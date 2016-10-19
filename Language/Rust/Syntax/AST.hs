@@ -255,9 +255,9 @@ data FnDecl a
   = FnDecl {
       inputs :: [Arg a],
       -- | Inlined from [FunctionRetTy](https://docs.serde.rs/syntex_syntax/ast/enum.FunctionRetTy.html)
-      --    * Left Span -> Return type is not specified. Functions default to () and closures default to inference. Span points to where return type would be inserted.
+      --    * Nothing -> Return type is not specified. Functions default to () and closures default to inference. Span points to where return type would be inserted.
       --    * Right Ty -> Everything else
-      output :: Either Span (Ty a),
+      output :: Maybe (Ty a),
       variadic :: Bool,
       nodeInfo :: a
     }

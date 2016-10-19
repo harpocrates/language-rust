@@ -148,6 +148,23 @@ import Language.Rust.Syntax.AST
   "\'static" { StaticLifetime }
   union      { Union }
 
+  -- types
+  bool_ty    { IdentTok (Ident (Name "bool") _ _) }
+  char_ty    { IdentTok (Ident (Name "char") _ _) }
+  i8_ty      { IdentTok (Ident (Name "i8") _ _) }
+  i16_ty     { IdentTok (Ident (Name "i16") _ _) }
+  i32_ty     { IdentTok (Ident (Name "i32") _ _) }
+  i64_ty     { IdentTok (Ident (Name "i64") _ _) }
+  u8_ty      { IdentTok (Ident (Name "u8") _ _) }
+  u16_ty     { IdentTok (Ident (Name "u16") _ _) }
+  u32_ty     { IdentTok (Ident (Name "u32") _ _) }
+  u64_ty     { IdentTok (Ident (Name "u64") _ _) }
+  isize_ty   { IdentTok (Ident (Name "isize") _ _) }
+  usize_ty   { IdentTok (Ident (Name "usize") _ _) }
+  f32_ty     { IdentTok (Ident (Name "f32") _ _) }
+  f64_ty     { IdentTok (Ident (Name "f64") _ _) }
+  str_ty     { IdentTok (Ident (Name "str") _ _) }
+
   -- Identifiers.
   ident      { IdentTok $$ }
   '_'        { Underscore }
@@ -165,6 +182,52 @@ import Language.Rust.Syntax.AST
   comment    { Comment }
 
 %%
+
+
+-- 3.6 Paths
+
+expr_path ::
+expr_path : [ "::" ] ident [ "::" expr_path_tail ] + ;
+expr_path_tail : '<' type_expr [ ',' type_expr ] + '>'
+               | expr_path ;
+
+type_path : ident [ type_path_tail ] + ;
+type_path_tail : '<' type_expr [ ',' type_expr ] + '>'
+               | "::" type_path ;
+
+qualified_path
+    : '<'
+
+
+ty_sum :: { Ty () }
+ty_sum
+    : ty                                    { $1 }
+    : ty '+' ty_param_bounds_rev            { ObjectSum $1 (reverse $3) () }
+
+ty_param_bounds_rev :: { [TyParamBound ()] }
+ty_param_bounds_rev
+    : ty_param_bound                        { [$1] }
+    | ty_param_bounds_rev '+' ty_param_bound { $3 : $1 }
+
+ty_param_bound :: { TyParamBound () }
+ty_param_bound
+    : trait_bound_modifier lifetime_defs_rev trait_ref   { TraitTyParamBound (PolyTraitRef (reverse $2) $3 ()) $1 }
+    | lifetime                                           { RegionTyParamBound $1 }
+
+trait_bound_modifier :: { TriatBoundModifier }
+trait_bound_modifier
+    : '?'                                   { Maybe }
+    | {- Empty -}                           { None } 
+
+trait_ref :: { TraitRef () }
+trait_ref : <parse_trait_ref()>
+
+lifetime_defs_rev :: { [LifetimeDef ()] }
+lifetime_defs_rev
+    : {- Empty -}                           { [] }
+    | for '<' lifetime ':'  '>'
+
+
 
 
 -- 6.3 Attributes (Done)
@@ -193,6 +256,47 @@ attribute_list_rev
 
 attribute_list :: { [Attribute ()] } 
 attribute_list : attribute_list_rev         { reverse $1 }
+
+-- 7.2 Expressions
+
+expr :: { Expr () }
+expr
+    : literal                               { $1 }
+    | expr_path                             { $1 }
+    | tuple_expr                            { $1 }
+    | unit_expr                             { $1 }
+    | struct_expr                           { $1 }
+    | block_expr                            { $1 }
+    | method_call_expr                      { $1 }
+    | field_expr                            { $1 }
+    | array_expr                            { $1 }
+    | idx_expr                              { $1 }
+    | range_expr                            { $1 }
+    | unop_expr                             { $1 }
+    | binop_expr                            { $1 }
+    | paren_expr                            { $1 }
+    | call_expr                             { $1 }
+    | lambda_expr                           { $1 }
+    | while_expr                            { $1 }
+    | loop_expr                             { $1 }
+    | break_continue_expr                   { $1 }
+    | for_expr                              { $1 }
+    | if_expr                               { $1 }
+    | match_expr                            { $1 }
+    | if_let_expr                           { $1 }
+    | while_let_expr                        { $1 }
+    | return_expr                           { $1 }
+
+literal :: { Lit a }
+literal
+    : byte                                  { Byte (parseByte $1) () }
+    | char                                  { Char (parseChar $1) () }
+    | string                                { Str (parseString $1) Cooked () }
+    | bytestring                            { ByteStr (parseByteStr $1) () }
+    | int                                   { Int (parseInt $1) (parseIntType $1) () } 
+    | float                                 { Float $1 (parseFloatTy $1) () }
+    | true                                  { Bool True () }
+    | false                                 { Bool False () }
 
 -- 7.2.3 Tuple expressions (Done)
 
@@ -306,7 +410,7 @@ unop
 binop_expr :: { Expr () }
 binop_expr
     : attribute_list expr binop expr        { Binary $1 $3 $2 $4 () }
-    | attribute_list value as type          { Cast $1 $2 $4 () }
+    | attribute_list value as ty            { Cast $1 $2 $4 () }
     | attribute_list expr '=' expr          { Assign $1 $2 $4 () }
     | attribute_list expr assign_op expr    { AssignOp $1 $3 $2 $4 () }
 
@@ -357,17 +461,30 @@ call_expr :: { Expr () }
 call_expr
     : attribute_list expr '(' expr_list comma_m ')'   { Call $1 $2 $4 () }
 
-7.2.16 Lambda expressions
+-- 7.2.16 Lambda expressions (Done)
 
 lambda_expr
-    : attribute_list '|' ident_list_rev '|' expr      { Closure $1 CaptureBy (FnDecl a) (Block a) () }
-    | attribute_list '|' ident_list_rev ',' '|' expr  { Closure $1 CaptureBy (FnDecl a) (Block a) () }
+    : attribute_list capture_by
+      '|' args_list_rev '|' '->' ty '{'
+         block
+      '}'                                    { Closure $1 $2 (FnDecl (reverse $4) (Just $7) False ()) $9 ()}
+    : attribute_list capture_by
+      '|' args_list_rev '|' expr             { Closure $1 $2 (FnDecl (reverse $4) Nothing False ())
+                                                       (Block [NoSemi $6] DefaultBlock ()) () }
 
-ident_list_rev :: { [Expr ()] }
-ident_list_rev
-    : {- Empty list -}                       { [] }
-    | ident_list_rev ',' ident               { $3 : $1 }
+capture_by :: { CaptureBy }
+capture_by
+    : {- Nothing -}                          { Ref }
+    | move                                   { Value }
 
+arg :: { Arg () }
+arg : pat ':' ty                             { Arg $3 $1 () }
+    : pat                                    { Arg (Infer ()) $1 () }
+
+args_list_rev :: { [Arg ()] }
+args_list_rev
+    : {- Nothing -}                          { [] }
+    | args_list_rev ',' arg                  { $2 : $1 }
 
 -- 7.2.17 While loops (Done)
 
@@ -388,7 +505,7 @@ loop_expr
 -- 7.2.20 Continue expressions (Done)
 
 break_continue_expr :: { Expr () }
-break_expr
+break_continue_expr
     : attribute_list break                  { Break $1 Nothing () }
     | attribute_list break lifetime         { Break $1 (Just $3) () } 
     | attribute_list continue               { Continue $1 Nothing () }
@@ -471,6 +588,19 @@ return_expr
     : attribute_list return                 { Ret $1 Nothing () }
     | attribute_list return expr            { Ret $1 (Just $3) () }
 
+-- 8.1 Types
+
+-- 8.1.3 Tuple types (Done)
+
+tuple_ty :: { Ty () }
+tuple_ty : '(' ty_list comma_m ')'          { TupTy $2 () }
+
+-- 8.1.4 Array, and Slice types (Done)
+
+array_slice_ty :: { Ty () }
+array_slice_ty
+    : '[' ty ']'                            { Slice $2 () }
+    | '[' ty ':' expr ']'                   { Array $2 $4 () }
 
 -- Util (Done)
 
