@@ -10,6 +10,7 @@ import Data.Word
 
 -- https://docs.serde.rs/syntex_syntax/abi/enum.Abi.html
 data Abi
+  -- Platform-specific ABIs
   = Cdecl
   | Stdcall
   | Fastcall
@@ -17,6 +18,7 @@ data Abi
   | Aapcs
   | Win64
   | SysV64
+  -- Cross-platform ABIs
   | Rust
   | C
   | System
@@ -29,8 +31,8 @@ data Abi
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Arg.html
 data Arg a
   = Arg {
-      ty :: [Ty a],
-      pat :: [Pat a],
+      ty :: Ty a,
+      pat :: Pat a,
       nodeInfo :: a
     }
 
@@ -372,10 +374,7 @@ data ItemKind a
   -- | A module declaration (mod or pub mod).
   -- E.g. mod foo; or mod foo { .. }
   -- Inlined [Mod](https://docs.serde.rs/syntex_syntax/ast/struct.Mod.html)
-  | Mod {
-      inner :: Span,   -- ^ A span from the first token past { to the last token until }. For mod foo;, the inner span ranges from the first token to the last token in the external file.
-      items :: [Item a]
-  }
+  | Mod { items :: [Item a] }
   -- | An external module (extern or pub extern).
   -- E.g. extern { .. } or extern C { .. }
   -- Inlined [ForeignMod](https://docs.serde.rs/syntex_syntax/ast/struct.ForeignMod.html)
@@ -475,7 +474,7 @@ data MacroDef a
       allowInternalUnstable :: Bool,
       body :: [TokenTree],
       nodeInfo :: a
-}
+    }
 
 -- | A compile-time attribute item.
 -- E.g. #[test], #[derive(..)] or #[feature = "foo"]
@@ -500,13 +499,6 @@ data MethodSig a
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.Mutability.html
 data Mutability = Mutable | Immutable deriving (Eq, Enum, Bounded)
-
--- https://docs.serde.rs/syntex_syntax/ast/struct.MutTy.html
-data MutTy a
-  = MutTy {
-      ty :: Ty a,
-      mutbl :: Mutability
-    }
 
 -- | Possible values inside of compile-time attribute lists.
 -- E.g. the '..' in #[name(..)].
@@ -546,7 +538,7 @@ data Path a
       global :: Bool,
       -- | The segments in the path: the things separated by ::.
       -- Each segment consists of an identifier, an optional lifetime, and a set of types. E.g. std, String or Box<T>
-      segments :: [(Ident a, PathParameters a)],
+      segments :: [(Ident a, Maybe (PathParameters a))],
       nodeInfo :: a
     }
 
@@ -675,7 +667,7 @@ data Stmt a
 -- https://docs.serde.rs/syntex_syntax/ast/enum.StrStyle.html
 data StrStyle
   = Cooked     -- ^ A regular string, like "foo"
-  | Raw Word64 -- ^ A raw string, like r##"foo"##. The uint is the number of # symbols used
+  | Raw Int    -- ^ A raw string, like r##"foo"##. The uint is the number of # symbols used
 
 -- | Field of a struct. E.g. bar: usize as in struct Foo { bar: usize }
 -- https://docs.serde.rs/syntex_syntax/ast/struct.StructField.html
@@ -774,6 +766,7 @@ data TraitRef a
 
 -- | The different kinds of types recognized by the compiler
 -- Inlined [TyKind](https://docs.serde.rs/syntex_syntax/ast/enum.TyKind.html)
+-- Inlined [MutTy](https://docs.serde.rs/syntex_syntax/ast/struct.MutTy.html)
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Ty.html
 data Ty a
   -- | A variable-length slice ([T])
@@ -781,9 +774,9 @@ data Ty a
   -- | A fixed length array ([T; n])
   | Array (Ty a) (Expr a) a
   -- | A raw pointer (*const T or *mut T)
-  | Ptr (MutTy a) a
+  | Ptr Mutability (Ty a) a
   -- | A reference (&'a T or &'a mut T)
-  | Rptr (Maybe (Lifetime a)) (MutTy a) a
+  | Rptr (Maybe (Lifetime a)) Mutability (Ty a) a
   -- | A bare function (e.g. fn(usize) -> bool)
   -- Inlined [BareFnTy](-- https://docs.serde.rs/syntex_syntax/ast/struct.BareFnTy.html)
   | BareFn Unsafety Abi [LifetimeDef a] (FnDecl a) a
@@ -873,7 +866,7 @@ data ViewPath a
 data Visibility a
   = PublicV a
   | CrateV a
-  | RestrictedV { path :: Path a, nodeInfo :: a }
+  | RestrictedV (Path a) a
   | InheritedV a
 
 -- | A `where` clause in a definition

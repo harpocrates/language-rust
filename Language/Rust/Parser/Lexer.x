@@ -115,7 +115,7 @@ tokens :-
   "."                             { \_ -> Dot }
   ","                             { \_ -> Comma }
   ";"                             { \_ -> Semi }
-  ".."                            { \_ -> ModSep }
+  "::"                            { \_ -> ModSep }
   ":"                             { \_ -> Colon }
   "->"                            { \_ -> RArrow }
   "<-"                            { \_ -> LArrow }

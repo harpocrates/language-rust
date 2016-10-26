@@ -11,6 +11,7 @@ import Language.Rust.Parser.Lexer
 import Language.Rust.Syntax.AST
 
 --- https://doc.rust-lang.org/grammar.html
+-- https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y
 }
 
 %name parseExpr
@@ -61,7 +62,7 @@ import Language.Rust.Syntax.AST
   '.'        { Dot }
   ','        { Comma }
   ';'        { Semi }
-  '..'       { ModSep }
+  '::'       { ModSep }
   ':'        { Colon }
   '->'       { RArrow }
   '<-'       { LArrow }
@@ -184,25 +185,104 @@ import Language.Rust.Syntax.AST
 %%
 
 
--- 3.6 Paths
+-- 3.6 Paths (Done)
+-- TODO double check this
 
-expr_path ::
-expr_path : [ "::" ] ident [ "::" expr_path_tail ] + ;
-expr_path_tail : '<' type_expr [ ',' type_expr ] + '>'
-               | expr_path ;
+type_path :: { Path () }
+type_path : global type_path_segments_rev   { Path $1 (reverse $2) () }
 
-type_path : ident [ type_path_tail ] + ;
-type_path_tail : '<' type_expr [ ',' type_expr ] + '>'
-               | "::" type_path ;
+expr_path :: { Path () }
+expr_path : global expr_path_segments_rev   { Path $1 (reverse $2) () }
 
-qualified_path
-    : '<'
+mod_path :: { Path () }
+mod_path : global mod_path_segments_rev     { Path $1 (reverse $2) () }
+
+qualified_type_path :: { (QSelf (), Path ()) }
+qualified_type_path : '<' ty_sum as_type_path '>' '::' type_path_segments_rev  { (QSelf $2 (length (segments $3)), appendSegmentsToPath $3 (reverse $6)) }
+
+qualified_expr_path :: { (QSelf (), Path ()) }
+qualified_expr_path : '<' ty_sum as_type_path '>' '::' expr_path_segments_rev  { (QSelf $2 (length (segments $3)), appendSegmentsToPath $3 (reverse $6)) }
+
+qualified_mod_path :: { (QSelf (), Path ()) }
+qualified_mod_path  : '<' ty_sum as_type_path '>' '::' mod_path_segments_rev   { (QSelf $2 (length (segments $3)), appendSegmentsToPath $3 (reverse $6)) }
+
+as_type_path :: { Path () }
+as_type_path
+    : as type_path                     { $2 }
+    | {- Nothing -}                    { Path False [] () }
+
+-- e.g. `a::b<T,U>::c<V,W>` or `a::b<T,U>::c(V) -> W` or `a::b<T,U>::c(V)`
+type_path_segments_rev :: { [(Ident a, Maybe (PathParameters a))] }
+type_path_segments_rev
+    : type_path_segments_rev '::' ident angle_bracketed      { ($3, Just $4) : $1 }
+    | type_path_segments_rev '::' ident parenthesized        { ($3, Just $4) : $1 }
+    | type_path_segments_rev '::' ident                      { ($3, Nothing) : $1 }
+    | {- Empty -}                                            { [] }
+
+-- e.g. `a::b::<T,U>::c`
+expr_path_segments_rev :: { [(Ident a, Maybe (PathParameters a))] }
+expr_path_segments_rev
+    : expr_path_segments_rev '::' ident '::' angle_bracketed { ($3, Just $5) : $1 }
+    | expr_path_segments_rev '::' ident                      { ($3, Nothing) : $1 }
+    | {- Empty -}                                            { [] }
+
+-- e.g. `a::b::c`
+mod_path_segments_rev :: { [(Ident a, Maybe (PathParameters a))] }
+mod_path_segments_rev
+    : mod_path_segments_rev '::' ident                      { ($3, Nothing) : $1 }
+    | {- Empty -}   
+
+global :: { Boolean }
+global : '::'          { True }
+       | {- Empty -}   { False }
+
+
+-- Aka: generic_values_after_lt
+angle_bracketed :: { PathParameters () }
+angle_bracketed
+    : '<' lifetimes ',' ty_sums ',' bindings comma_m '>'  { AngleBracketed $2 $4 $6 () }
+    | '<' lifetimes ',' ty_sums              comma_m '>'  { AngleBracketed $2 $4 [] () }
+    | '<' lifetimes ','             bindings comma_m '>'  { AngleBracketed $2 [] $4 () }
+    | '<'               ty_sums ',' bindings comma_m '>'  { AngleBracketed [] $2 $4 () }
+    | '<'                           bindings comma_m '>'  { AngleBracketed [] [] $2 () }
+    | '<'               ty_sums              comma_m '>'  { AngleBracketed [] $2 [] () }
+    | '<' lifetimes                          comma_m '>'  { AngleBracketed $2 [] [] () }
+    | '<'                                            '>'  { AngleBracketed [] [] [] () }
+
+parenthesized :: { PathParameters () }
+parenthesized
+    : '(' ty_sums comma_m ')' '->' ty                     { Parenthesized $2 (Just $6) () }
+    : '(' ty_sums comma_m ')'                             { Parenthesized $2 Nothing   () }        
+    : '(' ')' '->' ty                                     { Parenthesized [] (Just $4) () }
+    : '(' ')'                                             { Parenthesized [] Nothing   () }
+
+
+lifetimes :: { [Lifetime ()] }
+lifetimes : lifetimes_rev        { reverse $1 }
+lifetimes_rev
+    : lifetime                   { [$1] }
+    | lifetimes_rev ',' lifetime { $2 : $1 }
+
+ty_sums :: { [Ty ()] }
+ty_sums : ty_sums_rev            { reverse $1 }
+ty_sums_rev
+    : ty_sum                     { [$1] }
+    | ty_sums_rev ',' ty_sum     { $2 : $1 }
+
+bindings :: { [(Ident a, Ty a)] }
+bindings : bindings_rev          { reverse $1 }
+bindings_rev
+    : ident '=' ty                   { [($1, $3)] }
+    | bindings_rev ',' ident '=' ty  { ($3, $5) : $1 }
 
 
 ty_sum :: { Ty () }
 ty_sum
     : ty                                    { $1 }
-    : ty '+' ty_param_bounds_rev            { ObjectSum $1 (reverse $3) () }
+    : ty '+' ty_param_bounds            { ObjectSum $1 $3 () }
+
+ty_param_bounds :: { [TyParamBound ()] }
+ty_param_bounds : ty_param_bounds_rev       { reverse $1 }
 
 ty_param_bounds_rev :: { [TyParamBound ()] }
 ty_param_bounds_rev
@@ -227,7 +307,39 @@ lifetime_defs_rev
     : {- Empty -}                           { [] }
     | for '<' lifetime ':'  '>'
 
+-- 6.1 Items
 
+item :: { Item () }
+item : attribute_list vis item_kind        { Item (snd $3) $1 (fst $3) $2 () }
+
+item_kind :: { (Ident (), ItemKind ()) }
+item_kind
+    : use  _ ';'        { Use (ViewPath a) } -- TODO
+    | extern crate 
+    | extern 
+
+
+
+    : vis mod_item
+    | fn_item
+    | type_item
+    | struct_item
+    | enum_item
+    | const_item
+    | static_item
+    | trait_item
+    | impl_item
+    | extern_block_item
+
+vis :: { Visibility () }
+vis : pub '(' crate ')'                     { CrateV () }
+    | pub '(' mod_path ')'                  { RestrictedV $3 () }
+    | pub                                   { PublicV () }
+    | {- Nothing -}                         { InheritedV () }
+
+view_path :: { ViewPath () }
+view_path
+    : mod_path
 
 
 -- 6.3 Attributes (Done)
@@ -257,6 +369,25 @@ attribute_list_rev
 attribute_list :: { [Attribute ()] } 
 attribute_list : attribute_list_rev         { reverse $1 }
 
+-- 7 Statements and expressions
+
+-- 7.1 Statements
+-- 7.1.1.1 Item declarations
+-- 7.1.1 Declaration statements
+-- 7.1.1.2 Variable declarations
+-- 7.1.2 Expression statements
+
+stmt :: { Stmt () }
+stmt
+    : item                                     { ItemStmt $1 () }
+    | attribute_list let pat type_m init ';'   { Local $3 $4 $5 $1 () } 
+    | expr ';'                                 { Semi $1 }
+    | ';'
+
+init :: { Expr () }
+init : '=' expr        { Just $2 }
+     | {- Nothing -}   { Nothing }
+
 -- 7.2 Expressions
 
 expr :: { Expr () }
@@ -264,7 +395,6 @@ expr
     : literal                               { $1 }
     | expr_path                             { $1 }
     | tuple_expr                            { $1 }
-    | unit_expr                             { $1 }
     | struct_expr                           { $1 }
     | block_expr                            { $1 }
     | method_call_expr                      { $1 }
@@ -298,18 +428,20 @@ literal
     | true                                  { Bool True () }
     | false                                 { Bool False () }
 
+-- 7.2.0.1 Lvalues, rvalues and temporaries
+-- FIXME: grammar?
+
+-- 7.2.0.2 Moved and copied types
+-- FIXME: Do we want to capture this in the grammar as different productions?
+
 -- 7.2.3 Tuple expressions (Done)
+-- 7.2.4 Unit expressions (Done)
 
 tuple_expr :: { Expr () }
 tuple_expr
-    : attribute_list '(' expr ',' ')'       { TupExpr $1 [$3] () }
-    | attribute_list '(' expr_list ',' ')'  { TupExpr $1 $3 () }
-    | attribute_list '(' expr_list ')'      { TupExpr $1 $3 () }
-
--- 7.2.4 Unit expressions (Done)
-
-unit_expr :: { Expr () }
-unit_expr : attribute_list '(' ')'          { TupExpr $1 [] }
+    : attribute_list '(' expr ','
+      expr_list comma_m ')'                 { TupExpr $1 ($3 : $5) () }
+    | attribute_list '(' ')'                { TupExpr $1 [] }
 
 -- 7.2.5 Structure expressions (Done)
 -- TODO: ensure we really don't need the (expr_path) / (function-call-like struct) here )
@@ -562,7 +694,7 @@ match_arm
     : attribute_list pat_list_rev
       maybe_guard '=>' expr ','             { Arm $1 (reverse $2) $3 $5 }
     | attribute_list pat_list_rev
-      maybe_guard '=>' '{' block '}'        { Arm $1 (reverse $2) $3 (BlockExpr [] $6 ()) () }
+      maybe_guard '=>' '{' block '}'        { Arm $1 (reverse $2) $3 (BlockExpr [] $6 ()) () }     '} -- TODO delete < (fixes syntax highlighting)
 
 pat_list_rev :: { [Pat ()] }
 pat_list_rev
@@ -588,29 +720,101 @@ return_expr
     : attribute_list return                 { Ret $1 Nothing () }
     | attribute_list return expr            { Ret $1 (Just $3) () }
 
--- 8.1 Types
-
+-- 8.1 Types (Done)
 -- 8.1.3 Tuple types (Done)
-
-tuple_ty :: { Ty () }
-tuple_ty : '(' ty_list comma_m ')'          { TupTy $2 () }
-
 -- 8.1.4 Array, and Slice types (Done)
+--- TODO macro
 
-array_slice_ty :: { Ty () }
-array_slice_ty
-    : '[' ty ']'                            { Slice $2 () }
-    | '[' ty ':' expr ']'                   { Array $2 $4 () }
+ty :: { Ty () }
+ty  : '(' ty ')'                            { ParenTy $2 () }
+    | '(' ty_sum ',' ')'                    { TupTy [$2] () }
+    | '(' ty_sum_list comma_m ')'           { TupTy $2 () }
+    | '!'                                   { Never () }
+    | '*' mutability ty                     { Ptr $2 $3 () }
+    | '[' ty_sum ']'                        { Slice $2 () }
+    | '[' ty_sum ':' expr ']'               { Array $2 $4 () }
+    | '&' lifetime_m mutability ty          { RPtr $2 $3 $4 () }
+    | for '<' lifetime_defs '>' bare_fn_ty  { BareFn (addLifetimes $5 $3) () }
+    | for '<' lifetime_defs '>' type_path
+      parse_ty_param_bounds_m               { PolyTraitRefTy (TraitTyParamBound (PolyTraitRefTy $3 (TraitRef $5)) None : $6) () }
+    | impl parse_ty_param_bounds            { ImplTrait $2 () }
+    | bare_fn_ty                            { $1 }
+    | qualified_type_path                   { PathTy (Just (fst $1)) (snd $1) () }
+    | type_path                             { PathTy Nothing $1 () }
+ {- | type_path '!' -}
+    | typeof '(' expr ')'                   { Typeof $3 () }
+    | '_'                                   { Infer () }
+
+parse_ty_param_bounds_m :: { [TyParamBound ()] }
+parse_ty_param_bounds_m
+    : '+' parse_ty_param_bounds             { $2 }
+    : {- Nothing -}                         { [] }
+
+mutability :: { Mutability }
+mutability
+    : mut                                   { Mutable }
+    | const                                 { Immutable }
+
+lifetime_m :: { Maybe (Lifetime ()) }
+lifetime_m
+    : lifetime                              { Just $1 }
+    | {- Nothing -}                         { Nothing }
+
+lifetime_defs_rev :: { [LifetimeDef ()] }
+lifetime_defs_rev
+    : lifetime_defs_rev ',' attribute_list lifetime                   { LifetimeDef $1 $3 [] () }
+    | lifetime_defs_rev ',' attribute_list lifetime ':' lifetime_sum  { LifetimeDef $1 $3 $5 () }
+    | {- Nothing -}                                               { [] }
+
+lifetime_defs :: { [LifetimeDef ()] }
+lifetime_defs : lifetime_defs_rev           { reverse $1 }
+
+
+-- 8.1.8 Function types
+
+bare_fn_ty :: { Ty () }
+bare_fn_ty
+    : unsafe abi fn '(' arg_list_general_rev '...' ')' ret_ty   { BareFn $1 $2 _ (FnDecl (reverse $5) $8 True) () }
+    | unsafe abi fn '(' arg_list_general_rev comma_m ')' ret_ty { BareFn $1 $2 _ (FnDecl (reverse $5) $8 False) () }
+    | unsafe abi fn '(' ')' ret_ty                              { BareFn $1 $2 _ (FnDecl [] $6 False) () }
+
+
+arg_list_general_rev :: { [Arg ()] }
+arg_list_general_rev
+    | pat_m ty_sum                           { [Arg $2 $1 ()] }
+    : arg_list_general_rev ',' pat_m ty_sum  { (Arg $4 $3 ()) : $1 }
+
+pat_m :: { Pat () }
+pat_m
+    : pat ':'                                { $1 }
+    | {- Nothing -}                          { IdentP (ByValue Immutable) invalidIdent Nothing () }
+
+unsafety :: { Unsafety () }
+unsafety
+    : unsafe                                 { Unsafe }
+    | {- Nothing -}                          { Normal }
+
+abi :: { Abi }
+abi : extern string                          { parseAbi $2 }
+    | extern                                 { C }
+    | {- Nothing -}                          { Rust }
+
+ret_ty :: Maybe (Ty a)
+ret_ty
+    : '->' ty                               { Just $2 }
+    | {- None -}                            { Nothing }
 
 -- Util (Done)
 
 expr_list_rev :: { [Expr ()] }
 expr_list_rev
-    : {- Empty list -}                       { [] }
+    : expr                                   { [$1] }
     | expr_list_rev ',' expr                 { $3 : $1 }
 
 expr_list :: { [Expr ()] } 
-expr_list : expr_list_rev                    { reverse $1 }
+expr_list
+    : expr_list_rev                          { reverse $1 }
+    | {- Empty list -}                       { [] }
 
 maybe_expr :: { Maybe (Expr ()) }
 maybe_expr
@@ -625,6 +829,15 @@ ty_list_rev
 ty_list :: { [Ty ()] } 
 ty_list : ty_list_rev                        { reverse $1 }
 
+ty_sum_list_rev :: { [Ty ()] }
+ty_sum_list_rev
+    : {- Empty list -}                       { [] }
+    | ty_sum_list_rev ',' ty_sum             { $3 : $1 }
+
+ty_sum_list :: { [Ty ()] } 
+ty_sum_list : ty_sum_list_rev                        { reverse $1 }
+
+
 maybe_lifetime :: { Maybe Lifetime }
 maybe_lifetime
     : {- Nothing -}                          { Nothing }
@@ -634,3 +847,16 @@ comma_m :: { () }
 comma_m
     : {- Nothing -}                         { () }
     | ','                                   { () }
+
+type_m :: { Ty () }
+type_m
+    : {- Nothing -}                         { Infer () }
+    : ':' ty                                { $2 }
+
+lifetime_sum_rev :: { [Lifetime ()] }
+lifetime_sum_rev
+    : {- Empty list -}                      { [] }
+    | lifetime_sum_rev '+' lifetime         { $3 : $1 }
+
+lifetime_sum :: { [Lifetime ()] }
+lifetime_sum : lifetime_sum_rev             { reverse $1 }

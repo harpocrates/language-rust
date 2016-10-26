@@ -15,6 +15,9 @@ data Ident a
 mkIdent :: String -> Ident ()
 mkIdent s = Ident (Name s) 0 ()
 
+invalidIdent :: Ident ()
+invalidIdent = mkIdent ""
+
 -- TODO: backpack
 type InternedString = String
 
