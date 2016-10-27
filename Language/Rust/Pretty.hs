@@ -1,68 +1,82 @@
-module Language.Rust.Pretty (Pretty(..)) where
+{-# LANGUAGE RecordWildCards, OverloadedStrings, DuplicateRecordFields #-}
+
+module Language.Rust.Pretty where
 
 import Language.Rust.Syntax.AST
-import Text.PrettyPrint.HughesPJ
-
-
-{-# LANGUAGE RecordWildCards, OverloadedStrings #-}
-
--- lifted from <https://hackage.haskell.org/package/language-c-0.5.0/docs/src/Language-C-Pretty.html#Pretty>
-
--- | A class of types which can be pretty printed
-class Pretty p where
-  -- | pretty print the given value
-  pretty :: p -> Doc
-  pretty = prettyPrec 0
-  -- | @prettyPrec prec p@ pretty prints p assuming
-  -- that the surrounding context has a precedence of
-  -- @prec@
-  prettyPrec :: Int -> p -> Doc
-  prettyPrec _ = pretty
-
--- | comma delimited
-commaDelimited :: Pretty a => [a] -> Doc
-commaDelimited = hsep . punctuate comma . map pretty
-
-
-commaDelimited' :: [Doc] -> Doc
-commaDelimited' = hsep . punctuate comma
+import Language.Rust.Syntax.Ident
+import Text.PrettyPrint.HughesPJ (hsep, hcat, vcat, punctuate, sep, (<>), (<+>), Doc, empty, text)
 
 -- | comma delimited
 commas :: [a] -> (a -> Doc) -> Doc
-commas xs f = hsep . punctuate comma . map f xs
-
--- | + delimited
-plusDelimited :: Pretty a => [a] -> Doc
-plusDelimited = foldr1 (\x y -> x <+> "+" <+> y) . map pretty
-
--- | | delimited
-pipeDelimited :: Pretty a => [a] -> Doc
-pipeDelimited = foldr1 (\x y -> x <+> "|" <+> y) . map pretty
-
-perhaps :: Pretty a => Maybe a -> Doc
-perhaps Nothing = empty
-perhaps (Just a) = pretty a
+commas xs f = hsep (punctuate "," (map f xs))
 
 when :: Bool -> Doc -> Doc
 when False _ = empty
 when True d = d
 
+notNull = not . null
+
+perhaps :: (a -> Doc) -> Maybe a -> Doc
+perhaps = maybe empty
+
 -------------------------------------------
+
+printIdent :: Ident a -> Doc
+printIdent (Ident (Name s) _ _) = text s
+
+-- aka print_type
+-- Inlined print_ty_fn
+printType :: Ty a -> Doc
+printType (Slice ty _) = "[" <> printType ty <> "]"
+printType (Array ty v _) = "[" <> printType ty <> ";" <+> printExpr v <> "]"
+printType (Ptr mut ty _) = "*" <> printFullMutability mut <+> printType ty
+printType (Rptr lifetime mut ty _) = "&" <> perhaps printLifetime lifetime <+> printMutability mut <+> printType ty
+printType (BareFn unsafety abi lifetimes decl _) =
+  when (notNull lifetimes) ("for" <+> "<" <> printFormalLifetimeList lifetimes <> ">")
+    <+> printFnHeaderInfo unsafety NotConst abi InheritedV
+    <+> printFnArgsAndRet decl
+printType (Never _) = "!"
+printType (TupTy [elt] _) = "(" <> printType elt <> ",)"
+printType (TupTy elts _) = "(" <> commas elts printType <> ")"
+printType (PathTy Nothing path _) = printPath path False
+printType (PathTy (Just qself) path _) = printQPath path qself False
+printType (ObjectSum ty bounds _) = printType ty <+> printBounds "+" bounds
+printType (PolyTraitRefTy bounds _) = printBounds "" bounds
+printType (ImplTrait bounds _) = printBounds "impl " bounds
+printType (ParenTy ty _) = "(" <> printType ty <> ")"
+printType (Typeof e _) = "typeof(" <> printExpr e <> ")"
+printType (Infer _) = "_"
+printType (ImplicitSelf _) = "Self"
+printType (MacTy m _) = error "Unimplemented"
+
+
 -- aka print_stmt
 printStmt :: Stmt a -> Doc
 printStmt Local{..} = 
   printOuterAttributes attrs
-    <+> "let" <+> printPat pat <> (maybe empty (\t -> ":" <+> printType t) ty)
-    <+> (maybe empty (\e -> "=" <+> printExpr e) init) <> ";"
+    <+> "let" <+> printPat pat <> (perhaps (\t -> ":" <+> printType t) ty)
+    <+> (perhaps (\e -> "=" <+> printExpr e) init) <> ";"
 printStmt (ItemStmt item _) = printItem item
-printStmt (NoSemi expr _) = printExprOuterAttrStyle expr false <> when (exprRequiresSemiToBeStmt expr) ";"
-printStmt (Semi expr _) = printExprOuterAttrStyle expr false <> ";"
+printStmt (NoSemi expr _) = printExprOuterAttrStyle expr False <> when (exprRequiresSemiToBeStmt expr) ";"
+printStmt (Semi expr _) = printExprOuterAttrStyle expr False <> ";"
 printStmt (MacStmt m ms attrs _) = error "Unimplemented"
 
 
 -- aka parse::classify::expr_requires_semi_to_be_stmt
 exprRequiresSemiToBeStmt :: Expr a -> Bool
+exprRequiresSemiToBeStmt If{} = False
+exprRequiresSemiToBeStmt IfLet{} = False
+exprRequiresSemiToBeStmt While{} = False
+exprRequiresSemiToBeStmt WhileLet{} = False
+exprRequiresSemiToBeStmt ForLoop{} = False
+exprRequiresSemiToBeStmt Loop{} = False
+exprRequiresSemiToBeStmt Match{} = False
+exprRequiresSemiToBeStmt BlockExpr{} = False
+exprRequiresSemiToBeStmt _ = True
 
+
+printExpr :: Expr a -> Doc
+printExpr expr = printExprOuterAttrStyle expr True
 
 -- print_expr_outer_attr_style
 -- Inlined print_expr_in_place
@@ -72,6 +86,9 @@ exprRequiresSemiToBeStmt :: Expr a -> Bool
 -- Inlined print_expr_binary
 -- Inlined print_expr_unary
 -- Inlined print_expr_addr_of
+-- Inlined print_if
+-- Inlined print_if_let
+-- Inlined print_expr_repeat
 printExprOuterAttrStyle :: Expr a -> Bool -> Doc
 printExprOuterAttrStyle expr isInline = printOuterAttributes (expressionAttrs expr) <+>
   case expr of
@@ -81,68 +98,119 @@ printExprOuterAttrStyle expr isInline = printOuterAttributes (expressionAttrs ex
     Call _ func args _ -> printExprMaybeParen func <> "(" <> commas args printExpr <> ")"
     MethodCall _ ident tys (self:args) _ -> printExpr self <> "." <> printIdent ident <> when (not (null tys)) ("::<" <> commas tys printType <> ">") <> "(" <> commas args printExpr <> ")"
     TupExpr attrs exprs _ -> "(" <> printInnerAttributes attrs <> commas exprs printExpr <> when (length exprs == 1) "," <> ")"
-    Binary _ op lhs rhs _ -> checkExprBinNeedsParen lhs op <+> printBinop op <+> checkExprBinNeedsParen lhs op
-    Unary _ op expr _ -> printUnop op <> printExprMaybeParen expr
+    Binary _ op lhs rhs _ -> checkExprBinNeedsParen lhs op <+> printBinOp op <+> checkExprBinNeedsParen lhs op
+    Unary _ op expr _ -> printUnOp op <> printExprMaybeParen expr
     Lit _ lit _ -> printLiteral lit
     Cast _ expr ty _ -> case expr of { Cast{} -> printExpr expr; _ -> printExprMaybeParen expr } <+> "as" <+> printType ty
-    TypeAscription [Attribute a] (Expr a) (Ty a) a
-    If [Attribute a] (Expr a) (Block a) (Maybe (Expr a)) a
-    IfLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Expr a)) a
-    While [Attribute a] (Expr a) (Block a) (Maybe (Ident a)) a
-    WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Ident a)) a
-    ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Ident a)) a
-    Loop [Attribute a] (Block a) (Maybe (Ident a)) a
-    Match [Attribute a] (Expr a) [Arm a] a
-    Closure [Attribute a] CaptureBy (FnDecl a) (Block a) a
-    BlockExpr [Attribute a] (Block a) a
-    Assign [Attribute a] (Expr a) (Expr a) a
-    AssignOp [Attribute a] BinOp (Expr a) (Expr a) a
-    FieldAccess [Attribute a] (Expr a) (Ident a) a
-    TupField [Attribute a] (Expr a) Int a
-    Index [Attribute a] (Expr a) (Expr a) a
-    Range [Attribute a] (Maybe (Expr a)) (Maybe (Expr a)) RangeLimits a
-    PathExpr [Attribute a] (Maybe (QSelf a)) (Path a) a
+    TypeAscription _ expr ty _ -> printExpr expr <> ":" <+> printType ty
+    If _ test blk els _ -> "if" <+> printExpr test <+> printBlock blk <+> printElse els
+    IfLet _ pat expr blk els _ -> "if let" <+> printPat pat <+> "=" <+> printExpr expr <+> printBlock blk <+> printElse els
+    While attrs test blk label _ -> perhaps (\i -> printIdent i <> ":") label <+> "while" <+> printExpr test <+> printBlockWithAttrs blk attrs
+    WhileLet attrs pat expr blk label _ -> perhaps (\i -> printIdent i <> ":") label <+> "while let" <+> printPat pat <+> "=" <+> printExpr expr <+> printBlockWithAttrs blk attrs
+    ForLoop attrs pat expr blk label _ -> perhaps (\i -> printIdent i <> ":") label <+> "for"  <+> printPat pat <+> "in" <+> printExpr expr <+> printBlockWithAttrs blk attrs
+    Loop attrs blk label _ -> perhaps (\i -> printIdent i <> ":") label <+> "loop" <+> printBlockWithAttrs blk attrs
+    Match attrs expr arms _ -> "match" <+> printExpr expr <+> "{" <+> printInnerAttributes attrs <+> hsep (printArm <$> arms) <+> "}"
+    Closure _ captureBy decl body _ -> when (captureBy == Value) "move" 
+      <+> printFnBlockArgs decl
+      <+> case stmts body of
+            [NoSemi iExpr _] | output decl == Nothing -> case iExpr of
+                                                         BlockExpr attrs blk _ -> printBlockUnclosedWithAttrs blk attrs
+                                                         _ -> printExpr iExpr
+            _ -> printBlockUnclosed body
+    BlockExpr attrs blk _ -> printBlockWithAttrs blk attrs
+    Assign _ lhs rhs _ -> printExpr lhs <+> "=" <+> printExpr rhs
+    AssignOp _ op lhs rhs _ -> printExpr lhs <+> printBinOp op <> "=" <+> printExpr rhs
+    FieldAccess _ expr ident _ -> printExpr expr <> "." <> printIdent ident
+    TupField _ expr num _ -> printExpr expr <> "." <> text (show num)
+    Index _ expr index _ -> printExpr expr <> "[" <> printExpr index <> "]"
+    Range _ start end limits _ -> perhaps printExpr start <> printRangeLimits limits <> perhaps printExpr end
+    PathExpr _ Nothing path _ -> printPath path True
+    PathExpr _ (Just qself) path _ -> printQPath path qself True
     AddrOf _ mut expr _ -> "&" <> printMutability mut <+> printExprMaybeParen expr
-    Break _ brk _ -> "break" <+> maybe empty printIdent cont
-    Continue _ cont _ -> "continue" <+> maybe empty printIdent cont
-    Ret _ result _ -> "return" <+> maybe empty printExpr result
+    Break _ brk _ -> "break" <+> perhaps printIdent cont
+    Continue _ cont _ -> "continue" <+> perhaps printIdent cont
+    Ret _ result _ -> "return" <+> perhaps printExpr result
     InlineAsmExpr _ inlineAsm _ -> error "Unimplemented"
     MacExpr _ m _ -> error "Unimplemented"
-    Struct [Attribute a] (Path a) [Field a] (Maybe (Expr a)) a
-    Repeat [Attribute a] (Expr a) (Expr a) a
+    Struct attrs path fields wth _ -> printPath path True <+> "{"
+      <+> printInnerAttributes attrs
+      <+> sep (printField <$> fields)
+      <+> perhaps (\e -> ".." <> printExpr e) wth
+      <+> "}"
+    Repeat attrs element count _ -> "[" <> printInnerAttributes attrs <+> printExpr element <> ";" <+> printExpr count  <> "]"
     ParenExpr attrs expr _ -> "(" <> printInnerAttributes attrs <+> printExpr expr <> ")"
     Try _ expr _ -> printExpr expr <> "?"
 
--- no similar
-printBinop :: BinOp
-printBinop AddOp = "+"
-printBinop SubOp = "-"
-printBinop MulOp = "*"
-printBinop DivOp = "/"
-printBinop RemOp = "%"
-printBinop AndOp = "&&"
-printBinop OrOp = "||"
-printBinop BitXorOp = "^"
-printBinop BitAndOp = "&"
-printBinop BitOrOp = "|"
-printBinop ShlOp = "<<"
-printBinop ShrOp = ">>"
-printBinop EqOp = "=="
-printBinop LtOp = "<"
-printBinop LeOp = "<="
-printBinop NeOp = "!="
-printBinop GeOp = ">="
-printBinop GtOp = ">"
+printField :: Field a -> Doc
+printField Field{..} = printIdent ident <> ":" <+> printExpr expr <> ","
+
+printRangeLimits :: RangeLimits -> Doc
+printRangeLimits HalfOpen = ".."
+printRangeLimits Closed = "..."
+
+-- print_fn_block_args
+printFnBlockArgs :: FnDecl a -> Doc
+printFnBlockArgs FnDecl{..} = "|" <> commas inputs printArg <> "|" <+> perhaps (\ty -> "->" <+> printType ty) output
+
+-- print_arm
+printArm :: Arm a -> Doc
+printArm Arm{..} = printOuterAttributes attrs
+  <+> foldr1 (\x y -> x <+> "|" <+> y) (printPat <$> pats)
+  <+> perhaps (\e -> "if" <+> printExpr e) guard
+  <+> "=>"
+  <+> case body of 
+        BlockExpr _ blk _ -> printBlockUnclosed blk <> when (rules blk == UnsafeBlock) ","
+        _ -> printExpr body <> ","
+
+printBlock :: Block a -> Doc
+printBlock = error "Unimplemented"
+
+-- print_block_unclosed/print_block_unclosed_indent
+printBlockUnclosed :: Block a -> Doc
+printBlockUnclosed = error "Unimplemented"
+
+-- print_block_unclosed_with_attrs
+printBlockUnclosedWithAttrs :: Block a -> [Attribute a] -> Doc
+printBlockUnclosedWithAttrs = error "Unimplemented"
+
+-- print_else
+printElse :: Maybe (Expr a) -> Doc
+printElse Nothing = empty
+printElse (Just (If _ test thn els _)) = "else if" <+> printExpr test <+> printBlock thn <+> printElse els
+printElse (Just (IfLet _ pat expr thn els _)) = "else if let" <+> printPat pat <+> "=" <+> printExpr expr <+> printBlock thn <+> printElse els
+printElse (Just (BlockExpr _ blk _)) = "else" <+> printBlock blk
+printElse _ = error "printElse saw `if` with a weird alternative"
 
 -- no similar
-printUnop :: Unop -> Doc
-printUnop Deref = "*"
-printUnop Not = "!"
-printUnop Neg = "~"
+printBinOp :: BinOp
+printBinOp AddOp = "+"
+printBinOp SubOp = "-"
+printBinOp MulOp = "*"
+printBinOp DivOp = "/"
+printBinOp RemOp = "%"
+printBinOp AndOp = "&&"
+printBinOp OrOp = "||"
+printBinOp BitXorOp = "^"
+printBinOp BitAndOp = "&"
+printBinOp BitOrOp = "|"
+printBinOp ShlOp = "<<"
+printBinOp ShrOp = ">>"
+printBinOp EqOp = "=="
+printBinOp LtOp = "<"
+printBinOp LeOp = "<="
+printBinOp NeOp = "!="
+printBinOp GeOp = ">="
+printBinOp GtOp = ">"
+
+-- no similar
+printUnOp :: UnOp -> Doc
+printUnOp Deref = "*"
+printUnOp Not = "!"
+printUnOp Neg = "~"
 
 -- aka print_literal
 printLiteral :: Lit a -> Doc
-
+printLiteral = error "Unimplemented"
 
 -- similar to check_expr_bin_needs_paren
 checkExprBinNeedsParen :: Expr a -> BinOp -> Doc
@@ -156,13 +224,13 @@ printExprMaybeParen expr = when needs "(" <> printExpr expr <> when needs ")"
 
 -- aka needs_parentheses
 needsParentheses :: Expr a -> Bool
-needsParentheses @Assign{} = True
-needsParentheses @Binary{} = True
-needsParentheses @Closure{} = True
-needsParentheses @AssignOp{} = True
-needsParentheses @Cast{} = True
-needsParentheses @InPlace{} = True
-needsParentheses @Type{} = True
+needsParentheses Assign{} = True
+needsParentheses Binary{} = True
+needsParentheses Closure{} = True
+needsParentheses AssignOp{} = True
+needsParentheses Cast{} = True
+needsParentheses InPlace{} = True
+needsParentheses TypeAscription{} = True
 needsParentheses _ = False
 
 -- aka  print_inner_attributes / print_inner_attributes_no_trailing_hardbreak / print_inner_attributes_inline
@@ -198,38 +266,34 @@ printMetaListItem (Literal lit _) = printLiteral lit
 
 -- aka  print_meta_item
 printMetaItem :: MetaItem a -> Doc
-printMetaItem (Word name _) = pretty name
-printMetaItem (NameValue name lit _) = pretty name <+> "=" <+> printLiteral lit
-printMetaItem (List name items _) = pretty name <> "(" <> commas items printMetaListItem <> ")"
-
--- aka  print_literal
-printLiteral :: Literal a -> Doc
-printLiteral = error "Unimplemented"
+printMetaItem (Word name _) = printName name
+printMetaItem (NameValue name lit _) = printName name <+> "=" <+> printLiteral lit
+printMetaItem (List name items _) = printName name <> "(" <> commas items printMetaListItem <> ")"
 
 -- | Synthesizes a comment that was not textually present in the original source file.
 -- aka  synth_comment
 synthComment :: String -> Doc
-synthComment com = "/*" <+> com <+> "*/"
+synthComment com = "/*" <+> text com <+> "*/"
 
-
+-- aka print_item
 printItem :: Item a -> Doc
 printItem Item{..} = case node of
   ExternCrate optionalPath -> printVisibility vis <+> "extern" <+> "crate" 
   Use vp -> printVisibility vis <+> "use" <+> printViewPath vp <> ";"
-  Static ty m expr -> printVisibility vis <+> "static" <+> when (m == Mutable) "mut" <+> printIdent ident <> ":" <+> printType ty <+> "=" <+> printExpr <> ";"
+  Static ty m expr -> printVisibility vis <+> "static" <+> when (m == Mutable) "mut" <+> printIdent ident <> ":" <+> printType ty <+> "=" <+> printExpr expr <> ";"
   ConstItem ty expr -> printVisibility vis <+> "const" <+> printIdent ident <> ":" <+> printType ty <+> "=" <+> printExpr expr <> ";"
   Fn decl unsafety constness abi tyParams body -> printFn decl unsafety constness abi (Just ident) tyParams vis <+> printBlockWithAttrs body attrs
   Mod items -> printVisibility vis <+> "mod" <+> printIdent ident <> "{" <> printMod items attrs <> "}"
-  ForeignMod abi foreignItems -> "extern" <+> abi <> "{" printForeignMod foreignItems attrs <> "}"
+  ForeignMod abi foreignItems -> "extern" <+> printAbi abi <> "{" printForeignMod foreignItems attrs <> "}"
   TyAlias ty params -> printVisibility vis <+> "type" <+> printIdent ident <> printGenerics params <> printWhereClause (whereClause params) <+> "=" <+> printType ty <> ";"
   Enum variants params -> printEnumDef variants params ident vis
   StructItem structDef generics -> printVisibility vis <+> "struct" <+> printStruct structDef generics ident True
   Union structDef generics -> printVisibility vis <+> "union" <+> printStruct structDef generics ident True
-  DefaultImpl unsafety traitRef -> printVisibility vis <+> printUnsafety unsafe <+> "impl" <> printTraitRef traitRef <+> "for" <+> ".." <+> "{ }"
+  DefaultImpl unsafety traitRef -> printVisibility vis <+> printUnsafety unsafety <+> "impl" <> printTraitRef traitRef <+> "for" <+> ".." <+> "{ }"
   Impl unsafety polarity generics traitRef_m ty implItems ->
       printVisibility vis <+> printUnsafety unsafety <+> "impl"
         <+> (case generics of { Generics [] [] _ _ -> empty; _ -> printGenerics generics })
-        <+> (case traitRef_m of { Just trait -> ; _ -> empty })
+        <+> perhaps (\t -> printTraitRef t <+> "for") traitRef_m
         <+> printType ty
         <+> printWhereClause (whereClause generics)
         <+> "{" <+> printInnerAttributes attrs <+> hsep (printImplItem <$> implItems) <+> "}"
@@ -237,24 +301,24 @@ printItem Item{..} = case node of
       let seperateBounds :: [TyParamBound a] -> ([Doc], [TyParamBound a])
           seperateBounds [] = ([],[])
           seperateBounds (t:ts) = case t of
-              TraitTyParamBound ptr Maybe : ts) = (("for ?" <+> printTraitRef (traitRef ptr)) : ds,tybs)
-              _ -> (ds, t:tybs)
+                                    TraitTyParamBound ptr Maybe -> (("for ?" <+> printTraitRef (traitRef ptr)) : ds, tybs)
+                                    _ -> (ds, t:tybs)
             where ~(ds,tybs) = seperateBounds ts
 
           (bounds,realBounds) = seperateBounds typarambounds
       in printVisibility vis <+> printUnsafety unsafety <+> "trait" <+> printIdent ident
             <+> printGenerics generics
             <+> hsep bounds
-            <+> hsep (printBounds ":" realBounds)
+            <+> printBounds ":" realBounds
             <+> printWhereClause (whereClause generics)
-            <+> "{" <+> hsep (printTraitItem <+> traitItems) <+> "}"
+            <+> "{" <+> hsep (printTraitItem <$> traitItems) <+> "}"
   MacItem m -> error "Unimplemented (pprust.rs line 1333)"
 
 
 -- aka print_trait_item
 printTraitItem :: TraitItem a -> Doc
 printTraitItem TraitItem{..} = printOuterAttributes attrs <+>
-  case node of ->
+  case node of
     ConstT ty default_m -> printAssociatedConst ident ty default_m InheritedV
     MethodT sig block_m -> printMethodSig ident sig InheritedV <+> maybe ";" (\body -> printBlockWithAttrs body attrs) block_m
     TypeT bounds default_m -> printAssociatedType ident (Just bounds) default_m
@@ -263,6 +327,20 @@ printTraitItem TraitItem{..} = printOuterAttributes attrs <+>
 
 -- aka print_bounds
 printBounds :: Doc -> [TyParamBound a] -> Doc
+printBounds _ [] = empty
+printBounds prefix bounds = prefix <+> foldr1 (\x y -> x <+> "+" <+> y) (printBound <$> bounds)
+  where
+  printBound :: TyParamBound a -> Doc
+  printBound (RegionTyParamBound lt) = printLifetime lt
+  printBound (TraitTyParamBound PolyTraitRef{..} modi) =
+    case modi of { Maybe -> "?"; _ -> empty }
+      <> printFormalLifetimeList boundLifetimes
+      <+> printTraitRef traitRef
+
+-- aka print_formal_lifetime_list
+printFormalLifetimeList :: [LifetimeDef a] -> Doc
+printFormalLifetimeList [] = empty
+printFormalLifetimeList lifetimes = "for<" <> commas lifetimes (\LifetimeDef{..} -> printOuterAttributes attrs <+> printLifetimeBounds lifetime bounds) <> ">"
 
 -- aka print_impl_item
 printImplItem :: ImplItem a -> Doc
@@ -276,10 +354,10 @@ printImplItem ImplItem{..} =
             MacroI m -> error "Unimplemented (pprust.rs line 1608")
 
 -- aka printAssociatedType
-printAssociatedType :: Ident a ->  Maybe _ -> Maybe (Ty a) -> Doc
+printAssociatedType :: Ident a ->  Maybe [TyParamBound a] -> Maybe (Ty a) -> Doc
 printAssociatedType ident bounds_m ty_m = "type" <+> printIdent ident
-  <+> maybe empty (printBounds ":") bounds_m
-  <+> maybe empty (\ty -> "=" <+> printType ty) ty_m
+  <+> perhaps (printBounds ":") bounds_m
+  <+> perhaps (\ty -> "=" <+> printType ty) ty_m
   <> ";"
 
 -- aka print_method_sig
@@ -290,7 +368,7 @@ printMethodSig ident MethodSig{..} vis = printFn decl unsafety (node constness) 
 printAssociatedConst :: Ident a -> Ty a -> Maybe (Expr a) -> Visibility a -> Doc
 printAssociatedConst ident ty default_m vis = printVisibility vis
   <+> "const" <+> printIdent ident <> ":" <+> printType ty
-  <+> maybe empty (\expr -> "=" <+> printExpr expt) default_m
+  <+> perhaps (\expr -> "=" <+> printExpr expr) default_m
   <> ";"
 
 -- no aka
@@ -298,15 +376,11 @@ printPolarity :: ImplPolarity -> Doc
 printPolarity Negative = "!"
 printPolarity Positive = empty
 
--- aka print_trait_ref
-printTraitRef :: TraitRef a -> Doc
-printTraitRef TraitRef{..} = printPath path False
-
 -- aka print_visibility
 printVisibility :: Visibility a -> Doc
 printVisibility (PublicV _) = "pub"
 printVisibility (CrateV _) = "pub(crate)"
-printVisibility (RestrictedV path _) = "pub(" <> printPath path <> ")"
+printVisibility (RestrictedV path _) = "pub(" <> printPath path False <> ")"
 printVisibility (InheritedV _) = empty
 
 -- aka print_foreign_item
@@ -314,12 +388,12 @@ printForeignItem :: ForeignItem a -> Doc
 printForeignItem ForeignItem{..} = printOuterAttributes attrs <+>
   case node of
     ForeignFn decl generics -> printFn decl Normal NotConst <> ";"
-    ForeignStatic ty mut -> printVisibility vis <+> "static" <+> when mut "mut" <+> ident <> ":" <+> printType ty <> ";"
+    ForeignStatic ty mut -> printVisibility vis <+> "static" <+> when mut "mut" <+> printIdent ident <> ":" <+> printType ty <> ";"
 
 
 -- aka print_struct
 printStruct :: VariantData a -> Generics a -> Ident a -> Bool -> Doc
-printStruct structDef generics{ whereClause = whereClause } ident printFinalizer =
+printStruct structDef Generics{..} ident printFinalizer =
   printIdent ident <+> printGenerics generics <+> case structDef of 
     StructD fields _ -> printWhereClause whereClause <+> "{" <+> commas fields printStructField <+> "}"
     TupleD fields _ -> "(" <> commas fields printStructField <> ")" <+> printWhereClause whereClause <+> when printFinalizer ";" 
@@ -330,7 +404,7 @@ printStructField :: StructField a -> Doc
 printStructField StructField{..} =
   printOuterAttributes attrs
     <+> printVisibility vis
-    <+> maybe empty ident (\i -> printIdent i <> ":") <+> ty
+    <+> perhaps (\i -> printIdent i <> ":") ident <+> printType ty
 
 
 -- aka print_unsafety
@@ -339,22 +413,34 @@ printUnsafety Normal = empty
 printUnsafety Unsafe = "unsafe"
 
 -- aka print_enum_def
-printEnumDef :: [Variant a] -> Generics a -> Ident a -> Visibility -> Doc
+printEnumDef :: [Variant a] -> Generics a -> Ident a -> Visibility a -> Doc
+printEnumDef variants generics ident vis =
+  printVisibility vis <+> "enum" <+> printIdent ident <+> printGenerics generics
+    <+> printWhereClause (whereClause generics) <+> "{"
+    <+> sep ((\v -> printOuterAttributes (attrs v) <+> printVariant v <> ",") <$> variants)
+    <+> "}"
+
+-- print_variant
+printVariant :: Variant a -> Doc
+printVariant Variant{..} = 
+  perhaps (\e -> "=" <+> printExpr e) disrExpr
 
 -- aka print_where_clause
 printWhereClause :: WhereClause a -> Doc
-
--- used in printVisibility
-printPath :: Path a -> Doc
-
--- aka print_view_path
-printViewPath :: ViewPath a -> Doc
+printWhereClause WhereClause{..}
+  | null predicates = empty
+  | otherwise = "where" <+> commas predicates printWherePredicate
+  where
+  printWherePredicate :: WherePredicate a -> Doc
+  printWherePredicate BoundPredicate{..} = printFormalLifetimeList boundLifetimes <+> printType boundedTy <> printBounds ":" bounds 
+  printWherePredicate RegionPredicate{..} = printLifetimeBounds lifetime bounds
+  printWherePredicate EqPredicate{..} = printPath path False <+> "=" <+> printType ty
 
 -- aka  print_fn
 printFn :: FnDecl a -> Unsafety -> Constness -> Abi -> Maybe (Ident a) -> Generics a -> Visibility a -> Doc
 printFn decl unsafety constness abi name generics vis =
   printFnHeaderInfo unsafety constness abi vis
-    <+> maybe empty printIdent name
+    <+> perhaps printIdent name
     <> printGenerics generics
     <> printFnArgsAndRet decl
     <+> printWhereClause (whereClause generics)
@@ -367,43 +453,54 @@ printFnArgsAndRet FnDecl{..} = "(" <> commas inputs (\arg -> printArg arg False)
 printArg :: Arg a -> Bool -> Doc
 printArg Arg{..} isClosure = case node of
   Infer | isClosure -> printPat pat
-  _ otherwise -> let invalid = case pat of IdentP _ ident _ _ -> ident == "" -- TODO define constant `invalid :: Ident a`
-                                    _ -> False
-                  in when (not invalid) (printPat pat <> ":") <+> printTy ty
+  _ -> let invalid = case pat of IdentP _ ident _ _ -> ident == "" -- TODO define constant `invalid :: Ident a`
+                                 _ -> False
+       in when (not invalid) (printPat pat <> ":") <+> printType ty
 
 -- print_explicit_self
 printExplicitSelf :: SelfKind a -> Doc
 printExplicitSelf (ValueSelf mut) = printMutability mut <+> "self"
-printExplicitSelf (Region lifetime_m mut) = "&" <> maybe empty printLifetime lifetime_m <+> printMutability mut <+> "self"
+printExplicitSelf (Region lifetime_m mut) = "&" <> perhaps printLifetime lifetime_m <+> printMutability mut <+> "self"
 printExplicitSelf (Explicit ty mut) = printMutability mut <+> "self" <> ":" <+> printType ty
 
 -- aka print_lifetime
 printLifetime :: Lifetime a -> Doc
-printLifetime Lifetime{..} = printName name
+printLifetime Lifetime{..} = "'" <> printName name
 
 -- print_mutability
 printMutability :: Mutability -> Doc
 printMutability Mutable = "mut"
 printMutability Immutable = empty
 
+printFullMutability :: Mutability -> Doc
+printFullMutability Mutable = "mut"
+printFullMutability Immutable = "const"
+
 -- print_pat
 printPat :: Pat a -> Doc
 printPat (WildP _) = "_"
-printPat (IdentP bindingMode path1 sub _) = printBindingMode bindingMode <+> printIdent path1 <+> maybe empty (\p -> "@" <> printPat p) sub
-printPat (StructP (Path a) [FieldPat a] Bool _) = 
-printPat (TupleStructP path elts ddpos _) = 
-printPat (PathP (Maybe (QSelf a)) (Path a) _)
-printPat (TupleP [Pat a] (Maybe Word64) _)
+printPat (IdentP bindingMode path1 sub _) = printBindingMode bindingMode <+> printIdent path1 <+> perhaps (\p -> "@" <> printPat p) sub
+printPat (StructP path fieldPats b _) = error "Unimplemented"
+printPat (TupleStructP path elts Nothing _) = printPath path True <> "(" <> commas elts printPat <> ")"
+printPat (TupleStructP path elts (Just ddpos) _) = let (before,after) = splitAt ddpos elts
+  in printPath path True <> "(" <> commas before printPat <> when (notNull elts) ","
+      <+> ".." <> when (ddpos /= length elts) ("," <+> commas after printPat) <> ")"
+printPat (PathP Nothing path _) = printPath path True
+printPat (PathP (Just qself) path _) = printQPath path qself False
+printPat (TupleP elts Nothing _) = "(" <> commas elts printPat <> ")"
+printPat (TupleP elts (Just ddpos) _) = let (before,after) = splitAt ddpos elts
+  in "(" <> commas before printPat <> when (notNull elts) ","
+      <+> ".." <> when (ddpos /= length elts) ("," <+> commas after printPat) <> ")"
 printPat (BoxP inner _) = "box" <+> printPat inner
 printPat (RefP inner mutbl _) = "&" <> printMutability mutbl <+> printPat inner
 printPat (LitP expr _) = printExpr expr
 printPat (RangeP lo hi _) = printExpr lo <+> "..." <+> printExpr hi
 printPat (SliceP before slice_m after _) = "[" <> commas before printPat
-printPat (MacP (Mac a) _) =
+printPat (MacP m _) = error "Unimplemented"
 
 
-printBindingMode :: BindingMode a -> Doc
-printBindingMode (ByRef mutbl) = "ref" <+> printMutability
+printBindingMode :: BindingMode -> Doc
+printBindingMode (ByRef mutbl) = "ref" <+> printMutability mutbl
 printBindingMode (ByValue Immutable) = empty
 printBindingMode (ByValue Mutable) = "mut"
 
@@ -413,16 +510,32 @@ printFnHeaderInfo :: Unsafety -> Constness -> Abi -> Visibility a -> Doc
 printFnHeaderInfo unsafety constness abi vis =
   printVisibility vis
   <+> (case constness of { Const -> "const"; _ -> empty })
-  <+> printUnsafety safety
+  <+> printUnsafety unsafety
   <+> printAbi abi
   <+> "fn"
 
 printAbi :: Abi -> Doc
 printAbi Rust = empty
-printAbi abi = "extern" <+> "\"" <> show abi <> "\""
+printAbi abi = "extern" <+> raw abi
+  where
+  raw Cdecl = "\"cdecl\""
+  raw Stdcall = "\"stdcall\""
+  raw Fastcall = "\"fastcall\""
+  raw Vectorcall = "\"\""
+  raw Aapcs = "\"aapcs\""
+  raw Win64 = "\"win64\""
+  raw SysV64 = "\"sysv64\""
+  raw Rust = "\"Rust\""
+  raw C = "\"C\""
+  raw System = "\"system\""
+  raw RustIntrinsic = "\"rust-intrinsic\""
+  raw RustCall = "\"rust-call\""
+  raw PlatformIntrinsic = "\"platform-intrinsic\""
+
 
 -- aka print_block_with_attrs
 printBlockWithAttrs :: Block a -> [Attribute a] -> Doc
+printBlockWithAttrs = error "Unimplemented"
 
 -- aka print_mod
 printMod :: [Item a] -> [Attribute a] -> Doc
@@ -438,239 +551,62 @@ printGenerics Generics{..}
   | null lifetimes && null tyParams = empty
   | otherwise =  let lifetimes = [ printOuterAttributes attrs <+> printLifetimeBounds lifetime bounds | l@(Lifetime attrs lifetime bounds _)<-lifetimes ]
                      bounds = [ printTyParam param | param<-tyParams ]
-                 in "<" <> hsep (punctuate "," (punctuatelifetime ++ bounds)) <> ">"
-------------
+                 in "<" <> hsep (punctuate "," (lifetime ++ bounds)) <> ">"
 
-instance Pretty (Lit a) where
-  pretty (Str str Cooked _) = "\"" <> escapeDefault str <> "\""
-  pretty (Str str (Raw n) _) = let delim = replicate n '#' in "r" <> delim <> "\"" <> str <> "\"" <> delim
-  pretty (ByteStr [w8] _) = 
-  pretty (Byte w8 _) = 
-  pretty (Char ch _) = 
-  pretty (Int w64 litType _) = 
-  pretty (Float InternedString FloatTy _)
-  pretty (FloatUnsuffixed InternedString _)
-  pretty (Bool b _)
-
-
-instance Pretty UnOp where
-  pretty Deref = "*"
-  pretty Not = "!"
-  pretty Neg = "~"
-
--- aka  binop_to_string
-instance Pretty BinOp where
-  pretty AddOp = "+"
-  pretty SubOp = "-"
-  pretty MulOp = "*"
-  pretty DivOp = "/"
-  pretty RemOp = "%"
-  pretty AndOp = "&&"
-  pretty OrOp = "||"
-  pretty BitXorOp = "^"
-  pretty BitAndOp = "&"
-  pretty BitOrOp = "|"
-  pretty ShlOp = "<<"
-  pretty ShrOp = ">>"
-  pretty EqOp = "=="
-  pretty LtOp = "<"
-  pretty LeOp = "<="
-  pretty NeOp = "!="
-  pretty GeOp = ">="
-  pretty GtOp = ">"
-
-instance Pretty UintTy where
-  pretty Us = "usize"
-  pretty U8 = "u8"
-  pretty U16 = "u16"
-  pretty U32 = "u32"
-  pretty U64 = "u64"
-
-instance Pretty IntTy where
-  pretty Is = "isize"
-  pretty I8 = "i8"
-  pretty I16 = "i16"
-  pretty I32 = "i32"
-  pretty I64 = "i64"
-
-instance Pretty Abi where
-  pretty Cdecl = "\"cdecl\""
-  pretty Stdcall = "\"stdcall\""
-  pretty Fastcall = "\"fastcall\""
-  pretty Vectorcall = "\"\""
-  pretty Aapcs = "\"aapcs\""
-  pretty Win64 = "\"win64\""
-  pretty SysV64 = "\"sysv64\""
-  pretty Rust = "\"Rust\""
-  pretty C = "\"C\""
-  pretty System = "\"system\""
-  pretty RustIntrinsic = "\"rust-intrinsic\""
-  pretty RustCall = "\"rust-call\""
-  pretty PlatformIntrinsic = "\"platform-intrinsic\""
-
-instance Pretty Unsafety where
-  pretty Unsafe = "unsafe"
-  pretty Normal = empty
-
--- aka  print_lifetime
-instance Pretty (Lifetime a) where
-  pretty Lifetime{..} = pretty name
-
--- aka  print_lifetime_bounds    -- review if this is really for lifetimedef
-instance Pretty (LifetimeDef a) where
-  pretty LifetimeDef{..}
-    | null bounds = pretty lifetime
-    | otherwise = pretty lifetime <> colon <+> (plusDelimited bounds)
-
--- aka  print_generics
-instance Pretty (Generics a) where
-  pretty Generics{..}
-    | null lifetimes && null tyParams = empty
-    | otherwise = "<" <> commaDelimited' ((pretty <$> lifetimes) ++ (pretty <$> tyParams)) <> ">"
-
--- aka  print_where_clause
-instance Pretty (WhereClause a) where
-  pretty WhereClause{..}
-    | null predicates = empty
-    | otherwise = "where" <+> commaDelimited predicates
-
-instance Pretty (PathParameters a) where
-  pretty Parenthesized{..} = "(" <> commaDelimited inputs <> ")" <+> maybe empty (\t -> "->" <+> pretty t)
-  pretty AngleBracketed{..} = "<" <> commaDelimited' (lifetimes' ++ types' ++ bindings') ">"
-    where
-      lifetimes' = pretty <$> lifetimes
-      types' = pretty <$> types
-      bindings' = (\(i,t) -> pretty i <+> equals <+> pretty ty) <$> bindings
-
-formalLifetimeList :: [LifetimeDef a] -> Doc
-formalLifetimeList [] = empty
-formalLifetimeList ls = "for" <> "<" <> commaDelimited ls <> ">"
-
-instance Pretty (WherePredicate a) where
-  pretty BoundPredicate{..} = formalLifetimeList boundLifetimes <+> pretty boundedTy <> colon <+> error 2852
-  pretty RegionPredicate{..} = error 
-  pretty EqPredicate{..} = printPath path <+> "=" <+> pretty ty
-
--- | second argument says whether to put colons before params
-printPath :: Path a -> Bool -> Doc
-printPath Path{..} c = (when global "::") <> hcat (segments >>= \(i,pp) -> [ pretty i, when (c && notNull segments) "::", pretty pp ]
-
-instance Pretty (ViewPath a) where
-  pretty (ViewPathSimple i p _) = printPath p False <> when (last (segments p)) ...
-  pretty (ViewPathGlob p _) = printPath p False <> "::" <> "*"
-  pretty (ViewPathList p ps _) = path <> when (not (isEmpty path)) "::" <> "{" <> commaDelimited ps <> "}"
-     where
-        path = printPath p False
-
-instance Pretty (PathListItem a) where
-  pretty (PathListItem name (Just rename) _) = pretty name <+> "as" <+> pretty rename
-  pretty (PathListItem name Nothing _) = pretty name
-
--- aka  print_mutability
-instance Pretty Mutability where
-  pretty Mutable = "mut"
-  pretty Immutable = empty
 
 -- aka  print_poly_trait_ref
-instance Pretty (PolyTraitRef a) where
-  pretty PolyTraitRef{..} = formalLifetimeList boundLifetimes <+> pretty traitRef
+printPolyTraitRef :: PolyTraitRef a -> Doc
+printPolyTraitRef PolyTraitRef{..} = printFormalLifetimeList boundLifetimes <+> printTraitRef traitRef
 
 -- aka  print_trait_ref
-instance Pretty (TraitRef a) where
-  pretty TraitRef{..} = printPath path False
+printTraitRef :: TraitRef a -> Doc
+printTraitRef TraitRef{..} = printPath path False
 
-instance Pretty (Ty a) where
-  pretty (Slice t _)           = brackets (pretty t)
-  pretty (Array t e _)         = brackets (pretty t <> semi <+> pretty e)
-  pretty (Ptr m t _)           = "*" <> pretty m <+> pretty t
-  pretty (Rptr l m t _)        = "&" <> hsep [ perhaps l, pretty m ] <+> pretty t
-  pretty (BareFn u a l f _)    = error "Unimplemented"
-  pretty (Never _)             = "!"
-  pretty (TupTy ts _)          = parens (hsep (punctuate comma (pretty <$> ts)))
-  pretty (PathTy q p _)        = error "Unimplemented"
-  pretty (ObjectSum bs _)      = error "Unimplemented"
-  pretty (PolyTraitRefTy bs _) = error "Unimplemented"
-  pretty (ImplTrait bs _)      = error "Unimplemented"
-  pretty (ParenTy t _)         = parens (pretty t)
-  pretty (Typeof e _)          = "typeof" <> parens (pretty e)
-  pretty (Infer _)             = "_"
-  pretty (ImplicitSelf _)      = "Self"
-  pretty (MacTy m _)           = error "Unimplemented"
- 
-instance Pretty (Pat a) where
-  pretty (WildP _) = "_"
-  pretty (IdentP (ByRef m) i p _) = "ref" <+> pretty m <+> i <+> maybe empty (\p' -> "@" <> pretty p')
-  pretty (IdentP (ByValue Mutable) i p _) = "mut" <+> i <+> maybe empty (\p' -> "@" <> pretty p')
-  pretty (IdentP (ByValue Immutable) i p _) = i <+> maybe empty (\p' -> "@" <> pretty p')
-  pretty (StructP (Path a) [FieldPat a] Bool a) = 
-  pretty (TupleStructP (Path a) [Pat a] (Maybe Word64) a) = 
-  pretty (PathP Nothing p _) = printPath True p
-  pretty (PathP (Just q) p _) = error "Unimplemented"
-  pretty (TupleP [Pat a] (Maybe Word64) a) = 
-  pretty (BoxP p _) = "box" <+> p
-  pretty (RefP p Mutable _) = "&" <> "mut" <+> pretty p
-  pretty (RefP p Immutable _) = "&" <+> pretty p
-  pretty (LitP (Expr a) a) = 
-  pretty (RangeP (Expr a) (Expr a) a) = 
-  pretty (SliceP [Pat a] (Maybe (Pat a)) [Pat a] a) = 
-  pretty (MacP (Mac a) a) = 
+-- aka print_path_parameters
+printPathParameters :: PathParameters a -> Bool -> Doc
+printPathParameters (AngleBracketed [] [] [] _) _ = empty
+printPathParameters Parenthesized{..} colons = when colons "::" <> "(" <> commas inputs printType <> ")" <+> perhaps (\t -> "->" <+> printType t) output
+printPathParameters AngleBracketed{..} colons = when colons "::" <> "<" <> hsep (punctuate "," (lifetimes' ++ types' ++ bindings')) <> ">"
+  where
+    lifetimes' = printLifetime <$> lifetimes
+    types' = printType <$> types
+    bindings' = (\(ident,ty) -> printIdent ident <+> "=" <+> printType ty) <$> bindings
 
--- aka  print_arm
-instance Pretty (Arm a) where
-  pretty Arm{..} = hsep [
-    printOuterAttributes attrs,
-    pipeDelimited pats,
-    maybe empty ("if" <+>) guard,
-    "=>",
-    error "Unimplemented"
-  ] 
+-- | second argument says whether to put colons before params
+-- aka print_path
+printPath :: Path a -> Bool -> Doc
+printPath Path{..} colons = when global "::" <> hcat (printSegment <$> segments)
+  where
+  printSegment :: (Ident a, Maybe (PathParameters a)) -> Doc
+  printSegment (ident,parameters) = printIdent <> perhaps parameters (\p -> printPathParameters p colons)
 
-expr' :: Expr a -> Doc
-expr' 
+-- print_qpath
+printQPath :: Path a -> QSelf a -> Bool -> Doc
+printQPath Path{..} QSelf{..} colons =  
+  "<" <> printType ty <+> when (position > 0) ("as" <+> printPath path{ segments = take position segments } False) 
+      <> ">" <> "::" <> printIdent ident' <> printPathParameters parameters colons
+  where
+  (ident, parameters) = last segments 
 
+-- aka print_view_path
+printViewPath :: ViewPath a -> Doc
+printViewPath (ViewPathSimple ident path _) = printPath path False <+> when (fst (last (segments path)) /= ident) ("as" <+> printIdent ident)
+printViewPath (ViewPathGlob path _) = printPath path False <> "::*"
+printViewPath (ViewPathList path idents _) = prefix <> "::{" <> commas idents printPathListItem <> "}"
+  where
+  prefix = if (null (segments path)) then "{" else printPath path False
 
--- TODO attributes
-
-
-expr :: Bool -> Expr a -> Doc
-expr f (Box a e _)         = withAttrs f a (text "box" <+> e)
-expr f (InPlace a e1 e2 _) = withAttrs f a (e1 <+> text "<-" <+> e2) 
-expr f (Vec a es _)        = withAttrs f a (brackets (commaDelimited es))
-expr f (Call a f es _)     = withAttrs f a (pretty f <> parens (commaDelimited es)
-expr f (MethodCall a m tys (e:es) _) = withAttrs f a (hcat [ pretty e, text ".", pretty m, if null es then empty else text "::<" <> commaDelimited tys <> ">", parens (commaDelimited es) ])
-expr f (TupExpr a es _) = withAttrs f a (parens (commaDelimited es))
-expr f (Binary a BinOp (Expr a) (Expr a) _) = withAttrs f a $ 
-expr f (Unary a UnOp (Expr a) _) = withAttrs f a (error "Unimplemented")
-expr f (Lit a l _) = withAttrs f a (pretty l)
-expr f (Cast a e ty _) = withAttrs f a (pretty e <+> text "as" <+> pretty ty) 
-expr f (TypeAscription a (Expr a) (Ty a) _) = withAttrs f a (pretty e <+> colon <+> pretty ty) 
-expr f (If a (Expr a) (Block a) (Maybe (Expr a)) _) = withAttrs f a (text "if" <+> pretty )
-expr f (IfLet a (Pat a) (Expr a) (Block a) (Maybe (Expr a)) _) = withAttrs f a $ 
-expr f (While a (Expr a) (Block a) (Maybe (Ident a)) _) = withAttrs f a $ 
-expr f (WhileLet a (Pat a) (Expr a) (Block a) (Maybe (Ident a)) _) = withAttrs f a $ 
-expr f (ForLoop a (Pat a) (Expr a) (Block a) (Maybe (Ident a)) _) = withAttrs f a $ 
-expr f (Loop a (Block a) (Maybe (Ident a)) _) = withAttrs f a $ 
-expr f (Match a (Expr a) [Arm a] _) = withAttrs f a $ 
-expr f (Closure a CaptureBy (FnDecl a) (Block a) _) = withAttrs f a $ 
-expr f (BlockExpr a (Block a) _) = withAttrs f a $ 
-expr f (Assign a (Expr a) (Expr a) _) = withAttrs f a $ 
-expr f (AssignOp a BinOp (Expr a) (Expr a) _) = withAttrs f a $ 
-expr f (FieldAccess a (Expr a) (Ident a) _) = withAttrs f a $ 
-expr f (TupField a (Expr a) Int _) = withAttrs f a $ 
-expr f (Index a (Expr a) (Expr a) _) = withAttrs f a $ 
-expr f (Range a (Maybe (Expr a)) (Maybe (Expr a)) RangeLimits _) = withAttrs f a $ 
-expr f (PathExpr a (Maybe (QSelf a)) (Path a) _) = withAttrs f a $ 
-expr f (AddrOf a Mutability (Expr a) _) = withAttrs f a $ 
-expr f (Break a (Maybe (Ident a)) _) = withAttrs f a $ 
-expr f (Continue a (Maybe (Ident a)) _) = withAttrs f a $ 
-expr f (Ret a (Maybe (Expr a)) _) = withAttrs f a $ 
-expr f (InlineAsmExpr a (InlineAsm a) _) = withAttrs f a $ 
-expr f (MacExpr a (Mac a) _) = withAttrs f a $ 
-expr f (Struct a (Path a) [Field a] (Maybe (Expr a)) _) = withAttrs f a $ 
-expr f (Repeat a (Expr a) (Expr a) _) = withAttrs f a $ 
-expr f (ParenExpr a (Expr a) _) = withAttrs f a $ 
-expr f (Try a (Expr a) _) = withAttrs f a $ 
+  printPathListItem :: PathListItem a -> Doc
+  printPathListItem (PathListItem name (Just rename) _) = printIdent name <+> "as" <+> printIdent rename
+  printPathListItem (PathListItem name Nothing _) = printIdent name
 
 
 
+printTyParam :: TyParam a -> Doc
+printTyParam = error "Unimplemented"
 
+printName :: Name -> Doc
+printName (Name s) = text s
+
+printLifetimeBounds :: Lifetime a -> [Lifetime a] -> Doc
+printLifetimeBounds = error "Unimplemented"

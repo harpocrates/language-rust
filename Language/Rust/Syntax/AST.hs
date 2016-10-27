@@ -437,7 +437,7 @@ data Lit a
   | ByteStr [Word8] a                -- ^ A byte string (b"foo")    TODO: maybe ByteString?
   | Byte Word8 a                     -- ^ A byte char (b'f')
   | Char Char a                      -- ^ A character literal ('a')
-  | Int Word64 LitIntType a          -- ^ An integer literal (1)
+  | Int Int LitIntType a          -- ^ An integer literal (1)
   | Float InternedString FloatTy a   -- ^ A float literal (1f64 or 1E10f64)
   | FloatUnsuffixed InternedString a -- ^ A float literal without a suffix (1.0 or 1.0E10)
   | Bool Bool a                      -- ^ A boolean literal
@@ -555,14 +555,14 @@ data Pat a
   | StructP (Path a) [FieldPat a] Bool a
   -- | A tuple struct/variant pattern Variant(x, y, .., z). If the .. pattern fragment is present, then
   -- (Maybe usize) denotes its position. 0 <= position <= subpats.len()
-  | TupleStructP (Path a) [Pat a] (Maybe Word64) a
+  | TupleStructP (Path a) [Pat a] (Maybe Int) a
   -- | A possibly qualified path pattern. Unquailfied path patterns A::B::C can legally refer to variants, structs,
   -- constants or associated constants. Quailfied path patterns <A>::B::C/<A as Trait>::B::C can only legally refer to
   -- associated constants.
   | PathP (Maybe (QSelf a)) (Path a) a
   -- | A tuple pattern (a, b). If the .. pattern fragment is present, then (Maybe usize) denotes its position.
   -- 0 <= position <= subpats.len()
-  | TupleP [Pat a] (Maybe Word64) a
+  | TupleP [Pat a] (Maybe Int) a
   -- | A box pattern
   | BoxP (Pat a) a
   -- | A reference pattern, e.g. &mut (a, b)
@@ -727,7 +727,7 @@ data TokenTree
       tts :: [TokenTree],       -- ^ The sequence of token trees
       separator :: Maybe Token, -- ^ The optional separator
       op :: KleeneOp,           -- ^ Whether the sequence can be repeated zero (*), or one or more times (+)
-      num_captures :: Word64    -- ^ The number of MatchNts that appear in the sequence (and subsequences)
+      num_captures :: Int    -- ^ The number of MatchNts that appear in the sequence (and subsequences)
     }
 
 -- | A modifier on a bound, currently this is only used for ?Sized, where the modifier is Maybe. Negative
