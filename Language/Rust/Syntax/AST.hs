@@ -25,7 +25,7 @@ data Abi
   | RustIntrinsic
   | RustCall
   | PlatformIntrinsic
-  deriving (Eq, Enum, Bounded)
+  deriving (Eq, Enum, Bounded, Show)
 
 -- | An argument in a function header like `bar: usize` as in `fn foo(bar: usize)`
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Arg.html
@@ -820,6 +820,12 @@ data TyParamBound a
   = TraitTyParamBound (PolyTraitRef a) TraitBoundModifier
   | RegionTyParamBound (Lifetime a)
 
+-- | Parition a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and 'RegionTyParamBound' variants.
+partitionTyParamBounds :: [TyParamBound a] -> ([TyParamBound a], [TyParamBound a])
+partitionTyParamBounds [] = ([],[])
+partitionTyParamBounds (tpb@TraitTyParamBound{} : ts) = let ~(tpbs,rpbs) = partitionTyParamBounds ts in (tpb:tpbs,rpbs)
+partitionTyParamBounds (rpb@RegionTyParamBound{} : ts) = let ~(tpbs,rpbs) = partitionTyParamBounds ts in (tpbs,rpb:rpbs)
+
 -- https://docs.serde.rs/syntex_syntax/ast/enum.UintTy.html
 data UintTy = Us | U8 | U16 | U32 | U64 deriving (Eq, Enum, Bounded)
 
@@ -864,10 +870,10 @@ data ViewPath a
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.Visibility.html
 data Visibility a
-  = PublicV a
-  | CrateV a
-  | RestrictedV (Path a) a
-  | InheritedV a
+  = PublicV
+  | CrateV
+  | RestrictedV (Path a)
+  | InheritedV
 
 -- | A `where` clause in a definition
 -- https://docs.serde.rs/syntex_syntax/ast/struct.WhereClause.html
