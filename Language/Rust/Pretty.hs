@@ -207,11 +207,32 @@ printBlock blk = printBlockWithAttrs blk []
 
 -- print_block_unclosed/print_block_unclosed_indent
 printBlockUnclosed :: Block a -> Doc
-printBlockUnclosed = error "Unimplemented"
+printBlockUnclosed = printBlock -- TODO maybe?
 
 -- print_block_unclosed_with_attrs
 printBlockUnclosedWithAttrs :: Block a -> [Attribute a] -> Doc
-printBlockUnclosedWithAttrs = error "Unimplemented"
+printBlockUnclosedWithAttrs = printBlockWithAttrs -- TODO maybe?
+
+-- aka print_block_with_attrs
+-- Actually print_block_maybe_unclosed
+printBlockWithAttrs :: Block a -> [Attribute a] -> Doc
+printBlockWithAttrs Block{..} attrs = 
+    safety <+> "{" <+> printInnerAttributes attrs <+> body <+> lastStmt <+> "}"
+  where
+  body :: Doc
+  body = if null stmts then empty else hsep (printStmt <$> Prelude.init stmts)
+  
+  lastStmt :: Doc
+  lastStmt = if null stmts
+    then empty
+    else case last stmts of
+            NoSemi expr _ -> printExprOuterAttrStyle expr False
+            stmt -> printStmt stmt
+
+  safety :: Doc
+  safety = case rules of
+              DefaultBlock -> empty
+              UnsafeBlock _ -> "unsafe"
 
 -- print_else
 printElse :: Maybe (Expr a) -> Doc
@@ -242,18 +263,46 @@ printBinOp NeOp = "!="
 printBinOp GeOp = ">="
 printBinOp GtOp = ">"
 
+-- aka util::parser::AssocOp::precedence
+opPrecedence :: BinOp -> Int
+opPrecedence AddOp = 12
+opPrecedence SubOp = 12
+opPrecedence MulOp = 13
+opPrecedence DivOp = 13
+opPrecedence RemOp = 13
+opPrecedence AndOp = 6
+opPrecedence OrOp = 5
+opPrecedence BitXorOp = 9
+opPrecedence BitAndOp = 10
+opPrecedence BitOrOp = 8
+opPrecedence ShlOp = 11
+opPrecedence ShrOp = 11
+opPrecedence EqOp = 7
+opPrecedence LtOp = 7
+opPrecedence LeOp = 7
+opPrecedence NeOp = 7
+opPrecedence GeOp = 7
+opPrecedence GtOp = 7
+
 -- no similar
 printUnOp :: UnOp -> Doc
 printUnOp Deref = "*"
 printUnOp Not = "!"
 printUnOp Neg = "~"
 
-opPrecedence :: BinOp -> Int
-opPrecedence = error "Unimplemented"
-
 -- aka print_literal
+-- TODO this is broken with respect to escaping characters
 printLiteral :: Lit a -> Doc
-printLiteral = error "Unimplemented"
+printLiteral (Str str _ _) = "\"" <> text str <> "\""
+printLiteral (Char c _) = "'" <> text [c] <> "'"
+printLiteral (Int i _) = text (show i)
+printLiteral (Float str F32 _) = text str <> "f32"
+printLiteral (Float str F64 _) = text str <> "f64"
+printLiteral (FloatUnsuffixed str _) = text str
+printLiteral (Bool True _) = "true"
+printLiteral (Bool False _) = "false"
+printLiteral (ByteStr w8s _) = error "Unimplemented"
+printLiteral (Byte w8 _) = error "Unimplemented"
 
 -- similar to check_expr_bin_needs_paren
 checkExprBinNeedsParen :: Expr a -> BinOp -> Doc
@@ -524,7 +573,7 @@ printFullMutability Immutable = "const"
 printPat :: Pat a -> Doc
 printPat (WildP _) = "_"
 printPat (IdentP bindingMode path1 sub _) = printBindingMode bindingMode <+> printIdent path1 <+> perhaps (\p -> "@" <> printPat p) sub
-printPat (StructP path fieldPats b _) = error "Unimplemented"
+printPat (StructP path fieldPats b _) = printPath path True <+> "{" <+> commas fieldPats (\FieldPat{..} -> when (not isShorthand) (printIdent ident <> ":") <+> printPat pat)
 printPat (TupleStructP path elts Nothing _) = printPath path True <> "(" <> commas elts printPat <> ")"
 printPat (TupleStructP path elts (Just ddpos) _) = let (before,after) = splitAt ddpos elts
   in printPath path True <> "(" <> commas before printPat <> when (notNull elts) ","
@@ -575,28 +624,6 @@ printAbi abi = "extern" <+> raw abi
   raw RustIntrinsic = "\"rust-intrinsic\""
   raw RustCall = "\"rust-call\""
   raw PlatformIntrinsic = "\"platform-intrinsic\""
-
-
--- aka print_block_with_attrs
--- Actually print_block_maybe_unclosed
-printBlockWithAttrs :: Block a -> [Attribute a] -> Doc
-printBlockWithAttrs Block{..} attrs = 
-    safety <+> "{" <+> printInnerAttributes attrs <+> body <+> lastStmt <+> "}"
-  where
-  body :: Doc
-  body = if null stmts then empty else hsep (printStmt <$> Prelude.init stmts)
-  
-  lastStmt :: Doc
-  lastStmt = if null stmts
-    then empty
-    else case last stmts of
-            NoSemi expr _ -> printExprOuterAttrStyle expr False
-            stmt -> printStmt stmt
-
-  safety :: Doc
-  safety = case rules of
-              DefaultBlock -> empty
-              UnsafeBlock _ -> "unsafe"
 
 
 -- aka print_mod
@@ -672,5 +699,7 @@ printTyParam TyParam{..} = printOuterAttributes attrs
 printName :: Name -> Doc
 printName (Name s) = text s
 
+-- aka print_lifetime_bounds
 printLifetimeBounds :: Lifetime a -> [Lifetime a] -> Doc
-printLifetimeBounds = error "Unimplemented"
+printLifetimeBounds lifetime bounds = printLifetime lifetime
+  <> when (notNull bounds) (":" <+> foldr1 (\x y -> x <+> "+" <+> y) (printLifetime <$> bounds))

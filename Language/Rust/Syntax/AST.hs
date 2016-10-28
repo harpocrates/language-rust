@@ -1,4 +1,4 @@
-{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE DuplicateRecordFields, GADTs #-}
 
 module Language.Rust.Syntax.AST where
 
@@ -6,6 +6,7 @@ import qualified Language.Rust.Syntax.Token as Token
 import Language.Rust.Syntax.Ident
 import Language.Rust.Data.Position
 
+import Data.Int
 import Data.Word
 
 -- https://docs.serde.rs/syntex_syntax/abi/enum.Abi.html
@@ -340,9 +341,6 @@ data InlineAsmOutput a
       isIndirect :: Bool
     }
 
--- https://docs.serde.rs/syntex_syntax/ast/enum.IntTy.html
-data IntTy = Is | I8 | I16 | I32 | I64 deriving (Eq, Enum, Bounded)
-
 -- | An item
 -- The name might be a dummy name in case of anonymous items
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Item.html
@@ -426,8 +424,34 @@ data LifetimeDef a
       nodeInfo :: a
     }
 
--- https://docs.serde.rs/syntex_syntax/ast/enum.LitIntType.html
-data LitIntType = Signed IntTy | Unsigned UintTy | Unsuffixed
+-- Merged [LitIntType](https://docs.serde.rs/syntex_syntax/ast/enum.LitIntType.html)
+-- Merged [IntTy](https://docs.serde.rs/syntex_syntax/ast/enum.IntTy.html)
+-- Merged [UintTy](https://docs.serde.rs/syntex_syntax/ast/enum.UintTy.html)
+data LitIntType where
+  Unsuffixed :: Show a => a -> LitIntType
+  Is :: Int64 -> LitIntType
+  I8 :: Int8 -> LitIntType
+  I16 :: Int16 -> LitIntType
+  I32 :: Int32 -> LitIntType
+  I64 :: Int64 -> LitIntType
+  Us :: Word64 -> LitIntType
+  U8 :: Word8 -> LitIntType
+  U16 :: Word16 -> LitIntType
+  U32 :: Word32 -> LitIntType
+  U64 :: Word64 -> LitIntType
+
+instance Show LitIntType where
+  show (Unsuffixed i) = show i
+  show (Is i) = show i ++ "isize"
+  show (I8 i) = show i ++ "i8"
+  show (I16 i) = show i ++ "i16"
+  show (I32 i) = show i ++ "i32"
+  show (I64 i) = show i ++ "i64"
+  show (Us i) = show i ++ "usize"
+  show (U8 i) = show i ++ "u8"
+  show (U16 i) = show i ++ "u16"
+  show (U32 i) = show i ++ "u32"
+  show (U64 i) = show i ++ "u64"
 
 -- | Literal kind.
 -- E.g. "foo", 42, 12.34 or bool
@@ -437,7 +461,7 @@ data Lit a
   | ByteStr [Word8] a                -- ^ A byte string (b"foo")    TODO: maybe ByteString?
   | Byte Word8 a                     -- ^ A byte char (b'f')
   | Char Char a                      -- ^ A character literal ('a')
-  | Int Int LitIntType a          -- ^ An integer literal (1)
+  | Int LitIntType a                 -- ^ An integer literal (1)
   | Float InternedString FloatTy a   -- ^ A float literal (1f64 or 1E10f64)
   | FloatUnsuffixed InternedString a -- ^ A float literal without a suffix (1.0 or 1.0E10)
   | Bool Bool a                      -- ^ A boolean literal
@@ -825,9 +849,6 @@ partitionTyParamBounds :: [TyParamBound a] -> ([TyParamBound a], [TyParamBound a
 partitionTyParamBounds [] = ([],[])
 partitionTyParamBounds (tpb@TraitTyParamBound{} : ts) = let ~(tpbs,rpbs) = partitionTyParamBounds ts in (tpb:tpbs,rpbs)
 partitionTyParamBounds (rpb@RegionTyParamBound{} : ts) = let ~(tpbs,rpbs) = partitionTyParamBounds ts in (tpbs,rpb:rpbs)
-
--- https://docs.serde.rs/syntex_syntax/ast/enum.UintTy.html
-data UintTy = Us | U8 | U16 | U32 | U64 deriving (Eq, Enum, Bounded)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.UnOp.html
 data UnOp 
