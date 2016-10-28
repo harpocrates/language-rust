@@ -538,7 +538,7 @@ data Path a
       global :: Bool,
       -- | The segments in the path: the things separated by ::.
       -- Each segment consists of an identifier, an optional lifetime, and a set of types. E.g. std, String or Box<T>
-      segments :: [(Ident a, Maybe (PathParameters a))],
+      segments :: [(Ident a, PathParameters a)],
       nodeInfo :: a
     }
 

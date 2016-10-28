@@ -110,12 +110,12 @@ printExprOuterAttrStyle expr isInline = printOuterAttributes (expressionAttrs ex
     ForLoop attrs pat expr blk label _ -> perhaps (\i -> printIdent i <> ":") label <+> "for"  <+> printPat pat <+> "in" <+> printExpr expr <+> printBlockWithAttrs blk attrs
     Loop attrs blk label _ -> perhaps (\i -> printIdent i <> ":") label <+> "loop" <+> printBlockWithAttrs blk attrs
     Match attrs expr arms _ -> "match" <+> printExpr expr <+> "{" <+> printInnerAttributes attrs <+> hsep (printArm <$> arms) <+> "}"
-    Closure _ captureBy decl body _ -> when (captureBy == Value) "move" 
+    Closure _ captureBy decl@FnDecl{ output = output } body _ -> when (captureBy == Value) "move" 
       <+> printFnBlockArgs decl
-      <+> case stmts body of
-            [NoSemi iExpr _] | output decl == Nothing -> case iExpr of
-                                                         BlockExpr attrs blk _ -> printBlockUnclosedWithAttrs blk attrs
-                                                         _ -> printExpr iExpr
+      <+> case (stmts body, output) of
+            ([NoSemi iExpr _], Nothing) -> case iExpr of
+                                              BlockExpr attrs blk _ -> printBlockUnclosedWithAttrs blk attrs
+                                              _ -> printExpr iExpr
             _ -> printBlockUnclosed body
     BlockExpr attrs blk _ -> printBlockWithAttrs blk attrs
     Assign _ lhs rhs _ -> printExpr lhs <+> "=" <+> printExpr rhs
@@ -127,7 +127,7 @@ printExprOuterAttrStyle expr isInline = printOuterAttributes (expressionAttrs ex
     PathExpr _ Nothing path _ -> printPath path True
     PathExpr _ (Just qself) path _ -> printQPath path qself True
     AddrOf _ mut expr _ -> "&" <> printMutability mut <+> printExprMaybeParen expr
-    Break _ brk _ -> "break" <+> perhaps printIdent cont
+    Break _ brk _ -> "break" <+> perhaps printIdent brk
     Continue _ cont _ -> "continue" <+> perhaps printIdent cont
     Ret _ result _ -> "return" <+> perhaps printExpr result
     InlineAsmExpr _ inlineAsm _ -> error "Unimplemented"
@@ -141,6 +141,46 @@ printExprOuterAttrStyle expr isInline = printOuterAttributes (expressionAttrs ex
     ParenExpr attrs expr _ -> "(" <> printInnerAttributes attrs <+> printExpr expr <> ")"
     Try _ expr _ -> printExpr expr <> "?"
 
+expressionAttrs :: Expr a -> [Attribute a]
+expressionAttrs (Box as _ _) = as
+expressionAttrs (InPlace as _  _ _) = as
+expressionAttrs (Vec as _ _) = as
+expressionAttrs (Call as _  _ _) = as
+expressionAttrs (MethodCall as _  _ _ _) = as
+expressionAttrs (TupExpr as _ _) = as
+expressionAttrs (Binary as _ _ _ _) = as
+expressionAttrs (Unary as _ _ _) = as
+expressionAttrs (Lit as _ _) = as
+expressionAttrs (Cast as _ _ _) = as
+expressionAttrs (TypeAscription as _  _ _) = as
+expressionAttrs (If as _ _ _ _) = as
+expressionAttrs (IfLet as _ _ _ _ _) = as
+expressionAttrs (While as _  _ _ _) = as
+expressionAttrs (WhileLet as _ _ _ _ _) = as
+expressionAttrs (ForLoop as _ _ _ _ _) = as
+expressionAttrs (Loop as _ _ _) = as
+expressionAttrs (Match as _ _ _) = as
+expressionAttrs (Closure as _ _ _ _) = as
+expressionAttrs (BlockExpr as _ _) = as
+expressionAttrs (Assign as _ _ _) = as
+expressionAttrs (AssignOp as _ _ _ _) = as
+expressionAttrs (FieldAccess as _ _ _) = as
+expressionAttrs (TupField as _ _ _) = as
+expressionAttrs (Index as _ _ _) = as
+expressionAttrs (Range as _ _ _ _) = as
+expressionAttrs (PathExpr as _ _ _) = as
+expressionAttrs (AddrOf as _ _ _) = as
+expressionAttrs (Break as _ _) = as
+expressionAttrs (Continue as _ _) = as
+expressionAttrs (Ret as _ _) = as
+expressionAttrs (InlineAsmExpr as _ _) = as
+expressionAttrs (MacExpr as _ _) = as
+expressionAttrs (Struct as _ _ _ _) = as
+expressionAttrs (Repeat as _ _ _) = as
+expressionAttrs (ParenExpr as _ _) = as
+expressionAttrs (Try as _ _) = as
+
+
 printField :: Field a -> Doc
 printField Field{..} = printIdent ident <> ":" <+> printExpr expr <> ","
 
@@ -150,7 +190,7 @@ printRangeLimits Closed = "..."
 
 -- print_fn_block_args
 printFnBlockArgs :: FnDecl a -> Doc
-printFnBlockArgs FnDecl{..} = "|" <> commas inputs printArg <> "|" <+> perhaps (\ty -> "->" <+> printType ty) output
+printFnBlockArgs FnDecl{..} = "|" <> commas inputs (\a -> printArg a True) <> "|" <+> perhaps (\ty -> "->" <+> printType ty) output
 
 -- print_arm
 printArm :: Arm a -> Doc
@@ -159,11 +199,11 @@ printArm Arm{..} = printOuterAttributes attrs
   <+> perhaps (\e -> "if" <+> printExpr e) guard
   <+> "=>"
   <+> case body of 
-        BlockExpr _ blk _ -> printBlockUnclosed blk <> when (rules blk == UnsafeBlock) ","
+        BlockExpr _ blk _ -> printBlockUnclosed blk <> when (rules blk == UnsafeBlock False) ","
         _ -> printExpr body <> ","
 
 printBlock :: Block a -> Doc
-printBlock = error "Unimplemented"
+printBlock blk = printBlockWithAttrs blk []
 
 -- print_block_unclosed/print_block_unclosed_indent
 printBlockUnclosed :: Block a -> Doc
@@ -182,7 +222,7 @@ printElse (Just (BlockExpr _ blk _)) = "else" <+> printBlock blk
 printElse _ = error "printElse saw `if` with a weird alternative"
 
 -- no similar
-printBinOp :: BinOp
+printBinOp :: BinOp -> Doc
 printBinOp AddOp = "+"
 printBinOp SubOp = "-"
 printBinOp MulOp = "*"
@@ -208,6 +248,9 @@ printUnOp Deref = "*"
 printUnOp Not = "!"
 printUnOp Neg = "~"
 
+opPrecedence :: BinOp -> Int
+opPrecedence = error "Unimplemented"
+
 -- aka print_literal
 printLiteral :: Lit a -> Doc
 printLiteral = error "Unimplemented"
@@ -215,7 +258,7 @@ printLiteral = error "Unimplemented"
 -- similar to check_expr_bin_needs_paren
 checkExprBinNeedsParen :: Expr a -> BinOp -> Doc
 checkExprBinNeedsParen e@(Binary _ op' _ _ _) op | opPrecedence op' < opPrecedence op = "(" <> printExpr e <> ")"
-checkExprBinNeedsParen e = printExpr e
+checkExprBinNeedsParen e _ = printExpr e
 
 -- aka print_expr_maybe_paren
 printExprMaybeParen :: Expr a -> Doc
@@ -250,8 +293,8 @@ printEitherAttributes attrs kind inline = glue [ printAttribute attr inline | at
 
 -- aka  print_attribute_inline / print_attribute
 printAttribute :: Attribute a -> Bool -> Doc
-printAttribute a@Attribute{..} inline | isSugaredDoc && inline = "/*!" <+> valueStr a <+> "*/"
-                                      | isSugaredDoc = "//!" <+> valueStr a 
+printAttribute a@Attribute{..} inline | isSugaredDoc && inline = "/*!" <+> perhaps text (valueStr a) <+> "*/"
+                                      | isSugaredDoc = "//!" <+> perhaps text (valueStr a) 
                                       | style == Inner = "#![" <> printMetaItem value <> "]"
                                       | style == Outer = "#[" <> printMetaItem value <> "]"
 
@@ -266,9 +309,9 @@ printMetaListItem (Literal lit _) = printLiteral lit
 
 -- aka  print_meta_item
 printMetaItem :: MetaItem a -> Doc
-printMetaItem (Word name _) = printName name
-printMetaItem (NameValue name lit _) = printName name <+> "=" <+> printLiteral lit
-printMetaItem (List name items _) = printName name <> "(" <> commas items printMetaListItem <> ")"
+printMetaItem (Word name _) = text name
+printMetaItem (NameValue name lit _) = text name <+> "=" <+> printLiteral lit
+printMetaItem (List name items _) = text name <> "(" <> commas items printMetaListItem <> ")"
 
 -- | Synthesizes a comment that was not textually present in the original source file.
 -- aka  synth_comment
@@ -284,7 +327,7 @@ printItem Item{..} = case node of
   ConstItem ty expr -> printVisibility vis <+> "const" <+> printIdent ident <> ":" <+> printType ty <+> "=" <+> printExpr expr <> ";"
   Fn decl unsafety constness abi tyParams body -> printFn decl unsafety constness abi (Just ident) tyParams vis <+> printBlockWithAttrs body attrs
   Mod items -> printVisibility vis <+> "mod" <+> printIdent ident <> "{" <> printMod items attrs <> "}"
-  ForeignMod abi foreignItems -> "extern" <+> printAbi abi <> "{" printForeignMod foreignItems attrs <> "}"
+  ForeignMod abi foreignItems -> "extern" <+> printAbi abi <> "{" <> printForeignMod foreignItems attrs <> "}"
   TyAlias ty params -> printVisibility vis <+> "type" <+> printIdent ident <> printGenerics params <> printWhereClause (whereClause params) <+> "=" <+> printType ty <> ";"
   Enum variants params -> printEnumDef variants params ident vis
   StructItem structDef generics -> printVisibility vis <+> "struct" <+> printStruct structDef generics ident True
@@ -362,7 +405,7 @@ printAssociatedType ident bounds_m ty_m = "type" <+> printIdent ident
 
 -- aka print_method_sig
 printMethodSig :: Ident a -> MethodSig a -> Visibility a -> Doc
-printMethodSig ident MethodSig{..} vis = printFn decl unsafety (node constness) abi (Just ident) generics vis 
+printMethodSig ident MethodSig{..} vis = printFn decl unsafety constness abi (Just ident) generics vis 
 
 -- aka print_associated_const
 printAssociatedConst :: Ident a -> Ty a -> Maybe (Expr a) -> Visibility a -> Doc
@@ -378,26 +421,27 @@ printPolarity Positive = empty
 
 -- aka print_visibility
 printVisibility :: Visibility a -> Doc
-printVisibility (PublicV _) = "pub"
-printVisibility (CrateV _) = "pub(crate)"
-printVisibility (RestrictedV path _) = "pub(" <> printPath path False <> ")"
-printVisibility (InheritedV _) = empty
+printVisibility PublicV = "pub"
+printVisibility CrateV = "pub(crate)"
+printVisibility (RestrictedV path) = "pub(" <> printPath path False <> ")"
+printVisibility InheritedV = empty
 
 -- aka print_foreign_item
 printForeignItem :: ForeignItem a -> Doc
 printForeignItem ForeignItem{..} = printOuterAttributes attrs <+>
   case node of
-    ForeignFn decl generics -> printFn decl Normal NotConst <> ";"
+    ForeignFn decl generics -> printFn decl Normal NotConst Rust (Just ident) generics vis <> ";"
     ForeignStatic ty mut -> printVisibility vis <+> "static" <+> when mut "mut" <+> printIdent ident <> ":" <+> printType ty <> ";"
 
 
 -- aka print_struct
 printStruct :: VariantData a -> Generics a -> Ident a -> Bool -> Doc
-printStruct structDef Generics{..} ident printFinalizer =
-  printIdent ident <+> printGenerics generics <+> case structDef of 
-    StructD fields _ -> printWhereClause whereClause <+> "{" <+> commas fields printStructField <+> "}"
-    TupleD fields _ -> "(" <> commas fields printStructField <> ")" <+> printWhereClause whereClause <+> when printFinalizer ";" 
-    UnitD _ -> "()" <+> printWhereClause whereClause <+> when printFinalizer ";"
+printStruct structDef generics@Generics{..} ident printFinalizer =
+  printIdent ident <+> printGenerics generics
+    <+> case structDef of 
+          StructD fields _ -> printWhereClause whereClause <+> "{" <+> commas fields printStructField <+> "}"
+          TupleD fields _ -> "(" <> commas fields printStructField <> ")" <+> printWhereClause whereClause <+> when printFinalizer ";" 
+          UnitD _ -> "()" <+> printWhereClause whereClause <+> when printFinalizer ";"
 
 
 printStructField :: StructField a -> Doc
@@ -417,7 +461,7 @@ printEnumDef :: [Variant a] -> Generics a -> Ident a -> Visibility a -> Doc
 printEnumDef variants generics ident vis =
   printVisibility vis <+> "enum" <+> printIdent ident <+> printGenerics generics
     <+> printWhereClause (whereClause generics) <+> "{"
-    <+> sep ((\v -> printOuterAttributes (attrs v) <+> printVariant v <> ",") <$> variants)
+    <+> sep ((\v@Variant{..} -> printOuterAttributes attrs <+> printVariant v <> ",") <$> variants)
     <+> "}"
 
 -- print_variant
@@ -432,8 +476,8 @@ printWhereClause WhereClause{..}
   | otherwise = "where" <+> commas predicates printWherePredicate
   where
   printWherePredicate :: WherePredicate a -> Doc
-  printWherePredicate BoundPredicate{..} = printFormalLifetimeList boundLifetimes <+> printType boundedTy <> printBounds ":" bounds 
-  printWherePredicate RegionPredicate{..} = printLifetimeBounds lifetime bounds
+  printWherePredicate BoundPredicate{..} = printFormalLifetimeList boundLifetimes <+> printType boundedTy <> printBounds ":" traitLifetimeBounds 
+  printWherePredicate RegionPredicate{..} = printLifetimeBounds lifetime lifetimeBounds
   printWherePredicate EqPredicate{..} = printPath path False <+> "=" <+> printType ty
 
 -- aka  print_fn
@@ -451,9 +495,9 @@ printFnArgsAndRet FnDecl{..} = "(" <> commas inputs (\arg -> printArg arg False)
 
 -- aka print_arg TODO double check this
 printArg :: Arg a -> Bool -> Doc
-printArg Arg{..} isClosure = case node of
-  Infer | isClosure -> printPat pat
-  _ -> let invalid = case pat of IdentP _ ident _ _ -> ident == "" -- TODO define constant `invalid :: Ident a`
+printArg Arg{..} isClosure = case ty of
+  Infer _ | isClosure -> printPat pat
+  _ -> let invalid = case pat of IdentP _ (Ident (Name "") _ _) _ _ -> True -- TODO define constant `invalid :: Ident a`
                                  _ -> False
        in when (not invalid) (printPat pat <> ":") <+> printType ty
 
@@ -534,8 +578,26 @@ printAbi abi = "extern" <+> raw abi
 
 
 -- aka print_block_with_attrs
+-- Actually print_block_maybe_unclosed
 printBlockWithAttrs :: Block a -> [Attribute a] -> Doc
-printBlockWithAttrs = error "Unimplemented"
+printBlockWithAttrs Block{..} attrs = 
+    safety <+> "{" <+> printInnerAttributes attrs <+> body <+> lastStmt <+> "}"
+  where
+  body :: Doc
+  body = if null stmts then empty else hsep (printStmt <$> Prelude.init stmts)
+  
+  lastStmt :: Doc
+  lastStmt = if null stmts
+    then empty
+    else case last stmts of
+            NoSemi expr _ -> printExprOuterAttrStyle expr False
+            stmt -> printStmt stmt
+
+  safety :: Doc
+  safety = case rules of
+              DefaultBlock -> empty
+              UnsafeBlock _ -> "unsafe"
+
 
 -- aka print_mod
 printMod :: [Item a] -> [Attribute a] -> Doc
@@ -549,9 +611,9 @@ printForeignMod items attrs = printInnerAttributes attrs <+> hsep (printForeignI
 printGenerics :: Generics a -> Doc
 printGenerics Generics{..}
   | null lifetimes && null tyParams = empty
-  | otherwise =  let lifetimes = [ printOuterAttributes attrs <+> printLifetimeBounds lifetime bounds | l@(Lifetime attrs lifetime bounds _)<-lifetimes ]
-                     bounds = [ printTyParam param | param<-tyParams ]
-                 in "<" <> hsep (punctuate "," (lifetime ++ bounds)) <> ">"
+  | otherwise =  let lifetimes' = [ printOuterAttributes attrs <+> printLifetimeBounds lifetime bounds | l@(LifetimeDef attrs lifetime bounds _)<-lifetimes ]
+                     bounds' = [ printTyParam param | param<-tyParams ]
+                 in "<" <> hsep (punctuate "," (lifetimes' ++ bounds')) <> ">"
 
 
 -- aka  print_poly_trait_ref
@@ -577,14 +639,14 @@ printPathParameters AngleBracketed{..} colons = when colons "::" <> "<" <> hsep 
 printPath :: Path a -> Bool -> Doc
 printPath Path{..} colons = when global "::" <> hcat (printSegment <$> segments)
   where
-  printSegment :: (Ident a, Maybe (PathParameters a)) -> Doc
-  printSegment (ident,parameters) = printIdent <> perhaps parameters (\p -> printPathParameters p colons)
+  printSegment :: (Ident a, PathParameters a) -> Doc
+  printSegment (ident,parameters) = printIdent ident <> printPathParameters parameters colons
 
 -- print_qpath
 printQPath :: Path a -> QSelf a -> Bool -> Doc
 printQPath Path{..} QSelf{..} colons =  
-  "<" <> printType ty <+> when (position > 0) ("as" <+> printPath path{ segments = take position segments } False) 
-      <> ">" <> "::" <> printIdent ident' <> printPathParameters parameters colons
+  "<" <> printType ty <+> when (position > 0) ("as" <+> printPath (Path global (take position segments) nodeInfo) False) 
+      <> ">" <> "::" <> printIdent ident <> printPathParameters parameters colons
   where
   (ident, parameters) = last segments 
 
@@ -601,9 +663,11 @@ printViewPath (ViewPathList path idents _) = prefix <> "::{" <> commas idents pr
   printPathListItem (PathListItem name Nothing _) = printIdent name
 
 
-
+-- aka print_ty_param
 printTyParam :: TyParam a -> Doc
-printTyParam = error "Unimplemented"
+printTyParam TyParam{..} = printOuterAttributes attrs
+  <+> printIdent ident <> printBounds ":" bounds
+  <+> perhaps (\d -> "=" <+> printType d) default_
 
 printName :: Name -> Doc
 printName (Name s) = text s

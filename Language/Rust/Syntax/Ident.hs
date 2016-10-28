@@ -12,6 +12,9 @@ data Ident a
       nodeInfo :: a
     } deriving (Show)
 
+instance Eq (Ident a) where
+  i1 == i2 = name i1 == name i2
+
 mkIdent :: String -> Ident ()
 mkIdent s = Ident (Name s) 0 ()
 
@@ -23,7 +26,7 @@ type InternedString = String
 
 -- | A name is a part of an identifier, representing a string or gensym. It's the result of interning.
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Name.html
-data Name = Name InternedString deriving (Show) -- TODO, not quite
+data Name = Name InternedString deriving (Show, Eq) -- TODO, not quite
 
 -- | A SyntaxContext represents a chain of macro expansions (represented by marks).
 -- https://docs.serde.rs/syntex_syntax/ext/hygiene/struct.SyntaxContext.html
