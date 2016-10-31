@@ -13,7 +13,7 @@ import Data.Word
 ------------------
 
 -- https://docs.serde.rs/syntex_syntax/parse/token/enum.BinOpToken.html
-data BinOpToken = Plus | Minus | Star | Slash | Percent | Caret | And | Or | Shl | Shr deriving (Show)
+data BinOpToken = Plus | Minus | Star | Slash | Percent | Caret | And | Or | Shl | Shr | LArrow deriving (Show)
 
 -- | A delimiter token
 -- https://docs.serde.rs/syntex_syntax/parse/token/enum.DelimToken.html
@@ -41,7 +41,7 @@ data Token
   -- Expression-operator symbols.
   = Eq | Lt | Le | EqEq | Ne | Ge | Gt | AndAnd | OrOr | Not | Tilde | BinOp BinOpToken | BinOpEq BinOpToken
   -- Structural symbols
-  | At | Dot | DotDot | DotDotDot | Comma | Semi | Colon | ModSep | RArrow | LArrow | FatArrow | Pound | Dollar | Question
+  | At | Dot | DotDot | DotDotDot | Comma | Semi | Colon | ModSep | RArrow | FatArrow | Pound | Dollar | Question
   | OpenDelim DelimToken                -- ^ An opening delimiter, eg. `{`
   | CloseDelim DelimToken               -- ^ A closing delimiter, eg. `}`
   -- Literals

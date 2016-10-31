@@ -2,6 +2,7 @@ module Main where
 
 import Language.Rust.Syntax.AST
 import Language.Rust.Data.InputStream
+import Language.Rust.Parser.ParseMonad
 -- import Language.Rust.Parser.Lexer
 import Language.Rust.Pretty
 
