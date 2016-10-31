@@ -21,8 +21,8 @@ perhaps = maybe empty
 
 -------------------------------------------
 
-printIdent :: Ident a -> Doc
-printIdent (Ident (Name s) _ _) = text s
+printIdent :: Ident -> Doc
+printIdent Ident{..} = let (Name s) = name in text s
 
 -- aka print_type
 -- Inlined print_ty_fn
@@ -446,18 +446,18 @@ printImplItem ImplItem{..} =
             MacroI m -> error "Unimplemented (pprust.rs line 1608")
 
 -- aka printAssociatedType
-printAssociatedType :: Ident a ->  Maybe [TyParamBound a] -> Maybe (Ty a) -> Doc
+printAssociatedType :: Ident ->  Maybe [TyParamBound a] -> Maybe (Ty a) -> Doc
 printAssociatedType ident bounds_m ty_m = "type" <+> printIdent ident
   <+> perhaps (printBounds ":") bounds_m
   <+> perhaps (\ty -> "=" <+> printType ty) ty_m
   <> ";"
 
 -- aka print_method_sig
-printMethodSig :: Ident a -> MethodSig a -> Visibility a -> Doc
+printMethodSig :: Ident -> MethodSig a -> Visibility a -> Doc
 printMethodSig ident MethodSig{..} vis = printFn decl unsafety constness abi (Just ident) generics vis 
 
 -- aka print_associated_const
-printAssociatedConst :: Ident a -> Ty a -> Maybe (Expr a) -> Visibility a -> Doc
+printAssociatedConst :: Ident -> Ty a -> Maybe (Expr a) -> Visibility a -> Doc
 printAssociatedConst ident ty default_m vis = printVisibility vis
   <+> "const" <+> printIdent ident <> ":" <+> printType ty
   <+> perhaps (\expr -> "=" <+> printExpr expr) default_m
@@ -484,7 +484,7 @@ printForeignItem ForeignItem{..} = printOuterAttributes attrs <+>
 
 
 -- aka print_struct
-printStruct :: VariantData a -> Generics a -> Ident a -> Bool -> Doc
+printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Doc
 printStruct structDef generics@Generics{..} ident printFinalizer =
   printIdent ident <+> printGenerics generics
     <+> case structDef of 
@@ -506,7 +506,7 @@ printUnsafety Normal = empty
 printUnsafety Unsafe = "unsafe"
 
 -- aka print_enum_def
-printEnumDef :: [Variant a] -> Generics a -> Ident a -> Visibility a -> Doc
+printEnumDef :: [Variant a] -> Generics a -> Ident -> Visibility a -> Doc
 printEnumDef variants generics ident vis =
   printVisibility vis <+> "enum" <+> printIdent ident <+> printGenerics generics
     <+> printWhereClause (whereClause generics) <+> "{"
@@ -530,7 +530,7 @@ printWhereClause WhereClause{..}
   printWherePredicate EqPredicate{..} = printPath path False <+> "=" <+> printType ty
 
 -- aka  print_fn
-printFn :: FnDecl a -> Unsafety -> Constness -> Abi -> Maybe (Ident a) -> Generics a -> Visibility a -> Doc
+printFn :: FnDecl a -> Unsafety -> Constness -> Abi -> Maybe Ident -> Generics a -> Visibility a -> Doc
 printFn decl unsafety constness abi name generics vis =
   printFnHeaderInfo unsafety constness abi vis
     <+> perhaps printIdent name
@@ -546,8 +546,8 @@ printFnArgsAndRet FnDecl{..} = "(" <> commas inputs (\arg -> printArg arg False)
 printArg :: Arg a -> Bool -> Doc
 printArg Arg{..} isClosure = case ty of
   Infer _ | isClosure -> printPat pat
-  _ -> let invalid = case pat of IdentP _ (Ident (Name "") _ _) _ _ -> True -- TODO define constant `invalid :: Ident a`
-                                 _ -> False
+  _ -> let (IdentP _ ident _ _) = pat
+           invalid = ident == mkIdent ""
        in when (not invalid) (printPat pat <> ":") <+> printType ty
 
 -- print_explicit_self
@@ -666,7 +666,7 @@ printPathParameters AngleBracketed{..} colons = when colons "::" <> "<" <> hsep 
 printPath :: Path a -> Bool -> Doc
 printPath Path{..} colons = when global "::" <> hcat (printSegment <$> segments)
   where
-  printSegment :: (Ident a, PathParameters a) -> Doc
+  printSegment :: (Ident, PathParameters a) -> Doc
   printSegment (ident,parameters) = printIdent ident <> printPathParameters parameters colons
 
 -- print_qpath

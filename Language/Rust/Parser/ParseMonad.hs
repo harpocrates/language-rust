@@ -1,26 +1,20 @@
-{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE InstanceSigs, RecordWildCards #-}
 
 module Language.Rust.Parser.ParseMonad where
 
 import Language.Rust.Data.InputStream
+import Language.Rust.Data.Position
 import Language.Rust.Syntax.Token
 
 import Control.Monad
 import Control.Monad.Trans.Except
 
-
-data Position = Position {
-    absoluteOffset :: {-# UNPACK #-} !Int, -- ^ absolute offset the source file.
-    row :: {-# UNPACK #-} !Int,            -- ^ row (line) in the source file.
-    col :: {-# UNPACK #-} !Int             -- ^ column in the source file.
-  } deriving (Show)
-
-newtype ParseError = ParseError (String,Position) deriving (Show)
-
+-- | the result of running a parser
 data ParseResult a
-  = Ok a !PState
-  | Failed String Position   -- The error message and position
+  = Ok a !PState             -- ^ successful output
+  | Failed String Position   -- ^ the error message and position
 
+-- | state that the parser passes along
 data PState = PState {
     curPos     :: !Position,       -- position at current input location
     curInput   :: !InputStream,    -- the current input
@@ -28,6 +22,7 @@ data PState = PState {
     savedToken ::  Token           -- and the token before that
  }
 
+-- | parsing monad
 newtype P a = P { runP :: PState -> ParseResult a }
 
 instance Functor P where
@@ -47,17 +42,17 @@ instance Monad P where
                           Failed err pos -> Failed err pos
 
   fail :: String -> P a
-  fail msg = do { pos <- getPos; P (\_ -> Failed msg pos) }
+  fail msg = do { pos <- getPosition; P (\_ -> Failed msg pos) }
 
 -- | execute the given parser on the supplied input stream.
 --   returns 'ParseError' if the parser failed, and a pair of
 --   result and remaining name supply otherwise
 --
 -- Synopsis: @execParser parser inputStream initialPos predefinedTypedefs uniqNameSupply@
-execParser :: P a -> InputStream -> Position -> Except ParseError a
+execParser :: P a -> InputStream -> Position -> Except (Position,String) a
 execParser (P parser) input pos =
   case parser initialState of
-    Failed message errpos -> throwE (ParseError (message,errpos))
+    Failed message errpos -> throwE (errpos,message)
     Ok result st -> return result
   where initialState = PState {
           curPos = pos,
@@ -66,32 +61,39 @@ execParser (P parser) input pos =
           savedToken = error "CLexer.execParser: Touched undefined token (saved token)!"
         }
 
-setPos :: Position -> P ()
-setPos pos = P $ \s -> Ok () s{curPos=pos}
+-- | update the position of the parser
+updatePosition :: (Position -> Position) -> P ()
+updatePosition update = P (\s@PState{ curPos = pos } -> Ok () s{ curPos = update pos })
 
-getPos :: P Position
-getPos = P $ \s@PState{curPos=pos} -> Ok pos s
+-- | retrieve the position of the parser
+getPosition :: P Position
+getPosition = P (\s@PState{ curPos = pos } -> Ok pos s)
 
+-- | retrieve the position of the parser
+setPosition :: Position -> P ()
+setPosition pos = P (\s -> Ok () s{ curPos = pos })
+
+-- | retrieve the input stream of the parser
 getInput :: P InputStream
-getInput = P $ \s@PState{curInput=i} -> Ok i s
+getInput = P $ (\s@PState{ curInput = i } -> Ok i s)
 
+-- | set the input stream of the parser
 setInput :: InputStream -> P ()
-setInput i = P $ \s -> Ok () s{curInput=i}
+setInput i = P (\s -> Ok () s{ curInput = i })
 
+-- | get the previous token
 getLastToken :: P Token
-getLastToken = P $ \s@PState{prevToken=tok} -> Ok tok s
+getLastToken = P (\s@PState{ prevToken = tok } -> Ok tok s)
 
+-- | get the previous, previous token
 getSavedToken :: P Token
-getSavedToken = P $ \s@PState{savedToken=tok} -> Ok tok s
+getSavedToken = P (\s@PState{ savedToken = tok} -> Ok tok s)
 
--- | @setLastToken modifyCache tok@
+-- | update the last token
 setLastToken :: Token -> P ()
-setLastToken Eof = P $ \s -> Ok () s{savedToken=(prevToken s)}
-setLastToken tok = P $ \s -> Ok () s{prevToken=tok,savedToken=(prevToken s)}
+setLastToken Eof = P (\s -> Ok () s{ savedToken = prevToken s })
+setLastToken tok = P (\s -> Ok () s{ prevToken = tok, savedToken = prevToken s })
 
 -- | handle an End-Of-File token (changes savedToken)
 handleEofToken :: P ()
-handleEofToken = P $ \s -> Ok () s{savedToken=(prevToken s)}
-
-getCurrentPosition :: P Position
-getCurrentPosition = P $ \s@PState{curPos=pos} -> Ok pos s
+handleEofToken = P (\s -> Ok () s{ savedToken = prevToken s })

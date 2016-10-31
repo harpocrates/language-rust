@@ -144,7 +144,7 @@ data Expr a
   -- | A function call. The first field resolves to the function itself, and the second field is the list of arguments
   | Call [Attribute a] (Expr a) [Expr a] a
   -- | A method call (x.foo::<Bar, Baz>(a, b, c, d)).
-  -- The (Ident a) is the identifier for the method name. The vector of Tys are the ascripted
+  -- The Ident is the identifier for the method name. The vector of Tys are the ascripted
   -- type parameters for the method (within the angle brackets).
 
   -- The first element of the vector of Exprs is the expression that evaluates to the object on
@@ -153,7 +153,7 @@ data Expr a
 
   -- Thus, `x.foo::<Bar, Baz>(a, b, c, d)` is represented as
   -- `ExprKind::MethodCall(foo, [Bar, Baz], [x, a, b, c, d])`. -}
-  | MethodCall [Attribute a] (Ident a) [Ty a] [Expr a] a
+  | MethodCall [Attribute a] Ident [Ty a] [Expr a] a
   -- |  A tuple (`(a, b, c ,d)`)
   | TupExpr [Attribute a] [Expr a] a
   -- | A binary operation (For example: `a + b`, `a * b`)
@@ -173,17 +173,17 @@ data Expr a
   -- This is desugared to a match expression.
   | IfLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Expr a)) a
   -- | A while loop, with an optional label `'label: while expr { block }`
-  | While [Attribute a] (Expr a) (Block a) (Maybe (Ident a)) a
+  | While [Attribute a] (Expr a) (Block a) (Maybe Ident) a
   -- | A while-let loop, with an optional label
   -- 'label: while let pat = expr { block }
   -- This is desugared to a combination of loop and match expressions.
-  | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Ident a)) a
+  | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe Ident) a
   -- | A for loop, with an optional label
   -- 'label: for pat in expr { block }
   -- This is desugared to a combination of loop and match expressions.
-  | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Ident a)) a
+  | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe Ident) a
   -- | Conditionless loop (can be exited with break, continue, or return) 'label: loop { block }
-  | Loop [Attribute a] (Block a) (Maybe (Ident a)) a
+  | Loop [Attribute a] (Block a) (Maybe Ident) a
   -- | A match block.
   | Match [Attribute a] (Expr a) [Arm a] a
   -- | A closure (for example, `move |a, b, c| {a + b + c}`).
@@ -195,7 +195,7 @@ data Expr a
   -- | An assignment with an operator. For example, a += 1.
   | AssignOp [Attribute a] BinOp (Expr a) (Expr a) a
   -- | Access of a named struct field (obj.foo)
-  | FieldAccess [Attribute a] (Expr a) (Ident a) a
+  | FieldAccess [Attribute a] (Expr a) Ident a
   -- | Access of an unnamed field of a struct or tuple-struct. For example, foo.0.
   | TupField [Attribute a] (Expr a) Int a
   -- | An indexing operation (foo[2])
@@ -208,9 +208,9 @@ data Expr a
   -- | A referencing operation (&a or &mut a)
   | AddrOf [Attribute a] Mutability (Expr a) a
   -- | A break, with an optional label to break
-  | Break [Attribute a] (Maybe (Ident a)) a
+  | Break [Attribute a] (Maybe Ident) a
   -- | A continue, with an optional label
-  | Continue [Attribute a] (Maybe (Ident a)) a
+  | Continue [Attribute a] (Maybe Ident) a
   -- | A return, with an optional value to be returned
   | Ret [Attribute a] (Maybe (Expr a)) a
   -- | Output of the asm!() macro
@@ -231,7 +231,7 @@ data Expr a
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Field.html
 data Field a
   = Field {
-      ident :: Ident a,
+      ident :: Ident,
       expr :: Expr a,
       nodeInfo :: a
     }
@@ -242,7 +242,7 @@ data Field a
 -- https://docs.serde.rs/syntex_syntax/ast/struct.FieldPat.html
 data FieldPat a
   = FieldPat {
-      ident :: Ident a,     -- ^ The identifier for the field
+      ident :: Ident,     -- ^ The identifier for the field
       pat :: Pat a,         -- ^ The pattern the field is destructured to
       isShorthand :: Bool,
       nodeInfo :: a
@@ -268,7 +268,7 @@ data FnDecl a
 -- https://docs.serde.rs/syntex_syntax/ast/struct.ForeignItem.html
 data ForeignItem a
   = ForeignItem {
-      ident :: Ident a,
+      ident :: Ident,
       attrs :: [Attribute a],
       node :: ForeignItemKind a,
       vis :: Visibility a,
@@ -294,7 +294,7 @@ data Generics a
 -- https://docs.serde.rs/syntex_syntax/ast/struct.ImplItem.html
 data ImplItem a
   = ImplItem {
-      ident :: Ident a,
+      ident :: Ident,
       vis :: Visibility a,
       defaultness :: Defaultness,
       attrs :: [Attribute a],
@@ -346,7 +346,7 @@ data InlineAsmOutput a
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Item.html
 data Item a
   = Item {
-      ident :: Ident a,
+      ident :: Ident,
       attrs :: [Attribute a],
       node :: ItemKind a,
       vis :: Visibility a,
@@ -490,9 +490,9 @@ data MacStmtStyle
 -- https://docs.serde.rs/syntex_syntax/ast/struct.MacroDef.html
 data MacroDef a
   = MacroDef {
-      ident :: Ident a,
+      ident :: Ident,
       attrs :: [Attribute a],
-      importedFrom :: Maybe (Ident a),
+      importedFrom :: Maybe Ident,
       export :: Bool,
       useLocally :: Bool,
       allowInternalUnstable :: Bool,
@@ -540,7 +540,7 @@ data Nonterminal a
   | NtPat (Pat a)
   | NtExpr (Expr a)
   | NtTy (Ty a)
-  | NtIdent (Ident a)
+  | NtIdent Ident
   | NtMeta (MetaItem a)
   | NtPath (Path a)
   | NtTT TokenTree
@@ -562,7 +562,7 @@ data Path a
       global :: Bool,
       -- | The segments in the path: the things separated by ::.
       -- Each segment consists of an identifier, an optional lifetime, and a set of types. E.g. std, String or Box<T>
-      segments :: [(Ident a, PathParameters a)],
+      segments :: [(Ident, PathParameters a)],
       nodeInfo :: a
     }
 
@@ -574,7 +574,7 @@ data Pat a
   -- | A PatKind::Ident may either be a new bound variable (ref mut binding @ OPT_SUBPATTERN), or a unit
   -- struct/variant pattern, or a const pattern (in the last two cases the third field must be None). Disambiguation
   -- cannot be done with parser alone, so it happens during name resolution.
-  | IdentP BindingMode (Ident a) (Maybe (Pat a)) a
+  | IdentP BindingMode Ident (Maybe (Pat a)) a
   -- | A struct or struct variant pattern, e.g. Variant {x, y, ..}. The bool is true in the presence of a ...
   | StructP (Path a) [FieldPat a] Bool a
   -- | A tuple struct/variant pattern Variant(x, y, .., z). If the .. pattern fragment is present, then
@@ -604,8 +604,8 @@ data Pat a
 -- https://docs.serde.rs/syntex_syntax/ast/struct.PathListItem_.html
 data PathListItem a
   = PathListItem {
-      name :: Ident a,
-      rename :: Maybe (Ident a), -- ^ renamed in list, e.g. `use foo::{bar as baz};`
+      name :: Ident,
+      rename :: Maybe Ident, -- ^ renamed in list, e.g. `use foo::{bar as baz};`
       nodeInfo :: a
     }
 
@@ -619,7 +619,7 @@ data PathParameters a
   = AngleBracketed {
       lifetimes :: [Lifetime a],     -- ^ The lifetime parameters for this path segment.
       types :: [Ty a],               -- ^ The type parameters for this path segment, if present.
-      bindings :: [(Ident a, Ty a)], -- ^ Bindings (equality constraints) on associated types, if present. E.g., `Foo<A=Bar>`.
+      bindings :: [(Ident, Ty a)], -- ^ Bindings (equality constraints) on associated types, if present. E.g., `Foo<A=Bar>`.
       nodeInfo :: a
     }
   -- | A path like `Foo(A,B) -> C`
@@ -697,7 +697,7 @@ data StrStyle
 -- https://docs.serde.rs/syntex_syntax/ast/struct.StructField.html
 data StructField a
   = StructField {
-      ident :: Maybe (Ident a),
+      ident :: Maybe Ident,
       vis :: Visibility a,
       ty :: Ty a,
       attrs :: [Attribute a],
@@ -711,10 +711,10 @@ data Token
   | RArrow | LArrow | FatArrow | Pound | Dollar | Question
   | OpenDelim Token.DelimToken    -- ^ An opening delimiter, eg. {
   | CloseDelim Token.DelimToken   -- ^ A closing delimiter, eg. }
-  | LiteralToken (Lit ()) (Maybe Name) | IdentToken (Ident ()) | Underscore | LifetimeToken (Ident ()) | Interpolated (Nonterminal ())
+  | LiteralToken (Lit ()) (Maybe Name) | IdentToken Ident | Underscore | LifetimeToken Ident | Interpolated (Nonterminal ())
   | DocComment Name               -- ^ Doc comment
-  | MatchNt (Ident ()) (Ident ()) -- ^ Parse a nonterminal (name to bind, name of NT)
-  | SubstNt (Ident ())            -- ^ A syntactic variable that will be filled in by macro expansion.
+  | MatchNt Ident Ident           -- ^ Parse a nonterminal (name to bind, name of NT)
+  | SubstNt Ident                 -- ^ A syntactic variable that will be filled in by macro expansion.
   | SpecialMacroVar               -- ^ A macro variable with special meaning.
   | Whitespace                    -- ^ Whitespace
   | Comment                       -- ^ Comment
@@ -764,7 +764,7 @@ data TraitBoundModifier = None | Maybe
 -- https://docs.serde.rs/syntex_syntax/ast/struct.TraitItem.html
 data TraitItem a
   = TraitItem {
-      ident :: Ident a,
+      ident :: Ident,
       attrs :: [Attribute a],
       node :: TraitItemKind a,
       nodeInfo :: a
@@ -831,7 +831,7 @@ data Ty a
 data TyParam a
   = TyParam {
       attrs :: [Attribute a],
-      ident :: Ident a,
+      ident :: Ident,
       bounds :: [TyParamBound a],
       default_ :: Maybe (Ty a),
       nodeInfo :: a
@@ -864,7 +864,7 @@ data Unsafety = Unsafe | Normal deriving (Eq, Enum, Bounded)
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Variant_.html
 data Variant a
   = Variant {
-      name :: Ident a,
+      name :: Ident,
       attrs :: [Attribute a],
       data_ :: VariantData a,
       disrExpr :: Maybe (Expr a), -- ^ Explicit discriminant, e.g. Foo = 1
@@ -883,7 +883,7 @@ data VariantData a
 -- https://docs.serde.rs/syntex_syntax/ast/enum.ViewPath_.html
 data ViewPath a
   -- | `foo::bar::baz as quux` or just `foo::bar::baz` (with `as baz` implicitly on the right)
-  = ViewPathSimple (Ident a) (Path a) a
+  = ViewPathSimple Ident (Path a) a
   -- | foo::bar::*
   | ViewPathGlob (Path a) a
   -- | foo::bar::{a,b,c}

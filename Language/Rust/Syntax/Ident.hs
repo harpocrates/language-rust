@@ -1,24 +1,34 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 
-module Language.Rust.Syntax.Ident where
+module Language.Rust.Syntax.Ident (Ident(..), name, hash, mkIdent, invalidIdent, Name(..), InternedString) where
+
+import Data.List (foldl')
+import Data.Char (ord)
 
 -- | An identifier contains a Name (index into the interner table) and a SyntaxContext to track renaming
 -- and macro expansion per Flatt et al., "Macros That Work Together"
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Ident.html
-data Ident a
+data Ident
   = Ident {
       name :: Name,
-      ctxt :: SyntaxContext,
-      nodeInfo :: a
+      hash :: !Int
+      -- ctxt :: SyntaxContext,
+      -- nodeInfo :: a
     } deriving (Show)
 
-instance Eq (Ident a) where
-  i1 == i2 = name i1 == name i2
+instance Eq Ident where
+  i1 == i2 = hash i1 == hash i2 && name i1 == name i2
 
-mkIdent :: String -> Ident ()
-mkIdent s = Ident (Name s) 0 ()
+mkIdent :: String -> Ident
+mkIdent s = Ident (Name s) (hashString s) -- 0 ()
 
-invalidIdent :: Ident ()
+hashString :: String -> Int
+hashString = foldl' f golden
+   where f m c = fromIntegral (ord c) * magic + m
+         magic = 0xdeadbeef
+         golden = 1013904242
+
+invalidIdent :: Ident
 invalidIdent = mkIdent ""
 
 -- TODO: backpack
