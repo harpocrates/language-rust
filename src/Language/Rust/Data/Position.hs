@@ -26,6 +26,11 @@ incPos Position{..} offset = Position (absoluteOffset + offset) (row + offset) c
 retPos :: Position -> Position
 retPos Position{..} = Position (absoluteOffset + 1) (row + 1) 1
 
+-- | advance just the offset
+incOffset :: Position -> Int -> Position
+incOffset Position{..} offset = Position (absoluteOffset + offset) row col
+
+
 instance Show Position where
   show pos = show (row pos) ++ ":" ++ show (col pos)
 
@@ -46,6 +51,10 @@ data Span
     -- expnId :: ExpnId
   }
 
+instance Show Span where
+  show (Span lo hi) = show lo ++ " - " ++ show hi
+
 data Spanned a = Spanned { node :: a, span :: Span } deriving (Functor)
 
-
+instance Show a => Show (Spanned a) where
+  show (Spanned n p) = "at " ++ show p ++ ": " ++ show n

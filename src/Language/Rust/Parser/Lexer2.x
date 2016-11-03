@@ -7,15 +7,18 @@ import Language.Rust.Parser.ParseMonad
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
+import Prelude hiding (getChar)
+
 import Control.Monad (when)
 import Data.Word
 import Data.Char
 
--- TODO (there may be other problems - these are the ones that come to mind):
---   * fix floats (so they don't collide with things like 2.toString())
---   * fix suffixes on all literals (aka scan_optional_raw_name, translate to something like `token`)
+-- Things to review:
+--   * look over xid_start/continue (and incorporate these into ident, which is currently approximated)
+--   * look at error messages
 --   * decide whether to lex on kewords (and then what to do about those that are context sensitive)
 
+-- floats fixed (1.1f32 vs 1.field), literals fixed (suffixes, in particular), raw strings fixed
 }
 
 $xid_start
@@ -871,30 +874,28 @@ $hexit = [0-9a-fA-F]
 @char_escape
   = [nrt\\'"0]
   | [xX] $hexit $hexit
-  | "u" $hexit $hexit $hexit $hexit
-  | "U" $hexit $hexit $hexit $hexit $hexit $hexit $hexit $hexit
-  | "u{" $hexit "}"
-  | "u{" $hexit $hexit "}"
-  | "u{" $hexit $hexit $hexit "}"
-  | "u{" $hexit $hexit $hexit $hexit "}"
-  | "u{" $hexit $hexit $hexit $hexit $hexit "}"
-  | "u{" $hexit $hexit $hexit $hexit $hexit $hexit "}"
-
-$suffix = $hexit
+  | u $hexit $hexit $hexit $hexit
+  | U $hexit $hexit $hexit $hexit $hexit $hexit $hexit $hexit
+  | u\{ $hexit \}
+  | u\{ $hexit $hexit \}
+  | u\{ $hexit $hexit $hexit \}
+  | u\{ $hexit $hexit $hexit $hexit \}
+  | u\{ $hexit $hexit $hexit $hexit $hexit \}
+  | u\{ $hexit $hexit $hexit $hexit $hexit $hexit \}
 
 @lit_char
-  = "\'" ( "\\" @char_escape
-         | [^\\'\n\t\r]
-         | [ \ud800-\udbff \udc00-\udfff ]
-         )
-    "\'"
+  = \' ( \\ @char_escape
+       | [^\\'\n\t\r]
+       | [ \ud800-\udbff \udc00-\udfff ]
+       )
+    \'
 
 @lit_byte
-  = "b\'" ( "\\" ( [xX] $hexit $hexit
-                 | [nrt\\'"0] )
-          | [^\\'\n\t\r] [ \udc00-\udfff ]?
-          )
-    "\'"
+  = b\' ( \\ ( [xX] $hexit $hexit
+             | [nrt\\'"0] )
+        | [^\\'\n\t\r] [ \udc00-\udfff ]?
+        )
+    \'
 
 @lit_integer
   = [0-9][0-9_]*
@@ -902,26 +903,30 @@ $suffix = $hexit
   | 0o [0-8_]+
   | 0x [0-9a-fA-F_]+
 
-@lit_float = [0-9][0-9_]* ("." | ("." [0-9][0-9_]*)?) ([eE] [\-\+]? [0-9][0-9_]*)?
+@lit_float = [0-9][0-9_]* (\. [0-9][0-9_]*)? ([eE] [\-\+]? [0-9][0-9_]*)?
+@lit_float2 = [0-9][0-9_]* \.
 
 @lit_str = \" (\\\n | \\\r\n | \\ @char_escape | [^\"])* \"
 @lit_byte_str = b @lit_str
 
+@lit_raw_str = r \#* \"
+@lit_raw_bstr = rb \#* \"
+
 $question = \?
 
-@ident = $xid_start $xid_continue*
+@ident = [a-zA-Z_] [a-zA-Z0-9_]*
 @question_identifier = $question? @ident
 
 @lifetime = \' @ident
 
-@undoc_comment = "////" [^\n]*
+@undoc_comment  = "////" [^\n]*
 @yesdoc_comment = "///" [^\r\n]*
-@outer_doc_comment = "//!" [^\r\n]*
-@line_comment = "//" ( [^\n\/]* [^\n]* )?
+@outer_doc_cmt  = "//!" [^\r\n]*
+@line_comment   = "//" ( [^\n\/]* [^\n]* )?
 
 tokens :-
 
-[ \r\n\t]+      { token Whitespace }
+$white+         { token Whitespace }
 "="             { token Eq }
 "<"             { token Lt }
 "<="            { token Le }
@@ -942,6 +947,16 @@ tokens :-
 "|"             { token (BinOp Or) }
 "<<"            { token (BinOp Shl) }
 ">>"            { token (BinOp Shr) }
+"+="            { token (BinOpEq Plus) }
+"-="            { token (BinOpEq Minus) }
+"*="            { token (BinOpEq Star) }
+"/="            { token (BinOpEq Slash) }
+"%="            { token (BinOpEq Percent) }
+"^="            { token (BinOpEq Caret) }
+"&="            { token (BinOpEq And) }
+"|="            { token (BinOpEq Or) }
+"<<="           { token (BinOpEq Shl) }
+">>="           { token (BinOpEq Shr) }
 
 "@"             { token At }          
 "."             { token Dot }        
@@ -964,60 +979,118 @@ tokens :-
 "$"             { token Dollar }    
 "_"             { token Underscore }
 
-@lit_integer    { \i _ -> pure (Literal (Integer (Name i)) Nothing) }
-@lit_float      { \f _ -> pure (Literal (Float (Name f)) Nothing) }
-@lit_byte       { \c _ -> pure (Literal (Byte (Name (tail (tail (init c))))) Nothing) }
-@lit_char       { \c _ -> pure (Literal (Char (Name (tail (init c)))) Nothing) }
-@lit_str        { \s _  -> pure (Literal (Str_ (Name (tail (init s)))) Nothing) }
-@lit_byte_str   { \s _  -> pure (Literal (Str_ (Name (tail (tail (init s))))) Nothing) }
-br\"            { \_ s -> (\(n, v) -> Literal (ByteStrRaw (Name v) n) Nothing) <$> rawString s }
-r\"             { \_ s -> (\(n, v) -> Literal (StrRaw (Name v) n) Nothing) <$> rawString s }
+@lit_integer    { \i -> literal (Integer (Name i)) }
+@lit_float      { \f -> literal (Float   (Name f)) }
+@lit_float / [^\._a-zA-Z]
+                { \f -> literal (Float   (Name f)) }
 
-'?'             { token Question }
-@ident          { \s _ -> pure (IdentTok (mkIdent s)) } 
-@lifetime       { \s _ -> pure (IdentTok (mkIdent (tail s))) }
 
-@undoc_comment  { \comment _ -> pure (DocComment (Name comment)) }
-@yesdoc_comment { \comment _ -> pure (DocComment (Name comment)) }
-@outer_doc_comment { \comment _ -> pure (DocComment (Name comment)) }
+@lit_byte       { \c -> literal (Byte    (Name (drop 2 (init c)))) }
+@lit_char       { \c -> literal (Char    (Name (drop 1 (init c)))) }
+@lit_str        { \s -> literal (Str_    (Name (drop 1 (init s)))) }
+@lit_byte_str   { \s -> literal (ByteStr (Name (drop 2 (init s)))) }
+
+@lit_raw_str    { \s -> let n = length s - 2
+                        in do
+                            str <- rawString n
+                            pure (Literal (StrRaw (Name str) (fromIntegral n)) Nothing)
+                }
+@lit_raw_bstr   { \s -> let n = length s - 3
+                        in do
+                            str <- rawString n
+                            pure (Literal (ByteStrRaw (Name str) (fromIntegral n)) Nothing)
+                }
+
+<lits> ""       ;
+<lits> @ident   { \s -> pure (IdentTok (mkIdent s)) }
+
+\?              { token Question }
+@ident          { \s -> pure (IdentTok (mkIdent s)) } 
+@lifetime       { \s -> pure (Lifetime (mkIdent (tail s))) }
+
+@undoc_comment  { pure . DocComment . Name }
+@yesdoc_comment { pure . DocComment . Name }
+@outer_doc_cmt  { pure . DocComment . Name }
 @line_comment   { token Comment }
 
 {
--- Raw strings
 
-rawString :: AlexInput -> P (Word64, String)
-rawString input@(_,is) = case (go input' "") of
-                          Nothing -> fail "Invalid raw (byte)string"
-                          Just s -> pure (n, reverse s)
-  where
-    -- Number of opening pounds expected
-    (n,input') = greedyChar input '#'
+-- | Given the first part of a literal, try to parse also a suffix. Even if
+-- the allowed suffixes are very well defined and only valid on integer and
+-- float literals, we need to put in the same token whatever suffix follows.
+-- This is for backwards compatibility if Rust decides to ever add suffixes. 
+literal :: Lit -> P Token 
+literal lit = do
+  ai@(_, inp) <- getAlexInput
+  case alexScan ai lits of
+    AlexToken (pos', inp') len action -> do
+        tok <- action (take len inp)
+        case tok of
+          IdentTok (Ident name _) -> do
+            setAlexInput (pos', inp')
+            pure (Literal lit (Just name))
+          _ -> pure (Literal lit Nothing)
+    _ -> pure (Literal lit Nothing)
 
-    -- acc keeps track of the characters we are adding on (in reverse order)
-    -- closing keeps track of how many closing '#' we have seen 
-    go :: AlexInput -> String -> Maybe String
-    go input acc =
-      case alexGetChar input of
-        Nothing -> Nothing
-        Just (c,input') | c == '"' -> let (n',input'') = greedyChar input' '#'
-                                      in if n' >= n then Just acc else go input' (c:acc)
-                        | otherwise -> go input' (c:acc)
+-- | Parses a raw string, the closing quotation, and the appropriate number of
+-- '#' characters. Note that there can be more closing '#' characters than
+-- opening ones (this is as per Rust's standard).
+rawString :: Int -> P String
+rawString n = do
+  c_m <- getChar
+  case c_m of
+    -- The string was never closed
+    Nothing -> fail "Invalid raw (byte)string"
+    
+    -- The string has a chance of being closed
+    Just '"' -> do
+      n' <- greedyChar '#'
+      if n' >= n
+        then pure ""
+        else (('"' : replicate n' '#') ++) <$> rawString n 
 
+    -- Just another character...
+    Just c -> ([c] ++) <$> rawString n 
 
-greedyChar :: AlexInput -> Char -> (Word64,AlexInput)
-greedyChar i c = case alexGetChar i of
-                  Nothing -> (0,i)
-                  Just (c',i') | c == c'   -> let (n, i'') = greedyChar i' c in (n + 1, i'')
-                               | otherwise -> (0, i)
+-- | Greedily try to eat as many of a given character as possible (and return
+-- how many characters were eaten).
+greedyChar :: Char -> P Int
+greedyChar c = do
+  c_m <- peekChar
+  case c_m of
+    Just c' | c == c' -> do { getChar; n <- greedyChar c; pure (n+1) }
+    _ -> pure 0
 
+-------------------------------------------------------------------------------
+-- Parsing functions, working using their Alex counterparts
 
--- -----------------------------------------------------------------------------
+getAlexInput :: P AlexInput
+getAlexInput = (,) <$> getPosition <*> getInput
+
+setAlexInput :: AlexInput -> P ()
+setAlexInput (pos,inp) = setPosition pos *> setInput inp
+
+getChar :: P (Maybe Char)
+getChar = do
+  ai <- getAlexInput
+  case alexGetChar ai of
+    Nothing -> pure Nothing
+    Just (c,ai') -> setAlexInput ai' *> pure (Just c)
+
+peekChar :: P (Maybe Char)
+peekChar = do
+  ai <- getAlexInput
+  case alexGetChar ai of
+    Nothing -> pure Nothing
+    Just (c,ai') -> pure (Just c)
+
+-- ----------------------------------------------------------------------------
 -- The input type
 
 type Token_ = Spanned Token
 
-token :: Token -> String -> AlexInput -> P Token
-token t _ _ = pure t
+token :: Token -> String -> P Token
+token t _ = pure t
 
 type AlexInput = (Position,    -- current position,
                   InputStream) -- current input string
@@ -1042,30 +1115,21 @@ alexGetChar (p,is) | inputStreamEmpty is = Nothing
 alexMove :: Position -> Char -> Position
 alexMove pos ' '  = incPos pos 1
 alexMove pos '\n' = retPos pos
--- alexMove pos '\r' = incOffset pos 1  -- TODO understand
+alexMove pos '\r' = incOffset pos 1
 alexMove pos _    = incPos pos 1
 
 lexToken :: P Token_
-lexToken = lexToken' True
-
-lexToken' :: Bool -> P Token_
-lexToken' modifyCache = do
-  pos <- getPosition
-  inp <- getInput
+lexToken = do
+  (pos,inp) <- getAlexInput
   case alexScan (pos, inp) 0 of
-    AlexEOF -> do
-        handleEofToken
-        return (Spanned Eof (Span pos pos))
-    AlexError inp' -> fail "lexical error"
-    AlexSkip  (pos', inp') len -> do
-        setPosition pos'
-        setInput inp'
-        lexToken' modifyCache
-    AlexToken (pos', inp') len action -> do
-        setPosition pos'
-        setInput inp'
-        tok <- action (take len inp') (pos', inp')
-        when modifyCache $ setLastToken tok
+    AlexEOF        -> handleEofToken *> pure (Spanned Eof (Span pos pos))
+    AlexError _    -> fail "lexical error"
+    AlexSkip  ai _ -> setAlexInput ai *> lexToken
+    AlexToken ai len action -> do
+        setAlexInput ai
+        tok <- action (take len inp)
+        setLastToken tok
+        pos' <- getPosition
         return (Spanned tok (Span pos pos'))
 
 lexRust :: (Token_ -> P a) -> P a
