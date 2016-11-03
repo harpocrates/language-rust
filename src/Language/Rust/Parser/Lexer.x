@@ -11,7 +11,7 @@ import Data.Word (Word8)
 import Data.Char (chr)
 
 -- Things to review:
---   * look at error messages
+--   * improved error messages
 
 -- Based heavily on:
 --  * <https://github.com/rust-lang/rust/blob/master/src/grammar/RustLexer.g4>
@@ -20,6 +20,7 @@ import Data.Char (chr)
 
 }
 
+-- XID_START unicode character class
 @xid_start
   = [\x0041-\x005a]
   | "_"
@@ -397,6 +398,7 @@ import Data.Char (chr)
   | \xd869 [\x8000-\x82d5]
   | \xd87e [\xd400-\xd61c]
 
+-- XID_CONTINUE unicode character class
 @xid_continue
   = [\x0030-\x0039]
   | [\x0041-\x005a]
@@ -870,6 +872,8 @@ import Data.Char (chr)
 
 @ident = @xid_start @xid_continue*
 
+@lifetime       = \' @ident
+
 $hexit = [0-9a-fA-F]
 
 @char_escape
@@ -883,6 +887,9 @@ $hexit = [0-9a-fA-F]
   | u\{ $hexit $hexit $hexit $hexit \}
   | u\{ $hexit $hexit $hexit $hexit $hexit \}
   | u\{ $hexit $hexit $hexit $hexit $hexit $hexit \}
+
+
+-- literals
 
 @lit_char
   = \' ( \\ @char_escape
@@ -913,12 +920,14 @@ $hexit = [0-9a-fA-F]
 @lit_raw_str    = r \#* \"
 @lit_raw_bstr   = rb \#* \"
 
-@lifetime       = \' @ident
+
+-- Comments
 
 @undoc_comment  = "////" [^\n]*
 @yesdoc_comment = "///" [^\r\n]*
 @outer_doc_cmt  = "//!" [^\r\n]*
 @line_comment   = "//" ( [^\n\/]* [^\n]* )?
+@inline_comment = "/*" 
 
 
 tokens :-
@@ -990,12 +999,12 @@ $white+         { token Whitespace }
 @lit_raw_str    { \s -> let n = length s - 2
                         in do
                             str <- rawString n
-                            pure (Literal (StrRaw (Name str) (fromIntegral n)) Nothing)
+                            literal (StrRaw (Name str) (fromIntegral n))
                 }
 @lit_raw_bstr   { \s -> let n = length s - 3
                         in do
                             str <- rawString n
-                            pure (Literal (ByteStrRaw (Name str) (fromIntegral n)) Nothing)
+                            literal (ByteStrRaw (Name str) (fromIntegral n))
                 }
 
 <lits> ""       ;
@@ -1009,7 +1018,7 @@ $white+         { token Whitespace }
 @yesdoc_comment { pure . DocComment . Name }
 @outer_doc_cmt  { pure . DocComment . Name }
 @line_comment   { token Comment }
-
+@inline_comment { \_ -> nestedComment 1 }
 {
 
 -- | Make a token.
@@ -1053,6 +1062,27 @@ rawString n = do
     -- Just another character...
     Just c -> ([c] ++) <$> rawString n 
 
+-- | Consume a full inline comment (which may be nested).
+nestedComment :: Int -> P Token
+nestedComment 0 = pure Comment
+nestedComment n = do
+  c <- nextChar
+  case c of
+    Nothing -> fail "Unclosed comment"
+    Just '*' -> do
+      c' <- peekChar
+      case c' of 
+        Nothing -> fail "Unclosed comment"
+        Just '/' -> nextChar *> nestedComment (n-1)
+        Just _ -> nestedComment n
+    Just '/' -> do
+      c' <- peekChar
+      case c' of 
+        Nothing -> fail "Unclosed comment"
+        Just '*' -> nextChar *> nestedComment (n+1)
+        Just _ -> nestedComment n
+    Just _ -> nestedComment n
+
 
 -- Monadic functions
 
@@ -1085,6 +1115,18 @@ greedyChar c = do
   case c_m of
     Just c' | c == c' -> do { nextChar; n <- greedyChar c; pure (n+1) }
     _ -> pure 0
+
+-- | Signal a lexical error.
+lexicalError :: P a
+lexicalError = do
+  c <- peekChar
+  fail ("Lexical error: the character " ++ show c ++ " does not fit here")
+
+-- | Signal a syntax error.
+parseError :: P a
+parseError = do
+  tok <- getLastToken
+  fail ("Syntax error: the symbol `" ++ show tok ++ "' does not fit here")
 
 
 -- Functions required by Alex 
