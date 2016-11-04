@@ -2,7 +2,7 @@
 
 module Language.Rust.Syntax.AST where
 
-import qualified Language.Rust.Syntax.Token as Token
+import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 import Language.Rust.Data.Position
 
@@ -481,9 +481,9 @@ data Mac a
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.MacStmtStyle.html
 data MacStmtStyle
-  = Semicolon -- ^ The macro statement had a trailing semicolon, e.g. foo! { ... }; foo!(...);, foo![...];
-  | Braces    -- ^ The macro statement had braces; e.g. foo! { ... }
-  | NoBraces  -- ^ The macro statement had parentheses or brackets and no semicolon; e.g. foo!(...). All of these will end up being converted into macro expressions.
+  = SemicolonMac -- ^ The macro statement had a trailing semicolon, e.g. foo! { ... }; foo!(...);, foo![...];
+  | BracesMac    -- ^ The macro statement had braces; e.g. foo! { ... }
+  | NoBracesMac  -- ^ The macro statement had parentheses or brackets and no semicolon; e.g. foo!(...). All of these will end up being converted into macro expressions.
 
 -- | A macro definition, in this crate or imported from another.
 -- Not parsed directly, but created on macro import or macro_rules! expansion.
@@ -704,22 +704,6 @@ data StructField a
       nodeInfo :: a
    }
 
--- https://docs.serde.rs/syntex_syntax/parse/token/enum.Token.html
-data Token
-  = Eq | Lt | Le | EqEq | Ne | Ge | Gt | AndAnd | OrOr | NotToken | Tilde | BinOp Token.BinOpToken
-  | BinOpEq Token.BinOpToken | At | Dot | DotDot | DotDotDot | Comma | SemiToken | Colon | ModSep
-  | RArrow | LArrow | FatArrow | Pound | Dollar | Question
-  | OpenDelim Token.DelimToken    -- ^ An opening delimiter, eg. {
-  | CloseDelim Token.DelimToken   -- ^ A closing delimiter, eg. }
-  | LiteralToken (Lit ()) (Maybe Name) | IdentToken Ident | Underscore | LifetimeToken Ident | Interpolated (Nonterminal ())
-  | DocComment Name               -- ^ Doc comment
-  | MatchNt Ident Ident           -- ^ Parse a nonterminal (name to bind, name of NT)
-  | SubstNt Ident                 -- ^ A syntactic variable that will be filled in by macro expansion.
-  | SpecialMacroVar               -- ^ A macro variable with special meaning.
-  | Whitespace                    -- ^ Whitespace
-  | Comment                       -- ^ Comment
-  | Shebang Name | Eof
-
 -- | When the main rust parser encounters a syntax-extension invocation, it parses the arguments to the invocation
 -- as a token-tree. This is a very loose structure, such that all sorts of different AST-fragments can be passed to
 -- syntax extensions using a uniform type.
@@ -739,7 +723,7 @@ data TokenTree
   -- Inlined [Delimited](https://docs.serde.rs/syntex_syntax/tokenstream/struct.Delimited.html)
   | Delimited {
       span :: Span,
-      delim :: Token.DelimToken, -- ^ The type of delimiter
+      delim :: DelimToken,       -- ^ The type of delimiter
       open_span :: Span,         -- ^ The span covering the opening delimiter
       tts :: [TokenTree],        -- ^ The delimited sequence of token trees
       close_span :: Span         -- ^ The span covering the closing delimiter

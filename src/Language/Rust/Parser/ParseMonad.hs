@@ -1,13 +1,17 @@
-{-# LANGUAGE InstanceSigs, RecordWildCards #-}
+{-# LANGUAGE InstanceSigs, RecordWildCards, PatternSynonyms #-}
 
 module Language.Rust.Parser.ParseMonad where
 
 import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position
 import Language.Rust.Syntax.Token
+import Language.Rust.Syntax.Ident
 
 import Control.Monad
 import Control.Monad.Trans.Except
+
+pattern Identifier :: String -> Spanned Token
+pattern Identifier s <- (Spanned (IdentTok (Ident (Name s) _)) _) 
 
 -- | the result of running a parser
 data ParseResult a

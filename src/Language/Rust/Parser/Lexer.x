@@ -1,10 +1,10 @@
 {
-module Language.Rust.Parser.Lexer (lexToken, lexTokens, lexRust) where
+module Language.Rust.Parser.Lexer (lexToken, lexTokens, lexRust, lexicalError, parseError) where
 
 import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position
 import Language.Rust.Parser.ParseMonad
-import Language.Rust.Syntax.Token (Token(..), Lit(..), BinOpToken(..), DelimToken(..))
+import Language.Rust.Syntax.Token (Token(..), LitTok(..), BinOpToken(..), DelimToken(..))
 import Language.Rust.Syntax.Ident (mkIdent, Ident(..), Name(..))
 
 import Data.Word (Word8)
@@ -942,7 +942,7 @@ $white+         { token Whitespace }
 ">"             { token Gt }
 "&&"            { token AndAnd }
 "||"            { token OrOr }
-"!"             { token Not }
+"!"             { token Exclamation }
 "~"             { token Tilde }
 "+"             { token (BinOp Plus) }
 "-"             { token (BinOp Minus) }
@@ -970,7 +970,7 @@ $white+         { token Whitespace }
 ".."            { token DotDot }     
 "..."           { token DotDotDot } 
 ","             { token Comma } 
-";"             { token Semi }     
+";"             { token Semicolon }     
 ":"             { token Colon }
 "::"            { token ModSep }
 "->"            { token RArrow }
@@ -987,25 +987,25 @@ $white+         { token Whitespace }
 "_"             { token Underscore }
 
 
-@lit_integer    { \i -> literal (Integer (Name i)) }
-@lit_float      { \f -> literal (Float   (Name f)) }
+@lit_integer    { \i -> literal (IntegerTok (Name i)) }
+@lit_float      { \f -> literal (FloatTok   (Name f)) }
 @lit_float / [^\._a-zA-Z]
-                { \f -> literal (Float   (Name f)) }
+                { \f -> literal (FloatTok   (Name f)) }
 
-@lit_byte       { \c -> literal (Byte    (Name (drop 2 (init c)))) }
-@lit_char       { \c -> literal (Char    (Name (drop 1 (init c)))) }
-@lit_str        { \s -> literal (Str_    (Name (drop 1 (init s)))) }
-@lit_byte_str   { \s -> literal (ByteStr (Name (drop 2 (init s)))) }
+@lit_byte       { \c -> literal (ByteTok    (Name (drop 2 (init c)))) }
+@lit_char       { \c -> literal (CharTok    (Name (drop 1 (init c)))) }
+@lit_str        { \s -> literal (StrTok     (Name (drop 1 (init s)))) }
+@lit_byte_str   { \s -> literal (ByteStrTok (Name (drop 2 (init s)))) }
 
 @lit_raw_str    { \s -> let n = length s - 2
                         in do
                             str <- rawString n
-                            literal (StrRaw (Name str) (fromIntegral n))
+                            literal (StrRawTok (Name str) (fromIntegral n))
                 }
 @lit_raw_bstr   { \s -> let n = length s - 3
                         in do
                             str <- rawString n
-                            literal (ByteStrRaw (Name str) (fromIntegral n))
+                            literal (ByteStrRawTok (Name str) (fromIntegral n))
                 }
 
 <lits> ""       ;
@@ -1013,7 +1013,7 @@ $white+         { token Whitespace }
 
 \?              { token Question }
 @ident          { \s -> pure (IdentTok (mkIdent s)) } 
-@lifetime       { \s -> (pure (Lifetime (mkIdent (tail s))) :: P Token) }
+@lifetime       { \s -> (pure (LifetimeTok (mkIdent (tail s))) :: P Token) }
 
 @undoc_comment  { pure . DocComment . Name }
 @yesdoc_comment { pure . DocComment . Name }
@@ -1030,7 +1030,7 @@ token t _ = pure t
 -- the allowed suffixes are very well defined and only valid on integer and
 -- float literals, we need to put in the same token whatever suffix follows.
 -- This is for backwards compatibility if Rust decides to ever add suffixes. 
-literal :: Lit -> P Token 
+literal :: LitTok -> P Token 
 literal lit = do
   ai@(_, inp) <- getAlexInput
   case alexScan ai lits of
@@ -1039,9 +1039,9 @@ literal lit = do
         case tok of
           IdentTok (Ident suffix _) -> do
             setAlexInput (pos', inp')
-            pure (Literal lit (Just suffix))
-          _ -> pure (Literal lit Nothing)
-    _ -> pure (Literal lit Nothing)
+            pure (LiteralTok lit (Just suffix))
+          _ -> pure (LiteralTok lit Nothing)
+    _ -> pure (LiteralTok lit Nothing)
 
 -- | Parses a raw string, the closing quotation, and the appropriate number of
 -- '#' characters. Note that there can be more closing '#' characters than
@@ -1124,9 +1124,8 @@ lexicalError = do
   fail ("Lexical error: the character " ++ show c ++ " does not fit here")
 
 -- | Signal a syntax error.
-parseError :: P a
-parseError = do
-  tok <- getLastToken
+parseError :: Spanned Token -> P a
+parseError (Spanned tok _) = do
   fail ("Syntax error: the symbol `" ++ show tok ++ "' does not fit here")
 
 

@@ -5,13 +5,11 @@ module Language.Rust.Data.InputStream (
     countLines,
 ) where
 
-import Data.Word
+import Data.Word (Word8)
 
 #ifndef NO_BYTESTRING
-import qualified Data.ByteString.Lazy as BS
-import qualified Data.Text.Lazy as T
-import Data.Text.Lazy.Encoding (decodeUtf8With, encodeUtf8)
-import Data.Text.Encoding.Error (lenientDecode)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.UTF8 as BE
 #else
 import qualified Data.Char as Char
 #endif
@@ -57,13 +55,13 @@ countLines :: InputStream -> Int
 
 type InputStream = BS.ByteString
 takeByte bs = (BS.head bs, BS.tail bs)
-takeChar bs = let txt = decodeUtf8With lenientDecode bs in (T.head txt, encodeUtf8 (T.tail txt))
+takeChar bs = let Just res = BE.uncons bs in res
 inputStreamEmpty = BS.null
-takeChars n = T.unpack . T.take (fromIntegral n) . decodeUtf8With lenientDecode
+takeChars n = BE.toString . BE.take n
 readInputStream = BS.readFile
-inputStreamToString = T.unpack . decodeUtf8With lenientDecode
-inputStreamFromString = encodeUtf8 . T.pack
-countLines = length . T.lines . decodeUtf8With lenientDecode
+inputStreamToString = BE.toString  
+inputStreamFromString = BE.fromString 
+countLines = length . BE.lines
 
 #else
 
