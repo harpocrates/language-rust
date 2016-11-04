@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings, UnicodeSyntax  #-}
 module LexerTest (lexerSuite) where
 
 import Test.Framework (testGroup, Test)
@@ -82,24 +83,24 @@ commonCode = testGroup "lexing common code fragments"
              , Whitespace
              , IdentTok (mkIdent "y")
              ]
-  -- , testCode "fn ಠ_ಠ() { println!(\"Hello, 世界\"); }"
-  --            [ IdentTok (mkIdent "fn")
-  --            , Whitespace
-  --            , IdentTok (mkIdent "ಠ_ಠ")
-  --            , OpenDelim Paren 
-  --            , CloseDelim Paren
-  --            , Whitespace
-  --            , OpenDelim Brace
-  --            , Whitespace
-  --            , IdentTok (mkIdent "prinln")
-  --            , Not
-  --            , OpenDelim Paren
-  --            , Literal (Str_ (Name "Hello, 世界")) Nothing
-  --            , CloseDelim Paren
-  --            , Semi
-  --            , Whitespace
-  --            , CloseDelim Brace
-  --            ]
+   , testCode "fn ܐ_ܐ() { println!(\"Hello, čušpajž日本語\"); }"
+              [ IdentTok (mkIdent "fn")
+              , Whitespace
+              , IdentTok (mkIdent "ܐ_ܐ")
+              , OpenDelim Paren 
+              , CloseDelim Paren
+              , Whitespace
+              , OpenDelim Brace
+              , Whitespace
+              , IdentTok (mkIdent "println")
+              , Not
+              , OpenDelim Paren
+              , Literal (Str_ (Name "Hello, čušpajž日本語")) Nothing
+              , CloseDelim Paren
+              , Semi
+              , Whitespace
+              , CloseDelim Brace
+              ]
   ]
 
 
@@ -146,8 +147,8 @@ literals = testGroup "literals (numbers, characters, strings, etc.)"
   ]
 
 -- | Create a test for a code fragment that should tokenize.
-testCode :: InputStream -> [Token] -> Test
-testCode inp toks = testCase (show inp) $ Right toks @=? lexTokensNoSpans inp
+testCode :: String -> [Token] -> Test
+testCode inp toks = testCase inp $ Right toks @=? lexTokensNoSpans (inputStreamFromString inp)
 
 -- | Turn an InputStream into either an error or a list of tokens.
 lexTokensNoSpans :: InputStream -> Either (Position,String) [Token]

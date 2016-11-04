@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Language.Rust.Data.InputStream (
     InputStream, readInputStream,inputStreamToString,inputStreamFromString,
     takeByte, takeChar, inputStreamEmpty, takeChars,
@@ -5,7 +6,15 @@ module Language.Rust.Data.InputStream (
 ) where
 
 import Data.Word
+
+#ifndef NO_BYTESTRING
+import qualified Data.ByteString.Lazy as BS
+import qualified Data.Text.Lazy as T
+import Data.Text.Lazy.Encoding (decodeUtf8With, encodeUtf8)
+import Data.Text.Encoding.Error (lenientDecode)
+#else
 import qualified Data.Char as Char
+#endif
 
 -- TODO: this is copied from Language.C.Data.InputStream. Backpack this (or use CPP) for bytestring
 
@@ -42,6 +51,21 @@ takeChars :: Int -> InputStream -> [Char]
 -- given 'InputStream'
 countLines :: InputStream -> Int
 
+
+#ifndef NO_BYTESTRING
+
+type InputStream = BS.ByteString
+takeByte bs = (BS.head bs, BS.tail bs)
+takeChar bs = let txt = decodeUtf8With lenientDecode bs in (T.head txt, encodeUtf8 (T.tail txt))
+inputStreamEmpty = BS.null
+takeChars n = T.unpack . T.take (fromIntegral n) . decodeUtf8With lenientDecode
+readInputStream = BS.readFile
+inputStreamToString = T.unpack . decodeUtf8With lenientDecode
+inputStreamFromString = encodeUtf8 . T.pack
+countLines = length . T.lines . decodeUtf8With lenientDecode
+
+#else
+
 type InputStream = String
 takeByte bs
   | Char.isLatin1 c = let b = fromIntegral (Char.ord c) in b `seq` (b, tail bs)
@@ -54,3 +78,5 @@ readInputStream = readFile
 inputStreamToString = id
 inputStreamFromString = id
 countLines = length . lines
+
+#endif

@@ -1034,7 +1034,7 @@ literal lit = do
   ai@(_, inp) <- getAlexInput
   case alexScan ai lits of
     AlexToken (pos', inp') len action -> do
-        tok <- action (take len inp)
+        tok <- action (takeChars len inp)
         case tok of
           IdentTok (Ident name _) -> do
             setAlexInput (pos', inp')
@@ -1175,7 +1175,7 @@ lexToken = do
     AlexSkip  ai _ -> setAlexInput ai *> lexToken
     AlexToken ai len action -> do
         setAlexInput ai
-        tok <- action (take len inp)
+        tok <- action (takeChars len inp)
         setLastToken tok
         pos' <- getPosition
         return (Spanned tok (Span pos pos'))
