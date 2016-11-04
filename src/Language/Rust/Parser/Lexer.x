@@ -12,6 +12,7 @@ import Data.Char (chr)
 
 -- Things to review:
 --   * improved error messages
+--   * shebang
 
 -- Based heavily on:
 --  * <https://github.com/rust-lang/rust/blob/master/src/grammar/RustLexer.g4>
@@ -1036,9 +1037,9 @@ literal lit = do
     AlexToken (pos', inp') len action -> do
         tok <- action (takeChars len inp)
         case tok of
-          IdentTok (Ident name _) -> do
+          IdentTok (Ident suffix _) -> do
             setAlexInput (pos', inp')
-            pure (Literal lit (Just name))
+            pure (Literal lit (Just suffix))
           _ -> pure (Literal lit Nothing)
     _ -> pure (Literal lit Nothing)
 
@@ -1101,7 +1102,7 @@ nextChar = do
 -- parser state.
 peekChar :: P (Maybe Char)
 peekChar = do
-  (pos,inp) <- getAlexInput
+  inp <- getInput
   if inputStreamEmpty inp 
     then pure Nothing
     else let (c,_) = takeChar inp
@@ -1113,7 +1114,7 @@ greedyChar :: Char -> P Int
 greedyChar c = do
   c_m <- peekChar
   case c_m of
-    Just c' | c == c' -> do { nextChar; n <- greedyChar c; pure (n+1) }
+    Just c' | c == c' -> do { _ <- nextChar; n <- greedyChar c; pure (n+1) }
     _ -> pure 0
 
 -- | Signal a lexical error.

@@ -14,6 +14,7 @@ when :: Bool -> Doc -> Doc
 when False _ = empty
 when True d = d
 
+notNull :: [a] -> Bool
 notNull = not . null
 
 perhaps :: (a -> Doc) -> Maybe a -> Doc
@@ -573,7 +574,7 @@ printFullMutability Immutable = "const"
 printPat :: Pat a -> Doc
 printPat (WildP _) = "_"
 printPat (IdentP bindingMode path1 sub _) = printBindingMode bindingMode <+> printIdent path1 <+> perhaps (\p -> "@" <> printPat p) sub
-printPat (StructP path fieldPats b _) = printPath path True <+> "{" <+> commas fieldPats (\FieldPat{..} -> when (not isShorthand) (printIdent ident <> ":") <+> printPat pat)
+printPat (StructP path fieldPats b _) = printPath path True <+> "{" <+> commas fieldPats (\FieldPat{..} -> when (not isShorthand) (printIdent ident <> ":") <+> printPat pat) <+> when b ".." <+> "}"
 printPat (TupleStructP path elts Nothing _) = printPath path True <> "(" <> commas elts printPat <> ")"
 printPat (TupleStructP path elts (Just ddpos) _) = let (before,after) = splitAt ddpos elts
   in printPath path True <> "(" <> commas before printPat <> when (notNull elts) ","
@@ -589,7 +590,7 @@ printPat (RefP inner mutbl _) = "&" <> printMutability mutbl <+> printPat inner
 printPat (LitP expr _) = printExpr expr
 printPat (RangeP lo hi _) = printExpr lo <+> "..." <+> printExpr hi
 printPat (SliceP before slice_m after _) = "[" <> commas before printPat
-printPat (MacP m _) = error "Unimplemented"
+printPat (MacP _ _) = error "Unimplemented"
 
 
 printBindingMode :: BindingMode -> Doc
@@ -638,7 +639,7 @@ printForeignMod items attrs = printInnerAttributes attrs <+> hsep (printForeignI
 printGenerics :: Generics a -> Doc
 printGenerics Generics{..}
   | null lifetimes && null tyParams = empty
-  | otherwise =  let lifetimes' = [ printOuterAttributes attrs <+> printLifetimeBounds lifetime bounds | l@(LifetimeDef attrs lifetime bounds _)<-lifetimes ]
+  | otherwise =  let lifetimes' = [ printOuterAttributes attrs <+> printLifetimeBounds lifetime bounds | LifetimeDef attrs lifetime bounds _ <-lifetimes ]
                      bounds' = [ printTyParam param | param<-tyParams ]
                  in "<" <> hsep (punctuate "," (lifetimes' ++ bounds')) <> ">"
 

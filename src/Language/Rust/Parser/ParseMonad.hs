@@ -53,7 +53,7 @@ execParser :: P a -> InputStream -> Position -> Except (Position,String) a
 execParser (P parser) input pos =
   case parser initialState of
     Failed message errpos -> throwE (errpos,message)
-    Ok result st -> return result
+    Ok result _ -> return result
   where initialState = PState {
           curPos = pos,
           curInput = input,

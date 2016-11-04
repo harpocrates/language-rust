@@ -7,89 +7,106 @@ import Language.Rust.Syntax.Ident
 import Language.Rust.Data.Position
 import Language.Rust.Parser.Lexer
 import Language.Rust.Syntax.AST
+
+-- Based heavily on <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
 }
 
+-- in order to document the parsers, we have to alias them
+%name item item
+%name pattern pattern
+%name type_ type_
+%name statement statement
+%name expression expression
 
-%token SHL
-%token SHR
-%token LE
-%token EQEQ
-%token NE
-%token GE
-%token ANDAND
-%token OROR
-%token SHLEQ
-%token SHREQ
-%token MINUSEQ
-%token ANDEQ
-%token OREQ
-%token PLUSEQ
-%token STAREQ
-%token SLASHEQ
-%token CARETEQ
-%token PERCENTEQ
-%token DOTDOT
-%token DOTDOTDOT
-%token MOD_SEP
-%token RARROW
-%token LARROW
-%token FAT_ARROW
-%token LIT_BYTE
-%token LIT_CHAR
-%token LIT_INTEGER
-%token LIT_FLOAT
-%token LIT_STR
-%token LIT_STR_RAW
-%token LIT_BYTE_STR
-%token LIT_BYTE_STR_RAW
-%token IDENT
-%token UNDERSCORE
-%token LIFETIME
+%tokentype { CToken }
 
-// keywords
-%token SELF
-%token STATIC
-%token AS
-%token BREAK
-%token CRATE
-%token ELSE
-%token ENUM
-%token EXTERN
-%token FALSE
-%token FN
-%token FOR
-%token IF
-%token IMPL
-%token IN
-%token LET
-%token LOOP
-%token MATCH
-%token MOD
-%token MOVE
-%token MUT
-%token PRIV
-%token PUB
-%token REF
-%token RETURN
-%token STRUCT
-%token TRUE
-%token TRAIT
-%token TYPE
-%token UNSAFE
-%token USE
-%token WHILE
-%token CONTINUE
-%token PROC
-%token BOX
-%token CONST
-%token WHERE
-%token TYPEOF
-%token INNER_DOC_COMMENT
-%token OUTER_DOC_COMMENT
+%monad { P } { >>= } { return }
+%lexer { lexC } { CTokEof }
 
-%token SHEBANG
-%token SHEBANG_LINE
-%token STATIC_LIFETIME
+%expect 1
+
+%token
+
+  SHL
+  SHR
+  LE
+  EQEQ
+  NE
+  GE
+  ANDAND
+  OROR
+  SHLEQ
+  SHREQ
+  MINUSEQ
+  ANDEQ
+  OREQ
+  PLUSEQ
+  STAREQ
+  SLASHEQ
+  CARETEQ
+  PERCENTEQ
+  DOTDOT
+  DOTDOTDOT
+  MOD_SEP
+  RARROW
+  LARROW
+  FAT_ARROW
+  LIT_BYTE
+  LIT_CHAR
+  LIT_INTEGER
+  LIT_FLOAT
+  LIT_STR
+  LIT_STR_RAW
+  LIT_BYTE_STR
+  LIT_BYTE_STR_RAW
+  IDENT
+  UNDERSCORE
+  LIFETIME
+
+  -- keywords
+  SELF
+  STATIC
+  AS
+  BREAK
+  CRATE
+  ELSE
+  ENUM
+  EXTERN
+  FALSE
+  FN
+  FOR
+  IF
+  IMPL
+  IN
+  LET
+  LOOP
+  MATCH
+  MOD
+  MOVE
+  MUT
+  PRIV
+  PUB
+  REF
+  RETURN
+  STRUCT
+  TRUE
+  TRAIT
+  TYPE
+  UNSAFE
+  USE
+  WHILE
+  CONTINUE
+  PROC
+  BOX
+  CONST
+  WHERE
+  TYPEOF
+  INNER_DOC_COMMENT
+  OUTER_DOC_COMMENT
+
+  SHEBANG
+  SHEBANG_LINE
+  STATIC_LIFETIME
 
  /*
    Quoting from the Bison manual:
@@ -188,8 +205,8 @@ crate
 ;
 
 maybe_shebang
-: SHEBANG_LINE
-| %empty
+: empty
+| %SHEBANG_LINE
 ;
 
 maybe_inner_attrs

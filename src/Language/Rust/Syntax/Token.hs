@@ -3,7 +3,6 @@
 module Language.Rust.Syntax.Token where
 
 import Language.Rust.Syntax.Ident (Ident(..), Name)
-import Language.Rust.Data.Position
 
 import Data.Word
 

@@ -40,4 +40,4 @@ data Name = Name InternedString deriving (Show, Eq) -- TODO, not quite
 
 -- | A SyntaxContext represents a chain of macro expansions (represented by marks).
 -- https://docs.serde.rs/syntex_syntax/ext/hygiene/struct.SyntaxContext.html
-type SyntaxContext = Int
+--type SyntaxContext = Int

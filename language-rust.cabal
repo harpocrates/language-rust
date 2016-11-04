@@ -13,6 +13,7 @@ build-type:          Simple
 extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
+
 library
   hs-source-dirs:      src
   ghc-options:         -Wall

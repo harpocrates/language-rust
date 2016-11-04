@@ -16,7 +16,8 @@ import Data.Text.Encoding.Error (lenientDecode)
 import qualified Data.Char as Char
 #endif
 
--- TODO: this is copied from Language.C.Data.InputStream. Backpack this (or use CPP) for bytestring
+-- Things to review:
+--   * backpack this when GHC 8.2 is released
 
 -- | read a file into an 'InputStream'
 readInputStream :: FilePath -> IO InputStream

@@ -20,19 +20,23 @@ initPos = Position 0 1 1
 
 -- | advance column
 incPos :: Position -> Int -> Position
+incPos NoPosition _ = NoPosition
 incPos Position{..} offset = Position (absoluteOffset + offset) (row + offset) col
 
 -- | advance to the next line
 retPos :: Position -> Position
+retPos NoPosition = NoPosition
 retPos Position{..} = Position (absoluteOffset + 1) (row + 1) 1
 
 -- | advance just the offset
 incOffset :: Position -> Int -> Position
+incOffset NoPosition _ = NoPosition
 incOffset Position{..} offset = Position (absoluteOffset + offset) row col
 
 
 instance Show Position where
-  show pos = show (row pos) ++ ":" ++ show (col pos)
+  show NoPosition = "$"
+  show Position{..} = show row ++ ":" ++ show col
 
 
 type ExpnId = Int -- https://docs.serde.rs/syntex_pos/struct.ExpnId.html

@@ -44,7 +44,7 @@ data Arm a
       attrs :: [Attribute a],
       pats :: [Pat a],
       guard :: Maybe (Expr a),
-      body :: (Expr a),
+      body :: Expr a,
       nodeInfo :: a
     }
 
