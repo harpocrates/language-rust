@@ -22,7 +22,7 @@ import Language.Rust.Syntax.AST
 }
 
 -- in order to document the parsers, we have to alias them
-%name equal
+%name pat
 
 %tokentype { Spanned Token }
 
@@ -191,10 +191,189 @@ import Language.Rust.Syntax.AST
   -- Lifetimes.
   lifetime   { Spanned (LifetimeTok _) _ }
 
+-- fake-precedence symbol to cause '|' bars in lambda context to parse
+-- at low precedence, permit things like |x| foo = bar, where '=' is
+-- otherwise lower-precedence than '|'. Also used for proc() to cause
+-- things like proc() a + b to parse as proc() { a + b }.
+%left LAMBDA   -- precedence
+
+%left self     -- precedence
+
+-- MUT should be lower precedence than IDENT so that in the pat rule,
+-- "& MUT pat" has higher precedence than "binding_mode ident [@ pat]"
+%left mut      -- precedence
+
+-- IDENT needs to be lower than '{' so that 'foo {' is shifted when
+-- trying to decide if we've got a struct-construction expr (esp. in
+-- contexts like 'if foo { .')
+--
+-- IDENT also needs to be lower precedence than '<' so that '<' in
+-- 'foo:bar . <' is shifted (in a trait reference occurring in a
+-- bounds list), parsing as foo:(bar<baz>) rather than (foo:bar)<baz>.
+%left ident      -- precedence
+
+-- A couple fake-precedence symbols to use in rules associated with +
+-- and < in trailing type contexts. These come up when you have a type
+-- in the RHS of operator-AS, such as "foo as bar<baz>". The "<" there
+-- has to be shifted so the parser keeps trying to parse a type, even
+-- though it might well consider reducing the type "bar" and then
+-- going on to "<" as a subsequent binop. The "+" case is with
+-- trailing type-bounds ("foo as bar:A+B"), for the same reason.
+%left SHIFTPLUS
+
+%left '::'         -- precedence
+%left '<-' ':'      -- precedence
+
+-- In where clauses, "for" should have greater precedence when used as
+-- a higher ranked constraint than when used as the beginning of a
+-- for_in_type (which is a ty)
+%left FORTYPE             -- precedence
+%left for                 -- precedence
+
+-- Binops & unops, and their precedences
+%left box                 -- precedence
+%left BOXPLACE            -- precedence
+%nonassoc '..'
+
+-- RETURN needs to be lower-precedence than tokens that start
+-- prefix_exprs
+%left return              -- precedence
+
+%right '=' '<<=' '>>=' '-=' '&=' '|=' '+=' '*=' '\=' '^=' '%='
+%right '<-'
+%left '||'
+%left '&&'
+%left '==' '!='
+%left '<' '>' '<=' '>='
+%left '|'
+%left '^'
+%left '&'
+%left '<<' '>>'
+%left '+' '-'
+%left AS                 -- precedence
+%left '*' '/' '%'
+%left '!'                -- precedence
+
+%left '{' '[' '(' '.'    -- precedence
+
+%left RANGE              -- precedence
+
 %%
 
-equal : '='  { "dummy" }
+comma_m :: { Bool }
+comma_m
+  : {- Empty -}    { False }
+  | ','            { True }
+
+pat :: { Pat () }
+pat
+  : '_'                                           { WildP () }
+  | '&' pat                                       { RefP $2 Immutable () }
+  | '&' mut pat                                   { RefP $3 Mutable () }
+  | '&&' pat                                      { RefP (RefP $2 Immutable ()) Immutable () }
+  | '&&' mut pat                                  { RefP (RefP $2 Mutable ()) Immutable () }
+  | '(' pats_list_context ')'                     { TupleP (fst $2) (snd $2) () }
+  | '[' pats_list_binding ']'                     { $2 }
+  | lit                                           { LitP $1 () }
+  | '-' lit                                       { LitP (Unary [] Neg $1 ()) () }
+  | path_expr                                     { error "Unimplemented" } {- PathP (Maybe (QSelf a)) (Path a) a -}
+  | lit_or_path '...' lit_or_path                 { RangeP $1 $3 () }
+  | path '{' pat_fields comma_m '}'               { StructP $1 $3 False () }
+  | path '{' pat_fields ',' '..' '}'              { StructP $1 $3 True () }
+  | path '{' '..' '}'                             { StructP $1 [] True () }
+  | path '(' pats_list_context ')'                { TupleStructP $1 (snd $3) (fst $3) () }
+{-  | path '!' maybe_ident delimited_token_trees    { error "Unimplemented" } {- MacP (Mac a) a -} -}
+  | binding_mode ident '@' pat                    { IdentP $1 $2 (Just $4) () }
+  | binding_mode ident                            { IdentP $1 $2 Nothing () }
+  | box pat                                       { BoxP $2 () }
+{- | '<' ty_sum maybe_as_trait_ref '>' '::' ident { $$ = mk_node("PatQualifiedPath", 3, $2, $3, $6); }
+| '<<' ty_sum maybe_as_trait_ref '>' '::' ident maybe_as_trait_ref '>' '::' ident
+{
+  $$ = mk_node("PatQualifiedPath", 3, mk_node("PatQualifiedPath", 3, $2, $3, $6), $7, $10);
+} -}
+
+pats_list_context :: { (Maybe Int, [Pat ()]) }
+pats_list_context
+  :                    '..'                              { (Nothing, []) }
+  | comma_pats comma_m                                   { (Nothing, $1) }
+  | comma_pats comma_m '..'                              { (Just (length $1), $1) }
+  |                    '..' comma_m comma_pats comma_m   { (Just 0, $3) }
+  | comma_pats comma_m '..' comma_m comma_pats comma_m   { (Just (length $1), $1 ++ $5) }
+
+pats_list_binding :: { ([Pat a], Maybe (Pat a), [Pat a]) }
+pats_list_binding
+  :                    pat_m '..'                              { SliceP [] $1 [] () }
+  | comma_pats comma_m                                         { SliceP $1 Nothing [] () }
+  | comma_pats comma_m pat_m '..'                              { SliceP $1 $3 [] () }
+  |                    pat_m '..' comma_m comma_pats comma_m   { SliceP [] $1 $4 () }
+  | comma_pats comma_m pat_m '..' comma_m comma_pats comma_m   { SliceP $1 $3 $6 () }
+
+pat_m :: { Maybe (Pat ()) }
+pat_m
+  : pat          { Just $1 }
+  | {- Empty -}  { Nothing }
+
+pats_or :: { [Pat ()] }
+pats_or : pats_or_rev  { reverse $1 }
+
+pats_or_rev :: { [Pat ()] }
+pats_or_rev
+  : pat              { [$1] }
+  | pats_or '|' pat  { $3 : $1 }
+
+binding_mode :: { BindingMode }
+binding_mode
+  : ref mut     { ByRef Mutable }
+  | ref         { ByRef Immutable }
+  | mut         { ByValue Mutable }
+  | {- Empty -} { ByValue Immutable }
+
+lit_or_path :: { Expr () }
+lit_or_path
+  : path_expr    { $1 }    {-  PathP (Maybe (QSelf a)) (Path a) a  ?? -}
+  | lit          { $1 }
+  | '-' lit      { Unary [] Neg $2 () }
+
+pat_field :: { FieldPat () }
+pat_field
+  :     binding_mode ident        { FieldPat $2 (IdentP $1 $2 Nothing ()) True () }
+  | box binding_mode ident        { FieldPat $3 (BoxP (IdentP $2 $3 Nothing ()) ()) True () }
+  | binding_mode ident ':' pat    { FieldPat $2 (IdentP $1 $2 (Just $4) ()) True () }
+
+pat_fields :: { [FieldPat ()] }
+pat_fields : pat_fields_rev  { reverse $1 }
+
+pat_fields_rev :: { [FieldPat ()] }
+pat_fields_rev
+  : pat_field                      { [$1] }
+  | pat_fields_rev ',' pat_field   { $3 : $1 }
+
+comma_pats :: { [Pat ()] }
+comma_pats : comma_pats_rev  { reverse $1 }
+
+comma_pats_rev :: { [Pat ()] }
+comma_pats_rev
+  : pat                      { [$1] }
+  | comma_pats_rev ',' pat   { $3 : $1 }
+
+
+lit :: { Expr () }
+lit : {- Unimplemented -}         { error "Unimplemented" }
+
+path :: { Path () }
+path : {- Unimplemented -}        { error "Unimplemented" }
+
+path_expr :: { Expr () }
+path_expr : {- Unimplemented -}   { error "Unimplemented" }
+
+
+maybe_ident :: { Maybe Ident }
+maybe_ident
+  : {- Empty -}            { Nothing }
+  | ident                  { Just $1 }
+
+
 
 {
-
+  
 }

@@ -66,7 +66,7 @@ data Token
   -- them. Instead, users could extract that from the associated span.
   | Whitespace                 -- ^ Whitespace
   | Comment                    -- ^ Comment
-  | Shebang Name
+  | Shebang
   | Eof
   deriving (Eq, Show)
 

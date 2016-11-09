@@ -964,6 +964,7 @@ $white+         { token Whitespace }
 "|="            { token (BinOpEq Or) }
 "<<="           { token (BinOpEq Shl) }
 ">>="           { token (BinOpEq Shr) }
+"#!"            { token Shebang }
 
 "@"             { token At }          
 "."             { token Dot }        

@@ -242,7 +242,7 @@ data Field a
 -- https://docs.serde.rs/syntex_syntax/ast/struct.FieldPat.html
 data FieldPat a
   = FieldPat {
-      ident :: Ident,     -- ^ The identifier for the field
+      ident :: Ident,       -- ^ The identifier for the field
       pat :: Pat a,         -- ^ The pattern the field is destructured to
       isShorthand :: Bool,
       nodeInfo :: a
@@ -580,8 +580,8 @@ data Pat a
   -- | A tuple struct/variant pattern Variant(x, y, .., z). If the .. pattern fragment is present, then
   -- (Maybe usize) denotes its position. 0 <= position <= subpats.len()
   | TupleStructP (Path a) [Pat a] (Maybe Int) a
-  -- | A possibly qualified path pattern. Unquailfied path patterns A::B::C can legally refer to variants, structs,
-  -- constants or associated constants. Quailfied path patterns <A>::B::C/<A as Trait>::B::C can only legally refer to
+  -- | A possibly qualified path pattern. Unqualified path patterns A::B::C can legally refer to variants, structs,
+  -- constants or associated constants. Qualified path patterns <A>::B::C/<A as Trait>::B::C can only legally refer to
   -- associated constants.
   | PathP (Maybe (QSelf a)) (Path a) a
   -- | A tuple pattern (a, b). If the .. pattern fragment is present, then (Maybe usize) denotes its position.
@@ -592,7 +592,7 @@ data Pat a
   -- | A reference pattern, e.g. &mut (a, b)
   | RefP (Pat a) Mutability a
   -- | A literal
-  | LitP (Expr a) a
+  | LitP (Expr a) a -- TODO: why not have (Lit a) directly instead of (Expr a)
   -- | A range pattern, e.g. 1...2
   | RangeP (Expr a) (Expr a) a
   -- | [a, b, ..i, y, z] is represented as: PatKind::Slice(box [a, b], Some(i), box [y, z])
