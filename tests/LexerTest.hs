@@ -24,11 +24,11 @@ commonCode :: Test
 commonCode = testGroup "lexing common code fragments"
   [ testCode "let span = $p.span;" 
              [ IdentTok (mkIdent "let")
-             , Whitespace
+             , Space Whitespace (Name " ")
              , IdentTok (mkIdent "span")
-             , Whitespace
+             , Space Whitespace (Name " ")
              , Eq
-             , Whitespace
+             , Space Whitespace (Name " ")
              , Dollar
              , IdentTok (mkIdent "p")
              , Dot
@@ -37,10 +37,10 @@ commonCode = testGroup "lexing common code fragments"
              ]
   , testCode "pub s: pp::Printer<'a>,"
              [ IdentTok (mkIdent "pub")
-             , Whitespace
+             , Space Whitespace (Name " ")
              , IdentTok (mkIdent "s")
              , Colon
-             , Whitespace
+             , Space Whitespace (Name " ")
              , IdentTok (mkIdent "pp")
              , ModSep
              , IdentTok (mkIdent "Printer")
@@ -56,49 +56,49 @@ commonCode = testGroup "lexing common code fragments"
              , Comma
              , IdentTok (mkIdent "T")
              , Gt
-             , Whitespace
+             , Space Whitespace (Name " ")
              , IdentTok (mkIdent "Tr")
-             , Whitespace
+             , Space Whitespace (Name " ")
              , IdentTok (mkIdent "for")
-             , Whitespace
+             , Space Whitespace (Name " ")
              , BinOp And
              , LifetimeTok (mkIdent "a")
-             , Whitespace
+             , Space Whitespace (Name " ")
              , IdentTok (mkIdent "T")
-             , Whitespace
+             , Space Whitespace (Name " ")
              , OpenDelim Brace
              , CloseDelim Brace
              ]
   , testCode "x /* some comment */ y"
              [ IdentTok (mkIdent "x")
-             , Whitespace
-             , Comment
-             , Whitespace
+             , Space Whitespace (Name " ")
+             , Space Comment (Name "comment not captured (TODO)")
+             , Space Whitespace (Name " ")
              , IdentTok (mkIdent "y")
              ]
   , testCode "x /* some /* nested */ comment */ y"
              [ IdentTok (mkIdent "x")
-             , Whitespace
-             , Comment
-             , Whitespace
+             , Space Whitespace (Name " ")
+             , Space Comment (Name "comment not captured (TODO)")
+             , Space Whitespace (Name " ")
              , IdentTok (mkIdent "y")
              ]
    , testCode "fn ܐ_ܐ() { println!(\"Hello, čušpajž日本語\"); }"
               [ IdentTok (mkIdent "fn")
-              , Whitespace
+              , Space Whitespace (Name " ")
               , IdentTok (mkIdent "ܐ_ܐ")
               , OpenDelim Paren 
               , CloseDelim Paren
-              , Whitespace
+              , Space Whitespace (Name " ")
               , OpenDelim Brace
-              , Whitespace
+              , Space Whitespace (Name " ")
               , IdentTok (mkIdent "println")
               , Exclamation
               , OpenDelim Paren
               , LiteralTok (StrTok (Name "Hello, čušpajž日本語")) Nothing
               , CloseDelim Paren
               , Semicolon
-              , Whitespace
+              , Space Whitespace (Name " ")
               , CloseDelim Brace
               ]
   ]

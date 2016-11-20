@@ -4,7 +4,7 @@ module Language.Rust.Parser.Lexer (lexToken, lexTokens, lexRust, lexicalError, p
 import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position
 import Language.Rust.Parser.ParseMonad
-import Language.Rust.Syntax.Token (Token(..), LitTok(..), BinOpToken(..), DelimToken(..))
+import Language.Rust.Syntax.Token (Token(..), TokenSpace(..), Space(..), LitTok(..), BinOpToken(..), DelimToken(..))
 import Language.Rust.Syntax.Ident (mkIdent, Ident(..), Name(..))
 
 import Data.Word (Word8)
@@ -933,7 +933,8 @@ $hexit = [0-9a-fA-F]
 
 tokens :-
 
-$white+         { token Whitespace }
+$white+         { \s -> pure (Space Whitespace (Name s))  }
+
 "="             { token Eq }
 "<"             { token Lt }
 "<="            { token Le }
@@ -1016,11 +1017,12 @@ $white+         { token Whitespace }
 @ident          { \s -> pure (IdentTok (mkIdent s)) } 
 @lifetime       { \s -> (pure (LifetimeTok (mkIdent (tail s))) :: P Token) }
 
-@undoc_comment  { pure . DocComment . Name }
-@yesdoc_comment { pure . DocComment . Name }
-@outer_doc_cmt  { pure . DocComment . Name }
-@line_comment   { token Comment }
+@undoc_comment  { \c -> pure (Space DocComment (Name c)) }
+@yesdoc_comment { \c -> pure (Space DocComment (Name c)) }
+@outer_doc_cmt  { \c -> pure (Space DocComment (Name c)) }
+@line_comment   { \c -> pure (Space Comment (Name c)) }
 @inline_comment { \_ -> nestedComment 1 }
+
 {
 
 -- | Make a token.
@@ -1066,7 +1068,7 @@ rawString n = do
 
 -- | Consume a full inline comment (which may be nested).
 nestedComment :: Int -> P Token
-nestedComment 0 = pure Comment
+nestedComment 0 = pure (Space Comment (Name "comment not captured (TODO)"))
 nestedComment n = do
   c <- nextChar
   case c of
@@ -1181,9 +1183,20 @@ lexToken = do
         pos' <- getPosition
         return (Spanned tok (Span pos pos'))
 
+-- | lexer for one 'TokenSpace' - packages together a token with any space before it
+lexTokenSpace :: P (TokenSpace Spanned)
+lexTokenSpace = go []
+  where
+    go :: [Spanned Token] -> P (TokenSpace Spanned)
+    go spaces = do
+      sTok <- lexToken
+      case unspan sTok of
+        Space{} -> go (sTok : spaces)
+        _ -> pure (TokenSpace sTok spaces)
+
 -- | lexer for a token, in a form useful for Happy
-lexRust :: ((Spanned Token) -> P a) -> P a
-lexRust = (lexToken >>=)
+lexRust :: ((TokenSpace Spanned) -> P a) -> P a
+lexRust = (lexTokenSpace >>=)
 
 -- | continues to lex tokens up to (and not including) the EOF (not supposed
 -- to be efficient)

@@ -35,6 +35,9 @@ data LitTok
   | ByteStrRawTok Name Word64 -- ^ raw byte str delimited by n hash symbols
   deriving (Eq, Show)
 
+-- Represents a token bundled with preceding space tokens (if any)
+data TokenSpace s = TokenSpace (s Token) [s Token]
+
 -- Based loosely on <https://docs.serde.rs/syntex_syntax/parse/token/enum.Token.html>
 data Token
   -- Expression-operator symbols.
@@ -52,8 +55,6 @@ data Token
   -- NOT NEEDED IN TOKENIZATION!!
   -- For interpolation
   -- | Interpolated Nonterminal-- ^ Can be expanded into several tokens.
-  -- Doc comment
-  | DocComment Name
   -- NOT NEEDED IN TOKENIZATION!!
   -- In left-hand-sides of MBE macros:
   | MatchNt Ident Ident     -- ^ Parse a nonterminal (name to bind, name of NT)
@@ -64,12 +65,17 @@ data Token
   -- Junk. These carry no data because we don't really care about the data
   -- they *would* carry, and don't really want to allocate a new ident for
   -- them. Instead, users could extract that from the associated span.
-  | Whitespace                 -- ^ Whitespace
-  | Comment                    -- ^ Comment
+  | Space Space Name       -- ^ Whitespace
   | Shebang
   | Eof
   deriving (Eq, Show)
 
+
+data Space 
+  = Whitespace
+  | DocComment
+  | Comment
+  deriving (Eq, Show)
 
 canBeginExpr :: Token -> Bool
 canBeginExpr OpenDelim{}   = True
