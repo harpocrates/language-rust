@@ -11,9 +11,6 @@ import Data.Word
 -- https://github.com/serde-rs/syntex/blob/master/syntex_syntax/src/parse/token.rs
 ------------------
 
--- https://docs.serde.rs/syntex_syntax/parse/token/enum.BinOpToken.html
-data BinOpToken = Plus | Minus | Star | Slash | Percent | Caret | And | Or | Shl | Shr deriving (Eq, Show)
-
 -- | A delimiter token
 -- https://docs.serde.rs/syntex_syntax/parse/token/enum.DelimToken.html
 data DelimToken
@@ -39,13 +36,16 @@ data LitTok
 data TokenSpace s = TokenSpace (s Token) [s Token]
 
 -- Based loosely on <https://docs.serde.rs/syntex_syntax/parse/token/enum.Token.html>
+-- Inlined https://docs.serde.rs/syntex_syntax/parse/token/enum.BinOpToken.html
 data Token
-  -- Expression-operator symbols.
-  = Eq | Lt | Le | EqEq | Ne | Ge | Gt | AndAnd | OrOr | Exclamation | Tilde | BinOp BinOpToken | BinOpEq BinOpToken
+  -- Single character expression-operator symbols.
+  = Equal | Less | Not | Greater | Ampersand | Pipe | Exclamation | Tilde
+  | Plus | Minus | Star | Slash | Percent | Caret 
   -- Structural symbols
-  | At | Dot | DotDot | DotDotDot | Comma | Semicolon | Colon | ModSep | RArrow | LArrow | FatArrow | Pound | Dollar | Question
-  | OpenDelim DelimToken       -- ^ An opening delimiter, eg. `{`
-  | CloseDelim DelimToken      -- ^ A closing delimiter, eg. `}`
+  | At | Dot | DotDot | DotDotDot | Comma | Semicolon | Colon | ModSep | RArrow
+  | LArrow | FatArrow | Pound | Dollar | Question
+  -- Delimiters, eg. '{', ']', '('
+  | OpenDelim DelimToken | CloseDelim DelimToken
   -- Literals
   | LiteralTok LitTok (Maybe Name)
   -- Name components
@@ -62,20 +62,12 @@ data Token
   -- In right-hand-sides of MBE macros:
   | SubstNt Ident           -- ^ A syntactic variable that will be filled in by macro expansion.
   | SpecialVarNt            -- ^ A macro variable with special meaning.
-  -- Junk. These carry no data because we don't really care about the data
-  -- they *would* carry, and don't really want to allocate a new ident for
-  -- them. Instead, users could extract that from the associated span.
-  | Space Space Name       -- ^ Whitespace
+  | Space Space Name        -- ^ Whitespace
   | Shebang
   | Eof
   deriving (Eq, Show)
 
-
-data Space 
-  = Whitespace
-  | DocComment
-  | Comment
-  deriving (Eq, Show)
+data Space = Whitespace | DocComment | Comment deriving (Eq, Show, Enum, Bounded)
 
 canBeginExpr :: Token -> Bool
 canBeginExpr OpenDelim{}   = True
@@ -84,12 +76,10 @@ canBeginExpr Underscore    = True
 canBeginExpr Tilde         = True
 canBeginExpr LiteralTok{}  = True
 canBeginExpr Exclamation   = True
-canBeginExpr (BinOp Minus) = True
-canBeginExpr (BinOp Star)  = True
-canBeginExpr (BinOp And)   = True
-canBeginExpr (BinOp Or)    = True -- in lambda syntax
-canBeginExpr OrOr          = True -- in lambda syntax
-canBeginExpr AndAnd        = True -- double borrow
+canBeginExpr Minus         = True
+canBeginExpr Star          = True
+canBeginExpr Ampersand     = True
+canBeginExpr Pipe          = True -- in lambda syntax
 canBeginExpr DotDot        = True
 canBeginExpr DotDotDot     = True -- range notation
 canBeginExpr ModSep        = True

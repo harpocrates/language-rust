@@ -4,7 +4,7 @@ module Language.Rust.Parser.Lexer (lexToken, lexTokens, lexRust, lexicalError, p
 import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position
 import Language.Rust.Parser.ParseMonad
-import Language.Rust.Syntax.Token (Token(..), TokenSpace(..), Space(..), LitTok(..), BinOpToken(..), DelimToken(..))
+import Language.Rust.Syntax.Token (Token(..), TokenSpace(..), Space(..), LitTok(..), DelimToken(..))
 import Language.Rust.Syntax.Ident (mkIdent, Ident(..), Name(..))
 
 import Data.Word (Word8)
@@ -935,36 +935,19 @@ tokens :-
 
 $white+         { \s -> pure (Space Whitespace (Name s))  }
 
-"="             { token Eq }
-"<"             { token Lt }
-"<="            { token Le }
-"=="            { token EqEq }
-">="            { token Ge }
-">"             { token Gt }
-"&&"            { token AndAnd }
-"||"            { token OrOr }
+"="             { token Equal }
+"<"             { token Less }
+">"             { token Greater }
+"&"             { token Ampersand }
+"|"             { token Pipe }
 "!"             { token Exclamation }
 "~"             { token Tilde }
-"+"             { token (BinOp Plus) }
-"-"             { token (BinOp Minus) }
-"*"             { token (BinOp Star) }
-"/"             { token (BinOp Slash) }
-"%"             { token (BinOp Percent) }
-"^"             { token (BinOp Caret) }
-"&"             { token (BinOp And) }
-"|"             { token (BinOp Or) }
-"<<"            { token (BinOp Shl) }
-">>"            { token (BinOp Shr) }
-"+="            { token (BinOpEq Plus) }
-"-="            { token (BinOpEq Minus) }
-"*="            { token (BinOpEq Star) }
-"/="            { token (BinOpEq Slash) }
-"%="            { token (BinOpEq Percent) }
-"^="            { token (BinOpEq Caret) }
-"&="            { token (BinOpEq And) }
-"|="            { token (BinOpEq Or) }
-"<<="           { token (BinOpEq Shl) }
-">>="           { token (BinOpEq Shr) }
+"+"             { token Plus }
+"-"             { token Minus }
+"*"             { token Star }
+"/"             { token Slash }
+"%"             { token Percent }
+"^"             { token Caret }
 "#!"            { token Shebang }
 
 "@"             { token At }          
