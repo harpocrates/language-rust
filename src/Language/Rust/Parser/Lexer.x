@@ -1110,8 +1110,8 @@ lexicalError = do
   fail ("Lexical error: the character " ++ show c ++ " does not fit here")
 
 -- | Signal a syntax error.
-parseError :: Spanned Token -> P a
-parseError (Spanned tok _) = do
+parseError :: TokenSpace Spanned -> P a
+parseError (TokenSpace (Spanned tok _) _) = do
   fail ("Syntax error: the symbol `" ++ show tok ++ "' does not fit here")
 
 

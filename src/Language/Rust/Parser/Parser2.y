@@ -24,172 +24,153 @@ import Language.Rust.Syntax.AST
 -- in order to document the parsers, we have to alias them
 %name pat
 
-%tokentype { Spanned Token }
+%tokentype { TokenSpace Spanned }
 
 %monad { P } { >>= } { return }
 %error { parseError }
-%lexer { lexRust } { Spanned Eof _ }
+%lexer { lexRust } { Tok (Spanned Eof _) }
 
 %expect 0
 
 %token
 
   -- Expression-operator symbols. 
-  '='        { Spanned Eq _ }
-  '<'        { Spanned Lt _ }
-  '<='       { Spanned Le _ }
-  '=='       { Spanned EqEq _ }
-  '!='       { Spanned Ne _ }
-  '>='       { Spanned Ge _ }
-  '>'        { Spanned Gt _ }
-  '&&'       { Spanned AndAnd _ }
-  '||'       { Spanned OrOr _ }
-  '!'        { Spanned Exclamation _ }
-  '~'        { Spanned Tilde _ }
+  '='        { Tok $$@(Spanned Equal _) }
+  '<'        { Tok $$@(Spanned Less _) }
+  '>'        { Tok $$@(Spanned Greater _) }
+  '!'        { Tok $$@(Spanned Exclamation _) }
+  '~'        { Tok $$@(Spanned Tilde _) }
   
-  '+'        { Spanned (BinOp Plus) _ }
-  '-'        { Spanned (BinOp Minus) _ }
-  '*'        { Spanned (BinOp Star) _ }
-  '/'        { Spanned (BinOp Slash) _ }
-  '%'        { Spanned (BinOp Percent) _ }
-  '^'        { Spanned (BinOp Caret) _ }
-  '&'        { Spanned (BinOp And) _ }
-  '|'        { Spanned (BinOp Or) _ }
-  '<<'       { Spanned (BinOp Shl) _ }
-  '>>'       { Spanned (BinOp Shr) _ }
-
-  '+='       { Spanned (BinOpEq Plus) _ }
-  '-='       { Spanned (BinOpEq Minus) _ }
-  '*='       { Spanned (BinOpEq Star) _ }
-  '/='       { Spanned (BinOpEq Slash) _ }
-  '%='       { Spanned (BinOpEq Percent) _ }
-  '^='       { Spanned (BinOpEq Caret) _ }
-  '&='       { Spanned (BinOpEq And) _ }
-  '|='       { Spanned (BinOpEq Or) _ }
-  '<<='      { Spanned (BinOpEq Shl) _ }
-  '>>='      { Spanned (BinOpEq Shr) _ }
+  '+'        { Tok $$@(Spanned Plus _) }
+  '-'        { Tok $$@(Spanned Minus _) }
+  '*'        { Tok $$@(Spanned Star _) }
+  '/'        { Tok $$@(Spanned Slash _) }
+  '%'        { Tok $$@(Spanned Percent _) }
+  '^'        { Tok $$@(Spanned Caret _) }
+  '&'        { Tok $$@(Spanned Ampersand _) }
+  '|'        { Tok $$@(Spanned Pipe _) }
 
   -- Structural symbols.
-  '@'        { Spanned At _ }
-  '...'      { Spanned DotDotDot _ }
-  '..'       { Spanned DotDot _ }
-  '.'        { Spanned Dot _ }
-  ','        { Spanned Comma _ }
-  ';'        { Spanned Semicolon _ }
-  '::'       { Spanned ModSep _ }
-  ':'        { Spanned Colon _ }
-  '->'       { Spanned RArrow _ }
-  '<-'       { Spanned LArrow _ }
-  '=>'       { Spanned FatArrow _ }
-  '#'        { Spanned Pound _ }
-  '$'        { Spanned Dollar _ }
-  '?'        { Spanned Question _ }
+  '@'        { Tok $$@(Spanned At _) }
+  '...'      { Tok $$@(Spanned DotDotDot _) }
+  '..'       { Tok $$@(Spanned DotDot _) }
+  '.'        { Tok $$@(Spanned Dot _) }
+  ','        { Tok $$@(Spanned Comma _) }
+  ';'        { Tok $$@(Spanned Semicolon _) }
+  '::'       { Tok $$@(Spanned ModSep _) }
+  ':'        { Tok $$@(Spanned Colon _) }
+  '->'       { Tok $$@(Spanned RArrow _) }
+  '<-'       { Tok $$@(Spanned LArrow _) }
+  '=>'       { Tok $$@(Spanned FatArrow _) }
+  '#'        { Tok $$@(Spanned Pound _) }
+  '$'        { Tok $$@(Spanned Dollar _) }
+  '?'        { Tok $$@(Spanned Question _) }
 
-  '('        { Spanned (OpenDelim Paren) _ }
-  '['        { Spanned (OpenDelim Bracket) _ }
-  '{'        { Spanned (OpenDelim Brace) _ }
-  ')'        { Spanned (CloseDelim Paren) _ }
-  ']'        { Spanned (CloseDelim Bracket) _ }
-  '}'        { Spanned (CloseDelim Brace) _ }
+  '('        { Tok $$@(Spanned (OpenDelim Paren) _) }
+  '['        { Tok $$@(Spanned (OpenDelim Bracket) _) }
+  '{'        { Tok $$@(Spanned (OpenDelim Brace) _) }
+  ')'        { Tok $$@(Spanned (CloseDelim Paren) _) }
+  ']'        { Tok $$@(Spanned (CloseDelim Bracket) _) }
+  '}'        { Tok $$@(Spanned (CloseDelim Brace) _) }
 
   -- Literals.
-  byte       { Spanned (LiteralTok (ByteTok _) _) _ }
-  char       { Spanned (LiteralTok (CharTok _) _) _ }
-  int        { Spanned (LiteralTok (IntegerTok _) _) _ }
-  float      { Spanned (LiteralTok (FloatTok _) _) _ }
-  str        { Spanned (LiteralTok (StrTok _) _) _ }
-  byteStr    { Spanned (LiteralTok (ByteStrTok _) _) _ }
-  rawStr     { Spanned (LiteralTok (StrRawTok _ _) _) _ }
-  rawByteStr { Spanned (LiteralTok (ByteStrRawTok _ _) _) _ }
+  byte       { Tok $$@(Spanned (LiteralTok ByteTok{} _) _) }
+  char       { Tok $$@(Spanned (LiteralTok CharTok{} _) _) }
+  int        { Tok $$@(Spanned (LiteralTok IntegerTok{} _) _) }
+  float      { Tok $$@(Spanned (LiteralTok FloatTok{} _) _) }
+  str        { Tok $$@(Spanned (LiteralTok StrTok{} _) _) }
+  byteStr    { Tok $$@(Spanned (LiteralTok ByteStrTok{} _) _) }
+  rawStr     { Tok $$@(Spanned (LiteralTok StrRawTok{} _) _) }
+  rawByteStr { Tok $$@(Spanned (LiteralTok ByteStrRawTok{} _) _) }
 
   -- Strict keywords used in the language
-  as         { Identifier "as" }
-  box        { Identifier "box" } 
-  break      { Identifier "break" } 
-  const      { Identifier "const" } 
-  continue   { Identifier "continue" }
-  crate      { Identifier "crate" } 
-  else       { Identifier "else" }
-  enum       { Identifier "enum" }
-  extern     { Identifier "extern" }
-  false      { Identifier "false" } 
-  fn         { Identifier "fn" }
-  for        { Identifier "for" } 
-  if         { Identifier "if" }
-  impl       { Identifier "impl" }
-  in         { Identifier "in" }
-  let        { Identifier "let" } 
-  loop       { Identifier "loop" }
-  match      { Identifier "match" } 
-  mod        { Identifier "mod" } 
-  move       { Identifier "move" }
-  mut        { Identifier "mut" } 
-  pub        { Identifier "pub" } 
-  ref        { Identifier "ref" } 
-  return     { Identifier "return" }
-  selftype   { Identifier "self" }
-  selfvalue  { Identifier "Self" } 
-  static     { Identifier "static" }
-  struct     { Identifier "struct" }
-  super      { Identifier "super" } 
-  trait      { Identifier "trait" } 
-  true       { Identifier "true" }
-  type       { Identifier "type" }
-  unsafe     { Identifier "unsafe" }
-  use        { Identifier "use" } 
-  where      { Identifier "where" } 
-  while      { Identifier "while" } 
+  as         { Tok $$@(Identifier "as") }
+  box        { Tok $$@(Identifier "box") } 
+  break      { Tok $$@(Identifier "break") } 
+  const      { Tok $$@(Identifier "const") } 
+  continue   { Tok $$@(Identifier "continue") }
+  crate      { Tok $$@(Identifier "crate") } 
+  else       { Tok $$@(Identifier "else") }
+  enum       { Tok $$@(Identifier "enum") }
+  extern     { Tok $$@(Identifier "extern") }
+  false      { Tok $$@(Identifier "false") } 
+  fn         { Tok $$@(Identifier "fn") }
+  for        { Tok $$@(Identifier "for") } 
+  if         { Tok $$@(Identifier "if") }
+  impl       { Tok $$@(Identifier "impl") }
+  in         { Tok $$@(Identifier "in") }
+  let        { Tok $$@(Identifier "let") } 
+  loop       { Tok $$@(Identifier "loop") }
+  match      { Tok $$@(Identifier "match") } 
+  mod        { Tok $$@(Identifier "mod") } 
+  move       { Tok $$@(Identifier "move") }
+  mut        { Tok $$@(Identifier "mut") } 
+  pub        { Tok $$@(Identifier "pub") } 
+  ref        { Tok $$@(Identifier "ref") } 
+  return     { Tok $$@(Identifier "return") }
+  selftype   { Tok $$@(Identifier "self") }
+  selfvalue  { Tok $$@(Identifier "Self") } 
+  static     { Tok $$@(Identifier "static") }
+  struct     { Tok $$@(Identifier "struct") }
+  super      { Tok $$@(Identifier "super") } 
+  trait      { Tok $$@(Identifier "trait") } 
+  true       { Tok $$@(Identifier "true") }
+  type       { Tok $$@(Identifier "type") }
+  unsafe     { Tok $$@(Identifier "unsafe") }
+  use        { Tok $$@(Identifier "use") } 
+  where      { Tok $$@(Identifier "where") } 
+  while      { Tok $$@(Identifier "while") } 
   
   -- Keywords reserved for future use
-  abstract   { Identifier "abstract" }
-  alignof    { Identifier "alignof" } 
-  become     { Identifier "become" }
-  do         { Identifier "do" }
-  final      { Identifier "final" } 
-  macro      { Identifier "macro" } 
-  offsetof   { Identifier "offsetof" }
-  override   { Identifier "override" }
-  priv       { Identifier "priv" }
-  proc       { Identifier "proc" }
-  pure       { Identifier "pure" }
-  sizeof     { Identifier "sizeof" }
-  typeof     { Identifier "typeof" }
-  unsized    { Identifier "unsized" } 
-  virtual    { Identifier "virtual" } 
-  yield      { Identifier "yield" } 
+  abstract   { Tok $$@(Identifier "abstract") }
+  alignof    { Tok $$@(Identifier "alignof") } 
+  become     { Tok $$@(Identifier "become") }
+  do         { Tok $$@(Identifier "do") }
+  final      { Tok $$@(Identifier "final") } 
+  macro      { Tok $$@(Identifier "macro") } 
+  offsetof   { Tok $$@(Identifier "offsetof") }
+  override   { Tok $$@(Identifier "override") }
+  priv       { Tok $$@(Identifier "priv") }
+  proc       { Tok $$@(Identifier "proc") }
+  pure       { Tok $$@(Identifier "pure") }
+  sizeof     { Tok $$@(Identifier "sizeof") }
+  typeof     { Tok $$@(Identifier "typeof") }
+  unsized    { Tok $$@(Identifier "unsized") } 
+  virtual    { Tok $$@(Identifier "virtual") } 
+  yield      { Tok $$@(Identifier "yield") } 
 
   -- Weak keywords, have special meaning only in specific contexts.
-  default    { Identifier "default" } 
-  staticLife { Identifier "'static" }
-  union      { Identifier "union" } 
+  default    { Tok $$@(Identifier "default") } 
+  staticLife { Tok $$@(Identifier "'static") }
+  union      { Tok $$@(Identifier "union") } 
 
   -- Comments
-  docComment { Spanned (DocComment _) _ }
-  comment    { Spanned Comment _ }
+  -- docComment { Tok $$@(Spanned (DocComment _) _) }
+  -- comment    { Tok $$@(Spanned Comment _) }
 
   -- Types
-  boolTyp    { Identifier "bool" }
-  charTyp    { Identifier "char" }
-  i8Typ      { Identifier "i8" }
-  i16Typ     { Identifier "i16" }
-  i32Typ     { Identifier "i32" }
-  i64Typ     { Identifier "i64" }
-  u8Typ      { Identifier "u8" }
-  u16Typ     { Identifier "u16" }
-  u32Typ     { Identifier "u32" }
-  u64Typ     { Identifier "u64" }
-  isizeTyp   { Identifier "isize" }
-  usizeTyp   { Identifier "usize" }
-  f32Typ     { Identifier "f32" }
-  f64Typ     { Identifier "f64" }
-  strTyp     { Identifier "str" }
+  boolTyp    { Tok $$@(Identifier "bool") }
+  charTyp    { Tok $$@(Identifier "char") }
+  i8Typ      { Tok $$@(Identifier "i8") }
+  i16Typ     { Tok $$@(Identifier "i16") }
+  i32Typ     { Tok $$@(Identifier "i32") }
+  i64Typ     { Tok $$@(Identifier "i64") }
+  u8Typ      { Tok $$@(Identifier "u8") }
+  u16Typ     { Tok $$@(Identifier "u16") }
+  u32Typ     { Tok $$@(Identifier "u32") }
+  u64Typ     { Tok $$@(Identifier "u64") }
+  isizeTyp   { Tok $$@(Identifier "isize") }
+  usizeTyp   { Tok $$@(Identifier "usize") }
+  f32Typ     { Tok $$@(Identifier "f32") }
+  f64Typ     { Tok $$@(Identifier "f64") }
+  strTyp     { Tok $$@(Identifier "str") }
 
   -- Identifiers.
-  ident      { Identifier _ }
-  '_'        { Spanned Underscore _ }
+  ident      { Tok $$@(Identifier _) }
+  '_'        { Tok $$@(Spanned Underscore _) }
 
   -- Lifetimes.
-  lifetime   { Spanned (LifetimeTok _) _ }
+  lifetime   { Tok $$@(Spanned (LifetimeTok _) _) }
 
 -- fake-precedence symbol to cause '|' bars in lambda context to parse
 -- at low precedence, permit things like |x| foo = bar, where '=' is
@@ -260,117 +241,39 @@ import Language.Rust.Syntax.AST
 
 %%
 
-comma_m :: { Bool }
-comma_m
-  : {- Empty -}    { False }
-  | ','            { True }
+-------------
+-- Utility --
+-------------
 
-pat :: { Pat () }
-pat
-  : '_'                                           { WildP () }
-  | '&' pat                                       { RefP $2 Immutable () }
-  | '&' mut pat                                   { RefP $3 Mutable () }
-  | '&&' pat                                      { RefP (RefP $2 Immutable ()) Immutable () }
-  | '&&' mut pat                                  { RefP (RefP $2 Mutable ()) Immutable () }
-  | '(' pats_list_context ')'                     { TupleP (fst $2) (snd $2) () }
-  | '[' pats_list_binding ']'                     { $2 }
-  | lit                                           { LitP $1 () }
-  | '-' lit                                       { LitP (Unary [] Neg $1 ()) () }
-  | path_expr                                     { error "Unimplemented" } {- PathP (Maybe (QSelf a)) (Path a) a -}
-  | lit_or_path '...' lit_or_path                 { RangeP $1 $3 () }
-  | path '{' pat_fields comma_m '}'               { StructP $1 $3 False () }
-  | path '{' pat_fields ',' '..' '}'              { StructP $1 $3 True () }
-  | path '{' '..' '}'                             { StructP $1 [] True () }
-  | path '(' pats_list_context ')'                { TupleStructP $1 (snd $3) (fst $3) () }
-{-  | path '!' maybe_ident delimited_token_trees    { error "Unimplemented" } {- MacP (Mac a) a -} -}
-  | binding_mode ident '@' pat                    { IdentP $1 $2 (Just $4) () }
-  | binding_mode ident                            { IdentP $1 $2 Nothing () }
-  | box pat                                       { BoxP $2 () }
-{- | '<' ty_sum maybe_as_trait_ref '>' '::' ident { $$ = mk_node("PatQualifiedPath", 3, $2, $3, $6); }
-| '<<' ty_sum maybe_as_trait_ref '>' '::' ident maybe_as_trait_ref '>' '::' ident
-{
-  $$ = mk_node("PatQualifiedPath", 3, mk_node("PatQualifiedPath", 3, $2, $3, $6), $7, $10);
-} -}
+-- | Optional parser
+opt(p)          : p                   { Just $1 }
+                |                     { Nothing }
 
-pats_list_context :: { (Maybe Int, [Pat ()]) }
-pats_list_context
-  :                    '..'                              { (Nothing, []) }
-  | comma_pats comma_m                                   { (Nothing, $1) }
-  | comma_pats comma_m '..'                              { (Just (length $1), $1) }
-  |                    '..' comma_m comma_pats comma_m   { (Just 0, $3) }
-  | comma_pats comma_m '..' comma_m comma_pats comma_m   { (Just (length $1), $1 ++ $5) }
+-- | One or more
+some(p)         : rev_list1(p)        { reverse $1 }
 
-pats_list_binding :: { ([Pat a], Maybe (Pat a), [Pat a]) }
-pats_list_binding
-  :                    pat_m '..'                              { SliceP [] $1 [] () }
-  | comma_pats comma_m                                         { SliceP $1 Nothing [] () }
-  | comma_pats comma_m pat_m '..'                              { SliceP $1 $3 [] () }
-  |                    pat_m '..' comma_m comma_pats comma_m   { SliceP [] $1 $4 () }
-  | comma_pats comma_m pat_m '..' comma_m comma_pats comma_m   { SliceP $1 $3 $6 () }
+rev_list1(p)    : p                   { [$1] }
+                | rev_list1(p) p      { $2 : $1 }
 
-pat_m :: { Maybe (Pat ()) }
-pat_m
-  : pat          { Just $1 }
-  | {- Empty -}  { Nothing }
+-- | Zero or more 
+many(p)         : rev_list(p)         { reverse $1 }
 
-pats_or :: { [Pat ()] }
-pats_or : pats_or_rev  { reverse $1 }
+rev_list(p)     : {- Empty -}         { [] }
+                | rev_list(p) p       { $2 : $1 }
 
-pats_or_rev :: { [Pat ()] }
-pats_or_rev
-  : pat              { [$1] }
-  | pats_or '|' pat  { $3 : $1 }
+-- | Zero or more occurrences of p, separated by sep
+sep_by(p,sep)   : {- Empty -}         { [] }
+                | sep_by1(p,sep)      { $1 }
 
-binding_mode :: { BindingMode }
-binding_mode
-  : ref mut     { ByRef Mutable }
-  | ref         { ByRef Immutable }
-  | mut         { ByValue Mutable }
-  | {- Empty -} { ByValue Immutable }
+-- | One or more occurences of p, seperated by sep
+sep_by1(p,sep)  : p many(then(sep,p)) { $1 : $2 }
 
-lit_or_path :: { Expr () }
-lit_or_path
-  : path_expr    { $1 }    {-  PathP (Maybe (QSelf a)) (Path a) a  ?? -}
-  | lit          { $1 }
-  | '-' lit      { Unary [] Neg $2 () }
-
-pat_field :: { FieldPat () }
-pat_field
-  :     binding_mode ident        { FieldPat $2 (IdentP $1 $2 Nothing ()) True () }
-  | box binding_mode ident        { FieldPat $3 (BoxP (IdentP $2 $3 Nothing ()) ()) True () }
-  | binding_mode ident ':' pat    { FieldPat $2 (IdentP $1 $2 (Just $4) ()) True () }
-
-pat_fields :: { [FieldPat ()] }
-pat_fields : pat_fields_rev  { reverse $1 }
-
-pat_fields_rev :: { [FieldPat ()] }
-pat_fields_rev
-  : pat_field                      { [$1] }
-  | pat_fields_rev ',' pat_field   { $3 : $1 }
-
-comma_pats :: { [Pat ()] }
-comma_pats : comma_pats_rev  { reverse $1 }
-
-comma_pats_rev :: { [Pat ()] }
-comma_pats_rev
-  : pat                      { [$1] }
-  | comma_pats_rev ',' pat   { $3 : $1 }
+-- | Sequence two parsers, return the result of the second (*>)
+then(a,b)       : a b                 { $2 }
 
 
-lit :: { Expr () }
-lit : {- Unimplemented -}         { error "Unimplemented" }
 
-path :: { Path () }
-path : {- Unimplemented -}        { error "Unimplemented" }
-
-path_expr :: { Expr () }
-path_expr : {- Unimplemented -}   { error "Unimplemented" }
-
-
-maybe_ident :: { Maybe Ident }
-maybe_ident
-  : {- Empty -}            { Nothing }
-  | ident                  { Just $1 }
+pat : {- Empty -}        { () }
 
 
 
