@@ -22,6 +22,9 @@ instance Eq Ident where
 mkIdent :: String -> Ident
 mkIdent s = Ident (Name s) (hashString s) -- 0 ()
 
+unIdent :: Ident -> String
+unIdent (Ident (Name s) _) = s
+
 hashString :: String -> Int
 hashString = foldl' f golden
    where f m c = fromIntegral (ord c) * magic + m

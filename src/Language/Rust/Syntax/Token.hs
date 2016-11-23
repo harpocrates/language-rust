@@ -63,11 +63,13 @@ data Token
   | SubstNt Ident           -- ^ A syntactic variable that will be filled in by macro expansion.
   | SpecialVarNt            -- ^ A macro variable with special meaning.
   | Space Space Name        -- ^ Whitespace
+  | Doc String DocType      -- ^ Doc comment, contents, whether it is outer or not
   | Shebang
   | Eof
   deriving (Eq, Show)
 
-data Space = Whitespace | DocComment | Comment deriving (Eq, Show, Enum, Bounded)
+data DocType = OuterDoc | InnerDoc deriving (Eq, Show, Enum, Bounded)
+data Space = Whitespace | Comment deriving (Eq, Show, Enum, Bounded)
 
 canBeginExpr :: Token -> Bool
 canBeginExpr OpenDelim{}   = True

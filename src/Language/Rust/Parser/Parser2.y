@@ -95,6 +95,8 @@ import Language.Rust.Syntax.Constants
   byteStr    { Tok $$@(Spanned (LiteralTok ByteStrTok{} _) _) }
   rawStr     { Tok $$@(Spanned (LiteralTok StrRawTok{} _) _) }
   rawByteStr { Tok $$@(Spanned (LiteralTok ByteStrRawTok{} _) _) }
+  
+  unsuffixed { Tok $$@(Spanned (LiteralTok _ Nothing) _) }
 
   -- Strict keywords used in the language
   as         { Tok $$@(Identifier "as") }
@@ -157,8 +159,8 @@ import Language.Rust.Syntax.Constants
   union      { Tok $$@(Identifier "union") } 
 
   -- Comments
-  -- docComment { Tok $$@(Spanned (DocComment _) _) }
-  -- comment    { Tok $$@(Spanned Comment _) }
+  outerDoc   { Tok $$@(Spanned (Doc _ OuterDoc) _) }
+  innerDoc   { Tok $$@(Spanned (Doc _ InnerDoc) _) }
 
   -- Types
   boolTyp    { Tok $$@(Identifier "bool") }
@@ -442,13 +444,51 @@ arg ::{ Spanned (Arg Span) }
 arg   : pat ':' ty_sum  { withSpan (Arg <\$> $3 <*> $1) }
 
 
-----------------
--- Attributes --
-----------------
+--------------------------
+-- Attributes and Items --
+--------------------------
 
 -- parse_outer_attributes()
 outer_attributes :: { Spanned [Attribute Span] }
-outer_attribtues : {- Unimplemented -}                { error "Unimplemented" }
+outer_attributes : many(outer_attribute)              { sequence $1 }
+
+outer_attribute :: { Spanned (Attribute Span) }
+outer_attribute
+      : '#' '[' meta_item ']'        { withSpan (Attribute Outer <\$> $3 <*> pure False <* $1 <* $4) }
+      | outerDoc                     { let { Spanned (Doc docStr OuterDoc) s = $1
+                                           ; doc = NameValue (mkIdent "doc") (Str docStr Cooked Unsuffixed s) s
+                                           }
+                                       in Spanned (Attribute Outer doc True s) s }
+
+-- parse_inner_attributes()
+inner_attributes :: { Spanned [Attribute Span] }
+inner_attributes : many(inner_attribute)             { sequence $1 }
+
+inner_attribute :: { Spanned (Attribute Span) }
+inner_attribute
+      : '#' '!' '[' meta_item ']'    { withSpan (Attribute Inner <\$> $4 <*> pure False <* $1 <* $5) } 
+      | innerDoc                     { let { Spanned (Doc docStr InnerDoc) s = $1
+                                           ; doc = NameValue (mkIdent "doc") (Str docStr Cooked Unsuffixed s) s
+                                           }
+                                       in Spanned (Attribute Inner doc True s) s }
+
+-- parse_meta_item()
+meta_item :: { Spanned (MetaItem Span) }
+meta_item
+      : ident                                           { withSpan (Word <\$> $1) }
+      | ident '=' unsuffixed_lit                        { withSpan (NameValue <\$> $1 <*> $3) }
+      | ident '(' comma(meta_item_inner) opt(',') ')'   { withSpan (List <\$> $1 <*> sequence $3 <* $5) }
+
+-- parse_unsuffixed_lit()
+unsuffixed_lit :: { Spanned (Lit Span) }
+unsuffixed_lit : unsuffixed          { lit $1 }
+
+-- parse_meta_item_inner()
+meta_item_inner :: { Spanned (NestedMetaItem Span) }
+meta_item_inner
+      : unsuffixed_lit               { withSpan (Literal <\$> $1) }
+      | meta_item                    { withSpan (MetaItem <\$> $1) } 
+
 
 --------------
 -- Patterns --
@@ -714,7 +754,7 @@ lit_expr :: { Spanned (Expr Span) }
 lit_expr : lit             { withSpan (Lit [] <\$> $1) }
 
 expr :: { Spanned (Expr Span) }
-expr : {- Unimplemented -}            { error "Unimplemented" }
+expr : lit_expr            { $1 }
 
 
 {

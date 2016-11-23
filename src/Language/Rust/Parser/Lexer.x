@@ -4,7 +4,7 @@ module Language.Rust.Parser.Lexer (lexToken, lexTokens, lexRust, lexicalError, p
 import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position
 import Language.Rust.Parser.ParseMonad
-import Language.Rust.Syntax.Token (Token(..), TokenSpace(..), Space(..), LitTok(..), DelimToken(..))
+import Language.Rust.Syntax.Token 
 import Language.Rust.Syntax.Ident (mkIdent, Ident(..), Name(..))
 
 import Data.Word (Word8)
@@ -924,11 +924,14 @@ $hexit = [0-9a-fA-F]
 
 -- Comments
 
-@undoc_comment  = "////" [^\n]*
-@yesdoc_comment = "///" [^\r\n]*
-@outer_doc_cmt  = "//!" [^\r\n]*
+@outer_doc_line   = "///" [^\r\n]*
+@outer_doc_inline = "/**"
+
+@inner_doc_line   = "//!" [^\r\n]*
+@inner_doc_inline = "/*!"
+
 @line_comment   = "//" ( [^\n\/]* [^\n]* )?
-@inline_comment = "/*" 
+@inline_comment = "/*"
 
 
 tokens :-
@@ -1000,11 +1003,15 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 @ident          { \s -> pure (IdentTok (mkIdent s)) } 
 @lifetime       { \s -> (pure (LifetimeTok (mkIdent (tail s))) :: P Token) }
 
-@undoc_comment  { \c -> pure (Space DocComment (Name c)) }
-@yesdoc_comment { \c -> pure (Space DocComment (Name c)) }
-@outer_doc_cmt  { \c -> pure (Space DocComment (Name c)) }
-@line_comment   { \c -> pure (Space Comment (Name c)) }
-@inline_comment { \_ -> nestedComment 1 }
+
+@outer_doc_line   { \c -> pure (Doc (drop 3 c) OuterDoc) } 
+@outer_doc_inline { \_ -> Doc <$> nestedComment <*> pure OuterDoc }
+
+@inner_doc_line   { \c -> pure (Doc (drop 3 c) InnerDoc) }
+@inner_doc_inline { \_ -> Doc <$> nestedComment <*> pure InnerDoc }
+
+@line_comment     { \c -> pure (Space Comment (Name (drop 2 c))) }
+@inline_comment   { \_ -> Space Comment <$> (Name <$> nestedComment) }
 
 {
 
@@ -1050,25 +1057,28 @@ rawString n = do
     Just c -> ([c] ++) <$> rawString n 
 
 -- | Consume a full inline comment (which may be nested).
-nestedComment :: Int -> P Token
-nestedComment 0 = pure (Space Comment (Name "comment not captured (TODO)"))
-nestedComment n = do
-  c <- nextChar
-  case c of
-    Nothing -> fail "Unclosed comment"
-    Just '*' -> do
-      c' <- peekChar
-      case c' of 
+nestedComment :: P String
+nestedComment = go 1 ""
+  where
+    go :: Int -> String -> P String
+    go 0 s = pure (reverse (drop 2 s))
+    go n s = do
+      c <- nextChar
+      case c of
         Nothing -> fail "Unclosed comment"
-        Just '/' -> nextChar *> nestedComment (n-1)
-        Just _ -> nestedComment n
-    Just '/' -> do
-      c' <- peekChar
-      case c' of 
-        Nothing -> fail "Unclosed comment"
-        Just '*' -> nextChar *> nestedComment (n+1)
-        Just _ -> nestedComment n
-    Just _ -> nestedComment n
+        Just '*' -> do
+          c' <- peekChar
+          case c' of 
+            Nothing -> fail "Unclosed comment"
+            Just '/' -> nextChar *> go (n-1) ('/':'*':s)
+            Just _ -> go n ('*':s)
+        Just '/' -> do
+          c' <- peekChar
+          case c' of 
+            Nothing -> fail "Unclosed comment"
+            Just '*' -> nextChar *> go (n+1) ('/':'*':s) 
+            Just _ -> go n ('/':s)
+        Just c' -> go n (c':s)
 
 
 -- Monadic functions

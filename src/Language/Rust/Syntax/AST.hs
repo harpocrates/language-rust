@@ -452,7 +452,7 @@ instance Show Suffix where
 -- E.g. "foo", 42, 12.34 or bool
 -- https://docs.serde.rs/syntex_syntax/ast/enum.LitKind.html
 data Lit a
-  = Str InternedString StrStyle Suffix a    -- ^ A string ("foo")
+  = Str String StrStyle Suffix a            -- ^ A string ("foo")
   | ByteStr ByteString StrStyle Suffix a    -- ^ A byte string (b"foo")
   | Byte Word8 Suffix a                     -- ^ A byte (b'f')
   | Char Char Suffix a                      -- ^ A character ('a')
@@ -501,9 +501,9 @@ data MacroDef a
 -- https://docs.serde.rs/syntex_syntax/ast/enum.MetaItemKind.html
 -- https://docs.serde.rs/syntex_syntax/ast/enum.NestedMetaItemKind.html
 data MetaItem a
-  = Word InternedString a                    -- ^ Word meta item.        E.g. test as in #[test]
-  | List InternedString [NestedMetaItem a] a -- ^ List meta item.        E.g. derive(..) as in #[derive(..)]
-  | NameValue InternedString (Lit a) a       -- ^ Name value meta item.  E.g. feature = "foo" as in #[feature = "foo"]
+  = Word Ident a                    -- ^ Word meta item.        E.g. test as in #[test]
+  | List Ident [NestedMetaItem a] a -- ^ List meta item.        E.g. derive(..) as in #[derive(..)]
+  | NameValue Ident (Lit a) a       -- ^ Name value meta item.  E.g. feature = "foo" as in #[feature = "foo"]
   deriving (Functor)
 
 -- | Represents a method's signature in a trait declaration, or in an implementation.

@@ -359,9 +359,9 @@ printMetaListItem (Literal lit _) = printLiteral lit
 
 -- aka  print_meta_item
 printMetaItem :: MetaItem a -> Doc
-printMetaItem (Word name _) = text name
-printMetaItem (NameValue name lit _) = text name <+> "=" <+> printLiteral lit
-printMetaItem (List name items _) = text name <> "(" <> commas items printMetaListItem <> ")"
+printMetaItem (Word name _) = printIdent name
+printMetaItem (NameValue name lit _) = printIdent name <+> "=" <+> printLiteral lit
+printMetaItem (List name items _) = printIdent name <> "(" <> commas items printMetaListItem <> ")"
 
 -- | Synthesizes a comment that was not textually present in the original source file.
 -- aka  synth_comment
