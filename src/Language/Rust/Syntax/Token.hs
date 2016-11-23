@@ -1,10 +1,9 @@
-{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE DuplicateRecordFields, ExistentialQuantification #-}
 
 module Language.Rust.Syntax.Token where
 
 import Language.Rust.Syntax.Ident (Ident(..), Name)
-
-import Data.Word
+import Language.Rust.Syntax.AST
 
 ------------------
 -- Tokenization.
@@ -27,9 +26,9 @@ data LitTok
   | IntegerTok Name
   | FloatTok Name
   | StrTok Name
-  | StrRawTok Name Word64     -- ^ raw str delimited by n hash symbols
+  | StrRawTok Name Int     -- ^ raw str delimited by n hash symbols
   | ByteStrTok Name
-  | ByteStrRawTok Name Word64 -- ^ raw byte str delimited by n hash symbols
+  | ByteStrRawTok Name Int -- ^ raw byte str delimited by n hash symbols
   deriving (Eq, Show)
 
 -- Represents a token bundled with preceding space tokens (if any)
@@ -52,24 +51,25 @@ data Token
   | IdentTok Ident
   | Underscore
   | LifetimeTok Ident
-  -- NOT NEEDED IN TOKENIZATION!!
-  -- For interpolation
-  -- | Interpolated Nonterminal-- ^ Can be expanded into several tokens.
-  -- NOT NEEDED IN TOKENIZATION!!
-  -- In left-hand-sides of MBE macros:
-  | MatchNt Ident Ident     -- ^ Parse a nonterminal (name to bind, name of NT)
-  -- NOT NEEDED IN TOKENIZATION!!
-  -- In right-hand-sides of MBE macros:
-  | SubstNt Ident           -- ^ A syntactic variable that will be filled in by macro expansion.
-  | SpecialVarNt            -- ^ A macro variable with special meaning.
   | Space Space Name        -- ^ Whitespace
   | Doc String DocType      -- ^ Doc comment, contents, whether it is outer or not
   | Shebang
   | Eof
-  deriving (Eq, Show)
+  
+  -- NOT NEEDED IN TOKENIZATION!!
+  | forall a. Interpolated (Nonterminal a)        -- ^ Can be expanded into several tokens.
+  -- In left-hand-sides of MBE macros:
+  | MatchNt Ident Ident IdentStyle IdentStyle     -- ^ Parse a nonterminal (name to bind, name of NT)
+  -- In right-hand-sides of MBE macros:
+  | SubstNt Ident IdentStyle                      -- ^ A syntactic variable that will be filled in by macro expansion.
+  | SpecialVarNt                                  -- ^ A macro variable with special meaning.
+
+instance Show Token where
+  show _ = error "Token.hs: unimplemented - this instance might belong in Pretty.hs"
 
 data DocType = OuterDoc | InnerDoc deriving (Eq, Show, Enum, Bounded)
 data Space = Whitespace | Comment deriving (Eq, Show, Enum, Bounded)
+data IdentStyle = ModName | Plain deriving (Eq, Show, Enum, Bounded)
 
 canBeginExpr :: Token -> Bool
 canBeginExpr OpenDelim{}   = True
@@ -86,9 +86,9 @@ canBeginExpr DotDot        = True
 canBeginExpr DotDotDot     = True -- range notation
 canBeginExpr ModSep        = True
 canBeginExpr Pound         = True -- for expression attributes
- --canBeginExpr (Interpolated NtExpr{}) = True
--- canBeginExpr (Interpolated NtIdent{}) = True
--- canBeginExpr (Interpolated NtBlock{}) = True
--- canBeginExpr (Interpolated NtPath{}) = True
+canBeginExpr (Interpolated NtExpr{})  = True
+canBeginExpr (Interpolated NtIdent{}) = True
+canBeginExpr (Interpolated NtBlock{}) = True
+canBeginExpr (Interpolated NtPath{})  = True
 canBeginExpr _ = False
 

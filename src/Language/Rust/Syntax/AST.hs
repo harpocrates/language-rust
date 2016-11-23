@@ -2,12 +2,12 @@
 
 module Language.Rust.Syntax.AST where
 
-import Language.Rust.Syntax.Token
+import {-# SOURCE #-} Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 import Language.Rust.Data.Position
 
-import Data.ByteString
-import Data.Word
+import Data.ByteString (ByteString)
+import Data.Word (Word8)
 
 -- https://docs.serde.rs/syntex_syntax/abi/enum.Abi.html
 data Abi
@@ -693,7 +693,7 @@ data Stmt a
 -- https://docs.serde.rs/syntex_syntax/ast/enum.StrStyle.html
 data StrStyle
   = Cooked     -- ^ A regular string, like "foo"
-  | Raw Word64 -- ^ A raw string, like r##"foo"##. The uint is the number of # symbols used
+  | Raw Int    -- ^ A raw string, like r##"foo"##. The uint is the number of # symbols used
 
 -- | Field of a struct. E.g. bar: usize as in struct Foo { bar: usize }
 -- https://docs.serde.rs/syntex_syntax/ast/struct.StructField.html
@@ -723,22 +723,22 @@ data TokenTree
   = Token Span Token
   -- | A delimited sequence of token trees
   -- Inlined [Delimited](https://docs.serde.rs/syntex_syntax/tokenstream/struct.Delimited.html)
-  | Delimited {
-      span :: Span,
-      delim :: DelimToken,       -- ^ The type of delimiter
-      open_span :: Span,         -- ^ The span covering the opening delimiter
-      tts :: [TokenTree],        -- ^ The delimited sequence of token trees
-      close_span :: Span         -- ^ The span covering the closing delimiter
-    }
+  | Delimited
+      { span :: Span 
+      , delim :: DelimToken        -- ^ The type of delimiter
+      , openSpan :: Span           -- ^ The span covering the opening delimiter
+      , tts :: [TokenTree]         -- ^ The delimited sequence of token trees
+      , closeSpan :: Span          -- ^ The span covering the closing delimiter
+      }
   -- | A kleene-style repetition sequence of token trees with a span
   -- Inlined [SequenceRepetition](https://docs.serde.rs/syntex_syntax/tokenstream/struct.SequenceRepetition.html)
-  | Sequence {
-      span :: Span,
-      tts :: [TokenTree],       -- ^ The sequence of token trees
-      separator :: Maybe Token, -- ^ The optional separator
-      op :: KleeneOp,           -- ^ Whether the sequence can be repeated zero (*), or one or more times (+)
-      num_captures :: Int    -- ^ The number of MatchNts that appear in the sequence (and subsequences)
-    }
+  | Sequence 
+      { span :: Span 
+      , tts :: [TokenTree]         -- ^ The sequence of token trees
+      , separator :: Maybe Token   -- ^ The optional separator
+      , op :: KleeneOp             -- ^ Whether the sequence can be repeated zero (*), or one or more times (+)
+      , numCaptures :: Int         -- ^ The number of MatchNts that appear in the sequence (and subsequences)
+      }
 
 -- | A modifier on a bound, currently this is only used for ?Sized, where the modifier is Maybe. Negative
 -- bounds should also be handled here.

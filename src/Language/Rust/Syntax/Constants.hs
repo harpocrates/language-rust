@@ -4,8 +4,8 @@ import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 import Language.Rust.Syntax.AST
 
-import Data.Char
-import Data.Word
+import Data.Char (chr, isHexDigit, digitToInt)
+import Data.Word (Word8)
 import qualified Data.ByteString.Char8 as BSW (pack)
 import qualified Data.ByteString as BS (pack)
 import Data.List (unfoldr)

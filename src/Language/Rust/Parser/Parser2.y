@@ -123,8 +123,8 @@ import Language.Rust.Syntax.Constants
   pub        { Tok $$@(Identifier "pub") } 
   ref        { Tok $$@(Identifier "ref") } 
   return     { Tok $$@(Identifier "return") }
-  Self       { Tok $$@(Identifier "self") }
-  self       { Tok $$@(Identifier "Self") } 
+  Self       { Tok $$@(Identifier "Self") }
+  self       { Tok $$@(Identifier "self") } 
   static     { Tok $$@(Identifier "static") }
   struct     { Tok $$@(Identifier "struct") }
   super      { Tok $$@(Identifier "super") } 
@@ -346,6 +346,10 @@ ty_qual_path : qual_path(path_segments_without_colons)   { $1 }
 expr_qual_path :: { Spanned (QSelf Span, Path Span) }
 expr_qual_path : qual_path(path_segments_with_colons)    { $1 }
 
+-- parse_qualified_path(PathStyle::Mod)
+mod_qual_path :: { Spanned (QSelf Span, Path Span) }
+mod_qual_path : qual_path(path_segments_with_colons)    { $1 }
+
 qual_path(segs)
       : '<' ty_sum opt(then(as, ty_path)) '>' '::' segs
         { do
@@ -366,6 +370,12 @@ expr_path :: { Spanned (Path Span) }
 expr_path 
       : path_segments_with_colons              %prec ident { withSpan (Path False <\$> $1) }
       | '::' path_segments_with_colons         %prec ident { withSpan (Path True <\$> $2 <* $1) }
+
+-- parse_path(PathStyle::Mod)
+mod_path :: { Spanned (Path Span) }
+      : path_segments_without_types            %prec ident { withSpan (Path False <\$> $1) }
+      | '::' path_segments_without_types       %prec ident { withSpan (Path True <\$> $2 <* $1) }
+
 
 -- parse_path_segments_without_colons()
 path_segments_without_colons :: { Spanned [(Ident, PathParameters Span)] }
@@ -420,6 +430,38 @@ path_segment_with_colons
                        ang <- withSpan (AngleBracketed <\$> lts <*> tys <*> bds <* $5)
                        pure (i, ang)
           }
+
+-- parse_path_segments_without_types()
+path_segments_without_types :: { Spanned [(Ident, PathParameters Span)] }
+path_segments_without_types : sep_by1(path_segment_without_types, '::')  { sequence $1 }
+
+-- No corresponding function - see parse_path_segments_without_types
+path_segment_without_types :: { Spanned (Ident, PathParameters Span) }
+path_segment_without_types
+      : ident 
+          {% if (not . isPathSegmentIdent . unspan \$ $1)
+               then fail "invalid path segment in expression path"
+               else pure ((,) <\$> $1 <*> pure (AngleBracketed [] [] [] mempty))
+          }
+
+-- parse_path_list_items()
+path_list_item :: { Spanned (PathListItem Span) }
+path_list_item
+      : ident as ident     { withSpan (PathListItem <\$> $1 <*> (Just <\$> $3)) }
+      | ident              { withSpan (PathListItem <\$> $1 <*> pure Nothing) }
+
+-- parse_view_path()
+view_path :: { Spanned (ViewPath Span) }
+view_path
+      : '::' '*'                                              { withSpan (ViewPathGlob <\$> withSpan (Path True [] <\$ $1) <* $2) }
+      | '*'                                                   { withSpan (ViewPathGlob (Path False [] mempty) <\$ $1) }
+      | '::' '{' comma(path_list_item) opt(',') '}'           { withSpan (ViewPathList <\$> withSpan (Path True [] <\$ $1) <*> sequence $3 <* $5) }
+      | '{' comma(path_list_item) opt(',') '}'                { withSpan (ViewPathList (Path False [] mempty) <\$> sequence $2 <* $1 <* $4) }
+      | mod_path                                              { let (n,_) = last (segments (unspan $1))
+                                                                in withSpan (ViewPathSimple n <\$> $1) }
+      | mod_path '::' '{' comma(path_list_item) opt(',') '}'  { withSpan (ViewPathList <\$> $1 <*> sequence $4 <* $6) }
+      | mod_path '::' '*'                                     { withSpan (ViewPathGlob <\$> $1 <* $3) }
+      | mod_path as ident                                     { withSpan (ViewPathSimple <\$> $3 <*> $1) }
 
 -- parse_generic_values_after_lt()
 generic_values_after_lt :: { (Spanned [Lifetime Span], Spanned [Ty Span], Spanned [(Ident, Ty Span)]) }
@@ -726,6 +768,11 @@ exprs :: { Spanned [Expr Span] }
 exprs : comma(expr)       { sequence $1 }
 -}
 
+lit_expr :: { Spanned (Expr Span) }
+lit_expr : lit             { withSpan (Lit [] <\$> $1) }
+
+expr :: { Spanned (Expr Span) }
+expr : lit_expr            { $1 }
 
 --------------
 -- Literals --
@@ -748,14 +795,28 @@ string
       | byteStr           { lit $1 }
       | rawByteStr        { lit $1 }
 
--- TODO
 
-lit_expr :: { Spanned (Expr Span) }
-lit_expr : lit             { withSpan (Lit [] <\$> $1) }
+-----------
+-- Items --
+-----------
 
-expr :: { Spanned (Expr Span) }
-expr : lit_expr            { $1 }
+-- parse_visibility(true)
+visibility :: { Spanned (Visibility Span) }
+visibility
+      : visibility_no_path       { $1 }
+      | pub '(' mod_path ')'   { RestrictedV <\$> $3 <* $1 <* $4 }
 
+-- parse_visibility(false)
+visibility_no_path :: { Spanned (Visibility Span) }
+visibility_no_path
+      : {- empty -}              { pure InheritedV }
+      | pub                      { PublicV <\$ $1 }
+      | pub '(' crate ')'        { CrateV <\$ $1 <* $4 }
+
+-- parse_defaultness()
+defaultness :: { Spanned Defaultness }
+      : {- empty -}              { pure Final }
+      | default                  { Default <\$ $1 }
 
 {
 
