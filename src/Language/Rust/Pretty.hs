@@ -294,8 +294,8 @@ printUnOp Neg = "~"
 -- aka print_literal
 -- TODO this is broken with respect to escaping characters
 printLiteral :: Lit a -> Doc
-printLiteral (Str str _ _) = "\"" <> text str <> "\""
-printLiteral (Char c _) = "'" <> text [c] <> "'"
+printLiteral (Str str _ _ _) = "\"" <> text str <> "\""
+{-printLiteral (Char c _) = "'" <> text [c] <> "'"
 printLiteral (Int i _) = text (show i)
 printLiteral (Float str F32 _) = text str <> "f32"
 printLiteral (Float str F64 _) = text str <> "f64"
@@ -303,7 +303,7 @@ printLiteral (FloatUnsuffixed str _) = text str
 printLiteral (Bool True _) = "true"
 printLiteral (Bool False _) = "false"
 printLiteral (ByteStr w8s _) = error "Unimplemented"
-printLiteral (Byte w8 _) = error "Unimplemented"
+printLiteral (Byte w8 _) = error "Unimplemented"-}
 
 -- similar to check_expr_bin_needs_paren
 checkExprBinNeedsParen :: Expr a -> BinOp -> Doc
@@ -349,7 +349,7 @@ printAttribute a@Attribute{..} inline | isSugaredDoc && inline = "/*!" <+> perha
                                       | style == Outer = "#[" <> printMetaItem value <> "]"
 
 valueStr :: Attribute a -> Maybe String
-valueStr (Attribute _ (NameValue _  (Str s _ _) _) _ _) = Just s
+valueStr (Attribute _ (NameValue _  (Str s _ _ _) _) _ _) = Just s
 valueStr _ = Nothing
 
 -- aka  print_meta_list_item

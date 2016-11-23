@@ -23,6 +23,7 @@ library
   exposed-modules:     Language.Rust.Pretty
                        Language.Rust.Syntax.Token
                        Language.Rust.Syntax.Ident
+                       Language.Rust.Syntax.Constants
                        Language.Rust.Syntax.AST
                        Language.Rust.Parser.ParseMonad
                        Language.Rust.Parser.Lexer

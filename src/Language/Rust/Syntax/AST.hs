@@ -6,7 +6,7 @@ import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 import Language.Rust.Data.Position
 
-import Data.Int
+import Data.ByteString
 import Data.Word
 
 -- https://docs.serde.rs/syntex_syntax/abi/enum.Abi.html
@@ -433,44 +433,32 @@ data LifetimeDef a
 -- Merged [LitIntType](https://docs.serde.rs/syntex_syntax/ast/enum.LitIntType.html)
 -- Merged [IntTy](https://docs.serde.rs/syntex_syntax/ast/enum.IntTy.html)
 -- Merged [UintTy](https://docs.serde.rs/syntex_syntax/ast/enum.UintTy.html)
-data LitIntType where
-  Unsuffixed :: Show a => a -> LitIntType
-  Is :: Int64 -> LitIntType
-  I8 :: Int8 -> LitIntType
-  I16 :: Int16 -> LitIntType
-  I32 :: Int32 -> LitIntType
-  I64 :: Int64 -> LitIntType
-  Us :: Word64 -> LitIntType
-  U8 :: Word8 -> LitIntType
-  U16 :: Word16 -> LitIntType
-  U32 :: Word32 -> LitIntType
-  U64 :: Word64 -> LitIntType
+data Suffix = Unsuffixed | Is | I8 | I16 | I32 | I64 | Us | U8 | U16 |  U32 | U64
 
-instance Show LitIntType where
-  show (Unsuffixed i) = show i
-  show (Is i) = show i ++ "isize"
-  show (I8 i) = show i ++ "i8"
-  show (I16 i) = show i ++ "i16"
-  show (I32 i) = show i ++ "i32"
-  show (I64 i) = show i ++ "i64"
-  show (Us i) = show i ++ "usize"
-  show (U8 i) = show i ++ "u8"
-  show (U16 i) = show i ++ "u16"
-  show (U32 i) = show i ++ "u32"
-  show (U64 i) = show i ++ "u64"
+instance Show Suffix where
+  show Unsuffixed = ""
+  show Is = "isize"
+  show I8 = "i8"
+  show I16 = "i16"
+  show I32 = "i32"
+  show I64 = "i64"
+  show Us = "usize"
+  show U8 = "u8"
+  show U16 = "u16"
+  show U32 = "u32"
+  show U64 = "u64"
 
 -- | Literal kind.
 -- E.g. "foo", 42, 12.34 or bool
 -- https://docs.serde.rs/syntex_syntax/ast/enum.LitKind.html
 data Lit a
-  = Str InternedString StrStyle a    -- ^ A string literal ("foo")
-  | ByteStr [Word8] a                -- ^ A byte string (b"foo")    TODO: maybe ByteString?
-  | Byte Word8 a                     -- ^ A byte char (b'f')
-  | Char Char a                      -- ^ A character literal ('a')
-  | Int LitIntType a                 -- ^ An integer literal (1)
-  | Float InternedString FloatTy a   -- ^ A float literal (1f64 or 1E10f64)
-  | FloatUnsuffixed InternedString a -- ^ A float literal without a suffix (1.0 or 1.0E10)
-  | Bool Bool a                      -- ^ A boolean literal
+  = Str InternedString StrStyle Suffix a    -- ^ A string ("foo")
+  | ByteStr ByteString StrStyle Suffix a    -- ^ A byte string (b"foo")
+  | Byte Word8 Suffix a                     -- ^ A byte (b'f')
+  | Char Char Suffix a                      -- ^ A character ('a')
+  | Int Integer Suffix a                    -- ^ An integer (1)
+  | Float Double Suffix a                   -- ^ A float literal (1.12e4)
+  | Bool Bool Suffix a                      -- ^ A boolean literal
   deriving (Functor)
 
 -- | Represents a macro invocation. The Path indicates which macro is being invoked, and the vector of
@@ -705,7 +693,7 @@ data Stmt a
 -- https://docs.serde.rs/syntex_syntax/ast/enum.StrStyle.html
 data StrStyle
   = Cooked     -- ^ A regular string, like "foo"
-  | Raw Int    -- ^ A raw string, like r##"foo"##. The uint is the number of # symbols used
+  | Raw Word64 -- ^ A raw string, like r##"foo"##. The uint is the number of # symbols used
 
 -- | Field of a struct. E.g. bar: usize as in struct Foo { bar: usize }
 -- https://docs.serde.rs/syntex_syntax/ast/struct.StructField.html

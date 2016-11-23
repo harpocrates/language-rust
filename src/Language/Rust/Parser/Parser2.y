@@ -1,7 +1,7 @@
 {
 
 {-# LANGUAGE PatternSynonyms #-}
-module Language.Rust.Parser.Parser2 where
+module Language.Rust.Parser.Parser2 (patP, exprP, tyP) where
 
 import Language.Rust.Data.InputStream
 import Language.Rust.Syntax.Token
@@ -10,19 +10,17 @@ import Language.Rust.Data.Position
 import Language.Rust.Parser.Lexer
 import Language.Rust.Parser.ParseMonad
 import Language.Rust.Syntax.AST
+import Language.Rust.Syntax.Constants
 
--- Based heavily on <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
+-- <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
 -- References to <https://doc.rust-lang.org/grammar.html>
-
--- %name item item
--- %name pattern pattern
--- %name typ typ
--- %name statement statement
--- %name expression expression
+-- To see conflicts: stack exec happy -- --info=happyinfo.txt -o /dev/null src/Language/Rust/Parser/Parser2.y
 }
 
 -- in order to document the parsers, we have to alias them
-%name pat
+%name patP pat
+%name exprP expr
+%name tyP ty
 
 %tokentype { TokenSpace Spanned }
 
@@ -196,7 +194,7 @@ import Language.Rust.Syntax.AST
 
 -- MUT should be lower precedence than IDENT so that in the pat rule,
 -- "& MUT pat" has higher precedence than "binding_mode ident [@ pat]"
-%left mut      -- precedence
+%left mut ref -- precedence
 
 -- IDENT needs to be lower than '{' so that 'foo {' is shifted when
 -- trying to decide if we've got a struct-construction expr (esp. in
@@ -277,6 +275,10 @@ import Language.Rust.Syntax.AST
 '>='  : '>' EQ         { () <\$ $1 <* $2 }
 '<<'  : '<' LT         { () <\$ $1 <* $2 }
 '>>'  : '>' GT         { () <\$ $1 <* $2 }
+
+-- Unwraps the IdentTok into just an Ident
+ident :: { Spanned Ident }
+ident : IDENT                         { let Spanned (IdentTok i) s = $1 in Spanned i s }
 
 
 -------------
@@ -458,8 +460,8 @@ pat   : '_'                                           { withSpan (WildP <\$ $1) 
       | '&' mut pat                                   { withSpan (RefP <\$ $1 <* $2 <*> $3 <*> pure Mutable) }
       | '(' pats_list_context ')'                     { withSpan (TupleP <\$> snd $2 <*> pure (fst $2)) }
       | '[' pats_list_binding ']'                     { $2 }
-      | lit                                           { withSpan (LitP <\$> $1) }
-      | '-' lit                                       { withSpan (LitP <\$> withSpan (Unary [] Neg <\$> $2)) }
+      | lit_expr                                      { withSpan (LitP <\$> $1) }
+      | '-' lit_expr                                  { withSpan (LitP <\$> withSpan (Unary [] Neg <\$> $2)) }
       | expr_path                                     { withSpan (PathP Nothing <\$> $1) }
       | expr_qual_path                                { withSpan (PathP <\$> (Just . fst <\$> $1) <*> (snd <\$> $1)) }
       | lit_or_path '...' lit_or_path                 { withSpan (RangeP <\$> $1 <*> $3) }
@@ -493,17 +495,17 @@ pats_or : sep_by1(pat,'|')                                               { seque
 
 binding_mode :: { Spanned BindingMode }
 binding_mode
-      : ref mut     { ByRef Mutable <\$ $1 <* $2 }
-      | ref         { ByRef Immutable <\$ $1 }
-      | mut         { ByValue Mutable <\$ $1 }
-      | {- Empty -} { pure (ByValue Immutable) }
+      : ref mut               { ByRef Mutable <\$ $1 <* $2 }
+      | ref                   { ByRef Immutable <\$ $1 }
+      | mut                   { ByValue Mutable <\$ $1 }
+      | {- Empty -} %prec mut { pure (ByValue Immutable) }
 
 lit_or_path :: { Spanned (Expr Span) }
 lit_or_path
       : expr_path      { withSpan (PathExpr [] Nothing <\$> $1) } 
       | expr_qual_path { withSpan (PathExpr [] <\$> (Just . fst <\$> $1) <*> (snd <\$> $1)) }
-      | lit            { $1 }
-      | '-' lit        { withSpan (Unary [] Neg <\$> $2 <* $1) }
+      | lit_expr       { $1 }
+      | '-' lit_expr   { withSpan (Unary [] Neg <\$> $2 <* $1) }
 
 pat_field :: { Spanned (FieldPat Span) }
 pat_field
@@ -610,9 +612,9 @@ maybe_mut
 -- no equivalent
 maybe_mut_or_const :: { Spanned Mutability }
 maybe_mut_or_const
-      : mut         { Mutable <\$ $1 }
-      | const       { Immutable <\$ $1 }
-      | {- empty -} { pure Immutable }
+      : mut                   { Mutable <\$ $1 }
+      | const                 { Immutable <\$ $1 }
+      | {- empty -} %prec mut { pure Immutable }
 
 -- parse_poly_trait_ref()
 poly_trait_ref :: { Spanned (PolyTraitRef Span) }
@@ -643,23 +645,97 @@ trait_ref : ty_path                          %prec ident   { withSpan (TraitRef 
 binding :: { Spanned (Ident, Ty Span) }
 binding : ident '=' ty        { (,) <\$> $1 <*> $3  }
 
+--------------------------------
+-- Statements and Expressions --
+--------------------------------
+{-
+block :: { Spanned (Block Span) }
+block
+      : '{' maybe_stmts '}'                 { withSpan (Block <\$> $2 <*> pure DefaultBlock) }
+      | unsafe '{' maybe_stmts '}'          { withSpan (Block <\$> $2 <*> pure UnsafeBlock) }
+
+maybe_stmts :: { Spanned [Stmt Span] }
+maybe_stmts
+      : stmts               { $1 }
+      | stmts nonblock_expr { do { ss <- stmts; s <- withSpan (NoSemi <\$> $2); pure (ss ++ [s]) } } 
+      | nonblock_expr       { do {              s <- withSpan (NoSemi <\$> $2); pure [s]         } }
+      | {- empty -}         { pure [] }
+
+stmts :: { Spanned [Stmt Span] }
+stmts : some(stmt)          { sequence $1 }
+
+-- TODO: figure out attributes
+stmt :: { Spanned (Stmt Span) }
+stmt
+: let pat opt(then(':',ty_sum)) opt(then('=',expr)) ';'   { withSpan (Local <\$> $2 <*> $3 <*> $4 <*> pure []) }
+|                 stmt_item
+|             PUB stmt_item { $$ = $2; }
+| outer_attrs     stmt_item { $$ = $2; }
+| outer_attrs PUB stmt_item { $$ = $3; }
+| full_block_expr
+| block
+| nonblock_expr ';'
+| ';'                   { $$ = mk_none(); }
+;
+
+maybe_exprs :: { Spanned [Expr Span] }
+maybe_exprs
+      : commaT(expr)      { sequence $1 }
+
+exprs :: { Spanned [Expr Span] }
+exprs : comma(expr)       { sequence $1 }
+-}
+
+
+--------------
+-- Literals --
+--------------
+
+lit :: { Spanned (Lit Span) }
+lit
+      : byte              { lit $1 }
+      | char              { lit $1 }
+      | int               { lit $1 }
+      | float             { lit $1 }
+      | true              { lit $1 }
+      | false             { lit $1 }
+      | string            { $1 } 
+
+string :: { Spanned (Lit Span) }
+string
+      : str               { lit $1 }
+      | rawStr            { lit $1 }
+      | byteStr           { lit $1 }
+      | rawByteStr        { lit $1 }
 
 -- TODO
 
-lit :: { Spanned (Expr Span) }
-lit : {- Unimplemented -}             { error "Unimplemented" }
-
-path_expr :: { Spanned (Expr Span) }
-path_expr : {- Unimplemented -}       { error "Unimplemented" }
-
-ident :: { Spanned Ident }
-ident : IDENT                         { let Spanned (IdentTok i) s = $1 in Spanned i s }
+lit_expr :: { Spanned (Expr Span) }
+lit_expr : lit             { withSpan (Lit [] <\$> $1) }
 
 expr :: { Spanned (Expr Span) }
 expr : {- Unimplemented -}            { error "Unimplemented" }
 
 
 {
+
+lit :: Spanned Token -> Spanned (Lit Span)
+lit (Spanned (IdentTok (Ident (Name "true") _)) s) = Spanned (Bool True Unsuffixed s) s
+lit (Spanned (IdentTok (Ident (Name "false") _)) s) = Spanned (Bool False Unsuffixed s) s
+lit (Spanned (LiteralTok litTok suffix_m) s) = Spanned (parseLit litTok suffix s) s
+  where
+    suffix = case suffix_m of
+               Nothing -> Unsuffixed
+               (Just (Name "isize")) -> Is
+               (Just (Name "usize")) -> Us
+               (Just (Name "i8"))    -> I8
+               (Just (Name "u8"))    -> U8
+               (Just (Name "i16"))   -> I16
+               (Just (Name "u16"))   -> U16
+               (Just (Name "i32"))   -> I32
+               (Just (Name "u32"))   -> U32
+               (Just (Name "i64"))   -> I64
+               (Just (Name "u64"))   -> U64
 
 isPathSegmentIdent :: Ident -> Bool
 isPathSegmentIdent i = True
