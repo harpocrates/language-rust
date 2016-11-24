@@ -1,8 +1,9 @@
-{-# LANGUAGE DuplicateRecordFields, ExistentialQuantification #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 
 module Language.Rust.Syntax.Token where
 
 import Language.Rust.Syntax.Ident (Ident(..), Name)
+import Language.Rust.Data.Position
 import Language.Rust.Syntax.AST
 
 ------------------
@@ -57,7 +58,7 @@ data Token
   | Eof
   
   -- NOT NEEDED IN TOKENIZATION!!
-  | forall a. Interpolated (Nonterminal a)        -- ^ Can be expanded into several tokens.
+  | Interpolated (Nonterminal Span)               -- ^ Can be expanded into several tokens.
   -- In left-hand-sides of MBE macros:
   | MatchNt Ident Ident IdentStyle IdentStyle     -- ^ Parse a nonterminal (name to bind, name of NT)
   -- In right-hand-sides of MBE macros:

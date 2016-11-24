@@ -205,7 +205,7 @@ import Language.Rust.Syntax.Constants
 -- IDENT also needs to be lower precedence than '<' so that '<' in
 -- 'foo:bar . <' is shifted (in a trait reference occurring in a
 -- bounds list), parsing as foo:(bar<baz>) rather than (foo:bar)<baz>.
-%left ident      -- precedence
+%left IDENT      -- precedence
 
 -- A couple fake-precedence symbols to use in rules associated with +
 -- and < in trailing type contexts. These come up when you have a type
@@ -259,8 +259,8 @@ import Language.Rust.Syntax.Constants
 ---------------------
 
 -- All of these have type 'Spanned ()'
-'<<=' : '<' LT EQ      { () <\$ $1 <* $2 <* $3 }
-'>>=' : '>' GT EQ      { () <\$ $1 <* $2 <* $3 }
+'<<=' : '<' LT EQ      { () <\$ $1 <* $3 }
+'>>=' : '>' GT EQ      { () <\$ $1 <* $3 }
 '-='  : '-' EQ         { () <\$ $1 <* $2 }
 '&='  : '&' EQ         { () <\$ $1 <* $2 }
 '|='  : '|' EQ         { () <\$ $1 <* $2 }
@@ -348,7 +348,7 @@ expr_qual_path : qual_path(path_segments_with_colons)    { $1 }
 
 -- parse_qualified_path(PathStyle::Mod)
 mod_qual_path :: { Spanned (QSelf Span, Path Span) }
-mod_qual_path : qual_path(path_segments_with_colons)    { $1 }
+mod_qual_path : qual_path(path_segments_without_types)    { $1 }
 
 qual_path(segs)
       : '<' ty_sum opt(then(as, ty_path)) '>' '::' segs
@@ -362,36 +362,29 @@ qual_path(segs)
 -- parse_path(PathStyle::Type)
 ty_path :: { Spanned (Path Span) }
 ty_path 
-      : path_segments_without_colons           %prec ident { withSpan (Path False <\$> $1) }
-      | '::' path_segments_without_colons      %prec ident { withSpan (Path True <\$> $2 <* $1) }
+      : path_segments_without_colons           %prec IDENT { withSpan (Path False <\$> $1) }
+      | '::' path_segments_without_colons      %prec IDENT { withSpan (Path True <\$> $2 <* $1) }
 
 -- parse_path(PathStyle::Expr)
 expr_path :: { Spanned (Path Span) }
 expr_path 
-      : path_segments_with_colons              %prec ident { withSpan (Path False <\$> $1) }
-      | '::' path_segments_with_colons         %prec ident { withSpan (Path True <\$> $2 <* $1) }
+      : path_segments_with_colons              %prec IDENT { withSpan (Path False <\$> $1) }
+      | '::' path_segments_with_colons         %prec IDENT { withSpan (Path True <\$> $2 <* $1) }
 
 -- parse_path(PathStyle::Mod)
 mod_path :: { Spanned (Path Span) }
-      : path_segments_without_types            %prec ident { withSpan (Path False <\$> $1) }
-      | '::' path_segments_without_types       %prec ident { withSpan (Path True <\$> $2 <* $1) }
+      : path_segments_without_types            %prec IDENT { withSpan (Path False <\$> $1) }
+      | '::' path_segments_without_types       %prec IDENT { withSpan (Path True <\$> $2 <* $1) }
 
 
 -- parse_path_segments_without_colons()
 path_segments_without_colons :: { Spanned [(Ident, PathParameters Span)] }
 path_segments_without_colons : sep_by1(path_segment_without_colons, '::')  { sequence $1 } 
 
--- No corresponding function - see parse_path_segments_without_colons
+-- No corresponding function - see path_segments_without_colons
 path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
 path_segment_without_colons
-      : ident                                
-          {% if (not . isTypePathSegmentIdent . unspan \$ $1)
-               then fail "invalid path segment in type path"
-               else pure $ do
-                       i <- $1
-                       pure (i, AngleBracketed [] [] [] mempty)
-          }
-      | ident '<' generic_values_after_lt '>'
+      : ident '<' generic_values_after_lt '>'
           {% if (not . isTypePathSegmentIdent . unspan \$ $1)
                then fail "invalid path segment in type path"
                else pure $ do
@@ -408,12 +401,20 @@ path_segment_without_colons
                       args <- withSpan (Parenthesized <\$> sequence $3 <*> sequence $5 <* $2)
                       pure (i, args)
           }
+      | ident                                
+          {% if (not . isTypePathSegmentIdent . unspan \$ $1)
+               then fail "invalid path segment in type path"
+               else pure $ do
+                       i <- $1
+                       pure (i, AngleBracketed [] [] [] mempty)
+          }
+
 
 -- parse_path_segments_with_colons()
 path_segments_with_colons :: { Spanned [(Ident, PathParameters Span)] }
-path_segments_with_colons : sep_by1(path_segment_without_colons, '::')  { sequence $1 }
+path_segments_with_colons : sep_by1(path_segment_with_colons, '::')  { sequence $1 }
 
--- No corresponding function - see parse_path_segments_with_colons
+-- No corresponding function - see path_segments_with_colons
 path_segment_with_colons :: { Spanned (Ident, PathParameters Span) }
 path_segment_with_colons
       : ident
@@ -435,12 +436,12 @@ path_segment_with_colons
 path_segments_without_types :: { Spanned [(Ident, PathParameters Span)] }
 path_segments_without_types : sep_by1(path_segment_without_types, '::')  { sequence $1 }
 
--- No corresponding function - see parse_path_segments_without_types
+-- No corresponding function - see path_segments_without_types
 path_segment_without_types :: { Spanned (Ident, PathParameters Span) }
 path_segment_without_types
       : ident 
           {% if (not . isPathSegmentIdent . unspan \$ $1)
-               then fail "invalid path segment in expression path"
+               then fail "invalid path segment in mod path"
                else pure ((,) <\$> $1 <*> pure (AngleBracketed [] [] [] mempty))
           }
 
@@ -564,13 +565,16 @@ pats_list_context
       |                     '..' opt(',') comma(pat) opt(',')   { (Just 0, sequence $3 <* $1) }
       | comma(pat) opt(',') '..' opt(',') comma(pat) opt(',')   { (Just (length $1), (++) <\$> sequence $1 <*> sequence $5) }
 
+-- TODO: check where trailing commas are allowed, and generally reread this
 pats_list_binding :: { Spanned (Pat Span) }
 pats_list_binding
-      :                     opt(pat) '..'                                { withSpan (SliceP [] <\$> sequence $1 <*> pure [] <* $2) }
-      | comma(pat) opt(',')                                              { withSpan (SliceP <\$> sequence $1 <*> pure Nothing <*> pure []) }
-      | comma(pat) opt(',') opt(pat) '..'                                { withSpan (SliceP <\$> sequence $1 <*> sequence $3 <*> pure []) }
-      |                     opt(pat) '..' opt(',') comma(pat) opt(',')   { withSpan (SliceP [] <\$> sequence $1 <*> sequence $4) }
-      | comma(pat) opt(',') opt(pat) '..' opt(',') comma(pat) opt(',')   { withSpan (SliceP <\$> sequence $1 <*> sequence $3 <*> sequence $6) }
+      :                '..'               { withSpan (SliceP [] (Just (WildP mempty)) [] <\$ $1) }
+      | comma(pat)     '..'               { withSpan (SliceP <\$> sequence (Prelude.init $1) <*> (Just <\$> last $1) <*> pure [] <* $2) }
+      | comma(pat) ',' '..'               { withSpan (SliceP <\$> sequence $1 <*> pure (Just (WildP mempty)) <*> pure [] <* $3) }
+      | comma(pat)     '..'',' comma(pat) { withSpan (SliceP <\$> sequence (Prelude.init $1) <*> (Just <\$> last $1) <*> sequence $4) }
+      | comma(pat) ',' '..'',' comma(pat) { withSpan (SliceP <\$> sequence $1 <*> pure (Just (WildP mempty)) <*> sequence $5) }
+      | comma(pat)                        { withSpan (SliceP <\$> sequence $1 <*> pure Nothing <*> pure []) }
+      | {- empty -}                       { pure (SliceP [] Nothing [] mempty) }
 
 pats_or :: { Spanned [Pat Span] }
 pats_or : sep_by1(pat,'|')                                               { sequence $1 }
@@ -620,7 +624,7 @@ ty    : '(' ty_sum ',' comma(ty_sum) ')' { withSpan (TupTy <\$> ((:) <\$> $2 <*>
       | ty_qual_path                     { withSpan (PathTy <\$> (Just . fst <\$> $1) <*> (snd <\$> $1)) }
       | ty_path                          { withSpan (PathTy Nothing <\$> $1) }
       | '_'                              { withSpan (Infer <\$ $1) }
-
+      
 -- parse_ty_sum()
 ty_sum :: { Spanned (Ty Span) }
 ty_sum
@@ -646,17 +650,41 @@ ty_param_bounds_bare : sep_by(or(lifetime, poly_trait_ref),'+')
                         $1)
         }
 
+-- Appears to be the cause of some 42 conflicts (which were reduce conflicts when this was in a
+-- condensed form with 'opt's 'then's and such, but now are just shift conflicts).
 -- parse_ty_bare_fn(lifetime_defs: Vec<ast::LifetimeDef>)
 ty_bare_fn :: { Spanned [LifetimeDef Span] -> Spanned (Ty Span) }
 ty_bare_fn
-      :  opt(unsafe) opt(then(extern,abi)) fn '(' comma(arg_general) opt('...') ')' ret_ty
+      : unsafe extern abi fn '(' comma(arg_general) opt('...') ')' ret_ty
           { \lts -> withSpan $ do
                       lts' <- lts
-                      unsafety <- maybe (pure Normal) (Unsafe <\$) $1
-                      abi <- maybe (pure Rust) id $2
-                      decl <- withSpan (FnDecl <\$> sequence $5 <*> $8 <*> pure (case $6 of { Nothing -> False; _ -> True }))
-                      pure (BareFn unsafety abi lts' decl)
+                      $1
+                      abi <- $3
+                      decl <- withSpan (FnDecl <\$> sequence $6 <*> $9 <*> pure (case $7 of { Nothing -> False; _ -> True }))
+                      pure (BareFn Unsafe abi lts' decl)
           }
+      | extern abi fn '(' comma(arg_general) opt('...') ')' ret_ty
+          { \lts -> withSpan $ do
+                      lts' <- lts
+                      abi <- $2
+                      decl <- withSpan (FnDecl <\$> sequence $5 <*> $8 <*> pure (case $6 of { Nothing -> False; _ -> True }))
+                      pure (BareFn Normal abi lts' decl)
+          }
+      | unsafe fn '(' comma(arg_general) opt('...') ')' ret_ty
+          { \lts -> withSpan $ do
+                      lts' <- lts
+                      $1
+                      decl <- withSpan (FnDecl <\$> sequence $4 <*> $7 <*> pure (case $5 of { Nothing -> False; _ -> True }))
+                      pure (BareFn Unsafe Rust lts' decl)
+          }
+      | fn '(' comma(arg_general) opt('...') ')' ret_ty
+          { \lts -> withSpan $ do
+                      lts' <- lts
+                      decl <- withSpan (FnDecl <\$> sequence $3 <*> $6 <*> pure (case $4 of { Nothing -> False; _ -> True }))
+                      pure (BareFn Normal Rust lts' decl)
+          }
+
+
 
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Spanned Abi }
@@ -701,13 +729,14 @@ maybe_mut_or_const
 -- parse_poly_trait_ref()
 poly_trait_ref :: { Spanned (PolyTraitRef Span) }
 poly_trait_ref
-      : late_bound_lifetime_defs trait_ref { withSpan (PolyTraitRef <\$> $1 <*> $2) }
+      : trait_ref                          { withSpan (PolyTraitRef [] <\$> $1) }
+      | late_bound_lifetime_defs trait_ref { withSpan (PolyTraitRef <\$> $1 <*> $2) }
 
 -- parse_late_bound_lifetime_defs()
+-- Unlike the Rust libsyntax version, this _requires_ the for
 late_bound_lifetime_defs :: { Spanned [LifetimeDef Span] }
 late_bound_lifetime_defs
-      : {- empty -}                       { pure [] }
-      | for '<' comma(lifetime_def) '>'   { $1 *> sequence $3 <* $4 } 
+      : for '<' comma(lifetime_def) '>'   { $1 *> sequence $3 <* $4 } 
 
 -- No corresponding parse function
 lifetime_def :: { Spanned (LifetimeDef Span) }
@@ -721,7 +750,7 @@ lifetime : LIFETIME                                        { let Spanned (Lifeti
 
 -- parse_trait_ref()
 trait_ref :: { Spanned (TraitRef Span) }
-trait_ref : ty_path                          %prec ident   { withSpan (TraitRef <\$> $1) }
+trait_ref : ty_path                            %prec IDENT { withSpan (TraitRef <\$> $1) }
 
 -- no equivalent
 binding :: { Spanned (Ident, Ty Span) }
@@ -778,6 +807,7 @@ expr : lit_expr            { $1 }
 -- Literals --
 --------------
 
+-- TODO Interpolated (see parse_lit_token())
 lit :: { Spanned (Lit Span) }
 lit
       : byte              { lit $1 }
@@ -817,6 +847,7 @@ visibility_no_path
 defaultness :: { Spanned Defaultness }
       : {- empty -}              { pure Final }
       | default                  { Default <\$ $1 }
+
 
 {
 
