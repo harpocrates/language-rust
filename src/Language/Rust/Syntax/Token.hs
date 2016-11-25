@@ -64,9 +64,7 @@ data Token
   -- In right-hand-sides of MBE macros:
   | SubstNt Ident IdentStyle                      -- ^ A syntactic variable that will be filled in by macro expansion.
   | SpecialVarNt                                  -- ^ A macro variable with special meaning.
-
-instance Show Token where
-  show _ = error "Token.hs: unimplemented - this instance might belong in Pretty.hs"
+  deriving (Eq, Show)
 
 data DocType = OuterDoc | InnerDoc deriving (Eq, Show, Enum, Bounded)
 data Space = Whitespace | Comment deriving (Eq, Show, Enum, Bounded)

@@ -35,7 +35,7 @@ data Arg a
       { ty :: Ty a
       , pat :: Pat a
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Show, Functor)
 
 -- | An arm of a 'match'. E.g. `0...10 => { println!("match!") }` as in `match n { 0...10 => { println!("match!") }, /* .. */ }
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Arm.html
@@ -46,11 +46,11 @@ data Arm a
       , guard :: Maybe (Expr a)
       , body :: Expr a
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Show, Functor)
 
 -- | Inline assembly dialect.
 -- E.g. "intel" as in asm!("mov eax, 2" : "={eax}"(result) : : : "intel")
-data AsmDialect = Att | Intel deriving (Eq, Enum, Bounded)
+data AsmDialect = Att | Intel deriving (Eq, Enum, Bounded, Show)
 
 -- | Doc-comments are promoted to attributes that have isSugaredDoc = true
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Attribute_.html
@@ -60,12 +60,12 @@ data Attribute a
       , value :: MetaItem a
       , isSugaredDoc :: Bool
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Show, Functor)
 
 -- | Distinguishes between Attributes that decorate items and Attributes that are contained as statements
 -- within items. These two cases need to be distinguished for pretty-printing.
 -- https://docs.serde.rs/syntex_syntax/ast/enum.AttrStyle.html
-data AttrStyle = Outer | Inner deriving (Eq, Enum, Bounded)
+data AttrStyle = Outer | Inner deriving (Eq, Enum, Bounded, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.BinOpKind.html
 data BinOp
@@ -87,12 +87,13 @@ data BinOp
   | NeOp     -- ^ The != operator (not equal to)
   | GeOp     -- ^ The >= operator (greater than or equal to)
   | GtOp     -- ^ The > operator (greater than)
-  deriving (Eq, Enum, Bounded)
+  deriving (Eq, Enum, Bounded, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.BindingMode.html
 data BindingMode
   = ByRef Mutability
   | ByValue Mutability
+  deriving (Eq, Show)
 
 -- | A Block ({ .. }). E.g. `{ .. }` as in `fn foo() { .. }`
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Block.html
@@ -101,18 +102,18 @@ data Block a
       { stmts :: [Stmt a]       -- ^ Statements in a block
       , rules :: BlockCheckMode -- ^ Distinguishes between `unsafe { ... }` and `{ ... }`
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Show, Functor)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.BlockCheckMode.html
 -- Inlined [UnsafeSource](-- https://docs.serde.rs/syntex_syntax/ast/enum.UnsafeSource.html)
-data BlockCheckMode = DefaultBlock | UnsafeBlock { compilerGenerated :: Bool } deriving (Eq)
+data BlockCheckMode = DefaultBlock | UnsafeBlock { compilerGenerated :: Bool } deriving (Eq, Show)
 
 -- | A capture clause
 -- https://docs.serde.rs/syntex_syntax/ast/enum.CaptureBy.html
-data CaptureBy = Value | Ref deriving (Eq, Enum, Bounded)
+data CaptureBy = Value | Ref deriving (Eq, Enum, Bounded, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.Constness.html
-data Constness = Const | NotConst deriving (Eq, Enum, Bounded)
+data Constness = Const | NotConst deriving (Eq, Enum, Bounded, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Crate.html
 data Crate a
@@ -122,14 +123,14 @@ data Crate a
       , config :: MetaItem a
       , exportedMacros :: [MacroDef a]
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | The set of MetaItems that define the compilation environment of the crate, used to drive conditional compilation
 -- https://docs.serde.rs/syntex_syntax/ast/type.CrateConfig.html
 type CrateConfig a = [MetaItem a]
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.Defaultness.html
-data Defaultness = Default | Final deriving (Eq, Enum, Bounded)
+data Defaultness = Default | Final deriving (Eq, Enum, Bounded, Show)
 
 -- | An expression
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Expr.html
@@ -227,7 +228,7 @@ data Expr a
   | ParenExpr [Attribute a] (Expr a) a
   -- | `expr?`
   | Try [Attribute a] (Expr a) a
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Field.html
 data Field a
@@ -235,7 +236,7 @@ data Field a
       { ident :: Ident
       , expr :: Expr a
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- A single field in a struct pattern
 -- Patterns like the fields of `Foo { x, ref y, ref mut z }` are treated the same as
@@ -247,10 +248,10 @@ data FieldPat a
       , pat :: Pat a         -- ^ The pattern the field is destructured to
       , isShorthand :: Bool
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.FloatTy.html
-data FloatTy = F32 | F64 deriving (Eq, Enum, Bounded)
+data FloatTy = F32 | F64 deriving (Eq, Enum, Bounded, Show)
 
 -- | Header (not the body) of a function declaration.
 -- E.g. `fn foo(bar: baz)`
@@ -264,7 +265,7 @@ data FnDecl a
       , output :: Maybe (Ty a)
       , variadic :: Bool
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/struct.ForeignItem.html
 data ForeignItem a
@@ -274,14 +275,14 @@ data ForeignItem a
       , node :: ForeignItemKind a
       , vis :: Visibility a
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | An item within an extern block
 -- https://docs.serde.rs/syntex_syntax/ast/enum.ForeignItemKind.html
 data ForeignItemKind a
   = ForeignFn (FnDecl a) (Generics a) -- ^ A foreign function
   | ForeignStatic (Ty a) Bool         -- ^ A foreign static item (static ext: u8), with optional mutability (the boolean is true when mutable)
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- | Represents lifetimes and type parameters attached to a declaration of a function, enum, trait, etc.
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Generics.html
@@ -291,7 +292,7 @@ data Generics a
       , tyParams :: [TyParam a]
       , whereClause :: WhereClause a
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/struct.ImplItem.html
 data ImplItem a
@@ -302,7 +303,7 @@ data ImplItem a
       , attrs :: [Attribute a]
       , node :: ImplItemKind a
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.ImplItemKind.html
 data ImplItemKind a
@@ -310,13 +311,13 @@ data ImplItemKind a
   | MethodI (MethodSig a) (Block a)
   | TypeI (Ty a)
   | MacroI (Mac a)
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.ImplPolarity.html
 data ImplPolarity
   = Positive -- ^ `impl Trait for Type`
   | Negative -- ^ `impl !Trait for Type`
-  deriving (Eq, Enum, Bounded)
+  deriving (Eq, Enum, Bounded, Show)
 
 -- Inline assembly. E.g. `asm!("NOP")`;
 -- https://docs.serde.rs/syntex_syntax/ast/struct.InlineAsm.html
@@ -331,7 +332,7 @@ data InlineAsm a
       , alignstack :: Bool
       , dialect :: AsmDialect
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | Inline assembly.
 -- E.g. "={eax}"(result) as in asm!("mov eax, 2" : "={eax}"(result) : : : "intel")`
@@ -342,7 +343,7 @@ data InlineAsmOutput a
       , expr :: Expr a
       , isRw :: Bool
       , isIndirect :: Bool
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | An item
 -- The name might be a dummy name in case of anonymous items
@@ -354,7 +355,7 @@ data Item a
       , node :: ItemKind a
       , vis :: Visibility a
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 data ItemKind a
   -- | An extern crate item, with optional original crate name.
@@ -404,11 +405,11 @@ data ItemKind a
   -- | A macro invocation (which includes macro definition).
   -- E.g. macro_rules! foo { .. } or foo!(..)
   | MacItem (Mac a)
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- | A Kleene-style repetition operator for token sequences.
 -- https://docs.serde.rs/syntex_syntax/tokenstream/enum.KleeneOp.html
-data KleeneOp = ZeroOrMore | OneOrMore deriving (Eq, Enum, Bounded)
+data KleeneOp = ZeroOrMore | OneOrMore deriving (Eq, Enum, Bounded, Show)
 
 -- | A lifetime
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Lifetime.html
@@ -416,7 +417,7 @@ data Lifetime a
   = Lifetime
       { name :: Name
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- pattern synonym (Static s) = Lifetime (Name "'static") s
 
@@ -428,12 +429,13 @@ data LifetimeDef a
       , lifetime :: Lifetime a
       , bounds :: [Lifetime a]
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- Merged [LitIntType](https://docs.serde.rs/syntex_syntax/ast/enum.LitIntType.html)
 -- Merged [IntTy](https://docs.serde.rs/syntex_syntax/ast/enum.IntTy.html)
 -- Merged [UintTy](https://docs.serde.rs/syntex_syntax/ast/enum.UintTy.html)
 data Suffix = Unsuffixed | Is | I8 | I16 | I32 | I64 | Us | U8 | U16 |  U32 | U64
+            deriving (Eq, Enum, Bounded)
 
 instance Show Suffix where
   show Unsuffixed = ""
@@ -459,7 +461,7 @@ data Lit a
   | Int Integer Suffix a                    -- ^ An integer (1)
   | Float Double Suffix a                   -- ^ A float literal (1.12e4)
   | Bool Bool Suffix a                      -- ^ A boolean literal
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- | Represents a macro invocation. The Path indicates which macro is being invoked, and the vector of
 -- token-trees contains the source of the macro invocation.
@@ -472,13 +474,14 @@ data Mac a
       { path :: Path a
       , tts :: [TokenTree]
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.MacStmtStyle.html
 data MacStmtStyle
   = SemicolonMac -- ^ The macro statement had a trailing semicolon, e.g. foo! { ... }; foo!(...);, foo![...];
   | BracesMac    -- ^ The macro statement had braces; e.g. foo! { ... }
   | NoBracesMac  -- ^ The macro statement had parentheses or brackets and no semicolon; e.g. foo!(...). All of these will end up being converted into macro expressions.
+  deriving (Eq, Enum, Bounded, Show)
 
 -- | A macro definition, in this crate or imported from another.
 -- Not parsed directly, but created on macro import or macro_rules! expansion.
@@ -493,7 +496,7 @@ data MacroDef a
       , allowInternalUnstable :: Bool
       , body :: [TokenTree]
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | A compile-time attribute item.
 -- E.g. #[test], #[derive(..)] or #[feature = "foo"]
@@ -504,7 +507,7 @@ data MetaItem a
   = Word Ident a                    -- ^ Word meta item.        E.g. test as in #[test]
   | List Ident [NestedMetaItem a] a -- ^ List meta item.        E.g. derive(..) as in #[derive(..)]
   | NameValue Ident (Lit a) a       -- ^ Name value meta item.  E.g. feature = "foo" as in #[feature = "foo"]
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- | Represents a method's signature in a trait declaration, or in an implementation.
 -- https://docs.serde.rs/syntex_syntax/ast/struct.MethodSig.html
@@ -515,10 +518,10 @@ data MethodSig a
       , abi :: Abi
       , decl :: FnDecl a
       , generics :: Generics a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.Mutability.html
-data Mutability = Mutable | Immutable deriving (Eq, Enum, Bounded)
+data Mutability = Mutable | Immutable deriving (Eq, Enum, Bounded, Show)
 
 -- | Possible values inside of compile-time attribute lists.
 -- E.g. the '..' in #[name(..)].
@@ -526,7 +529,7 @@ data Mutability = Mutable | Immutable deriving (Eq, Enum, Bounded)
 data NestedMetaItem a
   = MetaItem (MetaItem a) a -- ^ A full MetaItem, for recursive meta items.
   | Literal (Lit a) a      -- ^ A literal. E.g. "foo", 64, true
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- | For interpolation during macro expansion.
 -- https://docs.serde.rs/syntex_syntax/parse/token/enum.Nonterminal.html
@@ -547,7 +550,7 @@ data Nonterminal a
   | NtGenerics (Generics a)
   | NtWhereClause (WhereClause a)
   | NtArg (Arg a)
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Pat.html
 -- Inlined [PatKind][https://docs.serde.rs/syntex_syntax/ast/enum.PatKind.html]
@@ -582,7 +585,7 @@ data Pat a
   | SliceP [Pat a] (Maybe (Pat a)) [Pat a] a
   -- | A macro pattern; pre-expansion
   | MacP (Mac a) a
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- | A "Path" is essentially Rust's notion of a name.
 -- It's represented as a sequence of identifiers, along with a bunch of supporting information.
@@ -597,7 +600,7 @@ data Path a
       -- Each segment consists of an identifier, an optional lifetime, and a set of types. E.g. std, String or Box<T>
       , segments :: [(Ident, PathParameters a)]
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/type.PathListItem.html
 -- https://docs.serde.rs/syntex_syntax/ast/struct.PathListItem_.html
@@ -606,7 +609,7 @@ data PathListItem a
       { name :: Ident
       , rename :: Maybe Ident -- ^ renamed in list, e.g. `use foo::{bar as baz};`
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | Parameters of a path segment.
 -- E.g. <A, B> as in Foo<A, B> or (A, B) as in Foo(A, B)
@@ -628,7 +631,7 @@ data PathParameters a
       , output :: Maybe (Ty a) -- ^ `C`
       , nodeInfo :: a
       }
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/struct.PolyTraitRef.html
 data PolyTraitRef a
@@ -636,7 +639,7 @@ data PolyTraitRef a
       { boundLifetimes :: [LifetimeDef a] -- ^ The `'a` in `<'a> Foo<&'a T>`
       , traitRef :: TraitRef a            -- ^ The `Foo<&'a T>` in `<'a> Foo<&'a T>`
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- |The explicit Self type in a "qualified path". The actual path, including the trait and the associated item, is stored
 -- separately. position represents the index of the associated item qualified with this Self type.
@@ -653,14 +656,14 @@ data QSelf a
   = QSelf
       { ty :: Ty a
       , position :: Int
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | Limit types of a range (inclusive or exclusive)
 -- https://docs.serde.rs/syntex_syntax/ast/enum.RangeLimits.html
 data RangeLimits
   = HalfOpen -- ^ Inclusive at the beginning, exclusive at the end
   | Closed   -- ^ Inclusive at the beginning and end
-  deriving (Eq, Enum, Bounded)
+  deriving (Eq, Enum, Bounded, Show)
 
 -- | Alternative representation for Args describing self parameter of methods.
 -- E.g. &mut self as in fn foo(&mut self)
@@ -669,7 +672,7 @@ data SelfKind a
   = ValueSelf Mutability                    -- ^ self, mut self
   | Region (Maybe (Lifetime a)) Mutability  -- ^ &'lt self, &'lt mut self
   | Explicit (Ty a) Mutability              -- ^ self: TYPE, mut self: TYPE
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- | A statement.
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Stmt.html
@@ -688,12 +691,13 @@ data Stmt a
   | NoSemi (Expr a) a    -- ^ Expr without trailing semi-colon.
   | Semi (Expr a) a
   | MacStmt (Mac a) MacStmtStyle [Attribute a] a
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.StrStyle.html
 data StrStyle
   = Cooked     -- ^ A regular string, like "foo"
   | Raw Int    -- ^ A raw string, like r##"foo"##. The uint is the number of # symbols used
+  deriving (Eq, Show)
 
 -- | Field of a struct. E.g. bar: usize as in struct Foo { bar: usize }
 -- https://docs.serde.rs/syntex_syntax/ast/struct.StructField.html
@@ -704,7 +708,7 @@ data StructField a
       , ty :: Ty a
       , attrs :: [Attribute a]
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | When the main rust parser encounters a syntax-extension invocation, it parses the arguments to the invocation
 -- as a token-tree. This is a very loose structure, such that all sorts of different AST-fragments can be passed to
@@ -739,10 +743,11 @@ data TokenTree
       , op :: KleeneOp             -- ^ Whether the sequence can be repeated zero (*), or one or more times (+)
       , numCaptures :: Int         -- ^ The number of MatchNts that appear in the sequence (and subsequences)
       }
+  deriving (Eq, Show)
 
 -- | A modifier on a bound, currently this is only used for ?Sized, where the modifier is Maybe. Negative
 -- bounds should also be handled here.
-data TraitBoundModifier = None | Maybe
+data TraitBoundModifier = None | Maybe deriving (Eq, Enum, Bounded, Show)
 
 -- | Represents an item declaration within a trait declaration, possibly including a default implementation.
 -- A trait item is either required (meaning it doesn't have an implementation, just a signature) or provided
@@ -754,7 +759,7 @@ data TraitItem a
       , attrs :: [Attribute a]
       , node :: TraitItemKind a
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.TraitItemKind.html
 data TraitItemKind a
@@ -762,7 +767,7 @@ data TraitItemKind a
   | MethodT (MethodSig a) (Maybe (Block a))
   | TypeT [TyParamBound a] (Maybe (Ty a))
   | MacroT (Mac a)
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- | TraitRef's appear in impls.
 -- resolve maps each TraitRef's ref_id to its defining trait; that's all that the ref_id is for.
@@ -773,7 +778,7 @@ data TraitRef a
   = TraitRef
       { path :: Path a
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | The different kinds of types recognized by the compiler
 -- Inlined [TyKind](https://docs.serde.rs/syntex_syntax/ast/enum.TyKind.html)
@@ -813,7 +818,7 @@ data Ty a
   -- | Inferred type of a self or &self argument in a method.
   | ImplicitSelf a
   | MacTy (Mac a) a
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/struct.TyParam.html
 data TyParam a
@@ -823,7 +828,7 @@ data TyParam a
       , bounds :: [TyParamBound a]
       , default_ :: Maybe (Ty a)
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | The AST represents all type param bounds as types. typeck::collect::compute_bounds matches these against the
 -- "special" built-in traits (see middle::lang_items) and detects Copy, Send and Sync.
@@ -831,7 +836,7 @@ data TyParam a
 data TyParamBound a
   = TraitTyParamBound (PolyTraitRef a) TraitBoundModifier
   | RegionTyParamBound (Lifetime a)
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- | Parition a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and 'RegionTyParamBound' variants.
 partitionTyParamBounds :: [TyParamBound a] -> ([TyParamBound a], [TyParamBound a])
@@ -844,10 +849,10 @@ data UnOp
   = Deref -- ^ The * operator for dereferencing
   | Not   -- ^ the ! operator for logical inversion
   | Neg   -- ^ the - operator for negation
-  deriving (Eq, Enum, Bounded)
+  deriving (Eq, Enum, Bounded, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.Unsafety.html
-data Unsafety = Unsafe | Normal deriving (Eq, Enum, Bounded)
+data Unsafety = Unsafe | Normal deriving (Eq, Enum, Bounded, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/type.Variant.html
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Variant_.html
@@ -858,7 +863,7 @@ data Variant a
       , data_ :: VariantData a
       , disrExpr :: Maybe (Expr a) -- ^ Explicit discriminant, e.g. Foo = 1
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | Fields and Ids of enum variants and structs
 -- 
@@ -867,7 +872,7 @@ data VariantData a
   = StructD [StructField a] a -- ^ Struct variant. E.g. Bar { .. } as in enum Foo { Bar { .. } }
   | TupleD [StructField a] a  -- ^ Tuple variant. E.g. Bar(..) as in enum Foo { Bar(..) }
   | UnitD a                   -- ^ Unit variant. E.g. Bar = .. as in enum Foo { Bar = .. }
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/type.ViewPath.html
 -- https://docs.serde.rs/syntex_syntax/ast/enum.ViewPath_.html
@@ -878,7 +883,7 @@ data ViewPath a
   | ViewPathGlob (Path a) a
   -- | foo::bar::{a,b,c}
   | ViewPathList (Path a) [PathListItem a] a
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.Visibility.html
 data Visibility a
@@ -886,7 +891,7 @@ data Visibility a
   | CrateV
   | RestrictedV (Path a)
   | InheritedV
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 
 -- | A `where` clause in a definition
 -- https://docs.serde.rs/syntex_syntax/ast/struct.WhereClause.html
@@ -894,7 +899,7 @@ data WhereClause a
   = WhereClause
       { predicates :: [WherePredicate a]
       , nodeInfo :: a
-      } deriving (Functor)
+      } deriving (Eq, Functor, Show)
 
 -- | A single predicate in a where clause
 -- https://docs.serde.rs/syntex_syntax/ast/enum.WherePredicate.html
@@ -921,5 +926,5 @@ data WherePredicate a
       , ty :: Ty a
       , nodeInfo :: a
       }
-  deriving (Functor)
+  deriving (Eq, Functor, Show)
 

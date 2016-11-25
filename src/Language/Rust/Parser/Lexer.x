@@ -1076,7 +1076,7 @@ nestedComment = go 1 ""
           c' <- peekChar
           case c' of 
             Nothing -> fail "Unclosed comment"
-            Just '*' -> nextChar *> go (n+1) ('/':'*':s) 
+            Just '*' -> nextChar *> go (n+1) ('*':'/':s) 
             Just _ -> go n ('/':s)
         Just c' -> go n (c':s)
 

@@ -1,7 +1,5 @@
 {
-
-{-# LANGUAGE PatternSynonyms #-}
-module Language.Rust.Parser.Parser2 (patP, exprP, tyP) where
+module Language.Rust.Parser.Parser2 (patternP, expressionP, typeP) where
 
 import Language.Rust.Data.InputStream
 import Language.Rust.Syntax.Token
@@ -11,11 +9,11 @@ import Language.Rust.Parser.Lexer
 import Language.Rust.Parser.ParseMonad
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Constants
+}
 
 -- <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
 -- References to <https://doc.rust-lang.org/grammar.html>
 -- To see conflicts: stack exec happy -- --info=happyinfo.txt -o /dev/null src/Language/Rust/Parser/Parser2.y
-}
 
 -- in order to document the parsers, we have to alias them
 %name patP pat
@@ -300,12 +298,12 @@ rev_list1(p)    : p                   { [$1] }
 -- | Zero or more 
 many(p)         : rev_list(p)         { reverse $1 }
 
-rev_list(p)     : {- Empty -}         { [] }
-                | rev_list(p) p       { $2 : $1 }
+rev_list(p)     : rev_list(p) p       { $2 : $1 }
+                | {- empty -}         { [] }
 
 -- | Zero or more occurrences of p, separated by sep
-sep_by(p,sep)   : {- Empty -}         { [] }
-                | sep_by1(p,sep)      { $1 }
+sep_by(p,sep)   : sep_by1(p,sep)      { $1 }
+                | {- empty -}         { [] }
 
 -- | One or more occurences of p, seperated by sep
 sep_by1(p,sep)  : p many(then(sep,p)) { $1 : $2 }
@@ -320,8 +318,8 @@ plus(p)         : sep_by1(p,'+')      { $1 }
 comma(p)        : sep_by1(p,',')      { $1 }
 
 -- | Comma delimited, allow trailing
-commaT(p)       : {- empty -}         { [] }
-                | comma(p) opt(',')   { $1 }
+commaT(p)       : comma(p) opt(',')   { $1 }
+                | {- empty -}         { [] }
 
 -- | One or the other
 or(l,r)         : l                   { Left $1 }
@@ -545,6 +543,8 @@ pat   : '_'                                           { withSpan (WildP <\$ $1) 
       | '[' pats_list_binding ']'                     { $2 }
       | lit_expr                                      { withSpan (LitP <\$> $1) }
       | '-' lit_expr                                  { withSpan (LitP <\$> withSpan (Unary [] Neg <\$> $2)) }
+      | binding_mode ident '@' pat                    { withSpan (IdentP <\$> $1 <*> $2 <*> (Just <\$> $4)) }
+      | binding_mode ident                            { withSpan (IdentP <\$> $1 <*> $2 <*> pure Nothing) }
       | expr_path                                     { withSpan (PathP Nothing <\$> $1) }
       | expr_qual_path                                { withSpan (PathP <\$> (Just . fst <\$> $1) <*> (snd <\$> $1)) }
       | lit_or_path '...' lit_or_path                 { withSpan (RangeP <\$> $1 <*> $3) }
@@ -553,8 +553,6 @@ pat   : '_'                                           { withSpan (WildP <\$ $1) 
       | expr_path '{' '..' '}'                        { withSpan (StructP <\$> $1 <*> pure [] <*> pure True) }
       | expr_path '(' pats_list_context ')'           { withSpan (TupleStructP <\$> $1 <*> snd $3 <*> pure (fst $3)) }
   --  | expr_path '!' opt(ident) delimited_token_trees     { error "Unimplemented" } {- MacP (Mac a) a -}
-      | binding_mode ident '@' pat                    { withSpan (IdentP <\$> $1 <*> $2 <*> (Just <\$> $4)) }
-      | binding_mode ident                            { withSpan (IdentP <\$> $1 <*> $2 <*> pure Nothing) }
       | box pat                                       { withSpan (BoxP <\$ $1 <*> $2) }
 
 pats_list_context :: { (Maybe Int, Spanned [Pat Span]) }
@@ -643,7 +641,7 @@ ty_param_bounds_mod : sep_by(or(lifetime, and(opt('?'),poly_trait_ref)),'+')
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare)
 ty_param_bounds_bare :: { Spanned [TyParamBound Span] }
-ty_param_bounds_bare : sep_by(or(lifetime, poly_trait_ref),'+')
+ty_param_bounds_bare : sep_by1(or(lifetime, poly_trait_ref),'+')
         { sequence (map (\x -> case x of
                                  Left l    -> RegionTyParamBound <\$> l
                                  Right bnd -> TraitTyParamBound <\$> bnd <*> pure None)
@@ -688,17 +686,17 @@ ty_bare_fn
 
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Spanned Abi }
-abi   : {- empty -}     { pure C }
-      | str             {% case unspan $1 of
+abi   : str             {% case unspan $1 of
                              (LiteralTok (StrTok (Name s)) Nothing) | isAbi s -> pure (read s <\$ $1)
                              _ -> fail "invalid ABI"
                         }
+      | {- empty -}     { pure C }
 
 -- parse_ret_ty
 ret_ty :: { Spanned (Maybe (Ty Span)) }
 ret_ty
-      : {- empty -}     { pure Nothing }
-      | '->' ty         { Just <\$> $2 <* $1 }
+      : '->' ty         { Just <\$> $2 <* $1 }
+      | {- empty -}     { pure Nothing }
 
 -- parse_for_in_type()
 for_in_type :: { Spanned (Ty Span) }
@@ -839,15 +837,29 @@ visibility
 -- parse_visibility(false)
 visibility_no_path :: { Spanned (Visibility Span) }
 visibility_no_path
-      : {- empty -}              { pure InheritedV }
+      : pub '(' crate ')'        { CrateV <\$ $1 <* $4 }
       | pub                      { PublicV <\$ $1 }
-      | pub '(' crate ')'        { CrateV <\$ $1 <* $4 }
+      | {- empty -}              { pure InheritedV }
 
 -- parse_defaultness()
 defaultness :: { Spanned Defaultness }
-      : {- empty -}              { pure Final }
-      | default                  { Default <\$ $1 }
+      : default                  { Default <\$ $1 }
+      | {- empty -}              { pure Final }
 
+-- parse_where_clause()
+where_clause :: { Spanned (WhereClause Span) }
+where_clause
+      : where comma(where_predicate) { withSpan (WhereClause <\$> sequence $2 <* $1) } 
+      | {- empty -}                  { pure (WhereClause [] mempty) } 
+
+-- see parse_where_clause()
+-- TODO: EqPredicates aren't implemented - this is just a guess about how they will be done.
+where_predicate :: { Spanned (WherePredicate Span) }
+where_predicate
+      : lifetime ':' sep_by1(lifetime,'+')                   { withSpan (RegionPredicate <\$> $1 <*> sequence $3) } 
+      | late_bound_lifetime_defs ty ':' ty_param_bounds_bare { withSpan (BoundPredicate <\$> $1 <*> $2 <*> $4) }
+      | ty ':' ty_param_bounds_bare                          { withSpan (BoundPredicate [] <\$> $1 <*> $3)  }
+      | ty_path '=' ty                                       { withSpan (EqPredicate <\$> $1 <*> $3) }
 
 {
 
@@ -884,4 +896,13 @@ isTraitTyParamBound _ = False
 withSpan :: Spanned (Span -> a) -> Spanned a
 withSpan (Spanned f s) = Spanned (f s) s
 
+-- For exporting:
+patternP :: P (Pat Span)
+patternP = unspan <$> patP
+
+expressionP :: P (Expr Span)
+expressionP = unspan <$> exprP
+
+typeP :: P (Ty Span)
+typeP = unspan <$> tyP
 }

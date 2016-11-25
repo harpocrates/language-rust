@@ -72,14 +72,14 @@ commonCode = testGroup "lexing common code fragments"
   , testCode "x /* some comment */ y"
              [ IdentTok (mkIdent "x")
              , Space Whitespace (Name " ")
-             , Space Comment (Name "comment not captured (TODO)")
+             , Space Comment (Name " some comment ")
              , Space Whitespace (Name " ")
              , IdentTok (mkIdent "y")
              ]
   , testCode "x /* some /* nested */ comment */ y"
              [ IdentTok (mkIdent "x")
              , Space Whitespace (Name " ")
-             , Space Comment (Name "comment not captured (TODO)")
+             , Space Comment (Name " some /* nested */ comment ")
              , Space Whitespace (Name " ")
              , IdentTok (mkIdent "y")
              ]

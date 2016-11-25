@@ -70,7 +70,7 @@ data Span
     lo :: Position,
     hi :: Position --,
     -- expnId :: ExpnId
-  }
+  } deriving (Eq)
 
 -- Spans are merged by taking the smallest span that covers both arguments
 instance Monoid Span where
