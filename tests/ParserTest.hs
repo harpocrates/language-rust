@@ -6,7 +6,7 @@ import Test.Framework.Providers.HUnit
 import Test.HUnit hiding (Test)
 
 import Language.Rust.Parser.ParseMonad
-import Language.Rust.Parser.Parser2 (expressionP, typeP, patternP)
+import Language.Rust.Parser.Parser2
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Ident
 import Language.Rust.Data.Position
@@ -18,6 +18,7 @@ import Control.Monad.Trans.Except
 parserSuite :: Test
 parserSuite = testGroup "parser suite" [ patternSuite, typeSuite, expressionSuite ]
 
+-- | This contains tests for parsing a variety of patterns
 patternSuite :: Test
 patternSuite = testGroup "parsing patterns"
   [ testPat "_"                       (WildP ())
@@ -37,9 +38,7 @@ patternSuite = testGroup "parsing patterns"
                                                False ()) 
   ] 
 
-i32 :: Ty ()
-i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
-
+-- | This contains tests for parsing a variety of types
 typeSuite :: Test
 typeSuite = testGroup "parsing types"
   [ testType "i32"          i32
@@ -54,10 +53,54 @@ typeSuite = testGroup "parsing types"
   , testType "[i32; 17]"    (Array i32 (Lit [] (Int 17 Unsuffixed ()) ()) ())
   , testType "&i32"         (Rptr Nothing Immutable i32 ())
   , testType "&'lt mut i32" (Rptr (Just (Lifetime (Name "lt") ())) Mutable i32  ())
+  , testType "_"            (Infer ())
+  , testType "typeof(123)"  (Typeof (Lit [] (Int 123 Unsuffixed ()) ()) ())
+  , testType "Vec<i32>"     (PathTy Nothing (Path False [("Vec", AngleBracketed [] [i32] [] ())] ()) ())
+  , testType "<i32 as a::b::Trait>::AssociatedItem"
+             (PathTy (Just (QSelf i32 3)) (Path False [ ("a", AngleBracketed [] [] [] ())
+                                                      , ("b", AngleBracketed [] [] [] ())
+                                                      , ("Trait", AngleBracketed [] [] [] ())
+                                                      , ("AssociatedItem", AngleBracketed [] [] [] ())
+                                                      ] ()) ())
+  , testType "<i32 as a(i32, i32)::b<'lt>::Trait(i32) -> i32>::AssociatedItem"
+             (PathTy (Just (QSelf i32 3)) (Path False [ ("a", Parenthesized [i32, i32] Nothing ())
+                                                      , ("b", AngleBracketed [Lifetime (Name "lt") ()] [] [] ())
+                                                      , ("Trait", Parenthesized [i32] (Just i32) ())
+                                                      , ("AssociatedItem", AngleBracketed [] [] [] ())
+                                                      ] ()) ())
+  , testType "fn(i32) -> i32"
+             (BareFn Normal Rust [] (FnDecl [Arg i32 (IdentP (ByValue Immutable) "" Nothing ()) ()] (Just i32) False ()) ())
+  , testType "fn(_: i32) -> i32"
+             (BareFn Normal Rust [] (FnDecl [Arg i32 (WildP ()) ()] (Just i32) False ()) ())
+  , testType "unsafe extern \"C\" fn(_: i32)"
+             (BareFn Unsafe C [] (FnDecl [Arg i32 (WildP ()) ()] Nothing False ()) ())
+  , testType "for<'l1: 'l2 + 'l3, 'l4: 'l5> fn(_: i32 + 'l1) -> i32"
+             (BareFn Normal Rust
+                            [ LifetimeDef [] (Lifetime (Name "l1") ()) [Lifetime (Name "l2") (), Lifetime (Name "l3") ()] ()
+                            , LifetimeDef [] (Lifetime (Name "l4") ()) [Lifetime (Name "l5") ()] () ]
+                            (FnDecl [Arg (ObjectSum i32 [RegionTyParamBound (Lifetime (Name "l1") ())] ()) (WildP ()) ()] 
+                                    (Just i32) False ()) ())
+  , testType "for <'a> Foo<&'a T>"
+             (PolyTraitRefTy
+                [TraitTyParamBound
+                   (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()]
+                                 (TraitRef (Path False [("Foo", AngleBracketed [] [Rptr (Just (Lifetime (Name "a") ()))
+                                                                                        Immutable
+                                                                                        (PathTy Nothing (Path False [("T", AngleBracketed [] [] [] ())] ()) ())
+                                                                                        ()]
+                                                                                  [] ())] ()) ()) ()) None] ())
   ]
+  where
+    -- Just a common type to make the tests above more straightforward
+    i32 :: Ty ()
+    i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
 
+-- | This contains tests for parsing a variety of expressions
 expressionSuite :: Test
 expressionSuite = testGroup "parsing expressions" []
+
+testParse :: (Show (f ()), Functor f, Eq (f ())) => String -> P (Spanned (f Span)) -> f () -> Test
+testParse inp parser x = testCase inp $ Right x @=? parseNoSpans (unspan <$> parser) (inputStreamFromString inp)
 
 -- | Create a test for a code fragment that should parse to an expression.
 testExpr :: String -> Expr () -> Test

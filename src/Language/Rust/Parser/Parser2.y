@@ -31,35 +31,35 @@ import Language.Rust.Syntax.Constants
 %token
 
   -- Expression-operator symbols. 
-  '='        { Tok $$@(Spanned Equal _) }
-  '<'        { Tok $$@(Spanned Less _) }
-  '>'        { Tok $$@(Spanned Greater _) }
-  '!'        { Tok $$@(Spanned Exclamation _) }
-  '~'        { Tok $$@(Spanned Tilde _) }
-  
-  '+'        { Tok $$@(Spanned Plus _) }
-  '-'        { Tok $$@(Spanned Minus _) }
-  '*'        { Tok $$@(Spanned Star _) }
-  '/'        { Tok $$@(Spanned Slash _) }
-  '%'        { Tok $$@(Spanned Percent _) }
-  '^'        { Tok $$@(Spanned Caret _) }
-  '&'        { Tok $$@(Spanned Ampersand _) }
-  '|'        { Tok $$@(Spanned Pipe _) }
-
   EQ         { NoSpTok $$@(Spanned Equal _) }
-  LT         { Tok $$@(Spanned Less _) }
-  GT         { Tok $$@(Spanned Greater _) }
-  NOT        { Tok $$@(Spanned Exclamation _) }
+  LT         { NoSpTok $$@(Spanned Less _) }
+  GT         { NoSpTok $$@(Spanned Greater _) }
+  NOT        { NoSpTok $$@(Spanned Exclamation _) }
+  TILDE      { NoSpTok $$@(Spanned Tilde _) }
   
-  PLUS       { Tok $$@(Spanned Plus _) }
-  MINUS      { Tok $$@(Spanned Minus _) }
-  STAR       { Tok $$@(Spanned Star _) }
-  SLASH      { Tok $$@(Spanned Slash _) }
-  PERCENT    { Tok $$@(Spanned Percent _) }
-  CARET      { Tok $$@(Spanned Caret _) }
-  AMPERSAND  { Tok $$@(Spanned Ampersand _) }
-  PIPE       { Tok $$@(Spanned Pipe _) }
+  PLUS       { NoSpTok $$@(Spanned Plus _) }
+  MINUS      { NoSpTok $$@(Spanned Minus _) }
+  STAR       { NoSpTok $$@(Spanned Star _) }
+  SLASH      { NoSpTok $$@(Spanned Slash _) }
+  PERCENT    { NoSpTok $$@(Spanned Percent _) }
+  CARET      { NoSpTok $$@(Spanned Caret _) }
+  AMPERSAND  { NoSpTok $$@(Spanned Ampersand _) }
+  PIPE       { NoSpTok $$@(Spanned Pipe _) }
 
+  EQ_S       { Tok $$@(Spanned Equal _) }
+  LT_S       { Tok $$@(Spanned Less _) }
+  GT_S       { Tok $$@(Spanned Greater _) }
+  NOT_S      { Tok $$@(Spanned Exclamation _) }
+  TILDE_S    { Tok $$@(Spanned Tilde _) }
+
+  PLUS_S     { Tok $$@(Spanned Plus _) }
+  MINUS_S    { Tok $$@(Spanned Minus _) }
+  STAR_S     { Tok $$@(Spanned Star _) }
+  SLASH_S    { Tok $$@(Spanned Slash _) }
+  PERCENT_S  { Tok $$@(Spanned Percent _) }
+  CARET_S    { Tok $$@(Spanned Caret _) }
+  AMPERSAND_S{ Tok $$@(Spanned Ampersand _) }
+  PIPE_S     { Tok $$@(Spanned Pipe _) }
 
   -- Structural symbols.
   '@'        { Tok $$@(Spanned At _) }
@@ -160,23 +160,6 @@ import Language.Rust.Syntax.Constants
   outerDoc   { Tok $$@(Spanned (Doc _ OuterDoc) _) }
   innerDoc   { Tok $$@(Spanned (Doc _ InnerDoc) _) }
 
-  -- Types
-  boolTyp    { Tok $$@(Identifier "bool") }
-  charTyp    { Tok $$@(Identifier "char") }
-  i8Typ      { Tok $$@(Identifier "i8") }
-  i16Typ     { Tok $$@(Identifier "i16") }
-  i32Typ     { Tok $$@(Identifier "i32") }
-  i64Typ     { Tok $$@(Identifier "i64") }
-  u8Typ      { Tok $$@(Identifier "u8") }
-  u16Typ     { Tok $$@(Identifier "u16") }
-  u32Typ     { Tok $$@(Identifier "u32") }
-  u64Typ     { Tok $$@(Identifier "u64") }
-  isizeTyp   { Tok $$@(Identifier "isize") }
-  usizeTyp   { Tok $$@(Identifier "usize") }
-  f32Typ     { Tok $$@(Identifier "f32") }
-  f64Typ     { Tok $$@(Identifier "f64") }
-  strTyp     { Tok $$@(Identifier "str") }
-
   -- Identifiers.
   IDENT      { Tok $$@(Identifier _) }
   '_'        { Tok $$@(Spanned Underscore _) }
@@ -255,6 +238,22 @@ import Language.Rust.Syntax.Constants
 ---------------------
 -- Extended tokens --
 ---------------------
+
+-- These tokens have both space and no space versions
+'=' : alt(EQ,EQ_S)                { $1 }
+'<' : alt(LT,LT_S)                { $1 }
+'>' : alt(GT,GT_S)                { $1 }
+'!' : alt(NOT,NOT_S)              { $1 }
+'~' : alt(TILDE,TILDE_S)          { $1 }
+
+'+' : alt(PLUS, PLUS_S)           { $1 }
+'-' : alt(MINUS, MINUS_S)         { $1 }
+'*' : alt(STAR, STAR_S)           { $1 }
+'/' : alt(SLASH, SLASH_S)         { $1 }
+'%' : alt(PERCENT, PERCENT_S)     { $1 }
+'^' : alt(CARET, CARET_S)         { $1 }
+'&' : alt(AMPERSAND, AMPERSAND_S) { $1 }
+'|' : alt(PIPE, PIPE_S)           { $1 }
 
 -- All of these have type 'Spanned ()'
 '<<=' : '<' LT EQ      { () <\$ $1 <* $3 }
@@ -359,7 +358,7 @@ qual_path(segs)
 
 -- parse_path(PathStyle::Type)
 ty_path :: { Spanned (Path Span) }
-ty_path 
+ty_path
       : path_segments_without_colons           %prec IDENT { withSpan (Path False <\$> $1) }
       | '::' path_segments_without_colons      %prec IDENT { withSpan (Path True <\$> $2 <* $1) }
 
@@ -382,7 +381,14 @@ path_segments_without_colons : sep_by1(path_segment_without_colons, '::')  { seq
 -- No corresponding function - see path_segments_without_colons
 path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
 path_segment_without_colons
-      : ident '<' generic_values_after_lt '>'
+      : ident 
+          {% if (not . isTypePathSegmentIdent . unspan \$ $1)
+               then fail "invalid path segment in type path"
+               else pure $ do
+                       i <- $1
+                       pure (i, AngleBracketed [] [] [] mempty)
+          }
+      | ident '<' generic_values_after_lt '>'
           {% if (not . isTypePathSegmentIdent . unspan \$ $1)
                then fail "invalid path segment in type path"
                else pure $ do
@@ -399,14 +405,6 @@ path_segment_without_colons
                       args <- withSpan (Parenthesized <\$> sequence $3 <*> sequence $5 <* $2)
                       pure (i, args)
           }
-      | ident                                
-          {% if (not . isTypePathSegmentIdent . unspan \$ $1)
-               then fail "invalid path segment in type path"
-               else pure $ do
-                       i <- $1
-                       pure (i, AngleBracketed [] [] [] mempty)
-          }
-
 
 -- parse_path_segments_with_colons()
 path_segments_with_colons :: { Spanned [(Ident, PathParameters Span)] }
@@ -475,10 +473,12 @@ generic_values_after_lt
       |                                                      { (pure []    , pure []    , pure []    ) }
 
 -- parse_arg_general(false) -- does not require name
+-- NOT ALL PATTERNS ARE ACCEPTED: <https://github.com/rust-lang/rust/issues/35203>
 arg_general :: { Spanned (Arg Span) } 
 arg_general
-      : arg             { $1 }
-      | ty_sum          { withSpan (Arg <\$> $1 <*> pure (IdentP (ByValue Immutable) invalidIdent Nothing mempty)) }
+      : ty_sum            { withSpan (Arg <\$> $1 <*> pure (IdentP (ByValue Immutable) invalidIdent Nothing mempty)) }
+      | ident ':' ty_sum  { withSpan (Arg <\$> $3 <*> withSpan (IdentP (ByValue Immutable) <\$> $1 <*> pure  Nothing)) }
+      | '_'   ':' ty_sum  { withSpan (Arg <\$> $3 <*> withSpan (WildP <\$ $1)) }
 
 -- parse_arg_general(true) -- requires name
 arg ::{ Spanned (Arg Span) }
