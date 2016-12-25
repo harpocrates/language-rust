@@ -53,12 +53,14 @@ test-suite tests
   main-is:             Main.hs
   other-modules:       LexerTest
                        ParserTest
+                       PrettyTest
   Type:                exitcode-stdio-1.0
   default-language:    Haskell2010
   build-depends:       base >=4.9 && <4.10
                      , Cabal >= 1.10.0
                      , transformers >=0.5 && <0.6
                      , HUnit
+                     , pretty >=1.1 && <1.2
                      , test-framework
                      , test-framework-hunit >= 0.3.0
                      , language-rust

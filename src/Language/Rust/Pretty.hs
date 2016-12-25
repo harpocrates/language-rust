@@ -1,10 +1,20 @@
 {-# LANGUAGE RecordWildCards, OverloadedStrings, DuplicateRecordFields #-}
 
-module Language.Rust.Pretty where
+module Language.Rust.Pretty
+  ( printType
+  , printStmt
+  , printExpr
+  , printLit
+  ) where
 
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Ident
-import Text.PrettyPrint.HughesPJ (hsep, hcat, vcat, punctuate, sep, (<>), (<+>), Doc, empty, text)
+import Text.PrettyPrint.HughesPJ (hsep, hcat, vcat, punctuate, sep, (<>), (<+>), Doc, empty, text, integer, double, char)
+import Data.Char (showLitChar,chr)
+
+import Data.ByteString (ByteString, unpack)
+import Data.Word (Word8)
+import Data.Char (intToDigit, ord)
 
 -- | comma delimited
 commas :: [a] -> (a -> Doc) -> Doc
@@ -23,22 +33,22 @@ perhaps = maybe empty
 -------------------------------------------
 
 printIdent :: Ident -> Doc
-printIdent Ident{..} = let (Name s) = name in text s
+printIdent Ident{..} = let Name s = name in text s
 
 -- aka print_type
 -- Inlined print_ty_fn
 printType :: Ty a -> Doc
-printType (Slice ty _) = "[" <> printType ty <> "]"
-printType (Array ty v _) = "[" <> printType ty <> ";" <+> printExpr v <> "]"
-printType (Ptr mut ty _) = "*" <> printFullMutability mut <+> printType ty
-printType (Rptr lifetime mut ty _) = "&" <> perhaps printLifetime lifetime <+> printMutability mut <+> printType ty
+printType (Slice ty _)       = "[" <> printType ty <> "]"
+printType (Array ty v _)     = "[" <> printType ty <> ";" <+> printExpr v <> "]"
+printType (Ptr mut ty _)     = "*" <> printFullMutability mut <+> printType ty
+printType (Rptr lt mut ty _) = "&" <> perhaps printLifetime lt <+> printMutability mut <+> printType ty
 printType (BareFn unsafety abi lifetimes decl _) =
   when (notNull lifetimes) ("for" <+> "<" <> printFormalLifetimeList lifetimes <> ">")
     <+> printFnHeaderInfo unsafety NotConst abi InheritedV
     <+> printFnArgsAndRet decl
-printType (Never _) = "!"
-printType (TupTy [elt] _) = "(" <> printType elt <> ",)"
-printType (TupTy elts _) = "(" <> commas elts printType <> ")"
+printType (Never _)          = "!"
+printType (TupTy [elt] _)    = "(" <> printType elt <> ",)"
+printType (TupTy elts _)     = "(" <> commas elts printType <> ")"
 printType (PathTy Nothing path _) = printPath path False
 printType (PathTy (Just qself) path _) = printQPath path qself False
 printType (ObjectSum ty bounds _) = printType ty <+> printBounds "+" bounds
@@ -50,17 +60,15 @@ printType (Infer _) = "_"
 printType (ImplicitSelf _) = "Self"
 printType (MacTy m _) = error "Unimplemented"
 
-
 -- aka print_stmt
 printStmt :: Stmt a -> Doc
-printStmt Local{..} = 
-  printOuterAttributes attrs
-    <+> "let" <+> printPat pat <> (perhaps (\t -> ":" <+> printType t) ty)
-    <+> (perhaps (\e -> "=" <+> printExpr e) init) <> ";"
-printStmt (ItemStmt item _) = printItem item
-printStmt (NoSemi expr _) = printExprOuterAttrStyle expr False <> when (exprRequiresSemiToBeStmt expr) ";"
-printStmt (Semi expr _) = printExprOuterAttrStyle expr False <> ";"
-printStmt (MacStmt m ms attrs _) = error "Unimplemented"
+printStmt (ItemStmt item _)   = printItem item
+printStmt (NoSemi expr _)     = printExprOuterAttrStyle expr False <> when (exprRequiresSemiToBeStmt expr) ";"
+printStmt (Semi expr _)       = printExprOuterAttrStyle expr False <> ";"
+printStmt (MacStmt m ms as _) = error "Unimplemented"
+printStmt Local{..}           = printOuterAttributes attrs
+                                  <+> "let" <+> printPat pat <> perhaps (\t -> ":" <+> printType t) ty
+                                  <+> perhaps (\e -> "=" <+> printExpr e) init <> ";"
 
 
 -- aka parse::classify::expr_requires_semi_to_be_stmt
@@ -101,7 +109,7 @@ printExprOuterAttrStyle expr isInline = printOuterAttributes (expressionAttrs ex
     TupExpr attrs exprs _ -> "(" <> printInnerAttributes attrs <> commas exprs printExpr <> when (length exprs == 1) "," <> ")"
     Binary _ op lhs rhs _ -> checkExprBinNeedsParen lhs op <+> printBinOp op <+> checkExprBinNeedsParen lhs op
     Unary _ op expr _ -> printUnOp op <> printExprMaybeParen expr
-    Lit _ lit _ -> printLiteral lit
+    Lit _ lit _ -> printLit lit
     Cast _ expr ty _ -> case expr of { Cast{} -> printExpr expr; _ -> printExprMaybeParen expr } <+> "as" <+> printType ty
     TypeAscription _ expr ty _ -> printExpr expr <> ":" <+> printType ty
     If _ test blk els _ -> "if" <+> printExpr test <+> printBlock blk <+> printElse els
@@ -289,21 +297,60 @@ opPrecedence GtOp = 7
 printUnOp :: UnOp -> Doc
 printUnOp Deref = "*"
 printUnOp Not = "!"
-printUnOp Neg = "~"
+printUnOp Neg = "~" 
 
 -- aka print_literal
--- TODO this is broken with respect to escaping characters
-printLiteral :: Lit a -> Doc
-printLiteral (Str str _ _ _) = "\"" <> text str <> "\""
-{-printLiteral (Char c _) = "'" <> text [c] <> "'"
-printLiteral (Int i _) = text (show i)
-printLiteral (Float str F32 _) = text str <> "f32"
-printLiteral (Float str F64 _) = text str <> "f64"
-printLiteral (FloatUnsuffixed str _) = text str
-printLiteral (Bool True _) = "true"
-printLiteral (Bool False _) = "false"
-printLiteral (ByteStr w8s _) = error "Unimplemented"
-printLiteral (Byte w8 _) = error "Unimplemented"-}
+printLit :: Lit a -> Doc
+printLit lit = case lit of
+    (Str     str Cooked  s _) -> hcat [ "\"", foldMap escapeChar str, "\"", suffix s ]
+    (Str     str (Raw n) s _) -> hcat [ "r", pad n, "\"", text str, "\"", pad n, suffix s ]
+    (ByteStr str Cooked  s _) -> hcat [ "b\"", foldMap escapeByte (unpack str), "\"", suffix s ]
+    (ByteStr str (Raw n) s _) -> hcat [ "br", pad n, "\"", text (map byte2Char (unpack str)), "\"", pad n, suffix s ]
+    (Char c s _)              -> hcat [ "'",  escapeChar c, "'", suffix s ]
+    (Byte b s _)              -> hcat [ "b'", escapeByte b, "'", suffix s ]
+    (Int i s _)               -> hcat [ integer i, suffix s ]
+    (Float d s _)             -> hcat [ double d,  suffix s ]
+    (Bool True s _)           -> hcat [ "true",  suffix s ]
+    (Bool False s _)          -> hcat [ "false", suffix s ]
+  where
+  pad :: Int -> Doc
+  pad n = text (replicate n '#')
+
+  suffix :: Suffix -> Doc
+  suffix = text . show
+
+-- | Extend a byte into a unicode character
+byte2Char :: Word8 -> Char
+byte2Char = chr . fromIntegral 
+  
+-- | Constrain a unicode character to a byte
+-- This assumes the character is in the right range already
+char2Byte :: Char -> Word8
+char2Byte = fromIntegral . ord
+
+-- | Escape a byte. Based on `std::ascii::escape_default`
+escapeByte :: Word8 -> Doc
+escapeByte w8 = case byte2Char w8 of
+  '\t' -> "\\t" 
+  '\r' -> "\\r"
+  '\n' -> "\\n"
+  '\\' -> "\\\\" 
+  '\'' -> "\\'"
+  '"'  -> "\\\""
+  c | 0x20 <= w8 && w8 <= 0x7e -> char c
+  _ -> "\\x" <> padHex 2 w8
+
+-- | Escape a unicode character. Based on `std::ascii::escape_default`
+escapeChar :: Char -> Doc
+escapeChar c | c <= '\xff'   = escapeByte (char2Byte c)
+             | c <= '\xffff' = "\\u" <> padHex 4 (ord c)
+             | otherwise     = "\\U" <> padHex 8 (ord c)
+ 
+-- | Convert a number to its padded hexadecimal form
+padHex :: Integral a => Int -> a -> Doc
+padHex n 0 = text (replicate n '0')
+padHex n m = let (m',r) = m `divMod` 0x10
+             in padHex (n-1) m' <> char (intToDigit (fromIntegral r))
 
 -- similar to check_expr_bin_needs_paren
 checkExprBinNeedsParen :: Expr a -> BinOp -> Doc
@@ -355,12 +402,12 @@ valueStr _ = Nothing
 -- aka  print_meta_list_item
 printMetaListItem :: NestedMetaItem a -> Doc
 printMetaListItem (MetaItem item _) = printMetaItem item
-printMetaListItem (Literal lit _) = printLiteral lit
+printMetaListItem (Literal lit _) = printLit lit
 
 -- aka  print_meta_item
 printMetaItem :: MetaItem a -> Doc
 printMetaItem (Word name _) = printIdent name
-printMetaItem (NameValue name lit _) = printIdent name <+> "=" <+> printLiteral lit
+printMetaItem (NameValue name lit _) = printIdent name <+> "=" <+> printLit lit
 printMetaItem (List name items _) = printIdent name <> "(" <> commas items printMetaListItem <> ")"
 
 -- | Synthesizes a comment that was not textually present in the original source file.

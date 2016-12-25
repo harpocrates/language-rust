@@ -12,6 +12,7 @@ import Language.Rust.Syntax.Constants
 }
 
 -- <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
+-- <https://github.com/rust-lang/rust/blob/master/src/libsyntax/parse/parser.rs>
 -- References to <https://doc.rust-lang.org/grammar.html>
 -- To see conflicts: stack exec happy -- --info=happyinfo.txt -o /dev/null src/Language/Rust/Parser/Parser2.y
 
@@ -177,6 +178,8 @@ import Language.Rust.Syntax.Constants
 
 -- MUT should be lower precedence than IDENT so that in the pat rule,
 -- "& MUT pat" has higher precedence than "binding_mode ident [@ pat]"
+%left pat
+%left PAT_EXPR
 %left mut ref -- precedence
 
 -- IDENT needs to be lower than '{' so that 'foo {' is shifted when
@@ -536,24 +539,29 @@ meta_item_inner
 --------------
 
 pat :: { Spanned (Pat Span) }
-pat   : '_'                                           { withSpan (WildP <\$ $1) }
-      | '&' pat                                       { withSpan (RefP <\$ $1 <*> $2 <*> pure Immutable) }
-      | '&' mut pat                                   { withSpan (RefP <\$ $1 <* $2 <*> $3 <*> pure Mutable) }
-      | '(' pats_list_context ')'                     { withSpan (TupleP <\$> snd $2 <*> pure (fst $2)) }
-      | '[' pats_list_binding ']'                     { $2 }
-      | lit_expr                                      { withSpan (LitP <\$> $1) }
-      | '-' lit_expr                                  { withSpan (LitP <\$> withSpan (Unary [] Neg <\$> $2)) }
-      | binding_mode ident '@' pat                    { withSpan (IdentP <\$> $1 <*> $2 <*> (Just <\$> $4)) }
-      | binding_mode ident                            { withSpan (IdentP <\$> $1 <*> $2 <*> pure Nothing) }
-      | expr_path                                     { withSpan (PathP Nothing <\$> $1) }
-      | expr_qual_path                                { withSpan (PathP <\$> (Just . fst <\$> $1) <*> (snd <\$> $1)) }
-      | lit_or_path '...' lit_or_path                 { withSpan (RangeP <\$> $1 <*> $3) }
-      | expr_path '{' comma(pat_field) opt(',') '}'   { withSpan (StructP <\$> $1 <*> sequence $3 <*> pure False <* $5) }
-      | expr_path '{' comma(pat_field) ',' '..' '}'   { withSpan (StructP <\$> $1 <*> sequence $3 <*> pure True <* $6) }
-      | expr_path '{' '..' '}'                        { withSpan (StructP <\$> $1 <*> pure [] <*> pure True) }
-      | expr_path '(' pats_list_context ')'           { withSpan (TupleStructP <\$> $1 <*> snd $3 <*> pure (fst $3)) }
+pat   : '_'                                                        { withSpan (WildP <\$ $1) }
+      | '&' mut pat                                                { withSpan (RefP <\$ $1 <* $2 <*> $3 <*> pure Mutable) }
+      | '&' pat                                                    { withSpan (RefP <\$ $1 <*> $2 <*> pure Immutable) }
+      | '(' pats_list_context ')'                                  { withSpan (TupleP <\$> snd $2 <*> pure (fst $2)) }
+      | '[' pats_list_binding ']'                                  { $2 }
+      | lit_expr                                                   { withSpan (LitP <\$> $1) }
+      | '-' lit_expr                                               { withSpan (LitP <\$> withSpan (Unary [] Neg <\$> $2)) }
+      | ident at_pat                                     %prec mut { withSpan (IdentP (ByValue Immutable) <\$> $1 <*> $2) }
+      | binding_mode1 ident at_pat                                 { withSpan (IdentP <\$> $1 <*> $2 <*> $3) }
+      | expr_path                                   %prec PAT_EXPR { withSpan (PathP Nothing <\$> $1) }
+      | expr_qual_path                              %prec PAT_EXPR { withSpan (PathP <\$> (Just . fst <\$> $1) <*> (snd <\$> $1)) }
+      | lit_or_path '...' lit_or_path               %prec PAT_EXPR { withSpan (RangeP <\$> $1 <*> $3) }
+      | expr_path '{' comma(pat_field) opt(',') '}' %prec PAT_EXPR { withSpan (StructP <\$> $1 <*> sequence $3 <*> pure False <* $5) }
+      | expr_path '{' comma(pat_field) ',' '..' '}' %prec PAT_EXPR { withSpan (StructP <\$> $1 <*> sequence $3 <*> pure True <* $6) }
+      | expr_path '{' '..' '}'                      %prec PAT_EXPR { withSpan (StructP <\$> $1 <*> pure [] <*> pure True) }
+      | expr_path '(' pats_list_context ')'         %prec PAT_EXPR { withSpan (TupleStructP <\$> $1 <*> snd $3 <*> pure (fst $3)) }
   --  | expr_path '!' opt(ident) delimited_token_trees     { error "Unimplemented" } {- MacP (Mac a) a -}
+ --     | binding_mode ident '@' pat         %prec mut           { withSpan (IdentP <\$> $1 <*> $2 <*> (Just <\$> $4)) }
+ --     | binding_mode ident                 %prec RANGE           { withSpan (IdentP <\$> $1 <*> $2 <*> pure Nothing) }
       | box pat                                       { withSpan (BoxP <\$ $1 <*> $2) }
+
+at_pat : '@' pat     { Just <\$> $2 }
+       | {- empty -} { pure Nothing }
 
 pats_list_context :: { (Maybe Int, Spanned [Pat Span]) }
 pats_list_context
@@ -561,21 +569,29 @@ pats_list_context
       | comma(pat) opt(',')                                     { (Nothing, sequence $1) }
       | comma(pat) opt(',') '..'                                { (Just (length $1), sequence $1 <* $3) }
       |                     '..' opt(',') comma(pat) opt(',')   { (Just 0, sequence $3 <* $1) }
-      | comma(pat) opt(',') '..' opt(',') comma(pat) opt(',')   { (Just (length $1), (++) <\$> sequence $1 <*> sequence $5) }
+      | comma(pat) ',' '..' opt(',') comma(pat) opt(',')   { (Just (length $1), (++) <\$> sequence $1 <*> sequence $5) }
+      | comma(pat)  '..' opt(',') comma(pat) opt(',')   { (Just (length $1), (++) <\$> sequence $1
+      <*> sequence $4) }
 
 -- TODO: check where trailing commas are allowed, and generally reread this
 pats_list_binding :: { Spanned (Pat Span) }
 pats_list_binding
       :                '..'               { withSpan (SliceP [] (Just (WildP mempty)) [] <\$ $1) }
-      | comma(pat)     '..'               { withSpan (SliceP <\$> sequence (Prelude.init $1) <*> (Just <\$> last $1) <*> pure [] <* $2) }
-      | comma(pat) ',' '..'               { withSpan (SliceP <\$> sequence $1 <*> pure (Just (WildP mempty)) <*> pure [] <* $3) }
-      | comma(pat)     '..'',' comma(pat) { withSpan (SliceP <\$> sequence (Prelude.init $1) <*> (Just <\$> last $1) <*> sequence $4) }
-      | comma(pat) ',' '..'',' comma(pat) { withSpan (SliceP <\$> sequence $1 <*> pure (Just (WildP mempty)) <*> sequence $5) }
+     -- | comma(pat)     '..'               { withSpan (SliceP <\$> sequence (Prelude.init $1) <*> (Just <\$> last $1) <*> pure [] <* $2) }
+     -- | comma(pat) ',' '..'               { withSpan (SliceP <\$> sequence $1 <*> pure (Just (WildP mempty)) <*> pure [] <* $3) }
+     -- | comma(pat)     '..'',' comma(pat) { withSpan (SliceP <\$> sequence (Prelude.init $1) <*> (Just <\$> last $1) <*> sequence $4) }
+     -- | comma(pat) ',' '..'',' comma(pat) { withSpan (SliceP <\$> sequence $1 <*> pure (Just (WildP mempty)) <*> sequence $5) }
       | comma(pat)                        { withSpan (SliceP <\$> sequence $1 <*> pure Nothing <*> pure []) }
       | {- empty -}                       { pure (SliceP [] Nothing [] mempty) }
 
 pats_or :: { Spanned [Pat Span] }
 pats_or : sep_by1(pat,'|')                                               { sequence $1 }
+
+binding_mode1 :: { Spanned BindingMode }
+binding_mode1
+      : ref mut               { ByRef Mutable <\$ $1 <* $2 }
+      | ref                   { ByRef Immutable <\$ $1 }
+      | mut                   { ByValue Mutable <\$ $1 }
 
 binding_mode :: { Spanned BindingMode }
 binding_mode
@@ -595,7 +611,7 @@ pat_field :: { Spanned (FieldPat Span) }
 pat_field
       :     binding_mode ident     { withSpan (FieldPat <\$> $2 <*> withSpan (IdentP <\$> $1 <*> $2 <*> pure Nothing) <*> pure True) }
       | box binding_mode ident     { withSpan (FieldPat <\$> $3 <*> withSpan (BoxP <\$> withSpan (IdentP <\$> $2 <*> $3 <*> pure  Nothing) <* $1) <*> pure True) }
-      | binding_mode ident ':' pat   { withSpan (FieldPat <\$> $2 <*> withSpan (IdentP <\$> $1 <*> $2 <*> (Just <\$> $4)) <*> pure True) }
+      | binding_mode ident ':' pat   { withSpan (FieldPat <\$> $2 <*> withSpan (IdentP <\$> $1 <*> $2 <*> (Just <\$> $4)) <*> pure False) }
 
 
 -----------
@@ -795,11 +811,22 @@ exprs :: { Spanned [Expr Span] }
 exprs : comma(expr)       { sequence $1 }
 -}
 
+-- parse_initializer
+initializer :: { Spanned (Maybe (Expr Span)) }
+initializer : '=' expr     { Just <\$> $2 <* $1 }
+            | {- empty -}  { pure Nothing }
+
 lit_expr :: { Spanned (Expr Span) }
 lit_expr : lit             { withSpan (Lit [] <\$> $1) }
 
 expr :: { Spanned (Expr Span) }
 expr : lit_expr            { $1 }
+
+stmt_without_recovery :: { Spanned (Maybe (Stmt Span)) }
+stmt_without_recovery
+      : outer_attributes let pat ':' ty_sum initializer  { Just <\$> withSpan (Local <\$> $3 <*> (Just <\$> $5) <*> $6 <*> $1) }
+      | outer_attributes let pat            initializer  { Just <\$> withSpan (Local <\$> $3 <*> pure Nothing <*> $4 <*> $1) }
+
 
 --------------
 -- Literals --

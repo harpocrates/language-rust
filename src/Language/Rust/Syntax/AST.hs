@@ -42,7 +42,7 @@ data Arg a
 data Arm a
   = Arm
       { attrs :: [Attribute a]
-      , pats :: [Pat a]
+      , pats :: [Pat a] -- NonEmpty
       , guard :: Maybe (Expr a)
       , body :: Expr a
       , nodeInfo :: a
@@ -250,9 +250,6 @@ data FieldPat a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
--- https://docs.serde.rs/syntex_syntax/ast/enum.FloatTy.html
-data FloatTy = F32 | F64 deriving (Eq, Enum, Bounded, Show)
-
 -- | Header (not the body) of a function declaration.
 -- E.g. `fn foo(bar: baz)`
 -- https://docs.serde.rs/syntex_syntax/ast/struct.FnDecl.html
@@ -434,8 +431,13 @@ data LifetimeDef a
 -- Merged [LitIntType](https://docs.serde.rs/syntex_syntax/ast/enum.LitIntType.html)
 -- Merged [IntTy](https://docs.serde.rs/syntex_syntax/ast/enum.IntTy.html)
 -- Merged [UintTy](https://docs.serde.rs/syntex_syntax/ast/enum.UintTy.html)
-data Suffix = Unsuffixed | Is | I8 | I16 | I32 | I64 | Us | U8 | U16 |  U32 | U64
-            deriving (Eq, Enum, Bounded)
+-- Merged [FloatTy](https://docs.serde.rs/syntex_syntax/ast/enum.FloatTy.html)
+data Suffix
+  = Unsuffixed
+  | Is | I8 | I16 | I32 | I64 
+  | Us | U8 | U16 | U32 | U64 
+  |                 F32 | F64
+   deriving (Eq, Enum, Bounded)
 
 instance Show Suffix where
   show Unsuffixed = ""
@@ -449,6 +451,8 @@ instance Show Suffix where
   show U16 = "u16"
   show U32 = "u32"
   show U64 = "u64"
+  show F32 = "f32"
+  show F64 = "f64"
 
 -- | Literal kind.
 -- E.g. "foo", 42, 12.34 or bool
@@ -456,8 +460,8 @@ instance Show Suffix where
 data Lit a
   = Str String StrStyle Suffix a            -- ^ A string ("foo")
   | ByteStr ByteString StrStyle Suffix a    -- ^ A byte string (b"foo")
-  | Byte Word8 Suffix a                     -- ^ A byte (b'f')
   | Char Char Suffix a                      -- ^ A character ('a')
+  | Byte Word8 Suffix a                     -- ^ A byte (b'f')
   | Int Integer Suffix a                    -- ^ An integer (1)
   | Float Double Suffix a                   -- ^ A float literal (1.12e4)
   | Bool Bool Suffix a                      -- ^ A boolean literal
@@ -806,9 +810,9 @@ data Ty a
   -- | Something like A+B. Note that B must always be a path.
   | ObjectSum (Ty a) [TyParamBound a] a
   -- | A type like for<'a> Foo<&'a Bar>
-  | PolyTraitRefTy [TyParamBound a] a
+  | PolyTraitRefTy [TyParamBound a] a -- NonEmpty
   -- | An impl TraitA+TraitB type.
-  | ImplTrait [TyParamBound a] a
+  | ImplTrait [TyParamBound a] a -- NonEmpty
   -- | No-op; kept solely so that we can pretty-print faithfully
   | ParenTy (Ty a) a
   -- | Unused for now
@@ -897,7 +901,7 @@ data Visibility a
 -- https://docs.serde.rs/syntex_syntax/ast/struct.WhereClause.html
 data WhereClause a
   = WhereClause
-      { predicates :: [WherePredicate a]
+      { predicates :: [WherePredicate a] -- NonEmpty?
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
