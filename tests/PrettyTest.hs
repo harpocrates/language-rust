@@ -11,7 +11,7 @@ import Language.Rust.Pretty
 
 import Control.Monad
 import Control.Monad.Trans.Except
-import Text.PrettyPrint (render, Doc)
+import Text.PrettyPrint.Annotated.WL (Doc)
 
 prettySuite :: Test
 prettySuite = testGroup "pretty suite" [ commonCode, literals ]
@@ -31,8 +31,8 @@ literals = testGroup "printing literals"
   , testRender "false" (printLit (Bool False Unsuffixed ()))
   ]
 
-testRender :: String -> Doc -> Test
-testRender str doc = testCase str $ str @=? render doc
+testRender :: String -> Doc a -> Test
+testRender str doc = testCase str $ str @=? show doc
 {-
 data Suffix = Unsuffixed | Is | I8 | I16 | I32 | I64 | Us | U8 | U16 |  U32 | U64
 

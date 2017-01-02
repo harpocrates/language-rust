@@ -39,7 +39,7 @@ data TokenSpace s = TokenSpace (s Token) [s Token]
 -- Inlined https://docs.serde.rs/syntex_syntax/parse/token/enum.BinOpToken.html
 data Token
   -- Single character expression-operator symbols.
-  = Equal | Less | Not | Greater | Ampersand | Pipe | Exclamation | Tilde
+  = Equal | Less | Greater | Ampersand | Pipe | Exclamation | Tilde
   | Plus | Minus | Star | Slash | Percent | Caret 
   -- Structural symbols
   | At | Dot | DotDot | DotDotDot | Comma | Semicolon | Colon | ModSep | RArrow

@@ -799,7 +799,7 @@ data Ty a
   | Rptr (Maybe (Lifetime a)) Mutability (Ty a) a
   -- | A bare function (e.g. fn(usize) -> bool)
   -- Inlined [BareFnTy](-- https://docs.serde.rs/syntex_syntax/ast/struct.BareFnTy.html)
-  | BareFn Unsafety Abi [LifetimeDef a] (FnDecl a) a
+  | BareFn { unsafety :: Unsafety, abi :: Abi, lifetimes :: [LifetimeDef a], decl :: FnDecl a, nodeInfo :: a }
   -- | The never type (!)
   | Never a
   -- | A tuple ((A, B, C, D,...))
