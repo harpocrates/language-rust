@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLists #-}
 module PrettyTest (prettySuite) where
 
 import Test.Framework (testGroup, Test)
@@ -15,7 +15,51 @@ import Control.Monad.Trans.Except
 import Text.PrettyPrint.Annotated.WL (Doc, flatten, renderPretty, renderPrettyDefault, display, renderCompact)
 
 prettySuite :: Test
-prettySuite = testGroup "pretty suite" [ commonCode, prettyLiterals, prettyTypes, prettyAttributes, prettyExpressions ]
+prettySuite = testGroup "pretty suite"
+  [ commonCode
+  , prettyLiterals
+  , prettyTypes
+  , prettyAttributes
+  , prettyExpressions
+  , prettyItems
+  , prettyStatements
+  ]
+
+
+-- | Common type to make tests more straightforward
+i32, f64, usize :: Ty ()
+i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
+f64 = PathTy Nothing (Path False [("f64", AngleBracketed [] [] [] ())] ()) ()
+usize = PathTy Nothing (Path False [("usize", AngleBracketed [] [] [] ())] ()) ()
+
+-- | Common path segments to make tests more straightforward
+std = ("std", AngleBracketed [] [] [] ())
+vec = ("vec", AngleBracketed [] [] [] ())
+veci32 = ("Vec", AngleBracketed [] [i32] [] ())
+debug = ("Debug", AngleBracketed [] [] [] ())
+println = ("println", AngleBracketed [] [] [] ())
+
+-- | Type parameter bounds to make tests more straightforward
+debug' = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [debug] ()) ()) ()) None
+lt = RegionTyParamBound (Lifetime (Name "lt") ())
+iterator = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Iterator", AngleBracketed [] [] [(mkIdent "Item",i32)] ())] ()) ()) ()) None
+
+-- | Short expressions to make tests more straightforward
+_1, _2, foo, bar :: Expr ()
+_1 = Lit [] (Int 1 Unsuffixed ()) ()
+_2 = Lit [cfgO] (Int 2 Unsuffixed ()) ()
+foo = PathExpr [] Nothing (Path False [("foo", AngleBracketed [] [] [] ())] ()) ()
+bar = PathExpr [] Nothing (Path False [("bar", AngleBracketed [] [] [] ())] ()) ()
+
+-- | Attributes to make tests more straightforward
+cfgI, cfgO :: Attribute ()
+cfgI = Attribute Inner (Word (mkIdent "cfgi") ()) False ()
+cfgO = Attribute Outer (Word (mkIdent "cfgo") ()) False ()
+
+-- | Blocks to make tests more straightforward
+assBlk = Block [ NoSemi (Assign [] foo _1 ()) () ] DefaultBlock ()
+retBlk = Block [ Semi (Ret [] (Just _1) ()) () ] DefaultBlock ()
+
 
 -- | This contains some random real-life code fragments. The purpose here is 
 -- primarily black-box testing.
@@ -94,24 +138,7 @@ prettyTypes = testGroup "printing types"
   , testFlatten "unsafe extern \"C\" fn(i32) -> i32"
                 (printType (BareFn Unsafe C [] (FnDecl [Arg i32 (IdentP (ByValue Immutable) (mkIdent "") Nothing ()) ()] (Just i32) False ()) ()))
   ]
-  where
-    -- Just a common type to make the tests above more straightforward
-    i32, f64, usize :: Ty ()
-    i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
-    f64 = PathTy Nothing (Path False [("f64", AngleBracketed [] [] [] ())] ()) ()
-    usize = PathTy Nothing (Path False [("usize", AngleBracketed [] [] [] ())] ()) ()
-
-    -- Couple path segments
-    std = ("std", AngleBracketed [] [] [] ())
-    vec = ("vec", AngleBracketed [] [] [] ())
-    veci32 = ("Vec", AngleBracketed [] [i32] [] ())
-    debug = ("Debug", AngleBracketed [] [] [] ())
-
-    -- ty paramater bounds
-    debug' = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [debug] ()) ()) ()) None
-    lt = RegionTyParamBound (Lifetime (Name "lt") ())
-    iterator = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Iterator", AngleBracketed [] [] [(mkIdent "Item",i32)] ())] ()) ()) ()) None
-
+    
 -- | Test pretty-printing of attributes (flattened).
 prettyAttributes :: Test
 prettyAttributes = testGroup "printing attributes"
@@ -228,34 +255,69 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "(foo?)" (printExpr (ParenExpr [] (Try [] foo ()) ()))
   , testFlatten "foo?" (printExpr (Try [] foo ()))
   ]
-  where
-    -- Literal expressionsi
-    _1, _2, foo, bar :: Expr ()
-    _1 = Lit [] (Int 1 Unsuffixed ()) ()
-    _2 = Lit [cfgO] (Int 2 Unsuffixed ()) ()
-    foo = PathExpr [] Nothing (Path False [("foo", AngleBracketed [] [] [] ())] ()) ()
-    bar = PathExpr [] Nothing (Path False [("bar", AngleBracketed [] [] [] ())] ()) ()
 
-    -- Attributes
-    cfgI, cfgO :: Attribute ()
-    cfgI = Attribute Inner (Word (mkIdent "cfgi") ()) False ()
-    cfgO = Attribute Outer (Word (mkIdent "cfgo") ()) False ()
+-- | Test pretty-printing of items (flattened)
+prettyItems :: Test
+prettyItems = testGroup "printing items"
+  [ testFlatten "extern crate \"rustc-serialize\" as rustc_serialize;" (printItem (Item (mkIdent "rustc_serialize") [] (ExternCrate (Just (mkIdent "rustc-serialize"))) InheritedV ()))
+  , testFlatten "pub extern crate rustc_serialize;" (printItem (Item (mkIdent "rustc_serialize") [] (ExternCrate Nothing) PublicV ()))
+  , testFlatten "#[cfgo]\npub extern crate rustc_serialize;" (printItem (Item (mkIdent "rustc_serialize") [cfgO] (ExternCrate Nothing) PublicV ()))
+  , testFlatten "use std::vec as baz;" (printItem (Item (mkIdent "") [] (Use (ViewPathSimple (mkIdent "baz") (Path False [std,vec] ()) ())) InheritedV ()))
+  , testFlatten "use std::vec::*;" (printItem (Item (mkIdent "") [] (Use (ViewPathGlob (Path False [std,vec] ()) ())) InheritedV ()))
+  , testFlatten "use std::vec::{a as b, c};" (printItem (Item (mkIdent "") [] (Use (ViewPathList (Path False [std,vec] ()) [PathListItem (mkIdent "a") (Just (mkIdent "b")) (), PathListItem (mkIdent "c") Nothing ()] ())) InheritedV ()))
+  , testFlatten "static mut foo: i32 = 1;" (printItem (Item (mkIdent "foo") [] (Static i32 Mutable _1) InheritedV ()))
+  , testFlatten "static foo: i32 = 1;" (printItem (Item (mkIdent "foo") [] (Static i32 Immutable _1) InheritedV ()))
+  , testFlatten "const foo: i32 = 1;" (printItem (Item (mkIdent "foo") [] (ConstItem i32 _1) InheritedV ()))
+  , testFlatten "fn foo(x: i32) -> i32 { return 1; }" (printItem (Item (mkIdent "foo") [] (Fn (FnDecl [Arg i32 (IdentP (ByValue Immutable) (mkIdent "x") Nothing ()) ()] (Just i32) False ()) Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) retBlk) InheritedV ()))
+  , testFlatten "unsafe fn foo(x: i32, ...) { return 1; }" (printItem (Item (mkIdent "foo") [] (Fn (FnDecl [Arg i32 (IdentP (ByValue Immutable) (mkIdent "x") Nothing ()) ()] Nothing True ()) Unsafe NotConst Rust (Generics [] [] (WhereClause [] ()) ()) retBlk) InheritedV ()))
+  , testFlatten "const unsafe extern \"C\" fn foo(x: i32) { return 1; }" (printItem (Item (mkIdent "foo") [] (Fn (FnDecl [Arg i32 (IdentP (ByValue Immutable) (mkIdent "x") Nothing ()) ()] Nothing False ()) Unsafe Const C (Generics [] [] (WhereClause [] ()) ()) retBlk) InheritedV ()))
+  , testFlatten "fn foo<'lt: 'foo + 'bar, T, U: Debug + 'lt = i32>(x: i32) { return 1; }" (printItem (Item (mkIdent "foo") [] (Fn (FnDecl [Arg i32 (IdentP (ByValue Immutable) (mkIdent "x") Nothing ()) ()] Nothing False ()) Normal NotConst Rust (Generics [LifetimeDef [] (Lifetime (Name "lt") ()) [Lifetime (Name "foo") (), Lifetime (Name "bar") ()] ()] [TyParam [] (mkIdent "T") [] Nothing (), TyParam [] (mkIdent "U") [debug', lt] (Just i32) ()] (WhereClause [] ()) ()) retBlk) InheritedV ()))
+  , testFlatten "fn foo<T, U: Debug + 'lt = i32>(x: i32) where for<'lt> i32: Debug, 'foo: 'bar, vec::std = i32 { return 1; }" (printItem (Item (mkIdent "foo") [] (Fn (FnDecl [Arg i32 (IdentP (ByValue Immutable) (mkIdent "x") Nothing ()) ()] Nothing False ()) Normal NotConst Rust (Generics [] [TyParam [] (mkIdent "T") [] Nothing (), TyParam [] (mkIdent "U") [debug', lt] (Just i32) ()] (WhereClause [BoundPredicate [LifetimeDef [] (Lifetime (Name "lt") ()) [] ()] i32 [debug'] (), RegionPredicate (Lifetime (Name "foo") ()) [Lifetime (Name "bar") ()] (), EqPredicate (Path False [vec,std] ()) i32 ()] ()) ()) retBlk) InheritedV ()))
+  , testFlatten "mod serialize { }" (printItem (Item (mkIdent "serialize") [] (Mod []) InheritedV ()))
+  , testFlatten "mod serialize { const foo: i32 = 1; }" (printItem (Item (mkIdent "serialize") [] (Mod [Item (mkIdent "foo") [] (ConstItem i32 _1) InheritedV ()]) InheritedV ()))
+  , testFlatten "#[cfgo]\nmod serialize {\n  #![cfgi]\n  const foo: i32 = 1;\n}" (printItem (Item (mkIdent "serialize") [cfgO,cfgI] (Mod [Item (mkIdent "foo") [] (ConstItem i32 _1) InheritedV ()]) InheritedV ()))
+  , testFlatten "extern \"C\" { }" (printItem (Item (mkIdent "") [] (ForeignMod C []) InheritedV ()))
+  , testFlatten "extern \"C\" { static mut foo: i32; }" (printItem (Item (mkIdent "") [] (ForeignMod C [ForeignItem (mkIdent "foo") [] (ForeignStatic i32 True) InheritedV ()]) InheritedV ()))
+  , testFlatten "#[cfgo]\nextern \"C\" {\n  #![cfgi]\n  fn foo(x: i32) -> i32;\n}" (printItem (Item (mkIdent "") [cfgO,cfgI] (ForeignMod C [ForeignItem (mkIdent "foo") [] (ForeignFn (FnDecl [Arg i32 (IdentP (ByValue Immutable) (mkIdent "x") Nothing ()) ()] (Just i32) False ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ()]) InheritedV ()))
+  , testFlatten "#[cfgo]\nextern \"C\" {\n  #![cfgi]\n  static foo: i32;\n}" (printItem (Item (mkIdent "") [cfgO,cfgI] (ForeignMod C [ForeignItem (mkIdent "foo") [] (ForeignStatic i32 False) InheritedV ()]) InheritedV ()))
+  , testFlatten "type Vec<T> = i32;" (printItem (Item (mkIdent "Vec") [] (TyAlias i32 (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())) InheritedV ()))
+  , testFlatten "enum foo<T> { }" (printItem (Item (mkIdent "foo") [] (Enum [] (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())) InheritedV ()))
+  , testFlatten "enum color { #[cfgo] red { i32 } = 1, blue(i32), green }" (printItem (Item (mkIdent "color") [] (Enum
+       [ Variant (mkIdent "red") [cfgO] (StructD [StructField Nothing InheritedV i32 [] ()] ()) (Just _1) ()
+       , Variant (mkIdent "blue") [] (TupleD [StructField Nothing InheritedV i32 [] ()] ()) Nothing ()
+       , Variant (mkIdent "green") [] (UnitD ()) Nothing ()]
+       (Generics [] [] (WhereClause [] ()) ())) InheritedV ()))
+  , testFlatten "struct red { x: i32 }" (printItem (Item (mkIdent "red") [] (StructItem (StructD [StructField (Just (mkIdent "x")) InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ()))
+  , testFlatten "union red { x: i32 }" (printItem (Item (mkIdent "red") [] (Union (StructD [StructField (Just (mkIdent "x")) InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ()))
+  , testFlatten "union red { x: i32 }" (printItem (Item (mkIdent "red") [] (Union (StructD [StructField (Just (mkIdent "x")) InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ()))
+  , testFlatten "impl std::Debug for .. { }" (printItem (Item (mkIdent "") [] (DefaultImpl Normal (TraitRef (Path False [std,debug] ()) ())) InheritedV ()))
+  , testFlatten "unsafe impl Debug for .. { }" (printItem (Item (mkIdent "") [] (DefaultImpl Unsafe (TraitRef (Path False [debug] ()) ())) InheritedV ()))
+  , testFlatten "impl Debug for i32 { }" (printItem (Item (mkIdent "") [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [debug] ()) ())) i32 []) InheritedV ()))
+  ]
 
-    -- Types
-    i32, f64 :: Ty ()
-    i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
-    f64 = PathTy Nothing (Path False [("f64", AngleBracketed [] [] [] ())] ()) ()
-    
-    -- Path segments
-    std = ("std", AngleBracketed [] [] [] ())
-    vec = ("vec", AngleBracketed [] [] [] ())
-    veci32 = ("Vec", AngleBracketed [] [i32] [] ())
-    debug = ("Debug", AngleBracketed [] [] [] ())
+-- Impl Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a]
 
-    -- Blocks
-    assBlk = Block [ NoSemi (Assign [] foo _1 ()) () ] DefaultBlock ()
-    retBlk = Block [ Semi (Ret [] (Just _1) ()) () ] DefaultBlock ()
-
+-- | Test pretty-printing of statements (flattened). 
+prettyStatements :: Test
+prettyStatements = testGroup "printing statements"
+  [ testFlatten "#[cfgo] let _;" (printStmt (Local (WildP ()) Nothing Nothing [cfgO] ()))
+  , testFlatten "let _: i32;" (printStmt (Local (WildP ()) (Just i32) Nothing [] ()))
+  , testFlatten "let _: i32 = 1;" (printStmt (Local (WildP ()) (Just i32) (Just _1) [] ()))
+  , testFlatten "extern crate rustc_serialize;" (printStmt (ItemStmt (Item (mkIdent "rustc_serialize") [] (ExternCrate Nothing) InheritedV ()) ())) 
+  , testFlatten "if foo { foo = 1 }" (printStmt (NoSemi (If [] foo assBlk Nothing ()) ()))
+  , testFlatten "{ return 1; }" (printStmt (NoSemi (BlockExpr [] retBlk ()) ()))
+  , testFlatten "foo;" (printStmt (NoSemi foo ()))
+  , testFlatten "1;" (printStmt (NoSemi _1 ()))
+  , testFlatten "if foo { foo = 1 };" (printStmt (Semi (If [] foo assBlk Nothing ()) ()))
+  , testFlatten "{ return 1; };" (printStmt (Semi (BlockExpr [] retBlk ()) ()))
+  , testFlatten "foo;" (printStmt (Semi foo ()))
+  , testFlatten "1;" (printStmt (Semi _1 ()))
+  , testFlatten "#[cfgo] println!(foo);" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) SemicolonMac [cfgO] ()))
+  , testFlatten "println!(foo);" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) SemicolonMac [] ()))
+  , testFlatten "println!{ foo }" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) BracesMac [] ()))
+  , testFlatten "println!(foo)" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) NoBracesMac [] ()))
+  ]
+  
 
 testRender :: String -> Doc a -> Test
 testRender str doc = testCase str $ str @=? display (renderPrettyDefault doc)

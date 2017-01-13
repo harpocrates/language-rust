@@ -8,6 +8,7 @@ import Language.Rust.Data.Position
 
 import Data.ByteString (ByteString)
 import Data.Word (Word8)
+import Data.List.NonEmpty (NonEmpty(..))
 
 -- https://docs.serde.rs/syntex_syntax/abi/enum.Abi.html
 data Abi
@@ -42,7 +43,7 @@ data Arg a
 data Arm a
   = Arm
       { attrs :: [Attribute a]
-      , pats :: [Pat a] -- NonEmpty
+      , pats :: NonEmpty (Pat a)
       , guard :: Maybe (Expr a)
       , body :: Expr a
       , nodeInfo :: a
@@ -154,7 +155,7 @@ data Expr a
 
   -- Thus, `x.foo::<Bar, Baz>(a, b, c, d)` is represented as
   -- `ExprKind::MethodCall(foo, [Bar, Baz], [x, a, b, c, d])`. -}
-  | MethodCall [Attribute a] Ident [Ty a] [Expr a] a
+  | MethodCall [Attribute a] Ident [Ty a] (NonEmpty (Expr a)) a
   -- |  A tuple (`(a, b, c ,d)`)
   | TupExpr [Attribute a] [Expr a] a
   -- | A binary operation (For example: `a + b`, `a * b`)
@@ -357,7 +358,7 @@ data Item a
 data ItemKind a
   -- | An extern crate item, with optional original crate name.
   -- E.g. extern crate foo or extern crate foo_bar as foo
-  = ExternCrate (Maybe Name)
+  = ExternCrate (Maybe Ident)
   -- | A use declaration (use or pub use) item.
   -- E.g. use foo;, use foo::bar; or use foo::bar as FooBar;
   | Use (ViewPath a)
@@ -810,9 +811,9 @@ data Ty a
   -- | Something like A+B. Note that B must always be a path.
   | ObjectSum (Ty a) [TyParamBound a] a
   -- | A type like for<'a> Foo<&'a Bar>
-  | PolyTraitRefTy [TyParamBound a] a -- NonEmpty
+  | PolyTraitRefTy (NonEmpty (TyParamBound a)) a
   -- | An impl TraitA+TraitB type.
-  | ImplTrait [TyParamBound a] a -- NonEmpty
+  | ImplTrait (NonEmpty (TyParamBound a)) a
   -- | No-op; kept solely so that we can pretty-print faithfully
   | ParenTy (Ty a) a
   -- | Unused for now

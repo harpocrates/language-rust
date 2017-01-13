@@ -1,25 +1,31 @@
-{-# LANGUAGE RecordWildCards, OverloadedStrings, DuplicateRecordFields, DefaultSignatures #-}
+{-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
+{-# LANGUAGE OverloadedStrings, DuplicateRecordFields, DefaultSignatures #-}
 
 module Language.Rust.Pretty
   ( printType
   , printExpr
+  , printStmt
   , printItem
   , printLit
   , printAttr
+  , Pretty(..)
+  , PrettyAnnotated(..)
   ) where
 
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
-import Text.PrettyPrint.Annotated.WL (Pretty(..), hcat, cat, indent, group, angles, space, line, flatten, align, fillSep, fillCat, punctuate, text, vcat, char, annotate, noAnnotate, parens, brackets, (<>), (<//>), Doc)
+import Text.PrettyPrint.Annotated.WL (Pretty(..), hcat, cat, indent, group, angles, space, line, flatten, align, fillSep, punctuate, text, vcat, char, annotate, noAnnotate, parens, brackets, (<>), (<//>), Doc)
 import qualified Text.PrettyPrint.Annotated.WL as WL
 
 import Data.ByteString (unpack)
 import Data.Word (Word8)
 import Data.Maybe (listToMaybe)
-import Data.List (intersperse)
+import Data.Either (lefts, rights)
 import Data.Char (intToDigit, ord, chr)
+import Data.List.NonEmpty (NonEmpty(..))
+import Data.Foldable (toList)
 
 -- | comma delimited
 commas :: [a] -> (a -> Doc b) -> Doc b
@@ -34,9 +40,9 @@ fold f xs | null xs = mempty
           | otherwise = foldr1 f xs
 
 liftOp :: (Doc a -> Doc a -> Doc a) -> Doc a -> Doc a -> Doc a
-liftOp (*) WL.Empty d = d
-liftOp (*) d WL.Empty = d
-liftOp (*) d d' = d * d'
+liftOp _ WL.Empty d = d
+liftOp _ d WL.Empty = d
+liftOp (#) d d' = d # d'
 
 (<+>) :: Doc a -> Doc a -> Doc a
 (<+>) = liftOp (WL.<+>)
@@ -61,10 +67,6 @@ unless b = when (not b)
 
 perhaps :: (a -> Doc b) -> Maybe a -> Doc b
 perhaps = maybe mempty
-
-isEmpty :: Doc a -> Bool
-isEmpty WL.Empty = True
-isEmpty _ = False
 
 -- | Asserts a 'Doc a' cannot render on multiple lines. 
 oneLine :: Doc a -> Bool
@@ -91,7 +93,7 @@ block' b | oneLine b = b
 -- Comma-delimited and brace-enclosed (as per "a trailing comma should be included whenever the
 -- closing delimiter appears on a separate line")
 braceComma :: [Doc a] -> Doc a
-braceComma [] = "{}"
+braceComma [] = "{ }"
 braceComma ds = let ds' = Prelude.init ds
                     d' = Prelude.last ds
                 in ("{" <+> hsep [ d <> "," | d <- ds' ] <+> d' <+> "}")
@@ -99,6 +101,7 @@ braceComma ds = let ds' = Prelude.init ds
                    ("{" <#> indent 2 (vsep [ d <> "," | d <- ds ]) <#> "}")
 
 braceCommaAttrs :: Doc a -> [Doc a] -> Doc a
+braceCommaAttrs WL.Empty [] = "{ }"
 braceCommaAttrs as [] = "{" <+> as <+> "}"
 braceCommaAttrs as ds = let ds' = Prelude.init ds
                             d' = Prelude.last ds
@@ -138,7 +141,7 @@ instance PrettyAnnotated NestedMetaItem where prettyAnn = printMetaListItem
 
 -- | Pretty print an identifier
 printIdent :: Ident -> Doc a
-printIdent Ident{..} = let Name s = name in text s
+printIdent (Ident (Name s) _) = text s
 
 -- | Pretty print a type
 -- aka 'print_type' (with 'print_ty_fn' inlined)
@@ -153,8 +156,8 @@ printType (TupTy elts x)        = annotate x ("(" <> align (fillSep (punctuate "
 printType (PathTy Nothing p x)  = annotate x (printPath p False)
 printType (PathTy (Just q) p x) = annotate x (printQPath p q False)
 printType (ObjectSum ty bs x)   = annotate x (printType ty <+> printBounds "+" bs)
-printType (PolyTraitRefTy bs x) = annotate x (printBounds mempty bs)
-printType (ImplTrait bs x)      = annotate x (printBounds "impl" bs)
+printType (PolyTraitRefTy bs x) = annotate x (printBounds mempty (toList bs))
+printType (ImplTrait bs x)      = annotate x (printBounds "impl" (toList bs))
 printType (ParenTy ty x)        = annotate x ("(" <> printType ty <> ")")
 printType (Typeof e x)          = annotate x ("typeof(" <> printExpr e <> ")")
 printType (Infer x)             = annotate x "_"
@@ -267,24 +270,24 @@ printNonterminal (NtArg arg) = printArg arg True -- todo double check True
 -- aka print_stmt
 printStmt :: Stmt a -> Doc a
 printStmt (ItemStmt item x)   = annotate x (printItem item)
-printStmt (NoSemi expr x)     = annotate x (printExprOuterAttrStyle expr False <> when (exprRequiresSemiToBeStmt expr) ";")
+printStmt (NoSemi expr x)     = annotate x (printExprOuterAttrStyle expr False <> when (requiresSemi expr) ";")
   where
   -- aka parse::classify::expr_requires_semi_to_be_stmt
-  exprRequiresSemiToBeStmt :: Expr a -> Bool
-  exprRequiresSemiToBeStmt If{} = False
-  exprRequiresSemiToBeStmt IfLet{} = False
-  exprRequiresSemiToBeStmt While{} = False
-  exprRequiresSemiToBeStmt WhileLet{} = False
-  exprRequiresSemiToBeStmt ForLoop{} = False
-  exprRequiresSemiToBeStmt Loop{} = False
-  exprRequiresSemiToBeStmt Match{} = False
-  exprRequiresSemiToBeStmt BlockExpr{} = False
-  exprRequiresSemiToBeStmt _ = True
+  requiresSemi :: Expr a -> Bool
+  requiresSemi If{} = False
+  requiresSemi IfLet{} = False
+  requiresSemi While{} = False
+  requiresSemi WhileLet{} = False
+  requiresSemi ForLoop{} = False
+  requiresSemi Loop{} = False
+  requiresSemi Match{} = False
+  requiresSemi BlockExpr{} = False
+  requiresSemi _ = True
 printStmt (Semi expr x)       = annotate x (printExprOuterAttrStyle expr False <> ";")
-printStmt (MacStmt m ms as x) = annotate x (printOuterAttrs as <+> printMac m delim <> end)
+printStmt (MacStmt m ms as x) = annotate x (printOuterAttrs as </> printMac m delim <> end)
   where delim = case ms of { BracesMac -> Brace; _ -> Paren }
         end   = case ms of { SemicolonMac -> ";"; _ -> mempty }
-printStmt (Local p ty i as x) = annotate x (printOuterAttrs as <+> "let" <+> binding <+> initializer <> ";")
+printStmt (Local p ty i as x) = annotate x (printOuterAttrs as </> "let" <+> binding <+> initializer <> ";")
   where binding = printPat p <> perhaps (\t -> ":" <+> printType t) ty
         initializer = perhaps (\e -> "=" <+> printExpr e) i
 
@@ -299,21 +302,21 @@ printExpr expr = printExprOuterAttrStyle expr True
 printExprOuterAttrStyle :: Expr a -> Bool -> Doc a
 printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs expr) Outer isInline) $
   case expr of
-    Box _ expr' x               -> annotate x ("box" <+> printExpr expr')
-    InPlace _ place expr x      -> annotate x (hsep [ printExprMaybeParen place, "<-", printExprMaybeParen expr ])
+    Box _ e x                   -> annotate x ("box" <+> printExpr e)
+    InPlace _ place e x         -> annotate x (hsep [ printExprMaybeParen place, "<-", printExprMaybeParen e ])
     Vec attrs exprs x           -> annotate x (brackets (printInnerAttrs attrs <+> commas exprs printExpr))
     Call _ func args x          -> annotate x (printExprMaybeParen func <> "(" <> commas args printExpr <> ")")
-    MethodCall _ i tys (s:as) x -> let tys' = unless (null tys) ("::<" <> commas tys printType <> ">")
+    MethodCall _ i ts (s:|as) x -> let tys' = unless (null ts) ("::<" <> commas ts printType <> ">")
                                    in annotate x (hcat [ printExpr s, ".", printIdent i, tys', "(", commas as printExpr, ")" ])
     TupExpr as es x             -> annotate x ("(" <> printInnerAttrs as <+> commas es printExpr <> when (length es == 1) "," <> ")")
     Binary _ op lhs rhs x       -> annotate x (hsep [ checkExprBinNeedsParen lhs op, printBinOp op, checkExprBinNeedsParen rhs op ])
-    Unary _ op expr x           -> annotate x (printUnOp op <> printExprMaybeParen expr)
+    Unary _ op e x              -> annotate x (printUnOp op <> printExprMaybeParen e)
     Lit _ lit x                 -> annotate x (printLit lit)
-    Cast _ expr ty x            -> let expr' = case expr of { Cast{} -> printExpr expr; _ -> printExprMaybeParen expr }
-                                   in annotate x (hsep [ expr', "as", printType ty ])
-    TypeAscription _ expr ty x  -> annotate x (printExpr expr <> ":" <+> printType ty)
+    Cast _ e ty x               -> let f = case e of { Cast{} -> printExpr; _ -> printExprMaybeParen }
+                                   in annotate x (hsep [ f e, "as", printType ty ])
+    TypeAscription _ e ty x     -> annotate x (printExpr e <> ":" <+> printType ty)
     If _ test blk els x         -> annotate x (hsep [ "if", printExpr test, printBlock blk, printElse els ])
-    IfLet _ pat expr blk els x  -> annotate x (hsep [ "if let", printPat pat, "=", printExpr expr, printBlock blk, printElse els ])
+    IfLet _ pat e blk els x     -> annotate x (hsep [ "if let", printPat pat, "=", printExpr e, printBlock blk, printElse els ])
     While as test blk lbl x     -> annotate x (hsep [ printLbl lbl, "while", printExpr test, printBlockWithAttrs blk as ])
     WhileLet as p e blk lbl x   -> annotate x (hsep [ printLbl lbl, "while let", printPat p, "=", printExpr e, printBlockWithAttrs blk as ])
     ForLoop as pat e blk lbl x  -> annotate x (hsep [ printLbl lbl, "for", printPat pat, "in", printExpr e, printBlockWithAttrs blk as ])
@@ -326,13 +329,13 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs blk attrs)
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
     AssignOp _ op lhs rhs x     -> annotate x (hsep [ printExpr lhs, printBinOp op <> "=", printExpr rhs ])
-    FieldAccess _ expr ident x  -> annotate x (hcat [ printExpr expr, ".", printIdent ident ])
-    TupField _ expr num x       -> annotate x (hcat [ printExpr expr, ".", pretty num ])
-    Index _ expr index x        -> annotate x (hcat [ printExpr expr, "[", printExpr index, "]" ])
+    FieldAccess _ e ident x     -> annotate x (hcat [ printExpr e, ".", printIdent ident ])
+    TupField _ e num x          -> annotate x (hcat [ printExpr e, ".", pretty num ])
+    Index _ e index x           -> annotate x (hcat [ printExpr e, "[", printExpr index, "]" ])
     Range _ start end limits x  -> annotate x (hcat [ perhaps printExpr start, printRangeLimits limits, perhaps printExpr end ])
     PathExpr _ Nothing path x   -> annotate x (printPath path True)
     PathExpr _ (Just qs) path x -> annotate x (printQPath path qs True)
-    AddrOf _ mut expr x         -> annotate x ("&" <> printMutability mut <+> printExprMaybeParen expr)
+    AddrOf _ mut e x            -> annotate x ("&" <> printMutability mut <+> printExprMaybeParen e)
     Break _ brk x               -> annotate x ("break" <+> perhaps printIdent brk)
     Continue _ cont x           -> annotate x ("continue" <+> perhaps printIdent cont)
     Ret _ result x              -> annotate x ("return" <+> perhaps printExpr result)
@@ -342,8 +345,8 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Struct as p fs (Just d) x   -> let body = [ printField f <> "," | f <- fs ] ++ [ ".." <> printExpr d ] 
                                    in annotate x (printPath p True <+> braceAttrs (printInnerAttrs as) body)
     Repeat attrs e cnt x        -> annotate x (brackets (printInnerAttrs attrs <+> printExpr e <> ";" <+> printExpr cnt))
-    ParenExpr attrs expr x      -> annotate x (parens (printInnerAttrs attrs <+> printExpr expr))
-    Try _ expr x                -> annotate x (printExpr expr <> "?")
+    ParenExpr attrs e x         -> annotate x (parens (printInnerAttrs attrs <+> printExpr e))
+    Try _ e x                   -> annotate x (printExpr e <> "?")
   where printLbl = perhaps (\i -> printIdent i <> ":")
         glue = if isInline then (<+>) else (</>)
 
@@ -409,7 +412,7 @@ expressionAttrs (Try as _ _) = as
 
 
 printField :: Field a -> Doc a
-printField Field{..} = annotate nodeInfo (printIdent ident <> ":" <+> printExpr expr)
+printField (Field ident expr x) = annotate x (printIdent ident <> ":" <+> printExpr expr)
 
 printRangeLimits :: RangeLimits -> Doc a
 printRangeLimits HalfOpen = ".."
@@ -424,7 +427,7 @@ printFnBlockArgs (FnDecl args ret _ x) = annotate x ("|" <> args' <> "|" <+> ret
 -- print_arm
 printArm :: Bool -> Arm a -> Doc a
 printArm end (Arm as pats guard body x) = annotate x (printOuterAttrs as
-  <+> foldr1 (\x y -> x <+> "|" <+> y) (printPat <$> pats)
+  <+> foldr1 (\a b -> a <+> "|" <+> b) (printPat <$> pats)
   <+> perhaps (\e -> "if" <+> printExpr e) guard
   <+> "=>"
   <+> case body of 
@@ -607,8 +610,8 @@ printAttr :: Attribute a -> Bool -> Doc a
 printAttr a@(Attribute style value isSugaredDoc x) inline
   | isSugaredDoc && inline = annotate x ("/*!" <+> perhaps text (valueStr a) <+> "*/")
   | isSugaredDoc           = annotate x ("//!" <+> perhaps text (valueStr a) <> line)
-  | style == Inner         = annotate x ("#![" <> printMetaItem value <> "]")
-  | style == Outer         = annotate x ("#[" <> printMetaItem value <> "]")
+  | otherwise              = case style of Inner -> annotate x ("#![" <> printMetaItem value <> "]")
+                                           Outer -> annotate x ("#[" <> printMetaItem value <> "]")
 
 valueStr :: Attribute a -> Maybe String
 valueStr (Attribute _ (NameValue _  (Str s _ _ _) _) _ _) = Just s
@@ -630,84 +633,75 @@ printMetaItem (List name items x) = annotate x (printIdent name <> "(" <> commas
 synthComment :: String -> Doc a
 synthComment com = "/*" <+> text com <+> "*/"
 
--- aka print_item
-printItem :: Item a -> Doc a
-printItem (Item ident attrs node vis x) = annotate x $ case node of
-  ExternCrate p -> printVisibility vis <+> "extern" <+> "crate" <+> perhaps (error "unimplemented") p <+> printIdent ident <> ";"
-  Use vp -> printVisibility vis <+> "use" <+> printViewPath vp <> ";"
-  Static ty m expr -> printVisibility vis <+> "static" <+> when (m == Mutable) "mut" <+> printIdent ident <> ":" <+> printType ty <+> "=" <+> printExpr expr <> ";"
-  ConstItem ty expr -> printVisibility vis <+> "const" <+> printIdent ident <> ":" <+> printType ty <+> "=" <+> printExpr expr <> ";"
-  Fn decl unsafety constness abi tyParams body -> printFn decl unsafety constness abi (Just ident) tyParams vis <+> printBlockWithAttrs body attrs
-  Mod items -> printVisibility vis <+> "mod" <+> printIdent ident <+> block (printMod items attrs)
-  ForeignMod abi foreignItems -> "extern" <+> printAbi abi <+> block (printForeignMod foreignItems attrs)
-  TyAlias ty params -> printVisibility vis <+> "type" <+> printIdent ident <> printGenerics params <> printWhereClause (whereClause params) <+> "=" <+> printType ty <> ";"
-  Enum variants params -> printEnumDef variants params ident vis
-  StructItem structDef generics -> printVisibility vis <+> "struct" <+> printStruct structDef generics ident True
-  Union structDef generics -> printVisibility vis <+> "union" <+> printStruct structDef generics ident True
-  DefaultImpl unsafety traitRef -> printVisibility vis <+> printUnsafety unsafety <+> "impl" <> printTraitRef traitRef <+> "for" <+> ".." <+> "{ }"
-  Impl unsafety polarity generics traitRef_m ty implItems ->
-      printVisibility vis <+> printUnsafety unsafety <+> "impl"
-        <+> (case generics of { Generics [] [] _ _ -> mempty; _ -> printGenerics generics })
-        <+> perhaps (\t -> printTraitRef t <+> "for") traitRef_m
-        <+> printType ty
-        <+> printWhereClause (whereClause generics)
-        <+> block (vsep (printInnerAttrs attrs  : (printImplItem `map` implItems)))
-  Trait unsafety generics typarambounds traitItems ->
-      let seperateBounds :: [TyParamBound a] -> ([Doc a], [TyParamBound a])
-          seperateBounds [] = ([],[])
-          seperateBounds (t:ts) = case t of
-                                    TraitTyParamBound ptr Maybe -> (("for ?" <+> printTraitRef (traitRef ptr)) : ds, tybs)
-                                    _ -> (ds, t:tybs)
-            where ~(ds,tybs) = seperateBounds ts
+-- | Print ident as is, or as cooked string if containing a hyphen
+printCookedIdent :: Ident -> Doc a
+printCookedIdent ident@Ident{ name = Name str }
+  | '-' `elem` str = printStr Cooked str
+  | otherwise = printIdent ident 
 
-          (bounds,realBounds) = seperateBounds typarambounds
-      in printVisibility vis <+> printUnsafety unsafety <+> "trait" <+> printIdent ident
-            <+> printGenerics generics
-            <+> hsep bounds
-            <+> printBounds ":" realBounds
-            <+> printWhereClause (whereClause generics)
-            <+> "{" <+> hsep (printTraitItem <$> traitItems) <+> "}"
-  MacItem m -> error "Unimplemented (pprust.rs line 1333)"
+-- aka print_item
+-- TODO: What does 'ident' do in the 'Use' case?
+printItem :: Item a -> Doc a
+printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs attrs <#> case node of
+  ExternCrate p     -> hsep [ printVis vis, "extern", "crate", perhaps (\p' -> printCookedIdent p' <+> "as") p, printIdent ident <> ";" ]
+  Use vp            -> hsep [ printVis vis, "use", printViewPath vp <> ";" ]
+  Static ty m e     -> hsep [ printVis vis, "static", printMutability m, printIdent ident <> ":", printType ty, "=", printExpr e <> ";" ]
+  ConstItem t e     -> hsep [ printVis vis, "const", printIdent ident <> ":", printType t, "=", printExpr e <> ";" ]
+  Fn d s c a t b    -> printFn d s c a (Just ident) t vis <+> printBlockWithAttrs b attrs
+  Mod items         -> hsep [ printVis vis, "mod", printIdent ident, block (printMod items attrs) ]
+  ForeignMod a i    -> hsep [ printAbi a, block (printForeignMod i attrs) ]
+  TyAlias ty ps     -> hsep [ printVis vis, "type", printIdent ident <> printGenerics ps <> printWhereClause (whereClause ps), "=", printType ty <> ";" ]
+  Enum vars ps      -> printEnumDef vars ps ident vis
+  StructItem s g    -> hsep [ printVis vis, "struct", printStruct s g ident True True ]
+  Union s g         -> hsep [ printVis vis, "union", printStruct s g ident True True ]
+  DefaultImpl u t   -> hsep [ printVis vis, printUnsafety u, "impl", printTraitRef t, "for", "..", "{ }" ]
+  Impl u p g t ty i -> let generics = case g of { Generics [] [] _ _ -> mempty; _ -> printGenerics g }
+                           traitref = perhaps (\t' -> printTraitRef t' <+> "for") t
+                       in hsep [ printVis vis, printUnsafety u, "impl" <> generics, printPolarity p <> traitref, printType ty
+                               , printWhereClause (whereClause g), braceAttrs (printInnerAttrs attrs) (printImplItem `map` i) ]
+  Trait u g tys i   -> let tys' = map (\t -> case t of TraitTyParamBound ptr Maybe -> Left ("for ?" <+> printTraitRef (traitRef ptr))
+                                                       _ -> Right t)
+                                      tys
+                       in hsep [ printVis vis, printUnsafety u, "trait", printIdent ident <> printGenerics g, hsep (lefts tys')
+                               , printBounds ":" (rights tys'), printWhereClause (whereClause g), braceAttrs mempty (printTraitItem `map` i) ]
+  MacItem m         -> printMac m Paren <> ";" 
 
 
 -- aka print_trait_item
 printTraitItem :: TraitItem a -> Doc a
-printTraitItem TraitItem{..} = annotate nodeInfo $ printOuterAttrs attrs <+>
+printTraitItem (TraitItem ident attrs node x) = annotate x $ printOuterAttrs attrs <+>
   case node of
     ConstT ty default_m -> printAssociatedConst ident ty default_m InheritedV
     MethodT sig block_m -> printMethodSig ident sig InheritedV <+> maybe ";" (`printBlockWithAttrs` attrs) block_m
     TypeT bounds default_m -> printAssociatedType ident (Just bounds) default_m
-    MacroT m -> error "Unimplemented (pprust.rs line 1572)"
-
+    MacroT m -> printMac m Paren <> ";"
 
 -- aka print_bounds
 printBounds :: Doc a -> [TyParamBound a] -> Doc a
 printBounds _ [] = mempty
-printBounds prefix (b:bs) = align (fillSep ((prefix <+> printBound b) : [ "+" <+> printBound b | b <- bs ]))
+printBounds prefix (b:bs) = align (fillSep ((prefix <+> printBound b) : [ "+" <+> printBound b' | b' <- bs ]))
   where
   printBound :: TyParamBound a -> Doc a
   printBound (RegionTyParamBound lt) = printLifetime lt
-  printBound (TraitTyParamBound PolyTraitRef{..} modi) =
-    case modi of { Maybe -> "?"; _ -> mempty }
-      <> printFormalLifetimeList boundLifetimes
-      <+> printTraitRef traitRef
+  printBound (TraitTyParamBound tref modi) = when (modi == Maybe) "?" <> printPolyTraitRef tref
 
 -- aka print_formal_lifetime_list
 printFormalLifetimeList :: [LifetimeDef a] -> Doc a
 printFormalLifetimeList [] = mempty
 printFormalLifetimeList defs = "for" <> angles (align (fillSep (punctuate "," (printDef `map` defs))))
-  where printDef LifetimeDef{..} = printOuterAttrs attrs <+> flatten (printLifetimeBounds lifetime bounds)
+  where printDef (LifetimeDef as lt bds x) = annotate x (printOuterAttrs as <+> flatten (printLifetimeBounds lt bds))
 
 -- aka print_impl_item
 printImplItem :: ImplItem a -> Doc a
-printImplItem ImplItem{..} =
-  printOuterAttrs attrs
-    <+> (case defaultness of { Default -> "default" <> space; Final -> mempty })
-    <> (case node of
-            ConstI ty expr -> printAssociatedConst ident ty (Just expr) vis
-            MethodI sig body -> printMethodSig ident sig vis <+> printBlockWithAttrs body attrs
-            TypeI ty -> printAssociatedType ident Nothing (Just ty) 
-            MacroI m -> error "Unimplemented (pprust.rs line 1608")
+printImplItem (ImplItem ident vis defaultness attrs node x) = annotate x $ hsep
+  [ printOuterAttrs attrs
+  , when (defaultness == Default) "default"
+  , case node of
+      ConstI ty expr -> printAssociatedConst ident ty (Just expr) vis
+      MethodI sig body -> printMethodSig ident sig vis <+> printBlockWithAttrs body attrs
+      TypeI ty -> printAssociatedType ident Nothing (Just ty) 
+      MacroI m -> printMac m Paren <> ";" 
+  ]
 
 -- aka printAssociatedType
 printAssociatedType :: Ident ->  Maybe [TyParamBound a] -> Maybe (Ty a) -> Doc a
@@ -718,11 +712,12 @@ printAssociatedType ident bounds_m ty_m = "type" <+> printIdent ident
 
 -- aka print_method_sig
 printMethodSig :: Ident -> MethodSig a -> Visibility a -> Doc a
-printMethodSig ident MethodSig{..} = printFn decl unsafety constness abi (Just ident) generics
+printMethodSig ident (MethodSig unsafety constness abi decl generics)
+  = printFn decl unsafety constness abi (Just ident) generics
 
 -- aka print_associated_const
 printAssociatedConst :: Ident -> Ty a -> Maybe (Expr a) -> Visibility a -> Doc a
-printAssociatedConst ident ty default_m vis = printVisibility vis
+printAssociatedConst ident ty default_m vis = printVis vis
   <+> "const" <+> printIdent ident <> ":" <+> printType ty
   <+> perhaps (\expr -> "=" <+> printExpr expr) default_m
   <> ";"
@@ -733,32 +728,34 @@ printPolarity Negative = "!"
 printPolarity Positive = mempty
 
 -- aka print_visibility
-printVisibility :: Visibility a -> Doc a
-printVisibility PublicV = "pub"
-printVisibility CrateV = "pub(crate)"
-printVisibility (RestrictedV path) = "pub(" <> printPath path False <> ")"
-printVisibility InheritedV = mempty
+printVis :: Visibility a -> Doc a
+printVis PublicV = "pub"
+printVis CrateV = "pub(crate)"
+printVis (RestrictedV path) = "pub(" <> printPath path False <> ")"
+printVis InheritedV = mempty
 
 -- aka print_foreign_item
 printForeignItem :: ForeignItem a -> Doc a
-printForeignItem ForeignItem{..} = printOuterAttrs attrs <+>
+printForeignItem (ForeignItem ident attrs node vis x) = annotate x $ printOuterAttrs attrs <+>
   case node of
     ForeignFn decl generics -> printFn decl Normal NotConst Rust (Just ident) generics vis <> ";"
-    ForeignStatic ty mut -> printVisibility vis <+> "static" <+> when mut "mut" <+> printIdent ident <> ":" <+> printType ty <> ";"
+    ForeignStatic ty mut -> printVis vis <+> "static" <+> when mut "mut" <+> printIdent ident <> ":" <+> printType ty <> ";"
 
 
 -- aka print_struct
-printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Doc a
-printStruct structDef generics@Generics{..} ident printFinalizer =
-  printIdent ident <+> printGenerics generics
-    <+> case structDef of 
-          StructD fields _ -> printWhereClause whereClause <+> braceComma (printStructField `map` fields)
-          TupleD fields _ -> "(" <> commas fields printStructField <> ")" <+> printWhereClause whereClause <+> when printFinalizer ";" 
-          UnitD _ -> "()" <+> printWhereClause whereClause <+> when printFinalizer ";"
+printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a
+printStruct structDef generics ident printFinalizer annotateGenerics =
+  printIdent ident <> gen
+    <> case structDef of 
+          StructD fields _ -> space <> wc <+> braceComma (printStructField `map` fields)
+          TupleD fields _ -> parens (commas fields printStructField) <+> wc <+> when printFinalizer ";" 
+          UnitD _ -> wc <+> when printFinalizer ";"
+  where gen = if annotateGenerics then printGenerics generics else noAnnotate (printGenerics generics)
+        wc = printWhereClause (whereClause generics)
 
 
 printStructField :: StructField a -> Doc a
-printStructField (StructField i v t as x) = annotate x (printOuterAttrs as <+> printVisibility v <+> perhaps (\i -> printIdent i <> ":") i <+> printType t)
+printStructField (StructField i v t as x) = annotate x (hsep [ printOuterAttrs as, printVis v, perhaps (\i' -> printIdent i' <> ":") i, printType t ])
 
 -- aka print_unsafety
 printUnsafety :: Unsafety -> Doc a
@@ -768,28 +765,29 @@ printUnsafety Unsafe = "unsafe"
 -- aka print_enum_def
 printEnumDef :: [Variant a] -> Generics a -> Ident -> Visibility a -> Doc a
 printEnumDef variants generics ident vis =
-  printVisibility vis <+> "enum" <+> printIdent ident <+> printGenerics generics
-    <+> printWhereClause (whereClause generics) <+> "{"
-    <+> sep ((\v@Variant{..} -> printOuterAttrs attrs <+> printVariant v <> ",") <$> variants)
-    <+> "}"
+  printVis vis <+> "enum" <+> (printIdent ident <> printGenerics generics)
+    <+> printWhereClause (whereClause generics)
+    <+> braceComma [ printOuterAttrs as <+> printVariant v  | v@Variant{ attrs = as } <- variants ]
 
 -- print_variant
 printVariant :: Variant a -> Doc a
-printVariant Variant{..} = 
-  perhaps (\e -> "=" <+> printExpr e) disrExpr
+printVariant (Variant i _ _data e x) = annotate x (body <+> disc)
+  where body = printStruct _data (Generics [] [] (WhereClause [] undefined) undefined) i False False
+        disc = perhaps (\e' -> "=" <+> printExpr e') e
 
 -- aka print_where_clause
 printWhereClause :: WhereClause a -> Doc a
-printWhereClause WhereClause{..}
+printWhereClause (WhereClause predicates x)
   | null predicates = mempty
-  | otherwise = "where" <+> commas predicates printWherePredicate
+  | otherwise = annotate x ("where" <+> commas predicates printPredicate)
   where
-  printWherePredicate :: WherePredicate a -> Doc a
-  printWherePredicate BoundPredicate{..} = printFormalLifetimeList boundLifetimes <+> printType boundedTy <> printBounds ":" traitLifetimeBounds 
-  printWherePredicate RegionPredicate{..} = printLifetimeBounds lifetime lifetimeBounds
-  printWherePredicate EqPredicate{..} = printPath path False <+> "=" <+> printType ty
+  printPredicate :: WherePredicate a -> Doc a
+  printPredicate (BoundPredicate blt ty bds y) = annotate y (printFormalLifetimeList blt <+> printType ty <> printBounds ":" bds)
+  printPredicate (RegionPredicate lt bds y) = annotate y (printLifetimeBounds lt bds)
+  printPredicate (EqPredicate path ty y) = annotate y (printPath path False <+> "=" <+> printType ty)
 
 -- aka  print_fn
+-- TODO: think carefully about multiline version of this
 printFn :: FnDecl a -> Unsafety -> Constness -> Abi -> Maybe Ident -> Generics a -> Visibility a -> Doc a
 printFn decl unsafety constness abi name generics vis =
   printFnHeaderInfo unsafety constness abi vis
@@ -807,8 +805,8 @@ printFnArgsAndRet (FnDecl args ret var x) = annotate x ("(" <> align (fillSep ar
 
 -- aka print_arg TODO double check this
 printArg :: Arg a -> Bool -> Doc a
-printArg Arg{..} isClosure = case ty of
-  Infer _ | isClosure -> printPat pat
+printArg (Arg ty pat x) isClosure = annotate x $ case ty of
+  Infer x' | isClosure -> annotate x' (printPat pat)
   _ -> let (IdentP _ ident _ _) = pat
            invalid = ident == mkIdent ""
        in unless invalid (printPat pat <> ":") <+> printType ty
@@ -835,13 +833,13 @@ printFullMutability Immutable = "const"
 -- print_pat
 printPat :: Pat a -> Doc a
 printPat (WildP x)                      = annotate x "_"
-printPat (IdentP bm p s x)              = annotate x (printBindingMode bm <+> printIdent p <+> perhaps (\p -> "@" <> printPat p) s)
+printPat (IdentP bm p s x)              = annotate x (printBindingMode bm <+> printIdent p <+> perhaps (\p' -> "@" <> printPat p') s)
 printPat (StructP p fs b x)             = annotate x (printPath p True <+> braceComma body)
   where body = (printFieldPat `map` fs) ++ (if b then [] else [ ".." ])
 printPat (TupleStructP p es Nothing x)  = annotate x (printPath p True <> "(" <> commas es printPat <> ")")
 printPat (TupleStructP p es (Just d) x) = let (before,after) = splitAt d es
-  in printPath p True <> "(" <> commas before printPat <> unless (null es) ","
-      <+> ".." <> when (d /= length es) ("," <+> commas after printPat) <> ")"
+  in annotate x (printPath p True <> "(" <> commas before printPat <> unless (null es) ","
+                    <+> ".." <> when (d /= length es) ("," <+> commas after printPat) <> ")")
 printPat (PathP Nothing path x)         = annotate x (printPath path True)
 printPat (PathP (Just qself) path x)    = annotate x (printQPath path qself False)
 printPat (TupleP elts Nothing x)        = annotate x ("(" <> commas elts printPat <> ")")
@@ -869,7 +867,7 @@ printBindingMode (ByValue Mutable) = "mut"
 -- aka  print_fn_header_info
 printFnHeaderInfo :: Unsafety -> Constness -> Abi -> Visibility a -> Doc a
 printFnHeaderInfo u c a v = foldr1 (<+>) parts
-  where parts = [ printVisibility v, case c of { Const -> "const"; _ -> mempty }, printUnsafety u, printAbi a, "fn" ]
+  where parts = [ printVis v, case c of { Const -> "const"; _ -> mempty }, printUnsafety u, printAbi a, "fn" ]
 
 printAbi :: Abi -> Doc a
 printAbi Rust = mempty
@@ -900,46 +898,51 @@ printForeignMod items attrs = vsep (printInnerAttrs attrs : (printForeignItem `m
 
 -- aka  print_generics
 printGenerics :: Generics a -> Doc a
-printGenerics Generics{..}
+printGenerics (Generics lifetimes tyParams whereClause x)
   | null lifetimes && null tyParams = mempty
   | otherwise =  let lifetimes' = [ printOuterAttrs as <+> printLifetimeBounds lt bds | LifetimeDef as lt bds _ <- lifetimes ]
                      bounds' = [ printTyParam param | param<-tyParams ]
-                 in "<" <> hsep (punctuate "," (lifetimes' ++ bounds')) <> ">"
-
+                 in annotate x ("<" <> hsep (punctuate "," (lifetimes' ++ bounds')) <> ">")
 
 -- aka  print_poly_trait_ref
 printPolyTraitRef :: PolyTraitRef a -> Doc a
-printPolyTraitRef PolyTraitRef{..} = printFormalLifetimeList boundLifetimes <+> printTraitRef traitRef
+printPolyTraitRef (PolyTraitRef lts tref x) = annotate x (printFormalLifetimeList lts <+> printTraitRef tref)
 
 -- aka  print_trait_ref
 printTraitRef :: TraitRef a -> Doc a
-printTraitRef TraitRef{..} = printPath path False
+printTraitRef (TraitRef path x) = annotate x (printPath path False)
 
 -- aka print_path_parameters
 printPathParameters :: PathParameters a -> Bool -> Doc a
 printPathParameters (AngleBracketed [] [] [] _) _ = mempty
-printPathParameters Parenthesized{..} colons = when colons "::" <> "(" <> commas inputs printType <> ")" <+> perhaps (\t -> "->" <+> printType t) output
-printPathParameters AngleBracketed{..} colons = when colons "::" <> "<" <> hsep (punctuate "," (lifetimes' ++ types' ++ bindings')) <> ">"
+printPathParameters (Parenthesized ins out x) colons = when colons "::" <> "(" <> commas ins printType <> ")" <+> perhaps (\t -> "->" <+> printType t) out
+printPathParameters (AngleBracketed lts tys bds x) colons = when colons "::" <> "<" <> hsep (punctuate "," (lts' ++ tys' ++ bds')) <> ">"
   where
-    lifetimes' = printLifetime <$> lifetimes
-    types' = printType <$> types
-    bindings' = (\(ident,ty) -> printIdent ident <+> "=" <+> printType ty) <$> bindings
+    lts' = printLifetime <$> lts
+    tys' = printType <$> tys
+    bds' = (\(ident,ty) -> printIdent ident <+> "=" <+> printType ty) <$> bds
+
 
 -- | second argument says whether to put colons before params
 -- aka print_path
 printPath :: Path a -> Bool -> Doc a
-printPath Path{..} colons = when global "::" <> hcat (punctuate "::" (printSegment <$> segments))
+printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (punctuate "::" (printSegment `map` segs)))
   where
   printSegment :: (Ident, PathParameters a) -> Doc a
   printSegment (ident,parameters) = printIdent ident <> printPathParameters parameters colons
 
 -- print_qpath
 printQPath :: Path a -> QSelf a -> Bool -> Doc a
-printQPath Path{..} QSelf{..} colons =  
-  "<" <> printType ty <+> when (position > 0) ("as" <+> printPath (Path global (take position segments) nodeInfo) False) 
-      <> ">" <> "::" <> printIdent ident <> printPathParameters parameters colons
+printQPath (Path global segments x) (QSelf ty position) colons = annotate x $ hcat
+  [ "<"
+  , printType ty <+> when (position > 0) aliased 
+  , ">", "::"
+  , printIdent ident
+  , printPathParameters params colons
+  ]
   where
-  (ident, parameters) = last segments 
+  (ident, params) = last segments
+  aliased = "as" <+> printPath (Path global (take position segments) x) False
 
 -- aka print_view_path
 printViewPath :: ViewPath a -> Doc a
@@ -956,9 +959,11 @@ printViewPath (ViewPathList path idents _) = prefix <> "::{" <> commas idents pr
 
 -- aka print_ty_param
 printTyParam :: TyParam a -> Doc a
-printTyParam TyParam{..} = printOuterAttrs attrs
-  <+> printIdent ident <> printBounds ":" bounds
-  <+> perhaps (\d -> "=" <+> printType d) default_
+printTyParam (TyParam as i bds def x) = annotate x $ hsep
+  [ printOuterAttrs as
+  , printIdent i <> printBounds ":" bds
+  , perhaps (\def' -> "=" <+> printType def') def
+  ]
 
 printName :: Name -> Doc a
 printName (Name s) = text s

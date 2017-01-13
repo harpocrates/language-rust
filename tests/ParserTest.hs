@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, UnicodeSyntax, FlexibleContexts  #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLists, UnicodeSyntax, FlexibleContexts  #-}
 module ParserTest (parserSuite) where
 
 import Test.Framework (testGroup, Test)
@@ -164,7 +164,7 @@ testPat inp pat = testCase inp $ Right pat @=? parseNoSpans patternP (inputStrea
 
 -- | Turn an InputStream into either an error or a parse.
 parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either (Position,String) (f ())
-parseNoSpans parser inp = runExcept (fmap (const ()) <$> result)
+parseNoSpans parser inp = runExcept (void <$> result)
   where
     -- result :: Except (Position,String) (f Span)
     result = execParser parser inp initPos

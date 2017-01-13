@@ -9,6 +9,8 @@ import Language.Rust.Parser.Lexer
 import Language.Rust.Parser.ParseMonad
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Constants
+
+import Data.List.NonEmpty (NonEmpty(..))
 }
 
 -- <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
@@ -309,6 +311,9 @@ sep_by(p,sep)   : sep_by1(p,sep)      { $1 }
 
 -- | One or more occurences of p, seperated by sep
 sep_by1(p,sep)  : p many(then(sep,p)) { $1 : $2 }
+
+-- | Like sep_by1, but returning a NonEmpty
+sep_by_nonempty(p,sep) : p many(then(sep,p)) { $1 :| $2 }
 
 -- | Sequence two parsers, return the result of the second (*>)
 then(a,b)       : a b                 { $2 }
@@ -646,12 +651,12 @@ ty_sum
       | ty '+' ty_param_bounds_bare    { withSpan (ObjectSum <\$> $1 <*> $3) }
 
 -- parse_ty_param_bounds(BoundParsingMode::Modified)
-ty_param_bounds_mod :: { Spanned [TyParamBound Span] }
-ty_param_bounds_mod : sep_by(or(lifetime, and(opt('?'),poly_trait_ref)),'+')
-        { sequence (map (\x -> case x of
-                                 Left l              -> RegionTyParamBound <\$> l
-                                 Right (Nothing,bnd) -> TraitTyParamBound <\$> bnd <*> pure None
-                                 Right (Just _,bnd)  -> TraitTyParamBound <\$> bnd <*> pure Maybe)
+ty_param_bounds_mod :: { Spanned (NonEmpty (TyParamBound Span)) }
+ty_param_bounds_mod : sep_by_nonempty(or(lifetime, and(opt('?'),poly_trait_ref)),'+')
+        { sequence (fmap (\x -> case x of
+                                  Left l              -> RegionTyParamBound <\$> l
+                                  Right (Nothing,bnd) -> TraitTyParamBound <\$> bnd <*> pure None
+                                  Right (Just _,bnd)  -> TraitTyParamBound <\$> bnd <*> pure Maybe)
                         $1)
         }
 
@@ -720,11 +725,11 @@ for_in_type
       : late_bound_lifetime_defs ty_bare_fn                          { $2 $1 }
       | late_bound_lifetime_defs trait_ref
           { let poly = withSpan (PolyTraitRef <\$> $1 <*> $2)
-            in withSpan (PolyTraitRefTy <\$> ((\x -> [x]) <\$> (TraitTyParamBound <\$> poly <*> pure None)))
+            in withSpan (PolyTraitRefTy <\$> ((:| []) <\$> (TraitTyParamBound <\$> poly <*> pure None)))
           }
       | late_bound_lifetime_defs trait_ref '+' ty_param_bounds_bare
           { let poly = withSpan (PolyTraitRef <\$> $1 <*> $2)
-            in withSpan (PolyTraitRefTy <\$> ((:) <\$> (TraitTyParamBound <\$> poly <*> pure None) <*> $4))
+            in withSpan (PolyTraitRefTy <\$> ((:|) <\$> (TraitTyParamBound <\$> poly <*> pure None) <*> $4))
           }
 
 -- no equivalent
