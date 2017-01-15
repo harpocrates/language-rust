@@ -484,13 +484,13 @@ generic_values_after_lt
 -- NOT ALL PATTERNS ARE ACCEPTED: <https://github.com/rust-lang/rust/issues/35203>
 arg_general :: { Spanned (Arg Span) } 
 arg_general
-      : ty_sum            { withSpan (Arg <\$> $1 <*> pure (IdentP (ByValue Immutable) invalidIdent Nothing mempty)) }
-      | ident ':' ty_sum  { withSpan (Arg <\$> $3 <*> withSpan (IdentP (ByValue Immutable) <\$> $1 <*> pure  Nothing)) }
-      | '_'   ':' ty_sum  { withSpan (Arg <\$> $3 <*> withSpan (WildP <\$ $1)) }
+      : ty_sum            { withSpan (Arg <\$> $1 <*> pure Nothing) }
+      | ident ':' ty_sum  { withSpan (Arg <\$> $3 <*> (Just <\$> withSpan (IdentP (ByValue Immutable) <\$> $1 <*> pure Nothing))) }
+      | '_'   ':' ty_sum  { withSpan (Arg <\$> $3 <*> (Just <\$> withSpan (WildP <\$ $1))) }
 
 -- parse_arg_general(true) -- requires name
 arg ::{ Spanned (Arg Span) }
-arg   : pat ':' ty_sum  { withSpan (Arg <\$> $3 <*> $1) }
+arg   : pat ':' ty_sum  { withSpan (Arg <\$> $3 <*> (Just <\$> $1)) }
 
 
 --------------------------
@@ -614,9 +614,9 @@ lit_or_path
 
 pat_field :: { Spanned (FieldPat Span) }
 pat_field
-      :     binding_mode ident     { withSpan (FieldPat <\$> $2 <*> withSpan (IdentP <\$> $1 <*> $2 <*> pure Nothing) <*> pure True) }
-      | box binding_mode ident     { withSpan (FieldPat <\$> $3 <*> withSpan (BoxP <\$> withSpan (IdentP <\$> $2 <*> $3 <*> pure  Nothing) <* $1) <*> pure True) }
-      | binding_mode ident ':' pat   { withSpan (FieldPat <\$> $2 <*> withSpan (IdentP <\$> $1 <*> $2 <*> (Just <\$> $4)) <*> pure False) }
+      :     binding_mode ident     { withSpan (FieldPat Nothing <\$> withSpan (IdentP <\$> $1 <*> $2 <*> pure Nothing)) }
+      | box binding_mode ident     { withSpan (FieldPat Nothing <\$> withSpan (BoxP <\$> withSpan (IdentP <\$> $2 <*> $3 <*> pure  Nothing) <* $1)) }
+      | binding_mode ident ':' pat   { withSpan (FieldPat <\$> (Just <\$> $2) <*> withSpan (IdentP <\$> $1 <*> $2 <*> (Just <\$> $4))) }
 
 
 -----------

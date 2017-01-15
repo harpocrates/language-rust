@@ -34,20 +34,16 @@ patternSuite = testGroup "parsing patterns"
   , testPat "-123"                    (LitP (Unary [] Neg (Lit [] (Int 123 Unsuffixed ()) ()) ()) ())
   , testPat "Point { .. }"            (StructP (Path False [("Point", AngleBracketed [] [] [] ())] ()) [] True ())
   , testPat "Point { x, y: y1 }"      (StructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
-                                               [ FieldPat "x" x True ()
-                                               , FieldPat "y" (IdentP (ByValue Immutable) "y" (Just (IdentP (ByValue Immutable) "y1" Nothing ())) ()) False () ]
+                                               [ FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) ()
+                                               , FieldPat (Just "y") (IdentP (ByValue Immutable) "y1" Nothing ()) () ]
                                                False ()) 
   , testPat "Point { x, .. }"         (StructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
-                                               [ FieldPat "x" x True () ]
-                                               True ()) 
+                                               [ FieldPat Nothing (IdentP (ByValue Immutable)"x" Nothing ()) () ]
+                                               True ())
   , testPat "math::PI"                (PathP Nothing (Path False [ ("math", AngleBracketed [] [] [] ())
                                                                  , ("PI", AngleBracketed [] [] [] ()) ] ()) ())
   , testPat "1...2"                   (RangeP (Lit [] (Int 1 Unsuffixed ()) ()) (Lit [] (Int 2 Unsuffixed ()) ()) ())
   , testPat "ref mut y@(x,x)"         (IdentP (ByRef Mutable) "y" (Just (TupleP [ x, x ] Nothing ())) ())
-  , testPat "(1,2..3)"                (TupleP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) ()
-                                              , LitP (Lit [] (Int 2 Unsuffixed ()) ()) ()
-                                              , LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ]
-                                              (Just 2) ())
   , testPat "(1,2,..,3)"              (TupleP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) ()
                                               , LitP (Lit [] (Int 2 Unsuffixed ()) ()) ()
                                               , LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ]
@@ -61,7 +57,7 @@ patternSuite = testGroup "parsing patterns"
                                                     ] ()) ())
   , testPat "[1,2]"                   (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) ()
                                               , LitP (Lit [] (Int 2 Unsuffixed ()) ()) () ] 
-                                              (Just (WildP ())) [] ())
+                                              Nothing [] ())
   , testPat "[1,..,3]"                (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ]
                                               (Just (WildP ()))
                                               [ LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ] ())
@@ -111,13 +107,13 @@ typeSuite = testGroup "parsing types"
                                                       , ("AssociatedItem", AngleBracketed [] [] [] ())
                                                       ] ()) ())
   , testType "fn(i32...)"
-             (BareFn Normal Rust [] (FnDecl [Arg i32 (IdentP (ByValue Immutable) "" Nothing ()) ()] Nothing True ()) ())
+             (BareFn Normal Rust [] (FnDecl [Arg i32 Nothing ()] Nothing True ()) ())
   , testType "fn(i32) -> i32"
-             (BareFn Normal Rust [] (FnDecl [Arg i32 (IdentP (ByValue Immutable) "" Nothing ()) ()] (Just i32) False ()) ())
+             (BareFn Normal Rust [] (FnDecl [Arg i32 Nothing ()] (Just i32) False ()) ())
   , testType "fn(_: i32) -> i32"
-             (BareFn Normal Rust [] (FnDecl [Arg i32 (WildP ()) ()] (Just i32) False ()) ())
+             (BareFn Normal Rust [] (FnDecl [Arg i32 (Just (WildP ())) ()] (Just i32) False ()) ())
   , testType "unsafe extern \"C\" fn(_: i32)"
-             (BareFn Unsafe C [] (FnDecl [Arg i32 (WildP ()) ()] Nothing False ()) ())
+             (BareFn Unsafe C [] (FnDecl [Arg i32 (Just (WildP ())) ()] Nothing False ()) ())
   , testType "PResult<'a, P<i32>>"
              (PathTy Nothing (Path False [("PResult", AngleBracketed [ Lifetime (Name "a") () ]
                                                                      [ PathTy Nothing (Path False [("P", AngleBracketed [] [ i32 ] [] ())] ()) () ]
@@ -126,7 +122,7 @@ typeSuite = testGroup "parsing types"
              (BareFn Normal Rust
                             [ LifetimeDef [] (Lifetime (Name "l1") ()) [Lifetime (Name "l2") (), Lifetime (Name "l3") ()] ()
                             , LifetimeDef [] (Lifetime (Name "l4") ()) [Lifetime (Name "l5") ()] () ]
-                            (FnDecl [Arg (ObjectSum i32 [RegionTyParamBound (Lifetime (Name "l1") ())] ()) (WildP ()) ()] 
+                            (FnDecl [Arg (ObjectSum i32 [RegionTyParamBound (Lifetime (Name "l1") ())] ()) (Just (WildP ())) ()] 
                                     (Just i32) False ()) ())
   , testType "for <'a> Foo<&'a T>"
              (PolyTraitRefTy

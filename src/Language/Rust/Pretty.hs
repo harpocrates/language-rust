@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wall -fno-warn-orphans -fno-warn-name-shadowing #-}
 {-# LANGUAGE OverloadedStrings, DuplicateRecordFields, DefaultSignatures #-}
 
 module Language.Rust.Pretty
@@ -7,6 +7,7 @@ module Language.Rust.Pretty
   , printStmt
   , printItem
   , printLit
+  , printPat
   , printAttr
   , Pretty(..)
   , PrettyAnnotated(..)
@@ -304,7 +305,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
   case expr of
     Box _ e x                   -> annotate x ("box" <+> printExpr e)
     InPlace _ place e x         -> annotate x (hsep [ printExprMaybeParen place, "<-", printExprMaybeParen e ])
-    Vec attrs exprs x           -> annotate x (brackets (printInnerAttrs attrs <+> commas exprs printExpr))
+    Vec as exprs x              -> annotate x (brackets (printInnerAttrs as <+> commas exprs printExpr))
     Call _ func args x          -> annotate x (printExprMaybeParen func <> "(" <> commas args printExpr <> ")")
     MethodCall _ i ts (s:|as) x -> let tys' = unless (null ts) ("::<" <> commas ts printType <> ">")
                                    in annotate x (hcat [ printExpr s, ".", printIdent i, tys', "(", commas as printExpr, ")" ])
@@ -321,10 +322,10 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     WhileLet as p e blk lbl x   -> annotate x (hsep [ printLbl lbl, "while let", printPat p, "=", printExpr e, printBlockWithAttrs blk as ])
     ForLoop as pat e blk lbl x  -> annotate x (hsep [ printLbl lbl, "for", printPat pat, "in", printExpr e, printBlockWithAttrs blk as ])
     Loop as blk lbl x           -> annotate x (hsep [ printLbl lbl, "loop", printBlockWithAttrs blk as ])
-    Match attrs e arms x        -> let arms' = if null arms
+    Match as e arms x           -> let arms' = if null arms
                                                  then [] 
                                                  else (printArm True `map` Prelude.init arms) ++ [ printArm False (Prelude.last arms) ]
-                                   in annotate x (hsep [ "match", printExpr e, braceAttrs (printInnerAttrs attrs) arms' ])
+                                   in annotate x (hsep [ "match", printExpr e, braceAttrs (printInnerAttrs as) arms' ])
     Closure _ cap decl body x   -> annotate x (when (cap == Value) "move" <+> printFnBlockArgs decl <+> printBlockUnclosed body)
     BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs blk attrs)
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
@@ -805,11 +806,9 @@ printFnArgsAndRet (FnDecl args ret var x) = annotate x ("(" <> align (fillSep ar
 
 -- aka print_arg TODO double check this
 printArg :: Arg a -> Bool -> Doc a
-printArg (Arg ty pat x) isClosure = annotate x $ case ty of
-  Infer x' | isClosure -> annotate x' (printPat pat)
-  _ -> let (IdentP _ ident _ _) = pat
-           invalid = ident == mkIdent ""
-       in unless invalid (printPat pat <> ":") <+> printType ty
+printArg (Arg (Infer x') (Just pat) x) True = annotate x (annotate x' (printPat pat))
+printArg (Arg ty Nothing x) _ = annotate x (printType ty)
+printArg (Arg ty (Just pat) x) _ = annotate x (printPat pat <> ":" <+> printType ty)
 
 -- print_explicit_self
 printExplicitSelf :: SelfKind a -> Doc a
@@ -833,12 +832,12 @@ printFullMutability Immutable = "const"
 -- print_pat
 printPat :: Pat a -> Doc a
 printPat (WildP x)                      = annotate x "_"
-printPat (IdentP bm p s x)              = annotate x (printBindingMode bm <+> printIdent p <+> perhaps (\p' -> "@" <> printPat p') s)
+printPat (IdentP bm p s x)              = annotate x (printBindingMode bm <+> printIdent p <+> perhaps (\p' -> "@" <+> printPat p') s)
 printPat (StructP p fs b x)             = annotate x (printPath p True <+> braceComma body)
-  where body = (printFieldPat `map` fs) ++ (if b then [] else [ ".." ])
+  where body = (printFieldPat `map` fs) ++ [ ".." | b ]
 printPat (TupleStructP p es Nothing x)  = annotate x (printPath p True <> "(" <> commas es printPat <> ")")
 printPat (TupleStructP p es (Just d) x) = let (before,after) = splitAt d es
-  in annotate x (printPath p True <> "(" <> commas before printPat <> unless (null es) ","
+  in annotate x (printPath p True <> "(" <> commas before printPat <> when (d /= 0) ","
                     <+> ".." <> when (d /= length es) ("," <+> commas after printPat) <> ")")
 printPat (PathP Nothing path x)         = annotate x (printPath path True)
 printPat (PathP (Just qself) path x)    = annotate x (printQPath path qself False)
@@ -850,13 +849,19 @@ printPat (BoxP inner x)                 = annotate x ("box" <+> printPat inner)
 printPat (RefP inner mutbl x)           = annotate x ("&" <> printMutability mutbl <+> printPat inner)
 printPat (LitP expr x)                  = annotate x (printExpr expr)
 printPat (RangeP lo hi x)               = annotate x (printExpr lo <+> "..." <+> printExpr hi)
-printPat (SliceP pb ps pa x)            = annotate x ("[" <> commas pb printPat <> ps' <> commas pa printPat <> "]")
-  where ps' = unless (null pb) "," <+> perhaps slicePat ps <> ".." <+> unless (null pa) ","
-        slicePat p = case p of { WildP{} -> mempty; _ -> printPat p }
+printPat (SliceP pb Nothing pa x)       = annotate x ("[" <> commas (pb ++ pa) printPat <> "]")
+printPat (SliceP pb (Just ps) pa x)     = annotate x ("[" <> commas pb printPat <> ps' <+> commas pa printPat <> "]")
+  where ps' = hcat [ unless (null pb) ","
+                   , space
+                   , case ps of WildP{} -> mempty
+                                _ -> printPat ps
+                   , ".."
+                   , unless (null pa) ","
+                   ]
 printPat (MacP m x)                     = annotate x (printMac m Paren)
 
 printFieldPat :: FieldPat a -> Doc a
-printFieldPat (FieldPat i p s x) = annotate x (when s (printIdent i <> ":") <+> printPat p)
+printFieldPat (FieldPat i p x) = annotate x (perhaps (\i -> printIdent i <> ":") i <+> printPat p)
 
 printBindingMode :: BindingMode -> Doc a
 printBindingMode (ByRef mutbl) = "ref" <+> printMutability mutbl
@@ -915,8 +920,9 @@ printTraitRef (TraitRef path x) = annotate x (printPath path False)
 -- aka print_path_parameters
 printPathParameters :: PathParameters a -> Bool -> Doc a
 printPathParameters (AngleBracketed [] [] [] _) _ = mempty
-printPathParameters (Parenthesized ins out x) colons = when colons "::" <> "(" <> commas ins printType <> ")" <+> perhaps (\t -> "->" <+> printType t) out
-printPathParameters (AngleBracketed lts tys bds x) colons = when colons "::" <> "<" <> hsep (punctuate "," (lts' ++ tys' ++ bds')) <> ">"
+printPathParameters (Parenthesized ins out x) colons = annotate x $
+  when colons "::" <> parens (commas ins printType) <+> perhaps (\t -> "->" <+> printType t) out
+printPathParameters (AngleBracketed lts tys bds x) colons = annotate x (when colons "::" <> "<" <> hsep (punctuate "," (lts' ++ tys' ++ bds')) <> ">")
   where
     lts' = printLifetime <$> lts
     tys' = printType <$> tys

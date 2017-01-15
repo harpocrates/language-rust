@@ -34,7 +34,7 @@ data Abi
 data Arg a
   = Arg
       { ty :: Ty a
-      , pat :: Pat a
+      , pat :: Maybe (Pat a)
       , nodeInfo :: a
       } deriving (Eq, Show, Functor)
 
@@ -240,14 +240,11 @@ data Field a
       } deriving (Eq, Functor, Show)
 
 -- A single field in a struct pattern
--- Patterns like the fields of `Foo { x, ref y, ref mut z }` are treated the same as
--- `x: x, y: ref y, z: ref mut z`, except `isShorthand` is `true`
 -- https://docs.serde.rs/syntex_syntax/ast/struct.FieldPat.html
 data FieldPat a
   = FieldPat
-      { ident :: Ident       -- ^ The identifier for the field
-      , pat :: Pat a         -- ^ The pattern the field is destructured to
-      , isShorthand :: Bool
+      { ident :: Maybe Ident -- ^ The identifier for the field
+      , pat :: Pat a         -- ^ The pattern the field is destructured to - has to be IdentP when ident is Nothing
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 

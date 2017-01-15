@@ -22,3 +22,4 @@ tags
 /_site/
 /.dir-locals.el
 /src/Language/Parser/Lexer.hs
+happyinfo.txt
