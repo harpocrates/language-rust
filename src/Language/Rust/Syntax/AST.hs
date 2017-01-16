@@ -1,4 +1,4 @@
-{-# LANGUAGE DuplicateRecordFields, DeriveFunctor, GADTs, PatternSynonyms #-}
+{-# LANGUAGE DuplicateRecordFields, DeriveFunctor, PatternSynonyms #-}
 
 module Language.Rust.Syntax.AST where
 

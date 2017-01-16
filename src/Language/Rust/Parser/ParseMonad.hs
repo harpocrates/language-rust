@@ -1,4 +1,4 @@
-{-# LANGUAGE InstanceSigs, RecordWildCards, PatternSynonyms #-}
+{-# LANGUAGE InstanceSigs, PatternSynonyms #-}
 
 module Language.Rust.Parser.ParseMonad where
 
@@ -92,7 +92,7 @@ setPosition pos = P (\s -> Ok () s{ curPos = pos })
 
 -- | retrieve the input stream of the parser
 getInput :: P InputStream
-getInput = P $ (\s@PState{ curInput = i } -> Ok i s)
+getInput = P (\s@PState{ curInput = i } -> Ok i s)
 
 -- | set the input stream of the parser
 setInput :: InputStream -> P ()

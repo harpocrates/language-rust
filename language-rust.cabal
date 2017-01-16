@@ -1,6 +1,6 @@
 name:                language-rust
 version:             0.1.0.0
-synopsis:            Haskell library for parsing and pretty printing Rust code.
+synopsis:            Haskell library for parsing and pretty printing Rust source code.
 -- description:         
 homepage:            https://github.com/harpocrates/language-rust
 license:             BSD3
@@ -32,10 +32,9 @@ library
                        Language.Rust.Data.InputStream
   -- other-modules:
 
-  other-extensions:    RecordWildCards
-                     , OverloadedStrings
+  other-extensions:    OverloadedStrings
+                     , OverloadedLists
                      , DuplicateRecordFields
-                     , GADTs
                      , InstanceSigs
                      , CPP
                      , DeriveFunctor

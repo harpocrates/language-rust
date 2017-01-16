@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, DeriveFunctor #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module Language.Rust.Data.Position where
 
@@ -36,22 +36,22 @@ initPos = Position 0 1 1
 -- | advance column
 incPos :: Position -> Int -> Position
 incPos NoPosition _ = NoPosition
-incPos Position{..} offset = Position (absoluteOffset + offset) (row + offset) col
+incPos p@Position{ absoluteOffset = a, row = r } offset = p { absoluteOffset = a + offset, row = r + offset }
 
 -- | advance to the next line
 retPos :: Position -> Position
 retPos NoPosition = NoPosition
-retPos Position{..} = Position (absoluteOffset + 1) (row + 1) 1
+retPos (Position a r _) = Position { absoluteOffset = a + 1, row = r + 1, col = 1 }
 
 -- | advance just the offset
 incOffset :: Position -> Int -> Position
 incOffset NoPosition _ = NoPosition
-incOffset Position{..} offset = Position (absoluteOffset + offset) row col
+incOffset p@Position{ absoluteOffset = a } offset = p { absoluteOffset = a + offset }
 
 
 instance Show Position where
   show NoPosition = "$"
-  show Position{..} = show row ++ ":" ++ show col
+  show (Position _ r c) = show r ++ ":" ++ show c
 
 
 type ExpnId = Int -- https://docs.serde.rs/syntex_pos/struct.ExpnId.html
@@ -78,7 +78,7 @@ instance Monoid Span where
   s1 `mappend` s2 = Span (lo s1 `minPos` lo s2) (hi s1 `maxPos` hi s2)
 
 instance Show Span where
-  show (Span lo hi) = show lo ++ " - " ++ show hi
+  show (Span lo' hi') = show lo' ++ " - " ++ show hi'
 
 -- | A "tagging" of something with a 'Span' that describes its extent
 data Spanned a = Spanned { unspan :: a, span :: Span } deriving (Functor)
