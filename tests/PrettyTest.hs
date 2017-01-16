@@ -368,7 +368,61 @@ prettyItems = testGroup "printing items"
   , testFlatten "impl std::Debug for .. { }" (printItem (Item (mkIdent "") [] (DefaultImpl Normal (TraitRef (Path False [std,debug] ()) ())) InheritedV ()))
   , testFlatten "unsafe impl Debug for .. { }" (printItem (Item (mkIdent "") [] (DefaultImpl Unsafe (TraitRef (Path False [debug] ()) ())) InheritedV ()))
   , testFlatten "impl Debug for i32 { }" (printItem (Item (mkIdent "") [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [debug] ()) ())) i32 []) InheritedV ()))
-  {- TODO unfinished -}
+  , testFlatten "pub impl !Debug for i32 where 'lt: 'gt { }" (printItem (Item (mkIdent "") [] (Impl Normal Negative (Generics [] [] (WhereClause [RegionPredicate (Lifetime (Name "lt") ()) [Lifetime (Name "gt") ()] ()] ()) ()) (Just (TraitRef (Path False [debug] ()) ())) i32 []) PublicV ()))
+  , testFlatten "impl <T> GenVal<T> {\n  fn value(&self) -> &T { return 1; }\n}" 
+                (printItem (Item (mkIdent "") [] (Impl Normal Positive
+                      (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())
+                      Nothing
+                      (PathTy Nothing (Path False [("GenVal", AngleBracketed [] [PathTy Nothing (Path False [(mkIdent "T", AngleBracketed [] [] [] ())] ()) ()] [] ())] ()) ())
+                      [ ImplItem (mkIdent "value") InheritedV Final []
+                          (MethodI (MethodSig Normal NotConst Rust
+                                      (FnDecl [Arg (Rptr Nothing Immutable (ImplicitSelf ()) ()) (Just (IdentP (ByValue Immutable) "self" Nothing ())) ()]
+                                              (Just (Rptr Nothing Immutable (PathTy Nothing (Path False [(mkIdent "T", AngleBracketed [] [] [] ())] ()) ()) ())) 
+                                              False ())
+                                      (Generics [] [] (WhereClause [] ()) ())) 
+                                      retBlk)
+                          ()
+                      ]) InheritedV ()))
+  , testFlatten "#[cfgo]\nimpl i32 {\n  #![cfgi]\n  fn value(&self) -> i32 { return 1; }\n  pub const pi: i32 = 1;\n  default type Size = i32;\n}" 
+                (printItem (Item (mkIdent "") [cfgI,cfgO] (Impl Normal Positive
+                      (Generics [] [] (WhereClause [] ()) ())
+                      Nothing
+                      i32
+                      [ ImplItem (mkIdent "value") InheritedV Final []
+                          (MethodI (MethodSig Normal NotConst Rust
+                                      (FnDecl [Arg (Rptr Nothing Immutable (ImplicitSelf ()) ())  (Just (IdentP (ByValue Immutable) "self" Nothing ())) ()]
+                                              (Just i32) 
+                                              False ())
+                                      (Generics [] [] (WhereClause [] ()) ())) 
+                                      retBlk)
+                          ()
+                      , ImplItem (mkIdent "pi") PublicV Final [] (ConstI i32 _1) ()
+                      , ImplItem (mkIdent "Size") InheritedV Default [] (TypeI i32) ()
+                      ]) InheritedV ()))
+  , testFlatten "unsafe trait Show { }" (printItem (Item (mkIdent "Show") [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [] []) InheritedV ()))
+  , testFlatten "trait Show<T> : 'l1 + for<'l3: 'l1 + 'l2> Debug + 'l2 { }" (printItem (Item (mkIdent "Show") []
+                                       (Trait Normal
+                                              (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())
+                                              [ RegionTyParamBound (Lifetime (Name "l1") ())
+                                              , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "l3") ()) [Lifetime (Name "l1") (), Lifetime (Name "l2") ()] ()] (TraitRef (Path False [debug] ()) ()) ())  None
+                                              , RegionTyParamBound (Lifetime (Name "l2") ())]
+                                              []) InheritedV ()))
+  , testFlatten "pub trait Show {\n  fn value(&self) -> i32 ;\n  const pi: i32 = 1;\n  const e: i32;\n  type Size = i32;\n  type Length : 'l3;\n  type SomeType : 'l1 = f64;\n}"
+                (printItem (Item (mkIdent "Show") [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) []
+                      [ TraitItem (mkIdent "value") []
+                          (MethodT (MethodSig Normal NotConst Rust
+                                      (FnDecl [Arg (Rptr Nothing Immutable (ImplicitSelf ()) ()) (Just (IdentP (ByValue Immutable) "self" Nothing ())) ()]
+                                              (Just i32) 
+                                              False ())
+                                      (Generics [] [] (WhereClause [] ()) ())) 
+                                      Nothing)
+                          ()
+                      , TraitItem (mkIdent "pi") [] (ConstT i32 (Just _1)) ()
+                      , TraitItem (mkIdent "e") [] (ConstT i32 Nothing) ()
+                      , TraitItem (mkIdent "Size") [] (TypeT [] (Just i32)) ()
+                      , TraitItem (mkIdent "Length") [] (TypeT [RegionTyParamBound (Lifetime (Name "l3") ())] Nothing) ()
+                      , TraitItem (mkIdent "SomeType") [] (TypeT [RegionTyParamBound (Lifetime (Name "l1") ())] (Just f64)) ()
+                      ]) PublicV ()))
   ]
 
 -- | Test pretty-printing of statements (flattened). 
@@ -392,11 +446,16 @@ prettyStatements = testGroup "printing statements"
   , testFlatten "println!(foo)" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) NoBracesMac [] ()))
   ]
   
-
+-- | Default pretty-printing
 testRender :: String -> Doc a -> Test
-testRender str doc = testCase str $ str @=? display (renderPrettyDefault doc)
+testRender str doc = testCase (escapeNewlines str) $ str @=? display (renderPrettyDefault doc)
 
+-- | This tries to make it so that the `Doc` gets rendered onto only one line.
 testFlatten :: String -> Doc a -> Test
-testFlatten str doc = testCase str $ str @=? display (renderPretty 0.5 1000 (flatten doc))
+testFlatten str doc = testCase (escapeNewlines str) $ str @=? display (renderPretty 0.5 1000 (flatten doc))
+
+-- | Utility function for escaping newlines (and only newlines)
+escapeNewlines :: String -> String
+escapeNewlines = concatMap (\c -> if c == '\n' then "\\n" else [c])
 
 

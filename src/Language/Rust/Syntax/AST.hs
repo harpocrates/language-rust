@@ -667,15 +667,6 @@ data RangeLimits
   | Closed   -- ^ Inclusive at the beginning and end
   deriving (Eq, Enum, Bounded, Show)
 
--- | Alternative representation for Args describing self parameter of methods.
--- E.g. &mut self as in fn foo(&mut self)
--- https://docs.serde.rs/syntex_syntax/ast/enum.SelfKind.html
-data SelfKind a
-  = ValueSelf Mutability                    -- ^ self, mut self
-  | Region (Maybe (Lifetime a)) Mutability  -- ^ &'lt self, &'lt mut self
-  | Explicit (Ty a) Mutability              -- ^ self: TYPE, mut self: TYPE
-  deriving (Eq, Functor, Show)
-
 -- | A statement.
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Stmt.html
 -- Inlined [StmtKind](https://docs.serde.rs/syntex_syntax/ast/enum.StmtKind.html)

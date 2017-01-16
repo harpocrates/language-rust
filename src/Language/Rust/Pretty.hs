@@ -657,14 +657,20 @@ printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs a
   Union s g         -> hsep [ printVis vis, "union", printStruct s g ident True True ]
   DefaultImpl u t   -> hsep [ printVis vis, printUnsafety u, "impl", printTraitRef t, "for", "..", "{ }" ]
   Impl u p g t ty i -> let generics = case g of { Generics [] [] _ _ -> mempty; _ -> printGenerics g }
-                           traitref = perhaps (\t' -> printTraitRef t' <+> "for") t
-                       in hsep [ printVis vis, printUnsafety u, "impl" <> generics, printPolarity p <> traitref, printType ty
-                               , printWhereClause (whereClause g), braceAttrs (printInnerAttrs attrs) (printImplItem `map` i) ]
-  Trait u g tys i   -> let tys' = map (\t -> case t of TraitTyParamBound ptr Maybe -> Left ("for ?" <+> printTraitRef (traitRef ptr))
-                                                       _ -> Right t)
+                           traitref = perhaps (\t' -> printPolarity p <> printTraitRef t' <+> "for") t
+                       in hsep [ printVis vis, printUnsafety u, "impl", generics
+                               , traitref <+> printType ty
+                               , printWhereClause (whereClause g)
+                               , block (vsep (printInnerAttrs attrs : (printImplItem `map` i)))
+                               ]
+  Trait u g tys i   -> let tys' = map (\t -> case t of
+                                               TraitTyParamBound ptr Maybe -> Left ("for ?" <+> printTraitRef (traitRef ptr))
+                                               _ -> Right t)
                                       tys
-                       in hsep [ printVis vis, printUnsafety u, "trait", printIdent ident <> printGenerics g, hsep (lefts tys')
-                               , printBounds ":" (rights tys'), printWhereClause (whereClause g), braceAttrs mempty (printTraitItem `map` i) ]
+                       in hsep [ printVis vis, printUnsafety u, "trait", printIdent ident <> printGenerics g
+                               , hsep (lefts tys'), printBounds ":" (rights tys'), printWhereClause (whereClause g)
+                               , block (vsep (printTraitItem `map` i))
+                               ]
   MacItem m         -> printMac m Paren <> ";" 
 
 
@@ -806,15 +812,15 @@ printFnArgsAndRet (FnDecl args ret var x) = annotate x ("(" <> align (fillSep ar
 
 -- aka print_arg TODO double check this
 printArg :: Arg a -> Bool -> Doc a
-printArg (Arg (Infer x') (Just pat) x) True = annotate x (annotate x' (printPat pat))
+printArg (Arg (Infer x') (Just pat) x) True = annotate x $ annotate x' (printPat pat)
 printArg (Arg ty Nothing x) _ = annotate x (printType ty)
+printArg (Arg ty (Just (IdentP (ByValue m) "self" Nothing x')) x) _ = annotate x $ annotate x' $
+  case ty of
+      ImplicitSelf x'' -> annotate x'' (printMutability m <+> "self")
+      Rptr lt m (ImplicitSelf x''') x'' -> annotate x'' $ annotate x'' $
+        "&" <> perhaps printLifetime lt <+> printMutability m <+> "self"
+      _ -> printMutability m <+> "self" <> ":" <+> printType ty
 printArg (Arg ty (Just pat) x) _ = annotate x (printPat pat <> ":" <+> printType ty)
-
--- print_explicit_self
-printExplicitSelf :: SelfKind a -> Doc a
-printExplicitSelf (ValueSelf mut) = printMutability mut <+> "self"
-printExplicitSelf (Region lifetime_m mut) = "&" <> perhaps printLifetime lifetime_m <+> printMutability mut <+> "self"
-printExplicitSelf (Explicit ty mut) = printMutability mut <+> "self" <> ":" <+> printType ty
 
 -- aka print_lifetime
 printLifetime :: Lifetime a -> Doc a
@@ -871,8 +877,8 @@ printBindingMode (ByValue Mutable) = "mut"
 
 -- aka  print_fn_header_info
 printFnHeaderInfo :: Unsafety -> Constness -> Abi -> Visibility a -> Doc a
-printFnHeaderInfo u c a v = foldr1 (<+>) parts
-  where parts = [ printVis v, case c of { Const -> "const"; _ -> mempty }, printUnsafety u, printAbi a, "fn" ]
+printFnHeaderInfo u c a v = hsep [ printVis v, case c of { Const -> "const"; _ -> mempty }
+                                 , printUnsafety u, printAbi a, "fn" ]
 
 printAbi :: Abi -> Doc a
 printAbi Rust = mempty
