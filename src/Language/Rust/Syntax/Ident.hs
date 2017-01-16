@@ -1,9 +1,10 @@
-{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE DuplicateRecordFields, OverloadedStrings #-}
 
 module Language.Rust.Syntax.Ident (Ident(..), name, hash, mkIdent, invalidIdent, Name(..), InternedString) where
 
 import Data.List (foldl')
 import Data.Char (ord)
+import Data.String
 
 -- | An identifier contains a Name (index into the interner table) and a SyntaxContext to track renaming
 -- and macro expansion per Flatt et al., "Macros That Work Together"
@@ -16,11 +17,17 @@ data Ident
       -- nodeInfo :: a
     } deriving (Show)
 
+instance IsString Ident where
+  fromString = mkIdent
+
 instance Eq Ident where
   i1 == i2 = hash i1 == hash i2 && name i1 == name i2
 
 mkIdent :: String -> Ident
 mkIdent s = Ident (Name s) (hashString s) -- 0 ()
+
+unIdent :: Ident -> String
+unIdent (Ident (Name s) _) = s
 
 hashString :: String -> Int
 hashString = foldl' f golden

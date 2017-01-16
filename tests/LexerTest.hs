@@ -27,7 +27,7 @@ commonCode = testGroup "lexing common code fragments"
              , Space Whitespace (Name " ")
              , IdentTok (mkIdent "span")
              , Space Whitespace (Name " ")
-             , Eq
+             , Equal
              , Space Whitespace (Name " ")
              , Dollar
              , IdentTok (mkIdent "p")
@@ -44,24 +44,24 @@ commonCode = testGroup "lexing common code fragments"
              , IdentTok (mkIdent "pp")
              , ModSep
              , IdentTok (mkIdent "Printer")
-             , Lt
+             , Less
              , LifetimeTok (mkIdent "a")
-             , Gt
+             , Greater
              , Comma
              ]
   , testCode "impl<'a,T> Tr for &'a T {}"
              [ IdentTok (mkIdent "impl")
-             , Lt
+             , Less
              , LifetimeTok (mkIdent "a")
              , Comma
              , IdentTok (mkIdent "T")
-             , Gt
+             , Greater
              , Space Whitespace (Name " ")
              , IdentTok (mkIdent "Tr")
              , Space Whitespace (Name " ")
              , IdentTok (mkIdent "for")
              , Space Whitespace (Name " ")
-             , BinOp And
+             , Ampersand
              , LifetimeTok (mkIdent "a")
              , Space Whitespace (Name " ")
              , IdentTok (mkIdent "T")
@@ -72,14 +72,14 @@ commonCode = testGroup "lexing common code fragments"
   , testCode "x /* some comment */ y"
              [ IdentTok (mkIdent "x")
              , Space Whitespace (Name " ")
-             , Space Comment (Name "comment not captured (TODO)")
+             , Space Comment (Name " some comment ")
              , Space Whitespace (Name " ")
              , IdentTok (mkIdent "y")
              ]
   , testCode "x /* some /* nested */ comment */ y"
              [ IdentTok (mkIdent "x")
              , Space Whitespace (Name " ")
-             , Space Comment (Name "comment not captured (TODO)")
+             , Space Comment (Name " some /* nested */ comment ")
              , Space Whitespace (Name " ")
              , IdentTok (mkIdent "y")
              ]
@@ -156,3 +156,4 @@ lexTokensNoSpans inp = runExcept (map unspan <$> tokens)
   where
     tokens :: Except (Position,String) [Spanned Token]
     tokens = execParser lexTokens inp initPos
+

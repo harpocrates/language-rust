@@ -10,8 +10,21 @@ import Language.Rust.Syntax.Ident
 import Control.Monad
 import Control.Monad.Trans.Except
 
+-- | Pattern for Identifiers
 pattern Identifier :: String -> Spanned Token
-pattern Identifier s <- (Spanned (IdentTok (Ident (Name s) _)) _) 
+pattern Identifier s <- (Spanned (IdentTok (Ident (Name s) _)) _)
+
+-- | Pattern for tokens preceded by space
+pattern SpTok :: Spanned Token -> TokenSpace Spanned
+pattern SpTok s <- (TokenSpace s (_:_))
+
+-- | Pattern for tokens not preceded by space
+pattern NoSpTok :: Spanned Token -> TokenSpace Spanned
+pattern NoSpTok s <- (TokenSpace s [])
+
+-- | Pattern for tokens (preceded or not by space)
+pattern Tok :: Spanned Token -> TokenSpace Spanned
+pattern Tok s <- (TokenSpace s _)
 
 -- | the result of running a parser
 data ParseResult a
@@ -58,12 +71,12 @@ execParser (P parser) input pos =
   case parser initialState of
     Failed message errpos -> throwE (errpos,message)
     Ok result _ -> return result
-  where initialState = PState {
-          curPos = pos,
-          curInput = input,
-          prevToken = error "CLexer.execParser: Touched undefined token!",
-          savedToken = error "CLexer.execParser: Touched undefined token (saved token)!"
-        }
+  where initialState = PState
+          { curPos = pos
+          , curInput = input
+          , prevToken = error "CLexer.execParser: Touched undefined token!"
+          , savedToken = error "CLexer.execParser: Touched undefined token (saved token)!"
+          }
 
 -- | update the position of the parser
 updatePosition :: (Position -> Position) -> P ()

@@ -2,9 +2,13 @@
 
 module Language.Rust.Data.Position where
 
+import Data.Ord (comparing)
+import Data.List (maximumBy, minimumBy)
+import Data.Monoid (Monoid, mappend, mempty)
+
 -- Taken and abbreviated from
--- | A position in a source file. The row and column information is kept only for its convenience
--- and human-readability.
+-- | A position in a source file. The row and column information is kept only
+-- for its convenience and human-readability.
 -- https://hackage.haskell.org/package/language-c-0.5.0/docs/src/Language-C-Data-Position.html#Position
 data Position = Position {
     absoluteOffset :: {-# UNPACK #-} !Int, -- ^ absolute offset the source file.
@@ -13,6 +17,17 @@ data Position = Position {
   }
   | NoPosition
   deriving (Eq, Ord)
+
+-- | Maximum and minimum positions, bias for actual positions in either case
+maxPos, minPos :: Position -> Position -> Position
+
+maxPos NoPosition p2 = p2
+maxPos p1 NoPosition = p1
+maxPos p1 p2 = maximumBy (comparing absoluteOffset) [p1,p2]
+
+minPos NoPosition p2 = p2
+minPos p1 NoPosition = p1
+minPos p1 p2 = minimumBy (comparing absoluteOffset) [p1,p2]
 
 -- | starting position in a file
 initPos :: Position
@@ -42,23 +57,40 @@ instance Show Position where
 type ExpnId = Int -- https://docs.serde.rs/syntex_pos/struct.ExpnId.html
 
 
--- | Spans represent a region of code, used for error reporting. Positions in spans are absolute positions from the
--- beginning of the codemap, not positions relative to FileMaps. Methods on the CodeMap can be used to relate spans
--- back to the original source. You must be careful if the span crosses more than one file - you will not be able to
--- use many of the functions on spans in codemap and you cannot assume that the length of the span = hi - lo; there may
--- be space in the BytePos range between files.
+-- | Spans represent a region of code, used for error reporting. Positions in
+-- spans are absolute positions from the beginning of the codemap, not
+-- positions relative to FileMaps. Methods on the CodeMap can be used to relate
+-- spans back to the original source. You must be careful if the span crosses
+-- more than one file - you will not be able to use many of the functions on 
+-- spans in codemap and you cannot assume that the length of the span = hi - lo;
+-- there may be space in the BytePos range between files.
 -- https://docs.serde.rs/syntex_syntax/ext/quote/rt/struct.Span.html
 data Span
   = Span {
     lo :: Position,
     hi :: Position --,
     -- expnId :: ExpnId
-  }
+  } deriving (Eq)
+
+-- Spans are merged by taking the smallest span that covers both arguments
+instance Monoid Span where
+  mempty = Span NoPosition NoPosition
+  s1 `mappend` s2 = Span (lo s1 `minPos` lo s2) (hi s1 `maxPos` hi s2)
 
 instance Show Span where
   show (Span lo hi) = show lo ++ " - " ++ show hi
 
+-- | A "tagging" of something with a 'Span' that describes its extent
 data Spanned a = Spanned { unspan :: a, span :: Span } deriving (Functor)
 
+instance Applicative Spanned where
+  pure x = Spanned x mempty
+  Spanned f s1 <*> Spanned x s2 = Spanned (f x) (s1 `mappend` s2)
+
+instance Monad Spanned where
+  return = pure
+  Spanned x s1 >>= f = let Spanned y s2 = f x in Spanned y (s1 `mappend` s2) 
+
 instance Show a => Show (Spanned a) where
-  show (Spanned n p) = "at " ++ show p ++ ": " ++ show n
+  show (Spanned p s) = "at " ++ show p ++ ": " ++ show s
+
