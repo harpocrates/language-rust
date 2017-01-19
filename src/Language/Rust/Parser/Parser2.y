@@ -914,6 +914,8 @@ lit (Spanned (LiteralTok litTok suffix_m) s) = Spanned (parseLit litTok suffix s
                (Just (Name "u32"))   -> U32
                (Just (Name "i64"))   -> I64
                (Just (Name "u64"))   -> U64
+               (Just (Name "i128"))  -> I128
+               (Just (Name "u128"))  -> U128
 
 isPathSegmentIdent :: Ident -> Bool
 isPathSegmentIdent i = True
