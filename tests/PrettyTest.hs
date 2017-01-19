@@ -8,7 +8,7 @@ import Test.HUnit hiding (Test)
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
-import Language.Rust.Pretty
+import Language.Rust.Pretty.Internal
 
 import Control.Monad
 import Control.Monad.Trans.Except
@@ -16,8 +16,7 @@ import Text.PrettyPrint.Annotated.WL (Doc, flatten, renderPretty, renderPrettyDe
 
 prettySuite :: Test
 prettySuite = testGroup "pretty suite"
-  [ commonCode
-  , prettyLiterals
+  [ prettyLiterals
   , prettyPatterns
   , prettyTypes
   , prettyAttributes
@@ -27,7 +26,7 @@ prettySuite = testGroup "pretty suite"
   ]
 
 
--- | Common type to make tests more straightforward
+-- | Common types to make tests more straightforward
 i32, f64, usize :: Ty ()
 i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
 f64 = PathTy Nothing (Path False [("f64", AngleBracketed [] [] [] ())] ()) ()
@@ -65,11 +64,6 @@ retBlk = Block [ Semi (Ret [] (Just _1) ()) () ] DefaultBlock ()
 x :: Pat ()
 x = IdentP (ByValue Immutable) "x" Nothing ()
 
-
--- | This contains some random real-life code fragments. The purpose here is 
--- primarily black-box testing.
-commonCode :: Test
-commonCode = testGroup "printing common code fragments" []
 
 -- | White-box testing of literals, especially character encoding/escapes.
 prettyLiterals :: Test
