@@ -6,7 +6,7 @@ import Test.Framework.Providers.HUnit
 import Test.HUnit hiding (Test)
 
 import Language.Rust.Parser.ParseMonad
-import Language.Rust.Parser.Parser2
+import Language.Rust.Parser.Parser
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Ident
 import Language.Rust.Data.Position
@@ -16,8 +16,62 @@ import Control.Monad
 import Control.Monad.Trans.Except
 
 parserSuite :: Test
-parserSuite = testGroup "parser suite" [ patternSuite, typeSuite, expressionSuite ]
+parserSuite = testGroup "parser suite" [ parserLiterals, parserAttributes ] --[ patternSuite, typeSuite, expressionSuite ]
 
+-- | Test parsing of literals.
+parserLiterals :: Test
+parserLiterals = testGroup "parsing literals"
+  -- bool's
+  [ testLiteral "true" (Bool True Unsuffixed ())
+  , testLiteral "false" (Bool False Unsuffixed ())
+  -- byte's
+  , testLiteral "b'a'" (Byte 97 Unsuffixed ())
+  , testLiteral "b'\\n'" (Byte 10 Unsuffixed ())
+  -- char's
+  , testLiteral "'a'" (Char 'a' Unsuffixed ())
+  , testLiteral "'\\n'" (Char '\n' Unsuffixed ()) 
+  -- integers
+  , testLiteral "123" (Int 123 Unsuffixed ())
+  , testLiteral "123i32" (Int 123 I32 ())
+  , testLiteral "0b1100_1101" (Int 205 Unsuffixed ())
+  , testLiteral "0b1100_1101isize" (Int 205 Is ())
+  , testLiteral "0o3170" (Int 1656 Unsuffixed ())
+  , testLiteral "0o3170i64" (Int 1656 I64 ())
+  , testLiteral "0xAFAC" (Int 44972 Unsuffixed ())
+  , testLiteral "0xAFACu32" (Int 44972 U32 ())
+  -- float's
+  , testLiteral "123.1" (Float 123.1 Unsuffixed ())
+  , testLiteral "123.f32" (Float 123.0 F32 ())
+  , testLiteral "123.1f32" (Float 123.1 F32 ())
+  , testLiteral "123e-9f32" (Float 123e-9 F32 ())
+  -- string's
+  , testLiteral "\"hello \\n world!\"" (Str "hello \n world!" Cooked Unsuffixed ())
+  , testLiteral "r\"hello \n world!\"" (Str "hello \n world!" (Raw 0) Unsuffixed ()) 
+  , testLiteral "r##\"hello \"#\n world!\"###" (Str "hello \"#\n world!" (Raw 2) Unsuffixed ())
+  -- bytestring's
+  , testLiteral "b\"hello \\n world!\"" (ByteStr "hello \n world!" Cooked Unsuffixed ())
+  , testLiteral "rb\"hello \n world!\"" (ByteStr "hello \n world!" (Raw 0) Unsuffixed ())
+  , testLiteral "rb##\"hello \"#\n world!\"###" (ByteStr "hello \"#\n world!" (Raw 2) Unsuffixed ())
+  ]
+  where testLiteral inp lit = testCase inp $ Right lit @=? parseNoSpans literalP (inputStreamFromString inp)
+
+-- | Test parsing of (inner and outer) attributes.
+parserAttributes :: Test
+parserAttributes = testGroup "parsing attributes" 
+  [ testAttribute "#[cfg]" (Attribute Outer (Word (mkIdent "cfg") ())False ())
+  , testAttribute "#![cfg]" (Attribute Inner (Word (mkIdent "cfg") ()) False ())
+  , testAttribute "#[test]" (Attribute Outer (Word (mkIdent "test") ()) False ())
+  , testAttribute "#[inline(always)]" (Attribute Outer (List (mkIdent "inline") [MetaItem (Word (mkIdent "always") ()) ()] ()) False ())
+  , testAttribute "#[inline(always, sometimes)]" (Attribute Outer (List (mkIdent "inline") [MetaItem (Word (mkIdent "always") ()) (),MetaItem (Word (mkIdent "sometimes") ()) ()] ()) False ())
+  , testAttribute "#[cfg(target_os = \"macos\")]" (Attribute Outer (List (mkIdent "cfg") [MetaItem (NameValue (mkIdent "target_os") (Str "macos" Cooked Unsuffixed ()) ()) ()] ()) False ())
+  , testAttribute "#[cfg(0, tar = \"mac\")]" (Attribute Outer (List (mkIdent "cfg") [Literal (Int 0 Unsuffixed ()) (), MetaItem (NameValue (mkIdent "tar") (Str "mac" Cooked Unsuffixed ()) ()) ()] ()) False ())
+  ]
+  where testAttribute inp attr = testCase inp $ Right attr @=? parseNoSpans attributeP (inputStreamFromString inp)
+
+
+
+
+{-
 -- | This contains tests for parsing a variety of patterns
 patternSuite :: Test
 patternSuite = testGroup "parsing patterns"
@@ -157,7 +211,7 @@ testType inp ty = testCase inp $ Right ty @=? parseNoSpans typeP (inputStreamFro
 -- | Create a test for a code fragment that should parse to a pattern.
 testPat :: String -> Pat () -> Test
 testPat inp pat = testCase inp $ Right pat @=? parseNoSpans patternP (inputStreamFromString inp)
-
+-}
 -- | Turn an InputStream into either an error or a parse.
 parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either (Position,String) (f ())
 parseNoSpans parser inp = runExcept (void <$> result)
