@@ -16,7 +16,7 @@ import Control.Monad
 import Control.Monad.Trans.Except
 
 parserSuite :: Test
-parserSuite = testGroup "parser suite" [ parserLiterals, parserAttributes ] --[ patternSuite, typeSuite, expressionSuite ]
+parserSuite = testGroup "parser suite" [ parserLiterals, parserAttributes, parserTypes ] --[ patternSuite, typeSuite, expressionSuite ]
 
 -- | Test parsing of literals.
 parserLiterals :: Test
@@ -68,8 +68,21 @@ parserAttributes = testGroup "parsing attributes"
   ]
   where testAttribute inp attr = testCase inp $ Right attr @=? parseNoSpans attributeP (inputStreamFromString inp)
 
-
-
+parserTypes :: Test
+parserTypes = testGroup "parsing types"
+  [ testType "_" (Infer ())
+  , testType "!" (Never ())
+  , testType "()" (TupTy [] ())
+  , testType "[_]" (Slice (Infer ()) ())
+  , testType "*()" (Ptr Immutable (TupTy [] ()) ())
+  , testType "*const !" (Ptr Immutable (Never ()) ())
+  , testType "*mut _" (Ptr Mutable (Infer ()) ())
+  , testType "&()" (Rptr Nothing Immutable (TupTy [] ()) ())
+  , testType "&mut !" (Rptr Nothing Mutable (Never ()) ())
+  , testType "&'lt ()" (Rptr (Just (Lifetime (Name "lt") ())) Immutable (TupTy [] ()) ())
+  , testType "&'lt mut !" (Rptr (Just (Lifetime (Name "lt") ())) Mutable (Never ()) ())
+  ]
+  where testType inp ty = testCase inp $ Right ty @=? parseNoSpans typeP (inputStreamFromString inp)
 
 {-
 -- | This contains tests for parsing a variety of patterns

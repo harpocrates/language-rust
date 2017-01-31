@@ -1,5 +1,5 @@
 {
-module Language.Rust.Parser.Parser (attributeP, literalP) where
+module Language.Rust.Parser.Parser (attributeP, typeP, literalP) where
 
 import Language.Rust.Data.InputStream
 import Language.Rust.Syntax.Token
@@ -11,7 +11,7 @@ import Language.Rust.Parser.ParseMonad
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Constants
 
-import Data.Monoid ((<>))
+import Data.Semigroup ((<>))
 import Data.List.NonEmpty
 }
 
@@ -23,6 +23,7 @@ import Data.List.NonEmpty
 -- in order to document the parsers, we have to alias them
 %name literalP lit
 %name attributeP attribute
+%name typeP ty
 
 %tokentype { TokenSpace Spanned }
 
@@ -30,7 +31,7 @@ import Data.List.NonEmpty
 %error { parseError }
 %lexer { lexRust } { Tok (Spanned Eof _) }
 
-%expect 0
+--%expect 0
 
 %token
 
@@ -98,8 +99,6 @@ import Data.List.NonEmpty
   rawStr     { Tok $$@(Spanned (LiteralTok StrRawTok{} _) _) }
   rawByteStr { Tok $$@(Spanned (LiteralTok ByteStrRawTok{} _) _) }
   
-  unsuffixed { Tok $$@(Spanned (LiteralTok _ Nothing) _) }
-
   -- Strict keywords used in the language
   as         { Tok $$@(Identifier "as") }
   box        { Tok $$@(Identifier "box") } 
@@ -233,12 +232,12 @@ many(p)         :                     { [] }
                 | p many(p)           { $1 : $2 }
 
 -- | Zero or more occurrences of p, separated by sep
-sep_by(p,sep)   : sep_by1(p,sep)      { $1 }
+sep_by(p,sep)   : sep_by1(p,sep)      { toList $1 }
                 | {- empty -}         { [] }
 
 -- | One or more occurences of p, seperated by sep
-sep_by1(p,sep)  : sep_by1(p,sep) sep p  { $1 ++ [$3] }
-                | p                     { [$1] }
+sep_by1(p,sep)  : sep_by1(p,sep) sep p  { $1 <> ($3 :| []) }
+                | p                     { $1 :| [] }
 
 -- | Like sep_by1, but returning a NonEmpty
 sep_by_nonempty(p,sep) : p many(then(sep,p)) { $1 :| $2 }
@@ -250,7 +249,7 @@ then(a,b)       : a b                 { $2 }
 plus(p)         : sep_by1(p,'+')      { $1 }
 
 -- | Comma delimited, at least one
-comma(p)        : sep_by1(p,',')      { $1 }
+comma(p)        : sep_by(p,',')       { $1 }
 
 -- | One or the other
 or(l,r)         : l                   { Left $1 }
@@ -263,6 +262,10 @@ alt(l,r)        : l                   { $1 }
 -- | Both
 and(l,r)        : l r                 { ($1, $2) }
 
+-------------
+-- General --
+-------------
+
 
 --------------------------
 -- Attributes
@@ -271,33 +274,39 @@ and(l,r)        : l r                 { ($1, $2) }
 -- TODO: add a check that the literals in meta_item and meta_item_inner are unsuffixed
 
 attribute :: { Attribute Span }
-      : '#' '[' meta_item ']'        {% withSpan $1 (Attribute Outer $3 False) }
-      | '#' '!' '[' meta_item ']'    {% withSpan $1 (Attribute Inner $4 False) } 
-      | outerDoc                     {% let Doc docStr OuterDoc = unspan $1 in
-                                        do { str <- withSpan $1 (Str docStr Cooked Unsuffixed)
-                                           ; doc <- withSpan $1 (NameValue (mkIdent "doc") str)
-                                           ; withSpan $1 (Attribute Outer doc True)
-                                           }
-                                     }
-      | innerDoc                     {% let Doc docStr InnerDoc = unspan $1 in
-                                        do { str <- withSpan $1 (Str docStr Cooked Unsuffixed)
-                                           ; doc <- withSpan $1 (NameValue (mkIdent "doc") str)
-                                           ; withSpan $1 (Attribute Inner doc True)
-                                           }
-                                     }
+  : inner_attribute { $1 }
+  | outer_attribute { $1 }
+
+
+outer_attribute :: { Attribute Span }
+  : '#' '[' meta_item ']'        {% withSpan $1 (Attribute Outer $3 False) }
+  | outerDoc                     {% let Doc docStr OuterDoc = unspan $1 in
+                                    do { str <- withSpan $1 (Str docStr Cooked Unsuffixed)
+                                       ; doc <- withSpan $1 (NameValue (mkIdent "doc") str)
+                                       ; withSpan $1 (Attribute Outer doc True)
+                                       }
+                                 }
+
+inner_attribute :: { Attribute Span }
+  : '#' '!' '[' meta_item ']'    {% withSpan $1 (Attribute Inner $4 False) } 
+  | innerDoc                     {% let Doc docStr InnerDoc = unspan $1 in
+                                    do { str <- withSpan $1 (Str docStr Cooked Unsuffixed)
+                                       ; doc <- withSpan $1 (NameValue (mkIdent "doc") str)
+                                       ; withSpan $1 (Attribute Inner doc True)
+                                    }
+                                 }
 
 -- parse_meta_item()
 meta_item :: { MetaItem Span }
-meta_item
-      : ident                                 {% withSpan $1 (Word (unspan $1)) }
-      | ident '=' lit                         {% withSpan $1 (NameValue (unspan $1) $3) }
-      | ident '(' comma(meta_item_inner) ')'  {% withSpan $1 (List (unspan $1) $3) }
+  : ident                                 {% withSpan $1 (Word (unspan $1)) }
+  | ident '=' lit                         {% withSpan $1 (NameValue (unspan $1) $3) }
+  | ident '(' comma(meta_item_inner) ')'  {% withSpan $1 (List (unspan $1) $3) }
 
 -- parse_meta_item_inner()
 meta_item_inner :: { NestedMetaItem Span }
-meta_item_inner
-      : lit                          {% withSpan $1 (Literal $1) }
-      | meta_item                    {% withSpan $1 (MetaItem $1) } 
+  : lit                          {% withSpan $1 (Literal $1) }
+  | meta_item                    {% withSpan $1 (MetaItem $1) } 
+
 
 --------------
 -- Literals --
@@ -305,22 +314,100 @@ meta_item_inner
 
 -- TODO Interpolated (see parse_lit_token())
 lit :: { Lit Span }
-lit
-      : byte              { lit $1 }
-      | char              { lit $1 }
-      | int               { lit $1 }
-      | float             { lit $1 }
-      | true              { lit $1 }
-      | false             { lit $1 }
-      | string            { $1 } 
+  : byte              { lit $1 }
+  | char              { lit $1 }
+  | int               { lit $1 }
+  | float             { lit $1 }
+  | true              { lit $1 }
+  | false             { lit $1 }
+  | string            { $1 } 
 
 string :: { Lit Span }
-string
-      : str               { lit $1 }
-      | rawStr            { lit $1 }
-      | byteStr           { lit $1 }
-      | rawByteStr        { lit $1 }
+  : str               { lit $1 }
+  | rawStr            { lit $1 }
+  | byteStr           { lit $1 }
+  | rawByteStr        { lit $1 }
 
+
+-----------
+-- Paths --
+-----------
+
+-- parse_generic_values_after_lt()
+generic_values :: { ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
+generic_values : lifetimes_tysums_bindings { $1 }
+
+lifetimes_tysums_bindings
+  : ident '=' ty ',' lifetimes_tysums_bindings  { let (lts, tys, bds) = $5 in (lts, tys, [(unspan $1,$3)] ++ bds) }
+  | lifetimes_tysums                            { (fst $1, snd $1, []) } 
+
+lifetimes_tysums
+  : ty {- TODO ty_sum -} ',' lifetimes_tysums   { (fst $3, [$1] ++ snd $3) }
+  | lifetimes                                   { ($1, []) }
+
+lifetimes
+  : lifetimes ',' lifetime    { $1 ++ [$3] }
+  |                           { [] }
+
+-- parse_path(PathStyle::Type)
+ty_path :: { Path Span }
+  : path_segments_without_colons            {% withSpan $1 (Path False (unspan $1)) }
+  | '::' path_segments_without_colons       {% withSpan $1 (Path True (unspan $2)) }
+
+
+-- parse_path_segments_without_colons()
+path_segments_without_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
+  : sep_by1(path_segment_without_colons, '::')  { sequence $1 }
+
+-- No corresponding function - see path_segments_without_colons
+path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
+  : ident path_parameter 
+     {% if not (isTypePathSegmentIdent $1)
+          then fail "invalid path segment in type path"
+          else withSpan $1 (Spanned (unspan $1, $2))
+     }
+
+-- TODO: comma(ty_sum), not comma(ty) for the second/third cases
+path_parameter :: { PathParameters Span }
+  : '<' generic_values '>'     {% let (lts, tys, bds) = $2 in withSpan $1 (AngleBracketed lts tys bds) }
+  | '(' comma(ty) ')'          {% withSpan $1 (Parenthesized $2 Nothing) }
+  | '(' comma(ty) ')' '->' ty  {% withSpan $1 (Parenthesized $2 (Just $5)) }
+  | {- empty -}                { AngleBracketed [] [] [] mempty }
+
+-----------
+-- Types --
+-----------
+
+lifetime :: { Lifetime Span }
+  : LIFETIME                      { let Spanned (LifetimeTok (Ident l _)) s = $1 in Lifetime l s }
+
+-- parse_ty()
+ty :: { Ty Span }
+  : '_'                              {% withSpan $1 Infer }
+  | '!'                              {% withSpan $1 Never }
+  | '(' ')'                          {% withSpan $1 (TupTy []) }
+  | '[' ty ']'                       {% withSpan $1 (Slice $2) }
+  | '*' ty                           {% withSpan $1 (Ptr Immutable $2) }
+  | '*' const ty                     {% withSpan $1 (Ptr Immutable $3) }
+  | '*' mut ty                       {% withSpan $1 (Ptr Mutable $3) }
+  | '&' ty                           {% withSpan $1 (Rptr Nothing Immutable $2) }
+  | '&' mut ty                       {% withSpan $1 (Rptr Nothing Mutable $3) }
+  | '&' lifetime ty                  {% withSpan $1 (Rptr (Just $2) Immutable $3) }
+  | '&' lifetime mut ty              {% withSpan $1 (Rptr (Just $2) Mutable $4) }
+  | ty_path                          {% withSpan $1 (PathTy Nothing $1) }
+{-
+: '(' ty_sum ',' comma(ty_sum) ')' { withSpan (TupTy <\$> ((:) <\$> $2 <*> sequence $4) <* $1 <* $5) }
+      | '(' ty_sum ',' ')'               { withSpan (TupTy <\$> (pure <\$> $2) <* $1 <* $4) }
+      | '[' ty ';' expr ']'              { withSpan (Array <\$> $2 <*> $4 <* $1 <* $5) }
+      | for_in_type                      { $1 }
+      | impl ty_param_bounds_mod         {% if (any isTraitTyParamBound (unspan $2))
+                                              then pure (withSpan (ImplTrait <\$> $2 <* $1))
+                                              else fail "at least one trait must be specified"
+                                         }
+      | ty_bare_fn                       { $1 (pure []) }
+      | typeof '(' expr ')'              { withSpan (Typeof <\$> $3 <* $1 <* $4) }
+      | ty_qual_path                     { withSpan (PathTy <\$> (Just . fst <\$> $1) <*> (snd <\$> $1)) }
+-}
 {
 
 lit :: Spanned Token -> Lit Span
@@ -346,10 +433,10 @@ lit (Spanned (LiteralTok litTok suffix_m) s) = parseLit litTok suffix s
                (Just (Name "f64"))   -> F64
                _ -> error "lit"
 
-isPathSegmentIdent :: Ident -> Bool
+isPathSegmentIdent :: Spanned Ident -> Bool
 isPathSegmentIdent i = True
 
-isTypePathSegmentIdent :: Ident -> Bool
+isTypePathSegmentIdent :: Spanned Ident -> Bool
 isTypePathSegmentIdent i = True
 
 isAbi :: InternedString -> Bool

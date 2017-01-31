@@ -602,7 +602,7 @@ data Path a
       { global :: Bool
       -- | The segments in the path: the things separated by ::.
       -- Each segment consists of an identifier, an optional lifetime, and a set of types. E.g. std, String or Box<T>
-      , segments :: [(Ident, PathParameters a)]
+      , segments :: NonEmpty (Ident, PathParameters a)  -- see https://github.com/rust-lang/rust/issues/3420
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
