@@ -12,7 +12,8 @@ import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Constants
 
 import Data.Semigroup ((<>))
-import Data.List.NonEmpty
+import Data.Maybe
+import Data.List.NonEmpty hiding (length)
 }
 
 -- <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
@@ -24,6 +25,7 @@ import Data.List.NonEmpty
 %name literalP lit
 %name attributeP attribute
 %name typeP ty
+%name expressionP expr
 
 %tokentype { TokenSpace Spanned }
 
@@ -31,7 +33,7 @@ import Data.List.NonEmpty
 %error { parseError }
 %lexer { lexRust } { Tok (Spanned Eof _) }
 
---%expect 0
+%expect 1
 
 %token
 
@@ -171,6 +173,8 @@ import Data.List.NonEmpty
   LIFETIME   { Tok $$@(Spanned (LifetimeTok _) _) }
 
 %%
+
+
 ---------------------
 -- Extended tokens --
 ---------------------
@@ -232,18 +236,12 @@ many(p)         :                     { [] }
                 | p many(p)           { $1 : $2 }
 
 -- | Zero or more occurrences of p, separated by sep
-sep_by(p,sep)   : sep_by1(p,sep)      { toList $1 }
+sep_by(p,sep)   : sep_by1(p,sep)      { $1 }
                 | {- empty -}         { [] }
 
 -- | One or more occurences of p, seperated by sep
-sep_by1(p,sep)  : sep_by1(p,sep) sep p  { $1 <> ($3 :| []) }
-                | p                     { $1 :| [] }
-
--- | Like sep_by1, but returning a NonEmpty
-sep_by_nonempty(p,sep) : p many(then(sep,p)) { $1 :| $2 }
-
--- | Sequence two parsers, return the result of the second (*>)
-then(a,b)       : a b                 { $2 }
+sep_by1(p,sep)  : sep_by1(p,sep) sep p  { $1 ++ [$3] }
+                | p                     { [$1] }
 
 -- | Plus delimited, at least one
 plus(p)         : sep_by1(p,'+')      { $1 }
@@ -251,16 +249,9 @@ plus(p)         : sep_by1(p,'+')      { $1 }
 -- | Comma delimited, at least one
 comma(p)        : sep_by(p,',')       { $1 }
 
--- | One or the other
-or(l,r)         : l                   { Left $1 }
-                | r                   { Right $1 }
-
 -- | One or the other, but of the same type
 alt(l,r)        : l                   { $1 }
                 | r                   { $1 }
-
--- | Both
-and(l,r)        : l r                 { ($1, $2) }
 
 -------------
 -- General --
@@ -333,31 +324,39 @@ string :: { Lit Span }
 -- Paths --
 -----------
 
+-- parse_qualified_path(PathStyle::Type)
+ty_qual_path :: { Ty Span }
+  : '<' ty_sum '>' '::' path_segments_without_colons            {% withSpan $1 (PathTy (Just (QSelf $2 0)) (Path False (unspan $5) (posOf $5))) }
+  | '<' ty_sum as ty_path '>' '::' path_segments_without_colons {% let segs = segments $4 <> unspan $7
+                                                                   in withSpan $1 (PathTy (Just (QSelf $2 (length (segments $4)))) $4{ segments = segs }) }
+
 -- parse_generic_values_after_lt()
 generic_values :: { ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
 generic_values : lifetimes_tysums_bindings { $1 }
 
+-- TODO: can this be made left recursive?
 lifetimes_tysums_bindings
-  : ident '=' ty ',' lifetimes_tysums_bindings  { let (lts, tys, bds) = $5 in (lts, tys, [(unspan $1,$3)] ++ bds) }
-  | lifetimes_tysums                            { (fst $1, snd $1, []) } 
+  : lifetime ',' lifetimes_tysums_bindings   { let (lts, tys, bds) = $3 in ($1 : lts, tys, bds) }
+  | lifetime                                 { ([$1], [], []) }
+  | tysums_bindings                          { let (tys, bds) = $1 in ([], tys, bds) } 
 
-lifetimes_tysums
-  : ty {- TODO ty_sum -} ',' lifetimes_tysums   { (fst $3, [$1] ++ snd $3) }
-  | lifetimes                                   { ($1, []) }
+-- TODO: can this be made left recursive?
+tysums_bindings
+  : ty_sum ',' tysums_bindings               { let (tys, bds) = $3 in ($1 : tys, bds) }
+  | ty_sum                                   { ([$1], []) }
+  | comma(binding)                           { ([], $1) }
 
-lifetimes
-  : lifetimes ',' lifetime    { $1 ++ [$3] }
-  |                           { [] }
+binding : ident '=' ty                             { (unspan $1, $3) }
+
 
 -- parse_path(PathStyle::Type)
 ty_path :: { Path Span }
   : path_segments_without_colons            {% withSpan $1 (Path False (unspan $1)) }
   | '::' path_segments_without_colons       {% withSpan $1 (Path True (unspan $2)) }
 
-
 -- parse_path_segments_without_colons()
 path_segments_without_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
-  : sep_by1(path_segment_without_colons, '::')  { sequence $1 }
+  : sep_by1(path_segment_without_colons, '::')  { sequence (fromList $1) }
 
 -- No corresponding function - see path_segments_without_colons
 path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
@@ -367,6 +366,7 @@ path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
           else withSpan $1 (Spanned (unspan $1, $2))
      }
 
+
 -- TODO: comma(ty_sum), not comma(ty) for the second/third cases
 path_parameter :: { PathParameters Span }
   : '<' generic_values '>'     {% let (lts, tys, bds) = $2 in withSpan $1 (AngleBracketed lts tys bds) }
@@ -374,18 +374,26 @@ path_parameter :: { PathParameters Span }
   | '(' comma(ty) ')' '->' ty  {% withSpan $1 (Parenthesized $2 (Just $5)) }
   | {- empty -}                { AngleBracketed [] [] [] mempty }
 
+
 -----------
 -- Types --
 -----------
 
 lifetime :: { Lifetime Span }
-  : LIFETIME                      { let Spanned (LifetimeTok (Ident l _)) s = $1 in Lifetime l s }
+  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _)) s = $1 in Lifetime l s }
+
+-- parse_trait_ref()
+trait_ref :: { TraitRef Span }
+  : ty_path                          {% withSpan $1 (TraitRef $1) }
+
 
 -- parse_ty()
 ty :: { Ty Span }
   : '_'                              {% withSpan $1 Infer }
   | '!'                              {% withSpan $1 Never }
   | '(' ')'                          {% withSpan $1 (TupTy []) }
+  | '(' ty ',' ')'                   {% withSpan $1 (TupTy [$2]) }
+  | '(' ty ',' sep_by1(ty,',') ')'   {% withSpan $1 (TupTy ($2 : $4)) }
   | '[' ty ']'                       {% withSpan $1 (Slice $2) }
   | '*' ty                           {% withSpan $1 (Ptr Immutable $2) }
   | '*' const ty                     {% withSpan $1 (Ptr Immutable $3) }
@@ -395,19 +403,100 @@ ty :: { Ty Span }
   | '&' lifetime ty                  {% withSpan $1 (Rptr (Just $2) Immutable $3) }
   | '&' lifetime mut ty              {% withSpan $1 (Rptr (Just $2) Mutable $4) }
   | ty_path                          {% withSpan $1 (PathTy Nothing $1) }
+  | ty_qual_path                     { $1 }
+  | unsafe extern abi fn_decl        {% withSpan $1 (BareFn Unsafe $3 [] $4) }
+  | unsafe fn_decl                   {% withSpan $1 (BareFn Unsafe Rust [] $2) }
+  | extern abi fn_decl               {% withSpan $1 (BareFn Normal $2 [] $3) }
+  | fn_decl                          {% withSpan $1 (BareFn Normal Rust [] $1) }
+  | typeof '(' expr ')'              {% withSpan $1 (Typeof $3) }
+  | '[' ty ';' expr ']'              {% withSpan $1 (Array $2 $4) }
+  | for_lts unsafe extern abi fn_decl {% withSpan $1 (BareFn Unsafe $4 (unspan $1) $5) }
+  | for_lts unsafe fn_decl           {% withSpan $1 (BareFn Unsafe Rust (unspan $1) $3) }
+  | for_lts extern abi fn_decl       {% withSpan $1 (BareFn Normal $3 (unspan $1) $4) }
+  | for_lts fn_decl                  {% withSpan $1 (BareFn Normal Rust (unspan $1) $2) }
+  | for_lts trait_ref                {% 
+      do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
+         withSpan $1 (PolyTraitRefTy (TraitTyParamBound poly None :| []))
+    }
+ {- | for_lts trait_ref '+' sep_by1(ty_param_bound,'+')  {%
+      do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
+         withSpan $1 (PolyTraitRefTy (TraitTyParamBound poly None :| $4)) 
+    } 
+-}
 {-
-: '(' ty_sum ',' comma(ty_sum) ')' { withSpan (TupTy <\$> ((:) <\$> $2 <*> sequence $4) <* $1 <* $5) }
-      | '(' ty_sum ',' ')'               { withSpan (TupTy <\$> (pure <\$> $2) <* $1 <* $4) }
-      | '[' ty ';' expr ']'              { withSpan (Array <\$> $2 <*> $4 <* $1 <* $5) }
-      | for_in_type                      { $1 }
       | impl ty_param_bounds_mod         {% if (any isTraitTyParamBound (unspan $2))
                                               then pure (withSpan (ImplTrait <\$> $2 <* $1))
                                               else fail "at least one trait must be specified"
                                          }
-      | ty_bare_fn                       { $1 (pure []) }
-      | typeof '(' expr ')'              { withSpan (Typeof <\$> $3 <* $1 <* $4) }
-      | ty_qual_path                     { withSpan (PathTy <\$> (Just . fst <\$> $1) <*> (snd <\$> $1)) }
 -}
+
+
+
+
+-- parse_ty_sum()
+ty_sum :: { Ty Span }
+  : ty                                   { $1 }
+  | ty '+' sep_by1(ty_param_bound,'+')   {% withSpan $1 (ObjectSum $1 $3) }
+ 
+fn_decl :: { FnDecl Span }
+  : fn '(' comma(arg_general) opt('...') ')' ret_ty  {% withSpan $1 (FnDecl $3 $6 (isJust $4)) }
+
+-- TODO: consider inlinging this
+-- parse_ty_param_bounds(BoundParsingMode::Bare)
+ty_param_bounds_bare :: { [TyParamBound Span] }
+  : sep_by1(ty_param_bound,'+')   { $1 }
+  
+ty_param_bound :: { TyParamBound Span }
+  : lifetime         { RegionTyParamBound $1 }
+  | poly_trait_ref   { TraitTyParamBound $1 None }
+
+-- parse_arg_general(false) -- does not require name
+-- NOT ALL PATTERNS ARE ACCEPTED: <https://github.com/rust-lang/rust/issues/35203>
+arg_general :: { Arg Span } 
+  : ty_sum            {% withSpan $1 (Arg $1 Nothing) }
+  | ident ':' ty_sum  {% withSpan $1 (Arg $3 (Just (IdentP (ByValue Immutable) (unspan $1) Nothing mempty))) }
+  | '_'   ':' ty_sum  {% withSpan $1 (Arg $3 (Just (WildP mempty))) }
+
+-- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
+abi :: { Abi }
+  : str             {% case unspan $1 of
+                         (LiteralTok (StrTok (Name s)) Nothing) | isAbi s -> pure (read s)
+                         _ -> fail "invalid ABI"
+                    }
+  | {- empty -}     { C }
+
+-- parse_ret_ty
+ret_ty :: { Maybe (Ty Span) }
+  : '->' ty         { Just $2 }
+  | {- empty -}     { Nothing }
+
+-- parse_poly_trait_ref()
+poly_trait_ref :: { PolyTraitRef Span }
+  : trait_ref                          {% withSpan $1 (PolyTraitRef [] $1) }
+  | for_lts trait_ref {% withSpan $1 (PolyTraitRef (unspan $1) $2) }
+
+-- parse_for_lts()
+-- Unlike the Rust libsyntax version, this _requires_ the for
+for_lts :: { Spanned [LifetimeDef Span] }
+  : for '<' comma(lifetime_def) '>'   {% withSpan $1 (Spanned $3) } 
+
+-- No corresponding parse function
+lifetime_def :: { LifetimeDef Span }
+  : outer_attribute many(outer_attribute) lifetime ':' sep_by1(lifetime,'+') {% withSpan $1 (LifetimeDef ($1 : $2) $3 $5) }
+  | outer_attribute many(outer_attribute) lifetime                           {% withSpan $1 (LifetimeDef ($1 : $2) $3 []) }
+  | lifetime ':' sep_by1(lifetime,'+')                                       {% withSpan $1 (LifetimeDef [] $1 $3) }
+  | lifetime                                                                 {% withSpan $1 (LifetimeDef [] $1 []) }
+
+
+-----------------
+-- Expressions --
+-----------------
+
+-- TODO: lit should have attributes. Also, some other cases are missing... ;)
+expr :: { Expr Span }
+  : lit       {% withSpan $1 (Lit [] $1) }
+
+
 {
 
 lit :: Spanned Token -> Lit Span
@@ -450,5 +539,12 @@ withSpan node mkNode = do
   let Span lo _ = posOf node
   hi <- getPosition
   pure (mkNode (Span lo hi))
+
+-- Functions related to `NonEmpty` that really should exist...
+(<++) :: [a] -> NonEmpty a -> NonEmpty a
+xs <++ ys = foldr (<|) ys xs
+
+(++>) :: NonEmpty a -> [a] -> NonEmpty a
+(x :| xs) ++> ys = x :| (xs ++ ys)
 
 }

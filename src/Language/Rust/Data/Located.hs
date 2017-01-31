@@ -13,6 +13,9 @@ instance Located Span where
 instance Located (Spanned a) where
   posOf (Spanned _ s) = s
 
+instance Located a => Located [a] where
+  posOf = foldMap posOf
+
 instance Located a => Located (Arg a) where posOf (Arg _ _ s) = posOf s
 instance Located a => Located (Arm a) where posOf (Arm _ _ _ _ s) = posOf s
 instance Located a => Located (Attribute a) where posOf (Attribute _ _ _ s) = posOf s
