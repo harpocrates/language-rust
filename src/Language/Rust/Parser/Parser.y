@@ -25,6 +25,7 @@ import Data.List.NonEmpty hiding (length)
 %name literalP lit
 %name attributeP attribute
 %name typeP ty
+%name patternP pat
 %name expressionP expr
 
 %tokentype { TokenSpace Spanned }
@@ -33,7 +34,8 @@ import Data.List.NonEmpty hiding (length)
 %error { parseError }
 %lexer { lexRust } { Tok (Spanned Eof _) }
 
-%expect 1
+-- Conflicts caused in the sep_by1(segment,'::') parts of paths
+%expect 2
 
 %token
 
@@ -325,14 +327,15 @@ string :: { Lit Span }
 -----------
 
 -- parse_qualified_path(PathStyle::Type)
-ty_qual_path :: { Ty Span }
-  : '<' ty_sum '>' '::' path_segments_without_colons            {% withSpan $1 (PathTy (Just (QSelf $2 0)) (Path False (unspan $5) (posOf $5))) }
-  | '<' ty_sum as ty_path '>' '::' path_segments_without_colons {% let segs = segments $4 <> unspan $7
-                                                                   in withSpan $1 (PathTy (Just (QSelf $2 (length (segments $4)))) $4{ segments = segs }) }
+-- qual_path :: Spanned (NonEmpty (Ident, PathParameters Span)) -> P (Spanned (QSelf Span, Path Span))
+qual_path(segs)
+  : '<' ty_sum '>' '::' segs            {% withSpan $1 (Spanned (QSelf $2 0, Path False (unspan $5) (posOf $5))) }
+  | '<' ty_sum as ty_path '>' '::' segs {% let segs = segments $4 <> unspan $7
+                                           in withSpan $1 (Spanned (QSelf $2 (length (segments $4)), $4{ segments = segs })) }
 
 -- parse_generic_values_after_lt()
 generic_values :: { ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
-generic_values : lifetimes_tysums_bindings { $1 }
+generic_values : lifetimes_tysums_bindings   { $1 }
 
 -- TODO: can this be made left recursive?
 lifetimes_tysums_bindings
@@ -349,31 +352,85 @@ tysums_bindings
 binding : ident '=' ty                             { (unspan $1, $3) }
 
 
+-- Type related:
 -- parse_path(PathStyle::Type)
 ty_path :: { Path Span }
   : path_segments_without_colons            {% withSpan $1 (Path False (unspan $1)) }
   | '::' path_segments_without_colons       {% withSpan $1 (Path True (unspan $2)) }
 
+ty_qual_path :: { Spanned (QSelf Span, Path Span) }
+  : qual_path(path_segments_without_colons)  { $1 }
+
 -- parse_path_segments_without_colons()
+-- TODO: Get rid of fromList, by making a version of sep_by1 for NonEmpty
 path_segments_without_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
   : sep_by1(path_segment_without_colons, '::')  { sequence (fromList $1) }
 
 -- No corresponding function - see path_segments_without_colons
 path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
-  : ident path_parameter 
-     {% if not (isTypePathSegmentIdent $1)
-          then fail "invalid path segment in type path"
-          else withSpan $1 (Spanned (unspan $1, $2))
+  : ident path_parameter1 
+     {% if isTypePathSegmentIdent $1
+          then withSpan $1 (Spanned (unspan $1, $2))
+          else fail "invalid path segment in type path"
      }
 
-
 -- TODO: comma(ty_sum), not comma(ty) for the second/third cases
-path_parameter :: { PathParameters Span }
-  : '<' generic_values '>'     {% let (lts, tys, bds) = $2 in withSpan $1 (AngleBracketed lts tys bds) }
-  | '(' comma(ty) ')'          {% withSpan $1 (Parenthesized $2 Nothing) }
-  | '(' comma(ty) ')' '->' ty  {% withSpan $1 (Parenthesized $2 (Just $5)) }
-  | {- empty -}                { AngleBracketed [] [] [] mempty }
+path_parameter1 :: { PathParameters Span }
+  : '<' generic_values '>'      {% let (lts, tys, bds) = $2 in withSpan $1 (AngleBracketed lts tys bds) }
+  | '(' comma(ty) ')'           {% withSpan $1 (Parenthesized $2 Nothing) }
+  | '(' comma(ty) ')' '->' ty   {% withSpan $1 (Parenthesized $2 (Just $5)) }
+  | {- empty -}                 { AngleBracketed [] [] [] mempty }
 
+
+-- Expression related:
+-- parse_path(PathStyle::Expr)
+expr_path :: { Path Span }
+  : path_segments_with_colons               {% withSpan $1 (Path False (unspan $1)) }
+  | '::' path_segments_with_colons          {% withSpan $1 (Path True (unspan $2)) }
+
+expr_qual_path :: { Spanned (QSelf Span, Path Span) }
+  : qual_path(path_segments_with_colons)  { $1 }
+
+-- parse_path_segments_with_colons()
+-- TODO: Get rid of fromList, by making a version of sep_by1 for NonEmpty
+path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
+  : sep_by1(path_segment_with_colons, '::')  { sequence (fromList $1) }
+
+-- No corresponding function - see path_segments_with_colons
+path_segment_with_colons :: { Spanned (Ident, PathParameters Span) }
+path_segment_with_colons
+  : ident path_parameter2
+     {% if isPathSegmentIdent $1
+          then withSpan $1 (Spanned (unspan $1, $2))
+          else fail "invalid path segment in expression path"
+     }
+
+path_parameter2 :: { PathParameters Span }
+  : '::' '<' generic_values '>' {% let (lts, tys, bds) = $3 in withSpan $1 (AngleBracketed lts tys bds) }
+  | {- empty -}                 { AngleBracketed [] [] [] mempty }
+
+
+-- Mod related:
+-- parse_path(PathStyle::Mod)
+mod_path :: { Path Span }
+  : path_segments_without_types             {% withSpan $1 (Path False (unspan $1)) }
+  | '::' path_segments_without_types        {% withSpan $1 (Path True (unspan $2)) }
+
+mod_qual_path :: { Spanned (QSelf Span, Path Span) }
+  : qual_path(path_segments_without_types)  { $1 }
+
+-- parse_path_segments_without_types()
+-- TODO: Get rid of fromList, by making a version of sep_by1 for NonEmpty
+path_segments_without_types :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
+  : sep_by1(path_segment_without_types, '::')  { sequence (fromList $1) }
+
+-- No corresponding function - see path_segments_without_types
+path_segment_without_types :: { Spanned (Ident, PathParameters Span) }
+  : ident 
+     {% if isPathSegmentIdent $1
+          then withSpan $1 (Spanned (unspan $1, AngleBracketed [] [] [] mempty))
+          else fail "invalid path segment in mod path"
+     }
 
 -----------
 -- Types --
@@ -403,7 +460,7 @@ ty :: { Ty Span }
   | '&' lifetime ty                  {% withSpan $1 (Rptr (Just $2) Immutable $3) }
   | '&' lifetime mut ty              {% withSpan $1 (Rptr (Just $2) Mutable $4) }
   | ty_path                          {% withSpan $1 (PathTy Nothing $1) }
-  | ty_qual_path                     { $1 }
+  | ty_qual_path                     {% withSpan $1 (PathTy (Just (fst (unspan $1))) (snd (unspan $1))) }
   | unsafe extern abi fn_decl        {% withSpan $1 (BareFn Unsafe $3 [] $4) }
   | unsafe fn_decl                   {% withSpan $1 (BareFn Unsafe Rust [] $2) }
   | extern abi fn_decl               {% withSpan $1 (BareFn Normal $2 [] $3) }
@@ -487,6 +544,43 @@ lifetime_def :: { LifetimeDef Span }
   | lifetime ':' sep_by1(lifetime,'+')                                       {% withSpan $1 (LifetimeDef [] $1 $3) }
   | lifetime                                                                 {% withSpan $1 (LifetimeDef [] $1 []) }
 
+--------------
+-- Patterns --
+--------------
+
+pat :: { Pat Span }
+  : '_'                                         {% withSpan $1 WildP }
+  | '&' mut pat                                 {% withSpan $1 (RefP $3 Mutable) }
+  | '&' pat                                     {% withSpan $1 (RefP $2 Immutable) }
+--  | binding_mode ident at_pat                   {% withSpan $1 (IdentP (unspan $1) $2 $3) }
+  | lit_expr                                    {% withSpan $1 (LitP $1) }
+  | '-' lit_expr                                {% withSpan $1 (LitP (Unary [] Neg $2 mempty)) }
+  | box pat                                     {% withSpan $1 (BoxP $2) }
+  | expr_path                                   {% withSpan $1 (PathP Nothing $1) }
+  | expr_qual_path                              {% withSpan $1 (PathP (Just (fst (unspan $1))) (snd (unspan $1))) }
+  | lit_or_path '...' lit_or_path               {% withSpan $1 (RangeP $1 $3) }
+  | expr_path '{' '..' '}'                      {% withSpan $1 (StructP $1 [] True) }
+
+lit_or_path :: { Expr Span }
+  : expr_path      {% withSpan $1 (PathExpr [] Nothing $1) } 
+  | expr_qual_path {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
+  | '-' lit_expr   {% withSpan $1 (Unary [] Neg $2) }
+  | lit_expr       { $1 }
+
+pat_field :: { FieldPat Span }
+  :     binding_mode ident     {% withSpan $1 (FieldPat Nothing (IdentP (unspan $1) (unspan $2) Nothing mempty)) }
+  | box binding_mode ident     {% withSpan $1 (FieldPat Nothing (BoxP (IdentP (unspan $2) (unspan $3) Nothing mempty) mempty)) }
+  | binding_mode ident ':' pat {% withSpan $1 (FieldPat (Just (unspan $2)) (IdentP (unspan $1) (unspan $2) (Just $4) mempty)) }
+
+binding_mode :: { Spanned BindingMode }
+  : ref mut               {% withSpan $1 (Spanned (ByRef Mutable)) }
+  | ref                   {% withSpan $1 (Spanned (ByRef Immutable)) }
+  | mut                   {% withSpan $1 (Spanned (ByValue Mutable)) }
+  | {- Empty -}           { pure (ByValue Immutable) }
+
+at_pat :: { Maybe (Pat Span) }
+  : '@' pat     { Just $2 }
+  | {- empty -} { Nothing }
 
 -----------------
 -- Expressions --
@@ -494,8 +588,10 @@ lifetime_def :: { LifetimeDef Span }
 
 -- TODO: lit should have attributes. Also, some other cases are missing... ;)
 expr :: { Expr Span }
-  : lit       {% withSpan $1 (Lit [] $1) }
+  : lit_expr  { $1 }
 
+lit_expr :: { Expr Span }
+  : lit       {% withSpan $1 (Lit [] $1) }
 
 {
 

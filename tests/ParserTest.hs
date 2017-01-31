@@ -146,6 +146,10 @@ parserTypes = testGroup "parsing types"
                                                                                         (PathTy Nothing (Path False [("T", AngleBracketed [] [] [] ())] ()) ())
                                                                                         ()]
                                                                                   [] ())] ()) ()) ()) None] ())
+  , testType "for <'a> Debug + for <'b> Clone + for <'c> Clone"
+             (PolyTraitRefTy
+               [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()]
+                                                (TraitRef (Path False [("Debug", AngleBracketed [] [] [] ())] ()) ()) ()) None] ())
   ]
   where
     -- | Create a test for a code fragment that should parse to a type.
