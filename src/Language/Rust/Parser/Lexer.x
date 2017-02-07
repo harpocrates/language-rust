@@ -978,7 +978,8 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 @lit_float      { \f -> literal (FloatTok   (Name f)) }
 @lit_float / [^\._a-zA-Z]
                 { \f -> literal (FloatTok   (Name f)) }
-@lit_float2     { \f -> literal (FloatTok   (Name f)) }
+@lit_float2 / [^\.]
+                { \f -> literal (FloatTok   (Name f)) }
 
 @lit_byte       { \c -> literal (ByteTok    (Name (drop 2 (init c)))) }
 @lit_char       { \c -> literal (CharTok    (Name (drop 1 (init c)))) }

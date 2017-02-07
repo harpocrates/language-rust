@@ -1,5 +1,7 @@
 {
-module Language.Rust.Parser.Parser (attributeP, typeP, literalP) where
+module Language.Rust.Parser.Parser (
+  attributeP, typeP, literalP, patternP, expressionP
+) where
 
 import Language.Rust.Data.InputStream
 import Language.Rust.Syntax.Token
@@ -14,6 +16,7 @@ import Language.Rust.Syntax.Constants
 import Data.Semigroup ((<>))
 import Data.Maybe
 import Data.List.NonEmpty hiding (length)
+import qualified Data.List.NonEmpty as N
 }
 
 -- <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
@@ -35,7 +38,7 @@ import Data.List.NonEmpty hiding (length)
 %lexer { lexRust } { Tok (Spanned Eof _) }
 
 -- Conflicts caused in the sep_by1(segment,'::') parts of paths
-%expect 2
+%expect 3
 
 %token
 
@@ -388,26 +391,38 @@ expr_path :: { Path Span }
   : path_segments_with_colons               {% withSpan $1 (Path False (unspan $1)) }
   | '::' path_segments_with_colons          {% withSpan $1 (Path True (unspan $2)) }
 
+-- As expr_path, but disallowing one IDENT paths
+-- TODO: this duplicates a bunch of stuff
+-- TODO: abstract function to make path out into code block at bottom of file
+complex_expr_path :: { Path Span }
+  : ident '::' '<' generic_values '>'                                       
+      {% if isPathSegmentIdent $1
+           then let (lts, tys, bds) = $4
+                in withSpan $1 (Path False (fromList [(unspan $1, AngleBracketed lts tys bds mempty)]))
+           else fail "invalid path segment in expression path" }
+  | ident '::' path_segments_with_colons                              
+      {% withSpan $1 (Path False ((unspan $1, NoParameters mempty) <| unspan $3)) }
+  | ident '::' '<' generic_values '>' '::' path_segments_with_colons
+      {% let (lts, tys, bds) = $4 in withSpan $1 (Path False ((unspan $1, AngleBracketed lts tys bds mempty) <| unspan $7)) }
+  | '::' path_segments_with_colons                                          {% withSpan $1 (Path True (unspan $2)) }
+
 expr_qual_path :: { Spanned (QSelf Span, Path Span) }
   : qual_path(path_segments_with_colons)  { $1 }
 
 -- parse_path_segments_with_colons()
 -- TODO: Get rid of fromList, by making a version of sep_by1 for NonEmpty
 path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
-  : sep_by1(path_segment_with_colons, '::')  { sequence (fromList $1) }
-
--- No corresponding function - see path_segments_with_colons
-path_segment_with_colons :: { Spanned (Ident, PathParameters Span) }
-path_segment_with_colons
-  : ident path_parameter2
-     {% if isPathSegmentIdent $1
-          then withSpan $1 (Spanned (unspan $1, $2))
-          else fail "invalid path segment in expression path"
-     }
-
-path_parameter2 :: { PathParameters Span }
-  : '::' '<' generic_values '>' {% let (lts, tys, bds) = $3 in withSpan $1 (AngleBracketed lts tys bds) }
-  | {- empty -}                 { AngleBracketed [] [] [] mempty }
+  : ident                                          {% withSpan $1 (Spanned ((unspan $1, NoParameters mempty) :| [])) }
+  | path_segments_with_colons '::' path_parameter2 {%
+     case (N.last (unspan $1), $3) of
+       ((i, NoParameters{}), Left (lts, tys, bds)) -> withSpan $1 (Spanned (N.init (unspan $1) <++ ((i, AngleBracketed lts tys bds mempty) :| [])))
+       (_, Right i) -> withSpan $1 (Spanned (unspan $1 <> ((i, AngleBracketed [] [] [] mempty) :| [])))
+       _ -> error "invalid path segment in expression path"
+    }
+  
+path_parameter2 :: { Either ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) Ident }
+  : '<' generic_values '>' { Left $2 }
+  | ident                  { Right (unspan $1) }
 
 
 -- Mod related:
@@ -552,31 +567,52 @@ pat :: { Pat Span }
   : '_'                                         {% withSpan $1 WildP }
   | '&' mut pat                                 {% withSpan $1 (RefP $3 Mutable) }
   | '&' pat                                     {% withSpan $1 (RefP $2 Immutable) }
---  | binding_mode ident at_pat                   {% withSpan $1 (IdentP (unspan $1) $2 $3) }
+  | '(' ')'                                     {% withSpan $1 (TupleP [] Nothing) }
+  | '(' pat_tup ')'                             {% withSpan $1 (TupleP $2 Nothing) }
+  | '(' pat_tup ',' ')'                         {% withSpan $1 (TupleP $2 Nothing) }
+  | binding_mode1 ident at_pat                  {% withSpan $1 (IdentP (unspan $1) (unspan $2) $3) }
+  | ident at_pat                                {% withSpan $1 (IdentP (ByValue Immutable) (unspan $1) $2) }
   | lit_expr                                    {% withSpan $1 (LitP $1) }
   | '-' lit_expr                                {% withSpan $1 (LitP (Unary [] Neg $2 mempty)) }
   | box pat                                     {% withSpan $1 (BoxP $2) }
-  | expr_path                                   {% withSpan $1 (PathP Nothing $1) }
+  | complex_expr_path                           {% withSpan $1 (PathP Nothing $1) }
   | expr_qual_path                              {% withSpan $1 (PathP (Just (fst (unspan $1))) (snd (unspan $1))) }
   | lit_or_path '...' lit_or_path               {% withSpan $1 (RangeP $1 $3) }
   | expr_path '{' '..' '}'                      {% withSpan $1 (StructP $1 [] True) }
+  | expr_path '{' pat_fields '}'                {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
+  | expr_path '(' pat_tup ')'                   {% withSpan $1 (TupleStructP $1 $3 Nothing) }
+
+-- TODO: the tuple pattern case should allow slices
+pat_tup :: { [Pat Span] }
+  : pat_tup ',' pat                             { $1 ++ [$3] }
+  | pat                                         { [$1] }
 
 lit_or_path :: { Expr Span }
-  : expr_path      {% withSpan $1 (PathExpr [] Nothing $1) } 
-  | expr_qual_path {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
-  | '-' lit_expr   {% withSpan $1 (Unary [] Neg $2) }
-  | lit_expr       { $1 }
+  : ident             {% withSpan $1 (PathExpr [] Nothing (Path False (fromList [(unspan $1, AngleBracketed [] [] [] mempty)]) mempty)) } 
+  | complex_expr_path {% withSpan $1 (PathExpr [] Nothing $1) } 
+  | expr_qual_path    {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
+  | '-' lit_expr      {% withSpan $1 (Unary [] Neg $2) }
+  | lit_expr          { $1 }
 
 pat_field :: { FieldPat Span }
   :     binding_mode ident     {% withSpan $1 (FieldPat Nothing (IdentP (unspan $1) (unspan $2) Nothing mempty)) }
   | box binding_mode ident     {% withSpan $1 (FieldPat Nothing (BoxP (IdentP (unspan $2) (unspan $3) Nothing mempty) mempty)) }
-  | binding_mode ident ':' pat {% withSpan $1 (FieldPat (Just (unspan $2)) (IdentP (unspan $1) (unspan $2) (Just $4) mempty)) }
+  | binding_mode ident ':' pat {% withSpan $1 (FieldPat (Just (unspan $2)) $4) }
 
-binding_mode :: { Spanned BindingMode }
+pat_fields :: { ([FieldPat Span], Bool) }
+  : pat_field ',' pat_fields   { let (fs,b) = $3 in ($1 : fs, b) }
+  | pat_field ','              { ([$1], False) }
+  | pat_field ',' '..'         { ([$1], True) }
+  | pat_field                  { ([$1], False) }
+
+binding_mode1 :: { Spanned BindingMode }
   : ref mut               {% withSpan $1 (Spanned (ByRef Mutable)) }
   | ref                   {% withSpan $1 (Spanned (ByRef Immutable)) }
   | mut                   {% withSpan $1 (Spanned (ByValue Mutable)) }
-  | {- Empty -}           { pure (ByValue Immutable) }
+
+binding_mode :: { Spanned BindingMode }
+  : binding_mode1         { $1 }
+  | {- empty -}           { pure (ByValue Immutable) }
 
 at_pat :: { Maybe (Pat Span) }
   : '@' pat     { Just $2 }
@@ -642,5 +678,6 @@ xs <++ ys = foldr (<|) ys xs
 
 (++>) :: NonEmpty a -> [a] -> NonEmpty a
 (x :| xs) ++> ys = x :| (xs ++ ys)
+
 
 }

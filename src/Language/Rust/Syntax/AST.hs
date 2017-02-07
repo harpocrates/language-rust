@@ -637,6 +637,9 @@ data PathParameters a
       }
   deriving (Eq, Functor, Show)
 
+pattern NoParameters :: a -> PathParameters a
+pattern NoParameters x = AngleBracketed [] [] [] x
+
 -- https://docs.serde.rs/syntex_syntax/ast/struct.PolyTraitRef.html
 data PolyTraitRef a
   = PolyTraitRef

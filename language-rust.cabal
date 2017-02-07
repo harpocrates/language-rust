@@ -30,6 +30,7 @@ library
                        Language.Rust.Parser.Lexer
                        Language.Rust.Parser.Parser
                        Language.Rust.Data.Position
+                       Language.Rust.Data.Located
                        Language.Rust.Data.InputStream
   -- other-modules:
 

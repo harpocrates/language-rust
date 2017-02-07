@@ -16,7 +16,7 @@ import Control.Monad
 import Control.Monad.Trans.Except
 
 parserSuite :: Test
-parserSuite = testGroup "parser suite" [ parserLiterals, parserAttributes, parserTypes ] --[ patternSuite, typeSuite, expressionSuite ]
+parserSuite = testGroup "parser suite" [ parserLiterals, parserAttributes, parserTypes, parserPatterns ]
 
 -- | Test parsing of literals.
 parserLiterals :: Test
@@ -159,14 +159,16 @@ parserTypes = testGroup "parsing types"
     i32 :: Ty ()
     i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
 
-{-
+
 -- | This contains tests for parsing a variety of patterns
-patternSuite :: Test
-patternSuite = testGroup "parsing patterns"
+parserPatterns :: Test
+parserPatterns = testGroup "parsing patterns"
   [ testPat "_"                       (WildP ())
   , testPat "x"                       x
+  , testPat "ref mut x"               (IdentP (ByRef Mutable) "x" Nothing ())
   , testPat "&x"                      (RefP x Immutable ())
   , testPat "&mut x"                  (RefP x Mutable ())
+  , testPat "(x, x)"                  (TupleP [ x, x ] Nothing ())
   , testPat "(x, ref mut y, box z)"   (TupleP [ x
                                               , IdentP (ByRef Mutable) "y" Nothing ()
                                               , BoxP (IdentP (ByValue Immutable) "z" Nothing ()) ()
@@ -184,8 +186,10 @@ patternSuite = testGroup "parsing patterns"
                                                True ())
   , testPat "math::PI"                (PathP Nothing (Path False [ ("math", AngleBracketed [] [] [] ())
                                                                  , ("PI", AngleBracketed [] [] [] ()) ] ()) ())
+  , testPat "math::<i32>"             (PathP Nothing (Path False [ ("math", AngleBracketed [] [i32] [] ()) ] ()) ())
   , testPat "1...2"                   (RangeP (Lit [] (Int 1 Unsuffixed ()) ()) (Lit [] (Int 2 Unsuffixed ()) ()) ())
   , testPat "ref mut y@(x,x)"         (IdentP (ByRef Mutable) "y" (Just (TupleP [ x, x ] Nothing ())) ())
+  , testPat "ref mut y@_"         (IdentP (ByRef Mutable) "y" (Just (WildP ())) ())
   , testPat "(1,2,..,3)"              (TupleP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) ()
                                               , LitP (Lit [] (Int 2 Unsuffixed ()) ()) ()
                                               , LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ]
@@ -210,13 +214,17 @@ patternSuite = testGroup "parsing patterns"
   , testPat "[1,x..]"                 (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ] (Just x) [] ())
   ]
   where
+    -- | Create a test for a code fragment that should parse to a pattern.
+    testPat :: String -> Pat () -> Test
+    testPat inp pat = testCase inp $ Right pat @=? parseNoSpans patternP (inputStreamFromString inp)
+
     -- Just a common pattern to make the tests above more straightforward
     x :: Pat ()
     x = IdentP (ByValue Immutable) "x" Nothing ()
     -- Just a common type to make the tests above more straightforward
     i32 :: Ty ()
     i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
-
+{-
 
   
 -- | This contains tests for parsing a variety of expressions
@@ -230,12 +238,6 @@ testParse inp parser x = testCase inp $ Right x @=? parseNoSpans (unspan <$> par
 testExpr :: String -> Expr () -> Test
 testExpr inp expr = testCase inp $ Right expr @=? parseNoSpans expressionP (inputStreamFromString inp)
 
-testType :: String -> Ty () -> Test
-testType inp ty = testCase inp $ Right ty @=? parseNoSpans typeP (inputStreamFromString inp)
-
--- | Create a test for a code fragment that should parse to a pattern.
-testPat :: String -> Pat () -> Test
-testPat inp pat = testCase inp $ Right pat @=? parseNoSpans patternP (inputStreamFromString inp)
 -}
 -- | Turn an InputStream into either an error or a parse.
 parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either (Position,String) (f ())
