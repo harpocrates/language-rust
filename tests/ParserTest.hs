@@ -168,7 +168,14 @@ parserPatterns = testGroup "parsing patterns"
   , testPat "ref mut x"               (IdentP (ByRef Mutable) "x" Nothing ())
   , testPat "&x"                      (RefP x Immutable ())
   , testPat "&mut x"                  (RefP x Mutable ())
+  , testPat "(x,)"                    (TupleP [ x ] Nothing ())
+  , testPat "(..)"                    (TupleP [] (Just 0) ())
   , testPat "(x, x)"                  (TupleP [ x, x ] Nothing ())
+  , testPat "(x,.., x)"               (TupleP [ x, x ] (Just 1) ())
+  , testPat "(..,x)"                  (TupleP [ x ] (Just 0) ())
+  , testPat "(..,x,)"                 (TupleP [ x ] (Just 0) ())
+  , testPat "(x,..)"                  (TupleP [ x ] (Just 1) ())
+  , testPat "(x,x,)"                  (TupleP [ x, x ] Nothing ())
   , testPat "(x, ref mut y, box z)"   (TupleP [ x
                                               , IdentP (ByRef Mutable) "y" Nothing ()
                                               , BoxP (IdentP (ByValue Immutable) "z" Nothing ()) ()
@@ -182,11 +189,14 @@ parserPatterns = testGroup "parsing patterns"
                                                , FieldPat (Just "y") (IdentP (ByValue Immutable) "y1" Nothing ()) () ]
                                                False ()) 
   , testPat "Point { x, .. }"         (StructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
-                                               [ FieldPat Nothing (IdentP (ByValue Immutable)"x" Nothing ()) () ]
+                                               [ FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) () ]
                                                True ())
+  , testPat "math"                    (IdentP (ByValue Immutable) "math" Nothing ())
   , testPat "math::PI"                (PathP Nothing (Path False [ ("math", AngleBracketed [] [] [] ())
                                                                  , ("PI", AngleBracketed [] [] [] ()) ] ()) ())
   , testPat "math::<i32>"             (PathP Nothing (Path False [ ("math", AngleBracketed [] [i32] [] ()) ] ()) ())
+  , testPat "math::<i32>::PI"         (PathP Nothing (Path False [ ("math", AngleBracketed [] [i32] [] ())
+                                                                 , ("PI", AngleBracketed [] [] [] ()) ] ()) ())
   , testPat "1...2"                   (RangeP (Lit [] (Int 1 Unsuffixed ()) ()) (Lit [] (Int 2 Unsuffixed ()) ()) ())
   , testPat "ref mut y@(x,x)"         (IdentP (ByRef Mutable) "y" (Just (TupleP [ x, x ] Nothing ())) ())
   , testPat "ref mut y@_"         (IdentP (ByRef Mutable) "y" (Just (WildP ())) ())
@@ -195,6 +205,8 @@ parserPatterns = testGroup "parsing patterns"
                                               , LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ]
                                               (Just 2) ())
   , testPat "Point(x)"                (TupleStructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
+                                              [ x ] Nothing ())
+  , testPat "Point(x,)"               (TupleStructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
                                               [ x ] Nothing ())
   , testPat "<i32 as a(i32, i32)>::b::<'lt>::AssociatedItem"
             (PathP (Just (QSelf i32 1)) (Path False [ ("a", Parenthesized [i32, i32] Nothing ())
@@ -221,6 +233,7 @@ parserPatterns = testGroup "parsing patterns"
     -- Just a common pattern to make the tests above more straightforward
     x :: Pat ()
     x = IdentP (ByValue Immutable) "x" Nothing ()
+    
     -- Just a common type to make the tests above more straightforward
     i32 :: Ty ()
     i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()

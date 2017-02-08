@@ -15,7 +15,10 @@ data Ident
       hash :: !Int
       -- ctxt :: SyntaxContext,
       -- nodeInfo :: a
-    } deriving (Show)
+    }
+
+instance Show Ident where
+  show = show . name
 
 instance IsString Ident where
   fromString = mkIdent
@@ -43,7 +46,10 @@ type InternedString = String
 
 -- | A name is a part of an identifier, representing a string or gensym. It's the result of interning.
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Name.html
-data Name = Name InternedString deriving (Show, Eq) -- TODO, not quite
+data Name = Name InternedString deriving (Eq) -- TODO, not quite
+
+instance Show Name where
+  show (Name s) = s
 
 -- | A SyntaxContext represents a chain of macro expansions (represented by marks).
 -- https://docs.serde.rs/syntex_syntax/ext/hygiene/struct.SyntaxContext.html

@@ -37,7 +37,11 @@ import qualified Data.List.NonEmpty as N
 %error { parseError }
 %lexer { lexRust } { Tok (Spanned Eof _) }
 
--- Conflicts caused in the sep_by1(segment,'::') parts of paths
+-- Conflicts caused in
+--  * sep_by1(segment,'::') parts of paths
+--  * complex_expr_path
+--  * & mut patterns
+-- However, they are all S/R and seem to be currently doing what they should
 %expect 3
 
 %token
@@ -244,6 +248,7 @@ many(p)         :                     { [] }
 sep_by(p,sep)   : sep_by1(p,sep)      { $1 }
                 | {- empty -}         { [] }
 
+-- TODO: Make this return a NonEmpty
 -- | One or more occurences of p, seperated by sep
 sep_by1(p,sep)  : sep_by1(p,sep) sep p  { $1 ++ [$3] }
                 | p                     { [$1] }
@@ -266,7 +271,7 @@ alt(l,r)        : l                   { $1 }
 --------------------------
 -- Attributes
 --------------------------
--- TODO: list case of a meta_item should admit trailing commas
+-- TODO: list case of a meta_item should admit trailing commas, and (check this!) be empty
 -- TODO: add a check that the literals in meta_item and meta_item_inner are unsuffixed
 
 attribute :: { Attribute Span }
@@ -490,20 +495,18 @@ ty :: { Ty Span }
       do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
          withSpan $1 (PolyTraitRefTy (TraitTyParamBound poly None :| []))
     }
- {- | for_lts trait_ref '+' sep_by1(ty_param_bound,'+')  {%
+ {-
+  -- The following both suffer from precedence issues around '+'
+  | for_lts trait_ref '+' sep_by1(ty_param_bound,'+')  {%
       do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
          withSpan $1 (PolyTraitRefTy (TraitTyParamBound poly None :| $4)) 
     } 
+  | impl ty_param_bounds_mod         {%
+      if (any isTraitTyParamBound (unspan $2))
+        then withSpan $1 (ImplTrait $2)
+        else fail "at least one trait must be specified"
+    }
 -}
-{-
-      | impl ty_param_bounds_mod         {% if (any isTraitTyParamBound (unspan $2))
-                                              then pure (withSpan (ImplTrait <\$> $2 <* $1))
-                                              else fail "at least one trait must be specified"
-                                         }
--}
-
-
-
 
 -- parse_ty_sum()
 ty_sum :: { Ty Span }
@@ -513,14 +516,24 @@ ty_sum :: { Ty Span }
 fn_decl :: { FnDecl Span }
   : fn '(' comma(arg_general) opt('...') ')' ret_ty  {% withSpan $1 (FnDecl $3 $6 (isJust $4)) }
 
+
 -- TODO: consider inlinging this
 -- parse_ty_param_bounds(BoundParsingMode::Bare)
 ty_param_bounds_bare :: { [TyParamBound Span] }
-  : sep_by1(ty_param_bound,'+')   { $1 }
-  
+  : sep_by1(ty_param_bound,'+')       { $1 }
+
+-- parse_ty_param_bounds(BoundParsingMode::Modified)
+ty_param_bounds_mod :: { NonEmpty (TyParamBound Span) }
+  : sep_by1(ty_param_bound_mod,'+')   { fromList $1 }  
+
 ty_param_bound :: { TyParamBound Span }
-  : lifetime         { RegionTyParamBound $1 }
-  | poly_trait_ref   { TraitTyParamBound $1 None }
+  : lifetime             { RegionTyParamBound $1 }
+  | poly_trait_ref       { TraitTyParamBound $1 None }
+
+ty_param_bound_mod :: { TyParamBound Span }
+  : ty_param_bound       { $1 }
+  | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe }
+
 
 -- parse_arg_general(false) -- does not require name
 -- NOT ALL PATTERNS ARE ACCEPTED: <https://github.com/rust-lang/rust/issues/35203>
@@ -563,13 +576,12 @@ lifetime_def :: { LifetimeDef Span }
 -- Patterns --
 --------------
 
+-- TODO: Double-check that the error message in the one element tuple case makes sense. It should...
+-- TODO: Slice patterns (not urgent - they are feature gated)
 pat :: { Pat Span }
   : '_'                                         {% withSpan $1 WildP }
   | '&' mut pat                                 {% withSpan $1 (RefP $3 Mutable) }
   | '&' pat                                     {% withSpan $1 (RefP $2 Immutable) }
-  | '(' ')'                                     {% withSpan $1 (TupleP [] Nothing) }
-  | '(' pat_tup ')'                             {% withSpan $1 (TupleP $2 Nothing) }
-  | '(' pat_tup ',' ')'                         {% withSpan $1 (TupleP $2 Nothing) }
   | binding_mode1 ident at_pat                  {% withSpan $1 (IdentP (unspan $1) (unspan $2) $3) }
   | ident at_pat                                {% withSpan $1 (IdentP (ByValue Immutable) (unspan $1) $2) }
   | lit_expr                                    {% withSpan $1 (LitP $1) }
@@ -580,12 +592,26 @@ pat :: { Pat Span }
   | lit_or_path '...' lit_or_path               {% withSpan $1 (RangeP $1 $3) }
   | expr_path '{' '..' '}'                      {% withSpan $1 (StructP $1 [] True) }
   | expr_path '{' pat_fields '}'                {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
-  | expr_path '(' pat_tup ')'                   {% withSpan $1 (TupleStructP $1 $3 Nothing) }
+  | expr_path '(' pat_tup ')'                   {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
+  | '(' pat_tup ')'                             {%
+      case $2 of
+        ([p], Nothing, False) -> fail "Syntax error: the symbol `)' does not fit here"
+        (ps,m,t) -> withSpan $1 (TupleP ps m)
+    }
 
--- TODO: the tuple pattern case should allow slices
-pat_tup :: { [Pat Span] }
-  : pat_tup ',' pat                             { $1 ++ [$3] }
-  | pat                                         { [$1] }
+-- The first element is the spans, the second the position of '..', and the third if there is a
+-- trailing comma
+pat_tup :: { ([Pat Span], Maybe Int, Bool) }
+  : '..' ',' sep_by1(pat,',')                          { ($3,         Just 0,           False) }
+  | '..' ',' sep_by1(pat,',') ','                      { ($3,         Just 0,           True) }
+  | '..'                                               { ([],         Just 0,           False) }
+  | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { ($1 ++ $5,   Just (length $1), False) }
+  | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',') ',' { ($1 ++ $5,   Just (length $1), True) }
+  | sep_by1(pat,',') ',' '..'                          { ($1,         Just (length $1), False) }
+  | sep_by1(pat,',')                                   { ($1,         Nothing,          False) }
+  | sep_by1(pat,',') ','                               { ($1,         Nothing,          True) }
+  | {- empty -}                                        { ([],         Nothing,          False) }
+
 
 lit_or_path :: { Expr Span }
   : ident             {% withSpan $1 (PathExpr [] Nothing (Path False (fromList [(unspan $1, AngleBracketed [] [] [] mempty)]) mempty)) } 
