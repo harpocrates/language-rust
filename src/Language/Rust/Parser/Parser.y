@@ -15,7 +15,7 @@ import Language.Rust.Syntax.Constants
 
 import Data.Semigroup ((<>))
 import Data.Maybe
-import Data.List.NonEmpty hiding (length)
+import Data.List.NonEmpty hiding (length, init, last)
 import qualified Data.List.NonEmpty as N
 }
 
@@ -577,7 +577,6 @@ lifetime_def :: { LifetimeDef Span }
 --------------
 
 -- TODO: Double-check that the error message in the one element tuple case makes sense. It should...
--- TODO: Slice patterns (not urgent - they are feature gated)
 pat :: { Pat Span }
   : '_'                                         {% withSpan $1 WildP }
   | '&' mut pat                                 {% withSpan $1 (RefP $3 Mutable) }
@@ -593,6 +592,8 @@ pat :: { Pat Span }
   | expr_path '{' '..' '}'                      {% withSpan $1 (StructP $1 [] True) }
   | expr_path '{' pat_fields '}'                {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
   | expr_path '(' pat_tup ')'                   {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
+  | expr_mac                                    {% withSpan $1 (MacP $1) }
+  | '[' pat_slice ']'                           {% let (b,s,a) = $2 in withSpan $1 (SliceP b s a) }
   | '(' pat_tup ')'                             {%
       case $2 of
         ([p], Nothing, False) -> fail "Syntax error: the symbol `)' does not fit here"
@@ -602,15 +603,32 @@ pat :: { Pat Span }
 -- The first element is the spans, the second the position of '..', and the third if there is a
 -- trailing comma
 pat_tup :: { ([Pat Span], Maybe Int, Bool) }
-  : '..' ',' sep_by1(pat,',')                          { ($3,         Just 0,           False) }
-  | '..' ',' sep_by1(pat,',') ','                      { ($3,         Just 0,           True) }
-  | '..'                                               { ([],         Just 0,           False) }
-  | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { ($1 ++ $5,   Just (length $1), False) }
+  : sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { ($1 ++ $5,   Just (length $1), False) }
   | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',') ',' { ($1 ++ $5,   Just (length $1), True) }
   | sep_by1(pat,',') ',' '..'                          { ($1,         Just (length $1), False) }
   | sep_by1(pat,',')                                   { ($1,         Nothing,          False) }
   | sep_by1(pat,',') ','                               { ($1,         Nothing,          True) }
+  | '..' ',' sep_by1(pat,',')                          { ($3,         Just 0,           False) }
+  | '..' ',' sep_by1(pat,',') ','                      { ($3,         Just 0,           True) }
+  | '..'                                               { ([],         Just 0,           False) }
   | {- empty -}                                        { ([],         Nothing,          False) }
+
+-- The first element is the patterns at the beginning of the slice, the second the optional binding
+-- for the middle slice ('Nothing' if there is no '..' and 'Just (WildP mempty) is there is one, but
+-- unlabelled), and the third is the patterns at the end of the slice.
+pat_slice :: { ([Pat Span], Maybe (Pat Span), [Pat Span]) }
+  : sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',') ',' { ($1, Just (WildP mempty), $5) }
+  | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { ($1, Just (WildP mempty), $5) }
+  | sep_by1(pat,',') ',' '..'                          { ($1, Just (WildP mempty), []) }
+  | sep_by1(pat,',') '..' ',' sep_by1(pat,',')         { (Prelude.init $1, Just (last $1), $4) }
+  | sep_by1(pat,',') '..' ',' sep_by1(pat,',') ','     { (Prelude.init $1, Just (last $1), $4) }
+  | sep_by1(pat,',') '..'                              { (Prelude.init $1, Just (last $1), []) }
+  | sep_by1(pat,',')                                   { ($1, Nothing, []) }
+  | sep_by1(pat,',') ','                               { ($1, Nothing, []) }
+  | '..' ',' sep_by1(pat,',')                          { ([], Just (WildP mempty), $3) }
+  | '..' ',' sep_by1(pat,',') ','                      { ([], Just (WildP mempty), $3) }
+  | '..'                                               { ([], Just (WildP mempty), []) }
+  | {- empty -}                                        { ([], Nothing, []) }
 
 
 lit_or_path :: { Expr Span }
@@ -654,6 +672,148 @@ expr :: { Expr Span }
 
 lit_expr :: { Expr Span }
   : lit       {% withSpan $1 (Lit [] $1) }
+
+-------------------
+-- Macro related --
+-------------------
+
+expr_mac :: { Mac Span }
+  : expr_path '!' '[' many(token_tree) ']'      {% withSpan $1 (Mac $1 $4) }
+  | expr_path '!' '{' many(token_tree) '}'      {% withSpan $1 (Mac $1 $4) }
+  | expr_path '!' '(' many(token_tree) ')'      {% withSpan $1 (Mac $1 $4) }
+
+ty_mac :: { Mac Span }
+  : ty_path '!' '[' many(token_tree) ']'      {% withSpan $1 (Mac $1 $4) }
+  | ty_path '!' '{' many(token_tree) '}'      {% withSpan $1 (Mac $1 $4) }
+  | ty_path '!' '(' many(token_tree) ')'      {% withSpan $1 (Mac $1 $4) }
+
+token_tree :: { TokenTree }
+  : '(' many(token_tree) ')' { Delimited mempty Paren mempty $2 mempty }
+  | '{' many(token_tree) ')' { Delimited mempty Brace mempty $2 mempty }
+  | '[' many(token_tree) ']' { Delimited mempty Bracket mempty $2 mempty }
+  -- Baaad
+  | '$'        {% fail "unimplemented: this should do some SubstNt related stuff" } 
+  -- Expression-operator symbols. 
+  | '='        { Token mempty (unspan $1) }
+  | '<'        { Token mempty (unspan $1) }
+  | '>'        { Token mempty (unspan $1) }
+  | '!'        { Token mempty (unspan $1) }
+  | '~'        { Token mempty (unspan $1) }
+  | '+'        { Token mempty (unspan $1) }
+  | '-'        { Token mempty (unspan $1) }
+  | '*'        { Token mempty (unspan $1) }
+  | '/'        { Token mempty (unspan $1) }
+  | '%'        { Token mempty (unspan $1) }
+  | '^'        { Token mempty (unspan $1) }
+  | '&'        { Token mempty (unspan $1) }
+  | '|'        { Token mempty (unspan $1) }
+{-  | '<<='    {  }
+  | '>>='      {  }
+  | '-='       {  }
+  | '&='       {  }
+  | '|='       {  }
+  | '+='       {  }
+  | '*='       {  }
+  | '/='       {  }
+  | '^='       {  }
+  | '%='       {  }
+  | '||'       {  }
+  | '&&'       {  }
+  | '=='       {  }
+  | '!='       {  }
+  | '<='       {  }
+  | '>='       {  }
+  | '<<'       {  }
+  | '>>'       {  } -}
+  -- Structural symbols.
+  | '@'        { Token mempty (unspan $1) } 
+  | '...'      { Token mempty (unspan $1) } 
+  | '..'       { Token mempty (unspan $1) } 
+  | '.'        { Token mempty (unspan $1) } 
+  | ','        { Token mempty (unspan $1) } 
+  | ';'        { Token mempty (unspan $1) } 
+  | '::'       { Token mempty (unspan $1) } 
+  | ':'        { Token mempty (unspan $1) } 
+  | '->'       { Token mempty (unspan $1) } 
+  | '<-'       { Token mempty (unspan $1) } 
+  | '=>'       { Token mempty (unspan $1) } 
+  | '#'        { Token mempty (unspan $1) } 
+  | '?'        { Token mempty (unspan $1) } 
+  -- Literals.
+  | byte       { Token mempty (unspan $1) } 
+  | char       { Token mempty (unspan $1) } 
+  | int        { Token mempty (unspan $1) } 
+  | float      { Token mempty (unspan $1) } 
+  | str        { Token mempty (unspan $1) } 
+  | byteStr    { Token mempty (unspan $1) } 
+  | rawStr     { Token mempty (unspan $1) } 
+  | rawByteStr { Token mempty (unspan $1) } 
+  -- Strict keywords used in the language
+  | as         { Token mempty (unspan $1) }
+  | box        { Token mempty (unspan $1) }
+  | break      { Token mempty (unspan $1) }
+  | const      { Token mempty (unspan $1) }
+  | continue   { Token mempty (unspan $1) }
+  | crate      { Token mempty (unspan $1) }
+  | else       { Token mempty (unspan $1) }
+  | enum       { Token mempty (unspan $1) }
+  | extern     { Token mempty (unspan $1) }
+  | false      { Token mempty (unspan $1) }
+  | fn         { Token mempty (unspan $1) }
+  | for        { Token mempty (unspan $1) }
+  | if         { Token mempty (unspan $1) }
+  | impl       { Token mempty (unspan $1) }
+  | in         { Token mempty (unspan $1) }
+  | let        { Token mempty (unspan $1) }
+  | loop       { Token mempty (unspan $1) }
+  | match      { Token mempty (unspan $1) }
+  | mod        { Token mempty (unspan $1) }
+  | move       { Token mempty (unspan $1) }
+  | mut        { Token mempty (unspan $1) }
+  | pub        { Token mempty (unspan $1) }
+  | ref        { Token mempty (unspan $1) }
+  | return     { Token mempty (unspan $1) }
+  | Self       { Token mempty (unspan $1) }
+  | self       { Token mempty (unspan $1) }
+  | static     { Token mempty (unspan $1) }
+  | struct     { Token mempty (unspan $1) }
+  | super      { Token mempty (unspan $1) }
+  | trait      { Token mempty (unspan $1) }
+  | true       { Token mempty (unspan $1) }
+  | type       { Token mempty (unspan $1) }
+  | unsafe     { Token mempty (unspan $1) }
+  | use        { Token mempty (unspan $1) }
+  | where      { Token mempty (unspan $1) }
+  | while      { Token mempty (unspan $1) }
+  -- Keywords reserved for future use
+  | abstract   { Token mempty (unspan $1) }
+  | alignof    { Token mempty (unspan $1) } 
+  | become     { Token mempty (unspan $1) }
+  | do         { Token mempty (unspan $1) }
+  | final      { Token mempty (unspan $1) }
+  | macro      { Token mempty (unspan $1) }
+  | offsetof   { Token mempty (unspan $1) }
+  | override   { Token mempty (unspan $1) }
+  | priv       { Token mempty (unspan $1) }
+  | proc       { Token mempty (unspan $1) }
+  | pure       { Token mempty (unspan $1) }
+  | sizeof     { Token mempty (unspan $1) }
+  | typeof     { Token mempty (unspan $1) }
+  | unsized    { Token mempty (unspan $1) } 
+  | virtual    { Token mempty (unspan $1) } 
+  | yield      { Token mempty (unspan $1) }
+  -- Weak keywords, have special meaning only in specific contexts.
+  | default    { Token mempty (unspan $1) }
+  | union      { Token mempty (unspan $1) }
+  -- Comments
+  | outerDoc   { Token mempty (unspan $1) }
+  | innerDoc   { Token mempty (unspan $1) }
+  -- Identifiers.
+  | IDENT      { Token mempty (unspan $1) }
+  | '_'        { Token mempty (unspan $1) }
+  -- Lifetimes.
+  | LIFETIME   { Token mempty (unspan $1) }
+
 
 {
 

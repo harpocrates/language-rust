@@ -8,6 +8,7 @@ import Test.HUnit hiding (Test)
 import Language.Rust.Parser.ParseMonad
 import Language.Rust.Parser.Parser
 import Language.Rust.Syntax.AST
+import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 import Language.Rust.Data.Position
 import Language.Rust.Data.InputStream
@@ -216,7 +217,13 @@ parserPatterns = testGroup "parsing patterns"
   , testPat "[1,2]"                   (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) ()
                                               , LitP (Lit [] (Int 2 Unsuffixed ()) ()) () ] 
                                               Nothing [] ())
+  , testPat "[1,2,]"                  (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) ()
+                                              , LitP (Lit [] (Int 2 Unsuffixed ()) ()) () ] 
+                                              Nothing [] ())
   , testPat "[1,..,3]"                (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ]
+                                              (Just (WildP ()))
+                                              [ LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ] ())
+  , testPat "[1,..,3,]"               (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ]
                                               (Just (WildP ()))
                                               [ LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ] ())
   , testPat "[1,x..,3]"               (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ]
@@ -224,6 +231,11 @@ parserPatterns = testGroup "parsing patterns"
                                               [ LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ] ())
   , testPat "[1,..]"                  (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ] (Just (WildP ())) [] ())
   , testPat "[1,x..]"                 (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ] (Just x) [] ())
+  , testPat "[x]"                     (SliceP [ x ] Nothing [] ())
+  , testPat "[x,]"                    (SliceP [ x ] Nothing [] ())
+  , testPat "[x..]"                   (SliceP [] (Just x) [] ())
+  , testPat "[..]"                    (SliceP [] (Just (WildP ())) [] ())
+  , testPat "foo!(x)"                 (MacP (Mac (Path False [("foo", NoParameters ())] ()) [Token mempty (IdentTok "x")]  ()) ())
   ]
   where
     -- | Create a test for a code fragment that should parse to a pattern.

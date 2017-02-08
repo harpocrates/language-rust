@@ -586,6 +586,8 @@ data Pat a
   -- | A range pattern, e.g. 1...2
   | RangeP (Expr a) (Expr a) a
   -- | [a, b, ..i, y, z] is represented as: PatKind::Slice(box [a, b], Some(i), box [y, z])
+  -- [1,2,3] can be (SliceP [1,2,3] Nothing []) or (SliceP [1,2] Nothing [3]) or ...
+  -- [1,..,3] is (SliceP [1] (Just WildP) [3])
   | SliceP [Pat a] (Maybe (Pat a)) [Pat a] a
   -- | A macro pattern; pre-expansion
   | MacP (Mac a) a
