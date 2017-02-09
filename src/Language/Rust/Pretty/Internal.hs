@@ -301,8 +301,8 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     PathExpr _ Nothing path x   -> annotate x (printPath path True)
     PathExpr _ (Just qs) path x -> annotate x (printQPath path qs True)
     AddrOf _ mut e x            -> annotate x ("&" <> printMutability mut <+> printExprMaybeParen e)
-    Break _ brk x               -> annotate x ("break" <+> perhaps printIdent brk)
-    Continue _ cont x           -> annotate x ("continue" <+> perhaps printIdent cont)
+    Break _ brk x               -> annotate x ("break" <+> perhaps printLifetime brk)
+    Continue _ cont x           -> annotate x ("continue" <+> perhaps printLifetime cont)
     Ret _ result x              -> annotate x ("return" <+> perhaps printExpr result)
     InlineAsmExpr _ inlineAsm x -> annotate x (printInlineAsm inlineAsm)
     MacExpr _ m x               -> annotate x (printMac m Paren)
@@ -312,7 +312,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Repeat attrs e cnt x        -> annotate x (brackets (printInnerAttrs attrs <+> printExpr e <> ";" <+> printExpr cnt))
     ParenExpr attrs e x         -> annotate x (parens (printInnerAttrs attrs <+> printExpr e))
     Try _ e x                   -> annotate x (printExpr e <> "?")
-  where printLbl = perhaps (\i -> printIdent i <> ":")
+  where printLbl = perhaps (\i -> printLifetime i <> ":")
         glue = if isInline then (<+>) else (</>)
 
 printInlineAsm :: InlineAsm a -> Doc a

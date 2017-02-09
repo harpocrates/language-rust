@@ -175,17 +175,17 @@ data Expr a
   -- This is desugared to a match expression.
   | IfLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Expr a)) a
   -- | A while loop, with an optional label `'label: while expr { block }`
-  | While [Attribute a] (Expr a) (Block a) (Maybe Ident) a
+  | While [Attribute a] (Expr a) (Block a) (Maybe (Lifetime a)) a
   -- | A while-let loop, with an optional label
   -- 'label: while let pat = expr { block }
   -- This is desugared to a combination of loop and match expressions.
-  | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe Ident) a
+  | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Lifetime a)) a
   -- | A for loop, with an optional label
   -- 'label: for pat in expr { block }
   -- This is desugared to a combination of loop and match expressions.
-  | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe Ident) a
+  | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Lifetime a)) a
   -- | Conditionless loop (can be exited with break, continue, or return) 'label: loop { block }
-  | Loop [Attribute a] (Block a) (Maybe Ident) a
+  | Loop [Attribute a] (Block a) (Maybe (Lifetime a)) a
   -- | A match block.
   | Match [Attribute a] (Expr a) [Arm a] a
   -- | A closure (for example, `move |a, b, c| {a + b + c}`).
@@ -210,9 +210,9 @@ data Expr a
   -- | A referencing operation (&a or &mut a)
   | AddrOf [Attribute a] Mutability (Expr a) a
   -- | A break, with an optional label to break
-  | Break [Attribute a] (Maybe Ident) a
+  | Break [Attribute a] (Maybe (Lifetime a)) a
   -- | A continue, with an optional label
-  | Continue [Attribute a] (Maybe Ident) a
+  | Continue [Attribute a] (Maybe (Lifetime a)) a
   -- | A return, with an optional value to be returned
   | Ret [Attribute a] (Maybe (Expr a)) a
   -- | Output of the asm!() macro

@@ -22,7 +22,7 @@ import qualified Data.List.NonEmpty as N
 -- <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
 -- <https://github.com/rust-lang/rust/blob/master/src/libsyntax/parse/parser.rs>
 -- References to <https://doc.rust-lang.org/grammar.html>
--- To see conflicts: stack exec happy -- --info=happyinfo.txt -o /dev/null src/Language/Rust/Parser/Parser2.y
+-- To see conflicts: stack exec happy -- --info=happyinfo.txt -o /dev/null src/Language/Rust/Parser/Parser.y
 
 -- in order to document the parsers, we have to alias them
 %name literalP lit
@@ -180,6 +180,7 @@ import qualified Data.List.NonEmpty as N
 
   -- Lifetimes.
   LIFETIME   { Tok $$@(Spanned (LifetimeTok _) _) }
+
 
 %%
 
@@ -469,6 +470,7 @@ ty :: { Ty Span }
   : '_'                              {% withSpan $1 Infer }
   | '!'                              {% withSpan $1 Never }
   | '(' ')'                          {% withSpan $1 (TupTy []) }
+  | '(' ty ')'                       {% withSpan $1 (ParenTy $2) }
   | '(' ty ',' ')'                   {% withSpan $1 (TupTy [$2]) }
   | '(' ty ',' sep_by1(ty,',') ')'   {% withSpan $1 (TupTy ($2 : $4)) }
   | '[' ty ']'                       {% withSpan $1 (Slice $2) }
@@ -497,6 +499,9 @@ ty :: { Ty Span }
     }
  {-
   -- The following both suffer from precedence issues around '+'
+  -- Even Rust itself has some problems with this...
+  -- https://github.com/rust-lang/rust/issues/39317
+  -- https://github.com/rust-lang/rust/issues/34511
   | for_lts trait_ref '+' sep_by1(ty_param_bound,'+')  {%
       do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
          withSpan $1 (PolyTraitRefTy (TraitTyParamBound poly None :| $4)) 
@@ -662,16 +667,21 @@ at_pat :: { Maybe (Pat Span) }
   : '@' pat     { Just $2 }
   | {- empty -} { Nothing }
 
+
 -----------------
 -- Expressions --
 -----------------
 
--- TODO: lit should have attributes. Also, some other cases are missing... ;)
-expr :: { Expr Span }
-  : lit_expr  { $1 }
-
 lit_expr :: { Expr Span }
   : lit       {% withSpan $1 (Lit [] $1) }
+
+field :: { Field Span }
+  : ident ':' expr  {% withSpan $1 (Field (unspan $1) $3) }
+
+-- TODO: deal with attributes
+expr :: { Expr Span }
+  : lit_expr                                           { $1 }
+  
 
 -------------------
 -- Macro related --
