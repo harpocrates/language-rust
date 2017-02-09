@@ -17,7 +17,7 @@ import Control.Monad
 import Control.Monad.Trans.Except
 
 parserSuite :: Test
-parserSuite = testGroup "parser suite" [ parserLiterals, parserAttributes, parserTypes, parserPatterns ]
+parserSuite = testGroup "parser suite" [ parserLiterals, parserAttributes, parserTypes, parserPatterns, parserExpressions ]
 
 -- | Test parsing of literals.
 parserLiterals :: Test
@@ -249,21 +249,19 @@ parserPatterns = testGroup "parsing patterns"
     -- Just a common type to make the tests above more straightforward
     i32 :: Ty ()
     i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
-{-
 
   
 -- | This contains tests for parsing a variety of expressions
-expressionSuite :: Test
-expressionSuite = testGroup "parsing expressions" []
+parserExpressions :: Test
+parserExpressions = testGroup "parsing expressions"
+  [ testExpr "123" (Lit [] (Int 123 Unsuffixed ()) ())
+  ]
+  where
+    -- | Create a test for a code fragment that should parse to an expression.
+    testExpr :: String -> Expr () -> Test
+    testExpr inp expr = testCase inp $ Right expr @=? parseNoSpans expressionP (inputStreamFromString inp)
 
-testParse :: (Show (f ()), Functor f, Eq (f ())) => String -> P (Spanned (f Span)) -> f () -> Test
-testParse inp parser x = testCase inp $ Right x @=? parseNoSpans (unspan <$> parser) (inputStreamFromString inp)
 
--- | Create a test for a code fragment that should parse to an expression.
-testExpr :: String -> Expr () -> Test
-testExpr inp expr = testCase inp $ Right expr @=? parseNoSpans expressionP (inputStreamFromString inp)
-
--}
 -- | Turn an InputStream into either an error or a parse.
 parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either (Position,String) (f ())
 parseNoSpans parser inp = runExcept (void <$> result)

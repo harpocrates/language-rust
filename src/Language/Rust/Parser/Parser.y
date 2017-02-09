@@ -15,14 +15,14 @@ import Language.Rust.Syntax.Constants
 
 import Data.Semigroup ((<>))
 import Data.Maybe
-import Data.List.NonEmpty hiding (length, init, last)
+import Data.List.NonEmpty hiding (length, init, last, reverse)
 import qualified Data.List.NonEmpty as N
 }
 
 -- <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
 -- <https://github.com/rust-lang/rust/blob/master/src/libsyntax/parse/parser.rs>
 -- References to <https://doc.rust-lang.org/grammar.html>
--- To see conflicts: stack exec happy -- --info=happyinfo.txt -o /dev/null src/Language/Rust/Parser/Parser2.y
+-- To see conflicts: stack exec happy -- --info=happyinfo.txt -o /dev/null src/Language/Rust/Parser/Parser.y
 
 -- in order to document the parsers, we have to alias them
 %name literalP lit
@@ -42,7 +42,7 @@ import qualified Data.List.NonEmpty as N
 --  * complex_expr_path
 --  * & mut patterns
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 3
+--%expect 3
 
 %token
 
@@ -181,6 +181,7 @@ import qualified Data.List.NonEmpty as N
   -- Lifetimes.
   LIFETIME   { Tok $$@(Spanned (LifetimeTok _) _) }
 
+
 %%
 
 
@@ -233,45 +234,49 @@ ident : IDENT                         { let Spanned (IdentTok i) s = $1 in Spann
 -- Utility --
 -------------
 
--- | Optional parser
-opt(p)          : p                   { Just $1 }
-                |                     { Nothing }
-
 -- | One or more
-some(p)         : p many(p)           { $1 :| $2 }
+-- some :: P a -> P (NonEmpty a)
+some(p)         : some_r(p)          { N.reverse $1 }
+some_r(p)       : some_r(p) p        { $2 <| $1 }
+                | p                  { $1 :| [] }
 
--- | Zero or more 
-many(p)         :                     { [] }
-                | p many(p)           { $1 : $2 }
+-- | Zero or more
+-- many :: P a -> P [a]
+many(p)         : some(p)            { toList $1 }
+                | {- empty -}        { [] } 
+
+
+-- | One or more occurences of p, seperated by sep
+-- sep_by1(p,sep) :: P a -> P b -> P (NonEmpty a)
+-- TODO: Use the commented out implementation (and understand why it currently makes more conlifcts)
+{-
+sep_by1(p,sep)  : sep_by1_r(p,sep)   { N.reverse $1 }
+sep_by1_r(p,s)  : sep_by1_r(p,s) s p { $3 <| $1 }
+                | p                  { $1 :| [] }
+-}
+sep_by1(p,sep)  : sep_by1(p,sep) sep p  { $1 <> fromList [$3] }
+                | p                     { fromList [$1] }
+
 
 -- | Zero or more occurrences of p, separated by sep
-sep_by(p,sep)   : sep_by1(p,sep)      { $1 }
-                | {- empty -}         { [] }
+-- sep_by :: P a -> P b -> P [a]
+sep_by(p,sep)   : sep_by1(p,sep)     { toList $1 }
+                | {- empty -}        { [] }
 
--- TODO: Make this return a NonEmpty
--- | One or more occurences of p, seperated by sep
-sep_by1(p,sep)  : sep_by1(p,sep) sep p  { $1 ++ [$3] }
-                | p                     { [$1] }
-
--- | Plus delimited, at least one
-plus(p)         : sep_by1(p,'+')      { $1 }
-
--- | Comma delimited, at least one
-comma(p)        : sep_by(p,',')       { $1 }
+-- | Comma delimited
+-- comma(p) :: P a -> P [a]
+comma(p)        : sep_by(p,',')      { $1 }
 
 -- | One or the other, but of the same type
-alt(l,r)        : l                   { $1 }
-                | r                   { $1 }
-
--------------
--- General --
--------------
+-- alt(l,r) :: P a -> P a -> P a
+alt(l,r)        : l                  { $1 }
+                | r                  { $1 }
 
 
 --------------------------
 -- Attributes
 --------------------------
--- TODO: list case of a meta_item should admit trailing commas, and (check this!) be empty
+-- TODO: list case of a meta_item should admit trailing commas
 -- TODO: add a check that the literals in meta_item and meta_item_inner are unsuffixed
 
 attribute :: { Attribute Span }
@@ -370,9 +375,8 @@ ty_qual_path :: { Spanned (QSelf Span, Path Span) }
   : qual_path(path_segments_without_colons)  { $1 }
 
 -- parse_path_segments_without_colons()
--- TODO: Get rid of fromList, by making a version of sep_by1 for NonEmpty
 path_segments_without_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
-  : sep_by1(path_segment_without_colons, '::')  { sequence (fromList $1) }
+  : sep_by1(path_segment_without_colons, '::')  { sequence $1 }
 
 -- No corresponding function - see path_segments_without_colons
 path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
@@ -415,7 +419,6 @@ expr_qual_path :: { Spanned (QSelf Span, Path Span) }
   : qual_path(path_segments_with_colons)  { $1 }
 
 -- parse_path_segments_with_colons()
--- TODO: Get rid of fromList, by making a version of sep_by1 for NonEmpty
 path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
   : ident                                          {% withSpan $1 (Spanned ((unspan $1, NoParameters mempty) :| [])) }
   | path_segments_with_colons '::' path_parameter2 {%
@@ -440,9 +443,8 @@ mod_qual_path :: { Spanned (QSelf Span, Path Span) }
   : qual_path(path_segments_without_types)  { $1 }
 
 -- parse_path_segments_without_types()
--- TODO: Get rid of fromList, by making a version of sep_by1 for NonEmpty
 path_segments_without_types :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
-  : sep_by1(path_segment_without_types, '::')  { sequence (fromList $1) }
+  : sep_by1(path_segment_without_types, '::')  { sequence $1 }
 
 -- No corresponding function - see path_segments_without_types
 path_segment_without_types :: { Spanned (Ident, PathParameters Span) }
@@ -469,8 +471,9 @@ ty :: { Ty Span }
   : '_'                              {% withSpan $1 Infer }
   | '!'                              {% withSpan $1 Never }
   | '(' ')'                          {% withSpan $1 (TupTy []) }
+  | '(' ty ')'                       {% withSpan $1 (ParenTy $2) }
   | '(' ty ',' ')'                   {% withSpan $1 (TupTy [$2]) }
-  | '(' ty ',' sep_by1(ty,',') ')'   {% withSpan $1 (TupTy ($2 : $4)) }
+  | '(' ty ',' sep_by1(ty,',') ')'   {% withSpan $1 (TupTy ($2 : toList $4)) }
   | '[' ty ']'                       {% withSpan $1 (Slice $2) }
   | '*' ty                           {% withSpan $1 (Ptr Immutable $2) }
   | '*' const ty                     {% withSpan $1 (Ptr Immutable $3) }
@@ -497,9 +500,13 @@ ty :: { Ty Span }
     }
  {-
   -- The following both suffer from precedence issues around '+'
+  -- The solution is probably to maintain a distinction between `parse_ty` and `parse_ty_no_plus`
+  -- Even Rust itself has some problems with this...
+  -- https://github.com/rust-lang/rust/issues/39317
+  -- https://github.com/rust-lang/rust/issues/34511
   | for_lts trait_ref '+' sep_by1(ty_param_bound,'+')  {%
       do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
-         withSpan $1 (PolyTraitRefTy (TraitTyParamBound poly None :| $4)) 
+         withSpan $1 (PolyTraitRefTy (TraitTyParamBound poly None <| $4)) 
     } 
   | impl ty_param_bounds_mod         {%
       if (any isTraitTyParamBound (unspan $2))
@@ -511,20 +518,21 @@ ty :: { Ty Span }
 -- parse_ty_sum()
 ty_sum :: { Ty Span }
   : ty                                   { $1 }
-  | ty '+' sep_by1(ty_param_bound,'+')   {% withSpan $1 (ObjectSum $1 $3) }
+  | ty '+' sep_by1(ty_param_bound,'+')   {% withSpan $1 (ObjectSum $1 (toList $3)) }
  
 fn_decl :: { FnDecl Span }
-  : fn '(' comma(arg_general) opt('...') ')' ret_ty  {% withSpan $1 (FnDecl $3 $6 (isJust $4)) }
+  : fn '(' comma(arg_general) '...' ')' ret_ty  {% withSpan $1 (FnDecl $3 $6 True) }
+  | fn '(' comma(arg_general) ')' ret_ty        {% withSpan $1 (FnDecl $3 $5 False) }
 
 
 -- TODO: consider inlinging this
 -- parse_ty_param_bounds(BoundParsingMode::Bare)
 ty_param_bounds_bare :: { [TyParamBound Span] }
-  : sep_by1(ty_param_bound,'+')       { $1 }
+  : sep_by1(ty_param_bound,'+')       { toList $1 }
 
 -- parse_ty_param_bounds(BoundParsingMode::Modified)
 ty_param_bounds_mod :: { NonEmpty (TyParamBound Span) }
-  : sep_by1(ty_param_bound_mod,'+')   { fromList $1 }  
+  : sep_by1(ty_param_bound_mod,'+')   { $1 }  
 
 ty_param_bound :: { TyParamBound Span }
   : lifetime             { RegionTyParamBound $1 }
@@ -567,9 +575,9 @@ for_lts :: { Spanned [LifetimeDef Span] }
 
 -- No corresponding parse function
 lifetime_def :: { LifetimeDef Span }
-  : outer_attribute many(outer_attribute) lifetime ':' sep_by1(lifetime,'+') {% withSpan $1 (LifetimeDef ($1 : $2) $3 $5) }
+  : outer_attribute many(outer_attribute) lifetime ':' sep_by1(lifetime,'+') {% withSpan $1 (LifetimeDef ($1 : $2) $3 (toList $5)) }
   | outer_attribute many(outer_attribute) lifetime                           {% withSpan $1 (LifetimeDef ($1 : $2) $3 []) }
-  | lifetime ':' sep_by1(lifetime,'+')                                       {% withSpan $1 (LifetimeDef [] $1 $3) }
+  | lifetime ':' sep_by1(lifetime,'+')                                       {% withSpan $1 (LifetimeDef [] $1 (toList $3)) }
   | lifetime                                                                 {% withSpan $1 (LifetimeDef [] $1 []) }
 
 --------------
@@ -603,32 +611,32 @@ pat :: { Pat Span }
 -- The first element is the spans, the second the position of '..', and the third if there is a
 -- trailing comma
 pat_tup :: { ([Pat Span], Maybe Int, Bool) }
-  : sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { ($1 ++ $5,   Just (length $1), False) }
-  | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',') ',' { ($1 ++ $5,   Just (length $1), True) }
-  | sep_by1(pat,',') ',' '..'                          { ($1,         Just (length $1), False) }
-  | sep_by1(pat,',')                                   { ($1,         Nothing,          False) }
-  | sep_by1(pat,',') ','                               { ($1,         Nothing,          True) }
-  | '..' ',' sep_by1(pat,',')                          { ($3,         Just 0,           False) }
-  | '..' ',' sep_by1(pat,',') ','                      { ($3,         Just 0,           True) }
-  | '..'                                               { ([],         Just 0,           False) }
-  | {- empty -}                                        { ([],         Nothing,          False) }
+  : sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { (toList ($1 <> $5), Just (length $1), False) }
+  | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',') ',' { (toList ($1 <> $5), Just (length $1), True) }
+  | sep_by1(pat,',') ',' '..'                          { (toList $1,         Just (length $1), False) }
+  | sep_by1(pat,',')                                   { (toList $1,         Nothing,          False) }
+  | sep_by1(pat,',') ','                               { (toList $1,         Nothing,          True) }
+  | '..' ',' sep_by1(pat,',')                          { (toList $3,         Just 0,           False) }
+  | '..' ',' sep_by1(pat,',') ','                      { (toList $3,         Just 0,           True) }
+  | '..'                                               { ([],                Just 0,           False) }
+  | {- empty -}                                        { ([],                Nothing,          False) }
 
 -- The first element is the patterns at the beginning of the slice, the second the optional binding
 -- for the middle slice ('Nothing' if there is no '..' and 'Just (WildP mempty) is there is one, but
 -- unlabelled), and the third is the patterns at the end of the slice.
 pat_slice :: { ([Pat Span], Maybe (Pat Span), [Pat Span]) }
-  : sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',') ',' { ($1, Just (WildP mempty), $5) }
-  | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { ($1, Just (WildP mempty), $5) }
-  | sep_by1(pat,',') ',' '..'                          { ($1, Just (WildP mempty), []) }
-  | sep_by1(pat,',') '..' ',' sep_by1(pat,',')         { (Prelude.init $1, Just (last $1), $4) }
-  | sep_by1(pat,',') '..' ',' sep_by1(pat,',') ','     { (Prelude.init $1, Just (last $1), $4) }
-  | sep_by1(pat,',') '..'                              { (Prelude.init $1, Just (last $1), []) }
-  | sep_by1(pat,',')                                   { ($1, Nothing, []) }
-  | sep_by1(pat,',') ','                               { ($1, Nothing, []) }
-  | '..' ',' sep_by1(pat,',')                          { ([], Just (WildP mempty), $3) }
-  | '..' ',' sep_by1(pat,',') ','                      { ([], Just (WildP mempty), $3) }
-  | '..'                                               { ([], Just (WildP mempty), []) }
-  | {- empty -}                                        { ([], Nothing, []) }
+  : sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',') ',' { (toList $1, Just (WildP mempty), toList $5) }
+  | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { (toList $1, Just (WildP mempty), toList $5) }
+  | sep_by1(pat,',') ',' '..'                          { (toList $1, Just (WildP mempty), []) }
+  | sep_by1(pat,',') '..' ',' sep_by1(pat,',')         { (N.init $1, Just (N.last $1),    toList $4) }
+  | sep_by1(pat,',') '..' ',' sep_by1(pat,',') ','     { (N.init $1, Just (N.last $1),    toList $4) }
+  | sep_by1(pat,',') '..'                              { (N.init $1, Just (N.last $1),    []) }
+  | sep_by1(pat,',')                                   { (toList $1, Nothing,             []) }
+  | sep_by1(pat,',') ','                               { (toList $1, Nothing,             []) }
+  | '..' ',' sep_by1(pat,',')                          { ([],        Just (WildP mempty), toList $3) }
+  | '..' ',' sep_by1(pat,',') ','                      { ([],        Just (WildP mempty), toList $3) }
+  | '..'                                               { ([],        Just (WildP mempty), []) }
+  | {- empty -}                                        { ([],        Nothing,             []) }
 
 
 lit_or_path :: { Expr Span }
@@ -662,16 +670,21 @@ at_pat :: { Maybe (Pat Span) }
   : '@' pat     { Just $2 }
   | {- empty -} { Nothing }
 
+
 -----------------
 -- Expressions --
 -----------------
 
--- TODO: lit should have attributes. Also, some other cases are missing... ;)
-expr :: { Expr Span }
-  : lit_expr  { $1 }
-
 lit_expr :: { Expr Span }
   : lit       {% withSpan $1 (Lit [] $1) }
+
+field :: { Field Span }
+  : ident ':' expr  {% withSpan $1 (Field (unspan $1) $3) }
+
+-- TODO: deal with attributes
+expr :: { Expr Span }
+  : lit_expr                                           { $1 }
+  
 
 -------------------
 -- Macro related --
