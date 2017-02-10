@@ -181,6 +181,23 @@ import qualified Data.List.NonEmpty as N
   -- Lifetimes.
   LIFETIME   { Tok $$@(Spanned (LifetimeTok _) _) }
 
+  -- Interpolated
+  ntItem         { Tok $$@(Spanned (Interpolated (NtItem _)) _) }
+  ntBlock        { Tok $$@(Spanned (Interpolated (NtBlock _)) _) }
+  ntStmt         { Tok $$@(Spanned (Interpolated (NtStmt _)) _) }
+  ntPat          { Tok $$@(Spanned (Interpolated (NtPat _)) _) }
+  ntExpr         { Tok $$@(Spanned (Interpolated (NtExpr _)) _) }
+  ntTy           { Tok $$@(Spanned (Interpolated (NtTy _)) _) }
+  ntIdent        { Tok $$@(Spanned (Interpolated (NtIdent _)) _) }
+  ntMeta         { Tok $$@(Spanned (Interpolated (NtMeta _)) _) }
+  ntPath         { Tok $$@(Spanned (Interpolated (NtPath _)) _) }
+  ntTT           { Tok $$@(Spanned (Interpolated (NtTT _)) _) }
+  ntArm          { Tok $$@(Spanned (Interpolated (NtArm _)) _) }
+  ntImplItem     { Tok $$@(Spanned (Interpolated (NtImplItem _)) _) }
+  ntTraitItem    { Tok $$@(Spanned (Interpolated (NtTraitItem _)) _) }
+  ntGenerics     { Tok $$@(Spanned (Interpolated (NtGenerics _)) _) }
+  ntWhereClause  { Tok $$@(Spanned (Interpolated (NtWhereClause _)) _) }
+  ntArg          { Tok $$@(Spanned (Interpolated (NtArg _)) _) }
 
 %%
 
@@ -254,18 +271,14 @@ sep_by1(p,sep)  : sep_by1_r(p,sep)   { N.reverse $1 }
 sep_by1_r(p,s)  : sep_by1_r(p,s) s p { $3 <| $1 }
                 | p                  { $1 :| [] }
 -}
-sep_by1(p,sep)  : sep_by1(p,sep) sep p  { $1 <> fromList [$3] }
-                | p                     { fromList [$1] }
+sep_by1(p,sep)  : sep_by1(p,sep) sep p  { $1 |> $3 }
+                | p                     { $1 :| [] }
 
 
 -- | Zero or more occurrences of p, separated by sep
 -- sep_by :: P a -> P b -> P [a]
 sep_by(p,sep)   : sep_by1(p,sep)     { toList $1 }
                 | {- empty -}        { [] }
-
--- | Comma delimited
--- comma(p) :: P a -> P [a]
-comma(p)        : sep_by(p,',')      { $1 }
 
 -- | One or the other, but of the same type
 -- alt(l,r) :: P a -> P a -> P a
@@ -276,13 +289,10 @@ alt(l,r)        : l                  { $1 }
 --------------------------
 -- Attributes
 --------------------------
--- TODO: list case of a meta_item should admit trailing commas
--- TODO: add a check that the literals in meta_item and meta_item_inner are unsuffixed
 
 attribute :: { Attribute Span }
   : inner_attribute { $1 }
   | outer_attribute { $1 }
-
 
 outer_attribute :: { Attribute Span }
   : '#' '[' meta_item ']'        {% withSpan $1 (Attribute Outer $3 False) }
@@ -304,14 +314,15 @@ inner_attribute :: { Attribute Span }
 
 -- parse_meta_item()
 meta_item :: { MetaItem Span }
-  : ident                                 {% withSpan $1 (Word (unspan $1)) }
-  | ident '=' lit                         {% withSpan $1 (NameValue (unspan $1) $3) }
-  | ident '(' comma(meta_item_inner) ')'  {% withSpan $1 (List (unspan $1) $3) }
+  : ident                                           {% withSpan $1 (Word (unspan $1)) }
+  | ident '=' unsuffixed                            {% withSpan $1 (NameValue (unspan $1) $3) }
+  | ident '(' sep_by(meta_item_inner,',') ')'       {% withSpan $1 (List (unspan $1) $3) }
+  | ident '(' sep_by1(meta_item_inner,',') ',' ')'  {% withSpan $1 (List (unspan $1) (toList $3)) }
 
 -- parse_meta_item_inner()
 meta_item_inner :: { NestedMetaItem Span }
-  : lit                          {% withSpan $1 (Literal $1) }
-  | meta_item                    {% withSpan $1 (MetaItem $1) } 
+  : unsuffixed                                      {% withSpan $1 (Literal $1) }
+  | meta_item                                       {% withSpan $1 (MetaItem $1) } 
 
 
 --------------
@@ -334,6 +345,9 @@ string :: { Lit Span }
   | byteStr           { lit $1 }
   | rawByteStr        { lit $1 }
 
+unsuffixed :: { Lit Span }
+  : lit {% case suffix $1 of { Unsuffixed -> pure $1; _ -> fail "expected unsuffixed literal" } }
+
 
 -----------
 -- Paths --
@@ -348,19 +362,15 @@ qual_path(segs)
 
 -- parse_generic_values_after_lt()
 generic_values :: { ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
-generic_values : lifetimes_tysums_bindings   { $1 }
-
--- TODO: can this be made left recursive?
-lifetimes_tysums_bindings
-  : lifetime ',' lifetimes_tysums_bindings   { let (lts, tys, bds) = $3 in ($1 : lts, tys, bds) }
-  | lifetime                                 { ([$1], [], []) }
-  | tysums_bindings                          { let (tys, bds) = $1 in ([], tys, bds) } 
-
--- TODO: can this be made left recursive?
-tysums_bindings
-  : ty_sum ',' tysums_bindings               { let (tys, bds) = $3 in ($1 : tys, bds) }
-  | ty_sum                                   { ([$1], []) }
-  | comma(binding)                           { ([], $1) }
+generic_values
+  : sep_by1(lifetime,',') ',' sep_by1(ty_sum,',') ',' sep_by1(binding,',')  { (toList $1, toList $3, toList $5) }
+  | sep_by1(lifetime,',') ',' sep_by1(ty_sum,',')                           { (toList $1, toList $3, []) }
+  | sep_by1(lifetime,',') ','                         sep_by1(binding,',')  { (toList $1, [],        toList $3) }
+  | sep_by1(lifetime,',')                                                   { (toList $1, [],        []) }
+  |                           sep_by1(ty_sum,',') ',' sep_by1(binding,',')  { ([],        toList $1, toList $3) }
+  |                           sep_by1(ty_sum,',')                           { ([],        toList $1, []) }
+  |                                                   sep_by1(binding,',')  { ([],        [],        toList $1) }
+  |                                                                         { ([],        [],        []) }
 
 binding : ident '=' ty                             { (unspan $1, $3) }
 
@@ -386,12 +396,14 @@ path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
           else fail "invalid path segment in type path"
      }
 
--- TODO: comma(ty_sum), not comma(ty) for the second/third cases
+-- TODO: sep_by(ty_sum), not sep_by(ty) for the second/third cases
 path_parameter1 :: { PathParameters Span }
-  : '<' generic_values '>'      {% let (lts, tys, bds) = $2 in withSpan $1 (AngleBracketed lts tys bds) }
-  | '(' comma(ty) ')'           {% withSpan $1 (Parenthesized $2 Nothing) }
-  | '(' comma(ty) ')' '->' ty   {% withSpan $1 (Parenthesized $2 (Just $5)) }
-  | {- empty -}                 { AngleBracketed [] [] [] mempty }
+  : '<' generic_values '>'                {% let (lts, tys, bds) = $2 in withSpan $1 (AngleBracketed lts tys bds) }
+  | '(' sep_by(ty,',') ')'                {% withSpan $1 (Parenthesized $2 Nothing) }
+  | '(' sep_by1(ty,',') ',' ')'           {% withSpan $1 (Parenthesized (toList $2) Nothing) }
+  | '(' sep_by(ty,',') ')' '->' ty        {% withSpan $1 (Parenthesized $2 (Just $>)) }
+  | '(' sep_by1(ty,',') ',' ')' '->' ty   {% withSpan $1 (Parenthesized (toList $2) (Just $>)) }
+  | {- empty -}                           { AngleBracketed [] [] [] mempty }
 
 
 -- Expression related:
@@ -423,8 +435,8 @@ path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
   : ident                                          {% withSpan $1 (Spanned ((unspan $1, NoParameters mempty) :| [])) }
   | path_segments_with_colons '::' path_parameter2 {%
      case (N.last (unspan $1), $3) of
-       ((i, NoParameters{}), Left (lts, tys, bds)) -> withSpan $1 (Spanned (N.init (unspan $1) <++ ((i, AngleBracketed lts tys bds mempty) :| [])))
-       (_, Right i) -> withSpan $1 (Spanned (unspan $1 <> ((i, AngleBracketed [] [] [] mempty) :| [])))
+       ((i, NoParameters{}), Left (lts, tys, bds)) -> withSpan $1 (Spanned (N.init (unspan $1) |: (i, AngleBracketed lts tys bds mempty)))
+       (_, Right i) -> withSpan $1 (Spanned (unspan $1 |> (i, AngleBracketed [] [] [] mempty)))
        _ -> error "invalid path segment in expression path"
     }
   
@@ -521,8 +533,9 @@ ty_sum :: { Ty Span }
   | ty '+' sep_by1(ty_param_bound,'+')   {% withSpan $1 (ObjectSum $1 (toList $3)) }
  
 fn_decl :: { FnDecl Span }
-  : fn '(' comma(arg_general) '...' ')' ret_ty  {% withSpan $1 (FnDecl $3 $6 True) }
-  | fn '(' comma(arg_general) ')' ret_ty        {% withSpan $1 (FnDecl $3 $5 False) }
+  : fn '(' sep_by1(arg_general,',') ',' '...' ')' ret_ty  {% withSpan $1 (FnDecl (toList $3) $> True) }
+  | fn '(' sep_by1(arg_general,',') ',' ')' ret_ty        {% withSpan $1 (FnDecl (toList $3) $> False) }
+  | fn '(' sep_by(arg_general,',') ')' ret_ty             {% withSpan $1 (FnDecl $3 $5 False) }
 
 
 -- TODO: consider inlinging this
@@ -571,7 +584,8 @@ poly_trait_ref :: { PolyTraitRef Span }
 -- parse_for_lts()
 -- Unlike the Rust libsyntax version, this _requires_ the for
 for_lts :: { Spanned [LifetimeDef Span] }
-  : for '<' comma(lifetime_def) '>'   {% withSpan $1 (Spanned $3) } 
+  : for '<' sep_by1(lifetime_def,',') ',' '>'   {% withSpan $1 (Spanned (toList $3)) } 
+  | for '<' sep_by(lifetime_def,',') '>'        {% withSpan $1 (Spanned $3) } 
 
 -- No corresponding parse function
 lifetime_def :: { LifetimeDef Span }
@@ -579,6 +593,7 @@ lifetime_def :: { LifetimeDef Span }
   | outer_attribute many(outer_attribute) lifetime                           {% withSpan $1 (LifetimeDef ($1 : $2) $3 []) }
   | lifetime ':' sep_by1(lifetime,'+')                                       {% withSpan $1 (LifetimeDef [] $1 (toList $3)) }
   | lifetime                                                                 {% withSpan $1 (LifetimeDef [] $1 []) }
+
 
 --------------
 -- Patterns --
@@ -830,6 +845,8 @@ token_tree :: { TokenTree }
 
 {
 
+-- | Given a 'LitTok' token that is expected to result in a valid literal, construct the associated
+-- literal. Note that this should _never_ fail on a token produced by the lexer.
 lit :: Spanned Token -> Lit Span
 lit (Spanned (IdentTok (Ident (Name "true") _)) s) = Bool True Unsuffixed s
 lit (Spanned (IdentTok (Ident (Name "false") _)) s) = Bool False Unsuffixed s
@@ -859,24 +876,35 @@ isPathSegmentIdent i = True
 isTypePathSegmentIdent :: Spanned Ident -> Bool
 isTypePathSegmentIdent i = True
 
+-- | Check if a given string is one of the accepted ABIs
 isAbi :: InternedString -> Bool
-isAbi s = s `elem` words "Cdecl Stdcall Fastcall Vectorcall Aapcs Win64 SysV64 Rust C System RustIntrinsic RustCall PlatformIntrinsic"
+isAbi s = s `elem` abis
+  where abis = [ "Cdecl", "Stdcall", "Fastcall", "Vectorcall", "Aapcs", "Win64", "SysV64"
+               , "Rust", "C", "System", "RustIntrinsic", "RustCall", "PlatformIntrinsic"
+               ]
 
 isTraitTyParamBound TraitTyParamBound{} = True
 isTraitTyParamBound _ = False
- 
+
+-- | The second argument is the thing you are trying to add a 'Span' to. The first argument is
+-- the first constituent of the thing we are annotating - it is passed in so that we can extract the
+-- start of the 'Span'. The end of the 'Span' is determined from the current parser position.
 withSpan :: Located node => node -> (Span -> a) -> P a
 withSpan node mkNode = do
   let Span lo _ = posOf node
   hi <- getPosition
   pure (mkNode (Span lo hi))
 
--- Functions related to `NonEmpty` that really should exist...
-(<++) :: [a] -> NonEmpty a -> NonEmpty a
-xs <++ ys = foldr (<|) ys xs
 
-(++>) :: NonEmpty a -> [a] -> NonEmpty a
-(x :| xs) ++> ys = x :| (xs ++ ys)
+-- Functions related to `NonEmpty` that really should already exist...
 
+-- | Append an element to a list to get a nonempty list (flipped version of '(:|)')
+(|:) :: [a] -> a -> NonEmpty a
+[] |: y = y :| []
+(x:xs) |: y = x :| (xs ++ [y])
+
+-- | Append an element to a nonempty list to get anothg nonempty list (flipped version of '(<|)')
+(|>) :: NonEmpty a -> a -> NonEmpty a
+(x:|xs) |> y = x :| (xs ++ [y])
 
 }

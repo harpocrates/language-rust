@@ -65,6 +65,8 @@ parserAttributes = testGroup "parsing attributes"
   , testAttribute "#![cfg]" (Attribute Inner (Word (mkIdent "cfg") ()) False ())
   , testAttribute "#[test]" (Attribute Outer (Word (mkIdent "test") ()) False ())
   , testAttribute "#[inline(always)]" (Attribute Outer (List (mkIdent "inline") [MetaItem (Word (mkIdent "always") ()) ()] ()) False ())
+  , testAttribute "#[inline(always,)]" (Attribute Outer (List (mkIdent "inline") [MetaItem (Word (mkIdent "always") ()) ()] ()) False ())
+  , testAttribute "#[inline()]" (Attribute Outer (List (mkIdent "inline") [] ()) False ())
   , testAttribute "#[inline(always, sometimes)]" (Attribute Outer (List (mkIdent "inline") [MetaItem (Word (mkIdent "always") ()) (),MetaItem (Word (mkIdent "sometimes") ()) ()] ()) False ())
   , testAttribute "#[cfg(target_os = \"macos\")]" (Attribute Outer (List (mkIdent "cfg") [MetaItem (NameValue (mkIdent "target_os") (Str "macos" Cooked Unsuffixed ()) ()) ()] ()) False ())
   , testAttribute "#[cfg(0, tar = \"mac\")]" (Attribute Outer (List (mkIdent "cfg") [Literal (Int 0 Unsuffixed ()) (), MetaItem (NameValue (mkIdent "tar") (Str "mac" Cooked Unsuffixed ()) ()) ()] ()) False ())
@@ -107,7 +109,10 @@ parserTypes = testGroup "parsing types"
                                                                                                [PathTy Nothing (Path False [(mkIdent "A",AngleBracketed [] [] [] ())] ()) () ]
                                                                                                [(mkIdent "B", Never ())] ())
                                                               ] ()) ())
+  , testType "Foo(!,!)" (PathTy Nothing (Path False [ (mkIdent "Foo", Parenthesized [Never (), Never ()] Nothing ()) ] ()) ())
+  , testType "Foo(!,!,)" (PathTy Nothing (Path False [ (mkIdent "Foo", Parenthesized [Never (), Never ()] Nothing ()) ] ()) ())
   , testType "Foo(!,!) -> !" (PathTy Nothing (Path False [ (mkIdent "Foo", Parenthesized [Never (), Never ()] (Just (Never ())) ()) ] ()) ())
+  , testType "Foo(!,!,) -> !" (PathTy Nothing (Path False [ (mkIdent "Foo", Parenthesized [Never (), Never ()] (Just (Never ())) ()) ] ()) ())
   , testType "<i32 as a::b::Trait>::AssociatedItem"
              (PathTy (Just (QSelf i32 3)) (Path False [ ("a", AngleBracketed [] [] [] ())
                                                       , ("b", AngleBracketed [] [] [] ())
@@ -120,9 +125,11 @@ parserTypes = testGroup "parsing types"
                                                       , ("Trait", Parenthesized [i32] (Just i32) ())
                                                       , ("AssociatedItem", AngleBracketed [] [] [] ())
                                                       ] ()) ())
-  , testType "fn(i32...)"
+  , testType "fn(i32,...)"
              (BareFn Normal Rust [] (FnDecl [Arg i32 Nothing ()] Nothing True ()) ())
   , testType "fn(i32) -> i32"
+             (BareFn Normal Rust [] (FnDecl [Arg i32 Nothing ()] (Just i32) False ()) ())
+  , testType "fn(i32,) -> i32"
              (BareFn Normal Rust [] (FnDecl [Arg i32 Nothing ()] (Just i32) False ()) ())
   , testType "fn(_: i32) -> i32"
              (BareFn Normal Rust [] (FnDecl [Arg i32 (Just (WildP ())) ()] (Just i32) False ()) ())
@@ -147,7 +154,7 @@ parserTypes = testGroup "parsing types"
                                                                                         (PathTy Nothing (Path False [("T", AngleBracketed [] [] [] ())] ()) ())
                                                                                         ()]
                                                                                   [] ())] ()) ()) ()) None] ())
-  , testType "for <'a> Debug + for <'b> Clone + for <'c> Clone"
+  , testType "for <'a,> Debug + for <'b> Clone + for <'c> Clone"
              (PolyTraitRefTy
                [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()]
                                                 (TraitRef (Path False [("Debug", AngleBracketed [] [] [] ())] ()) ()) ()) None] ())

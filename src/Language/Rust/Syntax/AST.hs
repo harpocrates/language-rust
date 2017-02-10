@@ -467,6 +467,16 @@ data Lit a
   | Bool Bool Suffix a                      -- ^ A boolean literal
   deriving (Eq, Functor, Show)
 
+suffix :: Lit a -> Suffix
+suffix (Str _ _ s _) = s
+suffix (ByteStr _ _ s _) = s
+suffix (Char _ s _) = s 
+suffix (Byte _ s _) = s 
+suffix (Int _ s _) = s 
+suffix (Float _ s _) = s
+suffix (Bool _ s _) = s 
+
+
 -- | Represents a macro invocation. The Path indicates which macro is being invoked, and the vector of
 -- token-trees contains the source of the macro invocation.
 --
