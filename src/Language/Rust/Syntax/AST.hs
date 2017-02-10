@@ -175,17 +175,17 @@ data Expr a
   -- This is desugared to a match expression.
   | IfLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Expr a)) a
   -- | A while loop, with an optional label `'label: while expr { block }`
-  | While [Attribute a] (Expr a) (Block a) (Maybe Ident) a
+  | While [Attribute a] (Expr a) (Block a) (Maybe (Lifetime a)) a
   -- | A while-let loop, with an optional label
   -- 'label: while let pat = expr { block }
   -- This is desugared to a combination of loop and match expressions.
-  | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe Ident) a
+  | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Lifetime a)) a
   -- | A for loop, with an optional label
   -- 'label: for pat in expr { block }
   -- This is desugared to a combination of loop and match expressions.
-  | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe Ident) a
+  | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Lifetime a)) a
   -- | Conditionless loop (can be exited with break, continue, or return) 'label: loop { block }
-  | Loop [Attribute a] (Block a) (Maybe Ident) a
+  | Loop [Attribute a] (Block a) (Maybe (Lifetime a)) a
   -- | A match block.
   | Match [Attribute a] (Expr a) [Arm a] a
   -- | A closure (for example, `move |a, b, c| {a + b + c}`).
@@ -210,9 +210,9 @@ data Expr a
   -- | A referencing operation (&a or &mut a)
   | AddrOf [Attribute a] Mutability (Expr a) a
   -- | A break, with an optional label to break
-  | Break [Attribute a] (Maybe Ident) a
+  | Break [Attribute a] (Maybe (Lifetime a)) a
   -- | A continue, with an optional label
-  | Continue [Attribute a] (Maybe Ident) a
+  | Continue [Attribute a] (Maybe (Lifetime a)) a
   -- | A return, with an optional value to be returned
   | Ret [Attribute a] (Maybe (Expr a)) a
   -- | Output of the asm!() macro
@@ -586,6 +586,8 @@ data Pat a
   -- | A range pattern, e.g. 1...2
   | RangeP (Expr a) (Expr a) a
   -- | [a, b, ..i, y, z] is represented as: PatKind::Slice(box [a, b], Some(i), box [y, z])
+  -- [1,2,3] can be (SliceP [1,2,3] Nothing []) or (SliceP [1,2] Nothing [3]) or ...
+  -- [1,..,3] is (SliceP [1] (Just WildP) [3])
   | SliceP [Pat a] (Maybe (Pat a)) [Pat a] a
   -- | A macro pattern; pre-expansion
   | MacP (Mac a) a
@@ -602,7 +604,7 @@ data Path a
       { global :: Bool
       -- | The segments in the path: the things separated by ::.
       -- Each segment consists of an identifier, an optional lifetime, and a set of types. E.g. std, String or Box<T>
-      , segments :: [(Ident, PathParameters a)]
+      , segments :: NonEmpty (Ident, PathParameters a)  -- see https://github.com/rust-lang/rust/issues/3420
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
@@ -636,6 +638,9 @@ data PathParameters a
       , nodeInfo :: a
       }
   deriving (Eq, Functor, Show)
+
+pattern NoParameters :: a -> PathParameters a
+pattern NoParameters x = AngleBracketed [] [] [] x
 
 -- https://docs.serde.rs/syntex_syntax/ast/struct.PolyTraitRef.html
 data PolyTraitRef a

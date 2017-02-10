@@ -33,7 +33,8 @@ data LitTok
   deriving (Eq, Show)
 
 -- Represents a token bundled with preceding space tokens (if any)
-data TokenSpace s = TokenSpace (s Token) [s Token]
+data TokenSpace s = TokenSpace { getToken :: s Token, getSpace :: [s Token] }
+
 
 -- Based loosely on <https://docs.serde.rs/syntex_syntax/parse/token/enum.Token.html>
 -- Inlined https://docs.serde.rs/syntex_syntax/parse/token/enum.BinOpToken.html
@@ -64,11 +65,75 @@ data Token
   -- In right-hand-sides of MBE macros:
   | SubstNt Ident IdentStyle                      -- ^ A syntactic variable that will be filled in by macro expansion.
   | SpecialVarNt                                  -- ^ A macro variable with special meaning.
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data DocType = OuterDoc | InnerDoc deriving (Eq, Show, Enum, Bounded)
 data Space = Whitespace | Comment deriving (Eq, Show, Enum, Bounded)
 data IdentStyle = ModName | Plain deriving (Eq, Show, Enum, Bounded)
+
+instance Show Token where
+  -- Single character expression-operator symbols.
+  show Equal = "="
+  show Less = "<"
+  show Greater = ">"
+  show Ampersand = "&"
+  show Pipe = "|"
+  show Exclamation = "!"
+  show Tilde = "~"
+  show Plus = "+"
+  show Minus = "-"
+  show Star = "*"
+  show Slash = "/"
+  show Percent = "%"
+  show Caret = "^"
+  -- Structural symbols
+  show At = "@"
+  show Dot = "."
+  show DotDot = ".."
+  show DotDotDot = "..."
+  show Comma = ","
+  show Semicolon = ";"
+  show Colon = ":"
+  show ModSep = "::"
+  show RArrow = "<-"
+  show LArrow = "->"
+  show FatArrow = "=>"
+  show Pound = "#"
+  show Dollar = "$"
+  show Question = "?"
+  -- Delimiters, eg. '{', ']', '('
+  show (OpenDelim Paren) = "("
+  show (OpenDelim Bracket) = "["
+  show (OpenDelim Brace) = "{"
+  show (OpenDelim NoDelim) = ""
+  show (CloseDelim Paren) = ")"
+  show (CloseDelim Bracket) = "]"
+  show (CloseDelim Brace) = "}"
+  show (CloseDelim NoDelim) = ""
+  -- Literals
+  show (LiteralTok (ByteTok n) s) = "b'" ++ show n ++ "'" ++ maybe "" show s
+  show (LiteralTok (CharTok n) s) = "'"  ++ show n ++ "'" ++ maybe "" show s
+  show (LiteralTok (IntegerTok n) s) = show n ++ maybe "" show s
+  show (LiteralTok (FloatTok n) s) = show n ++ maybe "" show s
+  show (LiteralTok (StrTok n) s) = "\"" ++ show n ++ "\"" ++ maybe "" show s
+  show (LiteralTok (StrRawTok n i) s) = "r" ++ replicate i '#' ++ "\"" ++ show n ++ "\"" ++ replicate i '#' ++ maybe "" show s
+  show (LiteralTok (ByteStrTok n) s) = "b\"" ++ show n ++ "\"" ++ maybe "" show s
+  show (LiteralTok (ByteStrRawTok n i) s) = "br" ++ replicate i '#' ++ "\"" ++ show n ++ "\"" ++ replicate i '#' ++ maybe "" show s
+  -- Name components
+  show (IdentTok i) = show i
+  show Underscore = "_"
+  show (LifetimeTok l) = "'" ++ show l
+  show (Space Whitespace _) = "<whitespace>"
+  show (Space Comment n) = "/*" ++ show n ++ " */"
+  show (Doc d InnerDoc) = "/*!" ++ d ++ "*/"
+  show (Doc d OuterDoc) = "/**" ++ d ++ "*/"
+  show Shebang = "#!"
+  show Eof = "<EOF>"
+  
+  show Interpolated{} = "<Interpolated>"
+  show MatchNt{} = "<MatchNt>"
+  show SubstNt{} = "<SubstNt>"
+  show SpecialVarNt = "<SpecialVarNt>"
 
 canBeginExpr :: Token -> Bool
 canBeginExpr OpenDelim{}   = True

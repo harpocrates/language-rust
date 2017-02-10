@@ -951,7 +951,6 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 "/"             { token Slash }
 "%"             { token Percent }
 "^"             { token Caret }
-"#!"            { token Shebang }
 
 "@"             { token At }          
 "."             { token Dot }        
@@ -978,6 +977,8 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 @lit_integer    { \i -> literal (IntegerTok (Name i)) }
 @lit_float      { \f -> literal (FloatTok   (Name f)) }
 @lit_float / [^\._a-zA-Z]
+                { \f -> literal (FloatTok   (Name f)) }
+@lit_float2 / [^\.]
                 { \f -> literal (FloatTok   (Name f)) }
 
 @lit_byte       { \c -> literal (ByteTok    (Name (drop 2 (init c)))) }

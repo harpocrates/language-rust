@@ -15,6 +15,7 @@ import Data.Char (intToDigit, ord, chr)
 import Data.Either (lefts, rights)
 import Data.Foldable (toList)
 import Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.List.NonEmpty as N
 import Data.Maybe (listToMaybe)
 import Data.Word (Word8)
 
@@ -300,8 +301,8 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     PathExpr _ Nothing path x   -> annotate x (printPath path True)
     PathExpr _ (Just qs) path x -> annotate x (printQPath path qs True)
     AddrOf _ mut e x            -> annotate x ("&" <> printMutability mut <+> printExprMaybeParen e)
-    Break _ brk x               -> annotate x ("break" <+> perhaps printIdent brk)
-    Continue _ cont x           -> annotate x ("continue" <+> perhaps printIdent cont)
+    Break _ brk x               -> annotate x ("break" <+> perhaps printLifetime brk)
+    Continue _ cont x           -> annotate x ("continue" <+> perhaps printLifetime cont)
     Ret _ result x              -> annotate x ("return" <+> perhaps printExpr result)
     InlineAsmExpr _ inlineAsm x -> annotate x (printInlineAsm inlineAsm)
     MacExpr _ m x               -> annotate x (printMac m Paren)
@@ -311,7 +312,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Repeat attrs e cnt x        -> annotate x (brackets (printInnerAttrs attrs <+> printExpr e <> ";" <+> printExpr cnt))
     ParenExpr attrs e x         -> annotate x (parens (printInnerAttrs attrs <+> printExpr e))
     Try _ e x                   -> annotate x (printExpr e <> "?")
-  where printLbl = perhaps (\i -> printIdent i <> ":")
+  where printLbl = perhaps (\i -> printLifetime i <> ":")
         glue = if isInline then (<+>) else (</>)
 
 printInlineAsm :: InlineAsm a -> Doc a
@@ -900,7 +901,7 @@ printPathParameters (AngleBracketed lts tys bds x) colons = annotate x (when col
 -- | second argument says whether to put colons before params
 -- aka print_path
 printPath :: Path a -> Bool -> Doc a
-printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (punctuate "::" (printSegment `map` segs)))
+printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (punctuate "::" (printSegment `map` N.toList segs)))
   where
   printSegment :: (Ident, PathParameters a) -> Doc a
   printSegment (ident,parameters) = printIdent ident <> printPathParameters parameters colons
@@ -915,12 +916,12 @@ printQPath (Path global segments x) (QSelf ty position) colons = annotate x $ hc
   , printPathParameters params colons
   ]
   where
-  (ident, params) = last segments
-  aliased = "as" <+> printPath (Path global (take position segments) x) False
+  (ident, params) = N.last segments
+  aliased = "as" <+> printPath (Path global (N.fromList (N.take position segments)) x) False
 
 -- aka print_view_path
 printViewPath :: ViewPath a -> Doc a
-printViewPath (ViewPathSimple ident path _) = printPath path False <+> when (fst (last (segments path)) /= ident) ("as" <+> printIdent ident)
+printViewPath (ViewPathSimple ident path _) = printPath path False <+> when (fst (N.last (segments path)) /= ident) ("as" <+> printIdent ident)
 printViewPath (ViewPathGlob path _) = printPath path False <> "::*"
 printViewPath (ViewPathList path idents _) = prefix <> "::{" <> commas idents printPathListItem <> "}"
   where

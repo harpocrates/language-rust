@@ -127,7 +127,7 @@ literals = testGroup "literals (numbers, characters, strings, etc.)"
   , testCode "0xAFACu32" [ LiteralTok (IntegerTok (Name "0xAFAC")) (Just (Name "u32")) ]
   -- float's
   , testCode "123.1" [ LiteralTok (FloatTok (Name "123.1")) Nothing ]
-  , testCode "123.f32" [ LiteralTok (IntegerTok (Name "123")) Nothing, Dot, IdentTok (mkIdent "f32") ]
+  , testCode "123.f32" [ LiteralTok (FloatTok (Name "123.")) (Just (Name "f32")) ]
   , testCode "123.1f32" [ LiteralTok (FloatTok (Name "123.1")) (Just (Name "f32")) ]
   , testCode "123e-9f32" [ LiteralTok (FloatTok (Name "123e-9")) (Just (Name "f32")) ]
   -- string's
