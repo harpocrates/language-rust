@@ -74,8 +74,8 @@ execParser (P parser) input pos =
   where initialState = PState
           { curPos = pos
           , curInput = input
-          , prevToken = error "CLexer.execParser: Touched undefined token!"
-          , savedToken = error "CLexer.execParser: Touched undefined token (saved token)!"
+          , prevToken = error "ParseMonad.execParser: Touched undefined token!"
+          , savedToken = error "ParseMonad.execParser: Touched undefined token (saved token)!"
           }
 
 -- | update the position of the parser

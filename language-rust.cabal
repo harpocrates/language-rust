@@ -26,6 +26,7 @@ library
                        Language.Rust.Syntax.Ident
                        Language.Rust.Syntax.Constants
                        Language.Rust.Syntax.AST
+                       Language.Rust.Parser
                        Language.Rust.Parser.ParseMonad
                        Language.Rust.Parser.Lexer
                        Language.Rust.Parser.Parser
