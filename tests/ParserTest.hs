@@ -161,15 +161,30 @@ parserTypes = testGroup "parsing types"
                                                                                         (PathTy Nothing (Path False [("T", AngleBracketed [] [] [] ())] ()) ())
                                                                                         ()]
                                                                                   [] ())] ()) ()) ()) None] ())
-  , testP "for <'a,> Debug + for <'b> Clone + for <'c> Clone"
-             (PolyTraitRefTy
-               [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()]
-                                                (TraitRef (Path False [("Debug", AngleBracketed [] [] [] ())] ()) ()) ()) None] ())
+  --, testP "for <'a,> Debug + for <'b> Clone + for <'c> Clone"
+  --           (PolyTraitRefTy
+  --             [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()]
+  --                                              (TraitRef (Path False [("Debug", AngleBracketed [] [] [] ())] ()) ()) ()) None] ())
+  , testP "&for<'a> Tr<'a> + Send"
+           (ObjectSum
+              (Rptr Nothing Immutable (PolyTraitRefTy [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime (Name "a") ()] [] [] ())] ()) ()) ()) None] ()) ())
+              [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",AngleBracketed [] [] [] ())] ()) ()) ()) None]
+              ()) 
+  , testP "&(for<'a> Tr<'a> + Send)"
+           (Rptr Nothing Immutable (ParenTy (ObjectSum
+              (PolyTraitRefTy [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime (Name "a") ()] [] [] ())] ()) ()) ()) None] ())
+              [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",AngleBracketed [] [] [] ())] ()) ()) ()) None]
+              ()) ()) ()) 
+  , testP "Fn() -> &(Object+Send)"
+           (PathTy Nothing (Path False [("Fn", Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (ObjectSum (PathTy Nothing (Path False [("Object",AngleBracketed [] [] [] ())] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",AngleBracketed [] [] [] ())] ()) ()) ()) None] ()) ()) ())) ())] ()) ())
   ]
   where
     -- Just a common type to make the tests above more straightforward
     i32 :: Ty ()
     i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
+
+
+
 
 
 -- | Test parsing of patterns.

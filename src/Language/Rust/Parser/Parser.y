@@ -27,7 +27,7 @@ import qualified Data.List.NonEmpty as N
 -- in order to document the parsers, we have to alias them
 %name literalP lit
 %name attributeP attribute
-%name typeP ty
+%name typeP ty_sum  -- the exported parser for types really is for type sums
 %name patternP pat
 %name expressionP expr
 
@@ -396,14 +396,13 @@ path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
           else fail "invalid path segment in type path"
      }
 
--- TODO: sep_by(ty_sum), not sep_by(ty) for the second/third cases
 path_parameter1 :: { PathParameters Span }
-  : '<' generic_values '>'                {% let (lts, tys, bds) = $2 in withSpan $1 (AngleBracketed lts tys bds) }
-  | '(' sep_by(ty,',') ')'                {% withSpan $1 (Parenthesized $2 Nothing) }
-  | '(' sep_by1(ty,',') ',' ')'           {% withSpan $1 (Parenthesized (toList $2) Nothing) }
-  | '(' sep_by(ty,',') ')' '->' ty        {% withSpan $1 (Parenthesized $2 (Just $>)) }
-  | '(' sep_by1(ty,',') ',' ')' '->' ty   {% withSpan $1 (Parenthesized (toList $2) (Just $>)) }
-  | {- empty -}                           { AngleBracketed [] [] [] mempty }
+  : '<' generic_values '>'                    {% let (lts, tys, bds) = $2 in withSpan $1 (AngleBracketed lts tys bds) }
+  | '(' sep_by(ty_sum,',') ')'                {% withSpan $1 (Parenthesized $2 Nothing) }
+  | '(' sep_by1(ty_sum,',') ',' ')'           {% withSpan $1 (Parenthesized (toList $2) Nothing) }
+  | '(' sep_by(ty_sum,',') ')' '->' ty        {% withSpan $1 (Parenthesized $2 (Just $>)) }
+  | '(' sep_by1(ty_sum,',') ',' ')' '->' ty   {% withSpan $1 (Parenthesized (toList $2) (Just $>)) }
+  | {- empty -}                               { AngleBracketed [] [] [] mempty }
 
 
 -- Expression related:
@@ -477,13 +476,12 @@ lifetime :: { Lifetime Span }
 trait_ref :: { TraitRef Span }
   : ty_path                          {% withSpan $1 (TraitRef $1) }
 
-
 -- parse_ty()
 ty :: { Ty Span }
   : '_'                              {% withSpan $1 Infer }
   | '!'                              {% withSpan $1 Never }
   | '(' ')'                          {% withSpan $1 (TupTy []) }
-  | '(' ty ')'                       {% withSpan $1 (ParenTy $2) }
+  | '(' ty_sum ')'                   {% withSpan $1 (ParenTy $2) }
   | '(' ty ',' ')'                   {% withSpan $1 (TupTy [$2]) }
   | '(' ty ',' sep_by1(ty,',') ')'   {% withSpan $1 (TupTy ($2 : toList $4)) }
   | '[' ty ']'                       {% withSpan $1 (Slice $2) }
@@ -510,24 +508,21 @@ ty :: { Ty Span }
       do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
          withSpan $1 (PolyTraitRefTy (TraitTyParamBound poly None :| []))
     }
- {-
-  -- The following both suffer from precedence issues around '+'
-  -- The solution is probably to maintain a distinction between `parse_ty` and `parse_ty_no_plus`
-  -- Even Rust itself has some problems with this...
-  -- https://github.com/rust-lang/rust/issues/39317
+{-
+  -- The following is still at RFC stage:
+  -- https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md
   -- https://github.com/rust-lang/rust/issues/34511
-  | for_lts trait_ref '+' sep_by1(ty_param_bound,'+')  {%
-      do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
-         withSpan $1 (PolyTraitRefTy (TraitTyParamBound poly None <| $4)) 
-    } 
-  | impl ty_param_bounds_mod         {%
-      if (any isTraitTyParamBound (unspan $2))
+  -- For now, this is only allowed in return type position. If that remains (there is some hope that
+  -- it will be more general), it would makes sense to move this as a special case of `ret_ty`
+  | impl sep_by1(ty_param_bound_mod,'+')         {%
+      if (any isTraitTyParamBound $2)
         then withSpan $1 (ImplTrait $2)
         else fail "at least one trait must be specified"
     }
--}
+ -}
 
 -- parse_ty_sum()
+-- See https://github.com/rust-lang/rfcs/blob/master/text/0438-precedence-of-plus.md
 ty_sum :: { Ty Span }
   : ty                                   { $1 }
   | ty '+' sep_by1(ty_param_bound,'+')   {% withSpan $1 (ObjectSum $1 (toList $3)) }
@@ -538,14 +533,8 @@ fn_decl :: { FnDecl Span }
   | fn '(' sep_by(arg_general,',') ')' ret_ty             {% withSpan $1 (FnDecl $3 $5 False) }
 
 
--- TODO: consider inlinging this
--- parse_ty_param_bounds(BoundParsingMode::Bare)
-ty_param_bounds_bare :: { [TyParamBound Span] }
-  : sep_by1(ty_param_bound,'+')       { toList $1 }
-
--- parse_ty_param_bounds(BoundParsingMode::Modified)
-ty_param_bounds_mod :: { NonEmpty (TyParamBound Span) }
-  : sep_by1(ty_param_bound_mod,'+')   { $1 }  
+-- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
+-- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+') 
 
 ty_param_bound :: { TyParamBound Span }
   : lifetime             { RegionTyParamBound $1 }
@@ -667,16 +656,18 @@ pat_field :: { FieldPat Span }
   | binding_mode ident ':' pat {% withSpan $1 (FieldPat (Just (unspan $2)) $4) }
 
 pat_fields :: { ([FieldPat Span], Bool) }
-  : pat_field ',' pat_fields   { let (fs,b) = $3 in ($1 : fs, b) }
+  : pat_field ',' pat_fields   { let ~(fs,b) = $3 in ($1 : fs, b) }
   | pat_field ','              { ([$1], False) }
   | pat_field ',' '..'         { ([$1], True) }
   | pat_field                  { ([$1], False) }
 
+-- Used prefixing IdentP patterns (not empty - that is a seperate pattern case)
 binding_mode1 :: { Spanned BindingMode }
   : ref mut               {% withSpan $1 (Spanned (ByRef Mutable)) }
   | ref                   {% withSpan $1 (Spanned (ByRef Immutable)) }
   | mut                   {% withSpan $1 (Spanned (ByValue Mutable)) }
 
+-- Used for patterns for fields (includes the empty case)
 binding_mode :: { Spanned BindingMode }
   : binding_mode1         { $1 }
   | {- empty -}           { pure (ByValue Immutable) }
@@ -699,7 +690,23 @@ field :: { Field Span }
 -- TODO: deal with attributes
 expr :: { Expr Span }
   : lit_expr                                           { $1 }
-  
+
+
+----------------
+-- Statements --
+----------------
+
+-- TODO: consider attributes
+stmt :: { Stmt Span }
+  : let pat ':' ty initializer         {% withSpan $1 (Local $2 (Just $4) $> []) }
+  | let pat '=' initializer            {% withSpan $1 (Local $2 Nothing $> []) } 
+  | expr ';'                           {% withSpan $1 (Semi $1) }                 
+  | expr                               {% withSpan $1 (NoSemi $1) } 
+ 
+initializer :: { Maybe (Expr Span) }
+  : '=' expr      { Just $2 }
+  | {- empty -}   { Nothing }
+
 
 -------------------
 -- Macro related --
