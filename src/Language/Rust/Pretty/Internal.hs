@@ -773,17 +773,17 @@ printFnArgsAndRet (FnDecl args ret var x) = annotate x ("(" <> align (fillSep ar
         args' = if var then [ printArg a False <> "," | a <- args ] ++ [ "..." ]
                        else punctuate "," ((`printArg` False) `map` args)
 
--- aka print_arg TODO double check this
+-- aka print_arg
 printArg :: Arg a -> Bool -> Doc a
-printArg (Arg (Infer x') (Just pat) x) True = annotate x $ annotate x' (printPat pat)
-printArg (Arg ty Nothing x) _ = annotate x (printType ty)
-printArg (Arg ty (Just (IdentP (ByValue m) "self" Nothing x')) x) _ = annotate x $ annotate x' $
+printArg (Arg (Just pat) (Infer x') x) True = annotate x $ annotate x' (printPat pat)
+printArg (Arg Nothing ty x) _ = annotate x (printType ty)
+printArg (Arg (Just (IdentP (ByValue m) "self" Nothing x')) ty x) _ = annotate x $ annotate x' $
   case ty of
       ImplicitSelf x'' -> annotate x'' (printMutability m <+> "self")
       Rptr lt m (ImplicitSelf x''') x'' -> annotate x'' $ annotate x''' $
         "&" <> perhaps printLifetime lt <+> printMutability m <+> "self"
       _ -> printMutability m <+> "self" <> ":" <+> printType ty
-printArg (Arg ty (Just pat) x) _ = annotate x (printPat pat <> ":" <+> printType ty)
+printArg (Arg (Just pat) ty x) _ = annotate x (printPat pat <> ":" <+> printType ty)
 
 -- aka print_lifetime
 printLifetime :: Lifetime a -> Doc a

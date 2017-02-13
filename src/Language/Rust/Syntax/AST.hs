@@ -33,8 +33,8 @@ data Abi
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Arg.html
 data Arg a
   = Arg
-      { ty :: Ty a
-      , pat :: Maybe (Pat a)
+      { pat :: Maybe (Pat a)
+      , ty :: Ty a
       , nodeInfo :: a
       } deriving (Eq, Show, Functor)
 

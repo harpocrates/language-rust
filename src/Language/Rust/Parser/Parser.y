@@ -549,9 +549,9 @@ ty_param_bound_mod :: { TyParamBound Span }
 -- parse_arg_general(false) -- does not require name
 -- NOT ALL PATTERNS ARE ACCEPTED: <https://github.com/rust-lang/rust/issues/35203>
 arg_general :: { Arg Span } 
-  : ty_sum            {% withSpan $1 (Arg $1 Nothing) }
-  | ident ':' ty_sum  {% withSpan $1 (Arg $3 (Just (IdentP (ByValue Immutable) (unspan $1) Nothing mempty))) }
-  | '_'   ':' ty_sum  {% withSpan $1 (Arg $3 (Just (WildP mempty))) }
+  : ty_sum            {% withSpan $1 (Arg Nothing $1) }
+  | ident ':' ty_sum  {% withSpan $1 (Arg (Just (IdentP (ByValue Immutable) (unspan $1) Nothing mempty)) $3) }
+  | '_'   ':' ty_sum  {% withSpan $1 (Arg (Just (WildP mempty)) $3) }
 
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Abi }
@@ -728,8 +728,8 @@ lambda_expr :: { Expr Span }
   |      args         expr       {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
 
 arg :: { Arg Span }
-  : pat ':' ty  {% withSpan $1 (Arg $3 (Just $1)) }
- -- |         ty  {% withSpan $1 (Arg $1 Nothing) }  -- conlicts with types (for instance, PathTy and PathPat). :(
+  : pat ':' ty  {% withSpan $1 (Arg (Just $1) $3) }
+  | pat         {% withSpan $1 (Arg (Just $1) (Infer mempty)) }
 
 args :: { [Arg Span] }
   : '|' '|'                       { [] }

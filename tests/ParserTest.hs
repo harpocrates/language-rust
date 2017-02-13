@@ -133,15 +133,15 @@ parserTypes = testGroup "parsing types"
                                                       , ("AssociatedItem", AngleBracketed [] [] [] ())
                                                       ] ()) ())
   , testP "fn(i32,...)"
-             (BareFn Normal Rust [] (FnDecl [Arg i32 Nothing ()] Nothing True ()) ())
+             (BareFn Normal Rust [] (FnDecl [Arg Nothing i32 ()] Nothing True ()) ())
   , testP "fn(i32) -> i32"
-             (BareFn Normal Rust [] (FnDecl [Arg i32 Nothing ()] (Just i32) False ()) ())
+             (BareFn Normal Rust [] (FnDecl [Arg Nothing i32 ()] (Just i32) False ()) ())
   , testP "fn(i32,) -> i32"
-             (BareFn Normal Rust [] (FnDecl [Arg i32 Nothing ()] (Just i32) False ()) ())
+             (BareFn Normal Rust [] (FnDecl [Arg Nothing i32 ()] (Just i32) False ()) ())
   , testP "fn(_: i32) -> i32"
-             (BareFn Normal Rust [] (FnDecl [Arg i32 (Just (WildP ())) ()] (Just i32) False ()) ())
+             (BareFn Normal Rust [] (FnDecl [Arg (Just (WildP ())) i32 ()] (Just i32) False ()) ())
   , testP "unsafe extern \"C\" fn(_: i32)"
-             (BareFn Unsafe C [] (FnDecl [Arg i32 (Just (WildP ())) ()] Nothing False ()) ())
+             (BareFn Unsafe C [] (FnDecl [Arg (Just (WildP ())) i32 ()] Nothing False ()) ())
   , testP "PResult<'a, P<i32>>"
              (PathTy Nothing (Path False [("PResult", AngleBracketed [ Lifetime (Name "a") () ]
                                                                      [ PathTy Nothing (Path False [("P", AngleBracketed [] [ i32 ] [] ())] ()) () ]
@@ -150,7 +150,7 @@ parserTypes = testGroup "parsing types"
              (BareFn Normal Rust
                             [ LifetimeDef [] (Lifetime (Name "l1") ()) [Lifetime (Name "l2") (), Lifetime (Name "l3") ()] ()
                             , LifetimeDef [] (Lifetime (Name "l4") ()) [Lifetime (Name "l5") ()] () ]
-                            (FnDecl [Arg (ObjectSum i32 [RegionTyParamBound (Lifetime (Name "l1") ())] ()) (Just (WildP ())) ()] 
+                            (FnDecl [Arg (Just (WildP ())) (ObjectSum i32 [RegionTyParamBound (Lifetime (Name "l1") ())] ()) ()] 
                                     (Just i32) False ()) ())
   , testP "for <'a> Foo<&'a T>"
              (PolyTraitRefTy
@@ -278,11 +278,13 @@ parserExpressions = testGroup "parsing expressions"
   , testP "(1,)" (TupExpr [] [Lit [] (Int 1 Unsuffixed ()) ()] ())
   , testP "(1,2)" (TupExpr [] [Lit [] (Int 1 Unsuffixed ()) (), Lit [] (Int 2 Unsuffixed ()) ()] ())
   , testP "|| 1" (Closure [] Ref (FnDecl [] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
-  , testP "|_: ()| 1" (Closure [] Ref (FnDecl [Arg (TupTy [] ()) (Just (WildP ())) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
-  , testP "|_: ()| -> () { () }" (Closure [] Ref (FnDecl [Arg (TupTy [] ()) (Just (WildP ())) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [NoSemi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
+  , testP "|_: ()| 1" (Closure [] Ref (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
+  , testP "|_| 1" (Closure [] Ref (FnDecl [Arg (Just (WildP ())) (Infer ()) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
+  , testP "|_: ()| -> () { () }" (Closure [] Ref (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [NoSemi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
   , testP "move || 1" (Closure [] Value (FnDecl [] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
-  , testP "move |_: ()| 1" (Closure [] Value (FnDecl [Arg (TupTy [] ()) (Just (WildP ())) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
-  , testP "move |_: ()| -> () { () }" (Closure [] Value (FnDecl [Arg (TupTy [] ()) (Just (WildP ())) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [NoSemi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
+  , testP "move |_: ()| 1" (Closure [] Value (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
+  , testP "move |_| 1" (Closure [] Value (FnDecl [Arg (Just (WildP ())) (Infer ()) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
+  , testP "move |_: ()| -> () { () }" (Closure [] Value (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [NoSemi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
   , testP "[(); 512]" (Repeat [] (TupExpr [] [] ()) (Lit [] (Int 512 Unsuffixed ()) ()) ())
   , testP "[]" (Vec [] [] ())
   , testP "[1]" (Vec [] [Lit [] (Int 1 Unsuffixed ()) ()] ())
