@@ -184,9 +184,6 @@ parserTypes = testGroup "parsing types"
     i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
 
 
-
-
-
 -- | Test parsing of patterns.
 parserPatterns :: Test
 parserPatterns = testGroup "parsing patterns"
@@ -277,5 +274,26 @@ parserPatterns = testGroup "parsing patterns"
 parserExpressions :: Test
 parserExpressions = testGroup "parsing expressions"
   [ testP "123" (Lit [] (Int 123 Unsuffixed ()) ())
+  , testP "()" (TupExpr [] [] ()) 
+  , testP "(1,)" (TupExpr [] [Lit [] (Int 1 Unsuffixed ()) ()] ())
+  , testP "(1,2)" (TupExpr [] [Lit [] (Int 1 Unsuffixed ()) (), Lit [] (Int 2 Unsuffixed ()) ()] ())
+  , testP "|| 1" (Closure [] Ref (FnDecl [] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
+  , testP "|_: ()| 1" (Closure [] Ref (FnDecl [Arg (TupTy [] ()) (Just (WildP ())) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
+  , testP "|_: ()| -> () { () }" (Closure [] Ref (FnDecl [Arg (TupTy [] ()) (Just (WildP ())) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [NoSemi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
+  , testP "move || 1" (Closure [] Value (FnDecl [] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
+  , testP "move |_: ()| 1" (Closure [] Value (FnDecl [Arg (TupTy [] ()) (Just (WildP ())) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
+  , testP "move |_: ()| -> () { () }" (Closure [] Value (FnDecl [Arg (TupTy [] ()) (Just (WildP ())) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [NoSemi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
+  , testP "[(); 512]" (Repeat [] (TupExpr [] [] ()) (Lit [] (Int 512 Unsuffixed ()) ()) ())
+  , testP "[]" (Vec [] [] ())
+  , testP "[1]" (Vec [] [Lit [] (Int 1 Unsuffixed ()) ()] ())
+  , testP "[1,]" (Vec [] [Lit [] (Int 1 Unsuffixed ()) ()] ())
+  , testP "[1,2]" (Vec [] [Lit [] (Int 1 Unsuffixed ()) (), Lit [] (Int 2 Unsuffixed ()) ()] ())
+  , testP "{ 1; 2 }" (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) (), NoSemi (Lit [] (Int 2 Unsuffixed ()) ()) ()] DefaultBlock ()) ())
+  , testP "unsafe { 1; 2 }" (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) (), NoSemi (Lit [] (Int 2 Unsuffixed ()) ()) ()] (UnsafeBlock False) ()) ())
+  , testP "return" (Ret [] Nothing ())
+  , testP "continue" (Continue [] Nothing ())
+  , testP "break" (Break [] Nothing ())
+  , testP "continue 'lbl" (Continue [] (Just (Lifetime (Name "lbl") ())) ())
+  , testP "break 'lbl" (Break [] (Just (Lifetime (Name "lbl") ())) ())
   ]
 

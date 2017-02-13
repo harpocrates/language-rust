@@ -189,7 +189,7 @@ data Expr a
   -- | A match block.
   | Match [Attribute a] (Expr a) [Arm a] a
   -- | A closure (for example, `move |a, b, c| {a + b + c}`).
-  | Closure [Attribute a] CaptureBy (FnDecl a) (Block a) a
+  | Closure [Attribute a] CaptureBy (FnDecl a) (Expr a) a
   -- | A block (`{ ... }`)
   | BlockExpr [Attribute a] (Block a) a
   -- | An assignment (a = foo())

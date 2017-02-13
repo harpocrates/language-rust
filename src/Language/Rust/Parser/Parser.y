@@ -29,6 +29,7 @@ import qualified Data.List.NonEmpty as N
 %name attributeP attribute
 %name typeP ty_sum  -- the exported parser for types really is for type sums
 %name patternP pat
+%name stmtP stmt
 %name expressionP expr
 
 %tokentype { TokenSpace Spanned }
@@ -687,10 +688,53 @@ lit_expr :: { Expr Span }
 field :: { Field Span }
   : ident ':' expr  {% withSpan $1 (Field (unspan $1) $3) }
 
--- TODO: deal with attributes
 expr :: { Expr Span }
-  : lit_expr                                           { $1 }
+  : expr_needs_semi                        { $1 }
 
+-- Expressions that need a semicolon to turn them into statements (except in tail position of a
+-- block)
+-- TODO: deal with attributes
+expr_needs_semi :: { Expr Span }
+  : lit_expr                               { $1 }
+  | '(' ')'                                {% withSpan $1 (TupExpr [] []) }
+  | '(' expr ')'                           {% withSpan $1 (ParenExpr [] $2) }
+  | '(' expr ',' ')'                       {% withSpan $1 (TupExpr [] [$2]) }
+  | '(' expr ',' sep_by1(expr,',') ')'     {% withSpan $1 (TupExpr [] ($2 : toList $4)) }
+  | block                                  {% withSpan $1 (BlockExpr [] $1) }
+  | lambda_expr                            { $1 }
+  | '[' expr ';' expr ']'                  {% withSpan $1 (Repeat [] $2 $4) } 
+  | '[' ']'                                {% withSpan $1 (Vec [] []) }
+  | '[' sep_by1(expr,',') ']'              {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' sep_by1(expr,',') ',' ']'          {% withSpan $1 (Vec [] (toList $2)) }
+ -- | expr_path                              {% withSpan $1 (PathExpr [] Nothing $1) }  
+ -- | expr_qual_path                         {% withSpan $1 (PathExpr [] (Just (fst $1)) (snd $1)) }  
+  | return                                 {% withSpan $1 (Ret [] Nothing) }
+ -- | return expr                            {% withSpan $1 (Ret [] (Just $2)) }
+  | continue                               {% withSpan $1 (Continue [] Nothing) }
+  | continue lifetime                      {% withSpan $1 (Continue [] (Just $2)) }
+  | break                                  {% withSpan $1 (Break [] Nothing) }
+  | break lifetime                         {% withSpan $1 (Break [] (Just $2)) }
+
+block :: { Block Span }
+  : alt(unsafe_block,safe_block)           { $1 }
+
+unsafe_block : unsafe '{' many(stmt) '}' {% withSpan $1 (Block $3 (UnsafeBlock False)) }
+safe_block   :        '{' many(stmt) '}' {% withSpan $1 (Block $2 DefaultBlock) }
+
+lambda_expr :: { Expr Span }
+  : move args '->' ty safe_block {% withSpan $1 (Closure [] Value (FnDecl $2 (Just $4) False mempty) (BlockExpr [] $> mempty)) }
+  | move args         expr       {% withSpan $1 (Closure [] Value (FnDecl $2 Nothing   False mempty) $>) }
+  |      args '->' ty safe_block {% withSpan $1 (Closure [] Ref   (FnDecl $1 (Just $3) False mempty) (BlockExpr [] $> mempty)) }
+  |      args         expr       {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
+
+arg :: { Arg Span }
+  : pat ':' ty  {% withSpan $1 (Arg $3 (Just $1)) }
+ -- |         ty  {% withSpan $1 (Arg $1 Nothing) }  -- conlicts with types (for instance, PathTy and PathPat). :(
+
+args :: { [Arg Span] }
+  : '|' '|'                       { [] }
+  | '|' sep_by1(arg,',') '|'      { toList $2 }
+  | '|' sep_by1(arg,',') ',' '|'  { toList $2 }
 
 ----------------
 -- Statements --
@@ -698,10 +742,11 @@ expr :: { Expr Span }
 
 -- TODO: consider attributes
 stmt :: { Stmt Span }
-  : let pat ':' ty initializer         {% withSpan $1 (Local $2 (Just $4) $> []) }
-  | let pat '=' initializer            {% withSpan $1 (Local $2 Nothing $> []) } 
-  | expr ';'                           {% withSpan $1 (Semi $1) }                 
-  | expr                               {% withSpan $1 (NoSemi $1) } 
+  : let pat ':' ty '=' initializer ';'   {% withSpan $1 (Local $2 (Just $4) $6 []) }
+  | let pat '=' initializer ';'          {% withSpan $1 (Local $2 Nothing $4 []) } 
+  | expr ';'                             {% withSpan $1 (Semi $1) }
+  | expr                                 {% withSpan $1 (NoSemi $1) }
+--  | ';'                                  
  
 initializer :: { Maybe (Expr Span) }
   : '=' expr      { Just $2 }

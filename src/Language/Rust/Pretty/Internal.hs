@@ -290,7 +290,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
                                                  then [] 
                                                  else (printArm True `map` Prelude.init arms) ++ [ printArm False (Prelude.last arms) ]
                                    in annotate x (hsep [ "match", printExpr e, blockAttrs (printInnerAttrs as) arms' ])
-    Closure _ cap decl body x   -> annotate x (when (cap == Value) "move" <+> printFnBlockArgs decl <+> printBlockUnclosed body)
+    Closure _ cap decl body x   -> annotate x (when (cap == Value) "move" <+> printFnBlockArgs decl <+> printExpr body)
     BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs blk attrs)
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
     AssignOp _ op lhs rhs x     -> annotate x (hsep [ printExpr lhs, printBinOp op <> "=", printExpr rhs ])
