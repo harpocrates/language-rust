@@ -610,11 +610,10 @@ data Pat a
 -- Inlined [PathSegment](https://docs.serde.rs/syntex_syntax/ast/struct.PathSegment.html)
 data Path a
   = Path
-      -- | A ::foo path, is relative to the crate root rather than current module (like paths in an import).
-      { global :: Bool
-      -- | The segments in the path: the things separated by ::.
+      { global :: Bool  -- ^ A ::foo path, is relative to the crate root rather than current module (like paths in an import).
+      -- see https://github.com/rust-lang/rust/issues/3420
       -- Each segment consists of an identifier, an optional lifetime, and a set of types. E.g. std, String or Box<T>
-      , segments :: NonEmpty (Ident, PathParameters a)  -- see https://github.com/rust-lang/rust/issues/3420
+      , segments :: NonEmpty (Ident, PathParameters a) -- ^ The segments in the path: the things separated by ::.
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
