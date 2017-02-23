@@ -41,9 +41,8 @@ import qualified Data.List.NonEmpty as N
 -- Conflicts caused in
 --  * sep_by1(segment,'::') parts of paths
 --  * complex_expr_path
---  * & mut patterns
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 3
+%expect 2
 
 %token
 
@@ -199,6 +198,11 @@ import qualified Data.List.NonEmpty as N
   ntGenerics     { Tok $$@(Spanned (Interpolated (NtGenerics _)) _) }
   ntWhereClause  { Tok $$@(Spanned (Interpolated (NtWhereClause _)) _) }
   ntArg          { Tok $$@(Spanned (Interpolated (NtArg _)) _) }
+
+-- 'mut' should be lower precedence than 'IDENT' so that in the pat rule,
+-- "& mut pat" has higher precedence than "binding_mode1 ident [@ pat]"
+%nonassoc mut
+%nonassoc IDENT
 
 %%
 
