@@ -178,10 +178,6 @@ parserTypes = testGroup "parsing types"
   , testP "Fn() -> &(Object+Send)"
            (PathTy Nothing (Path False [("Fn", Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (ObjectSum (PathTy Nothing (Path False [("Object",AngleBracketed [] [] [] ())] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",AngleBracketed [] [] [] ())] ()) ()) ()) None] ()) ()) ())) ())] ()) ())
   ]
-  where
-    -- Just a common type to make the tests above more straightforward
-    i32 :: Ty ()
-    i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
 
 
 -- | Test parsing of patterns.
@@ -260,14 +256,6 @@ parserPatterns = testGroup "parsing patterns"
   , testP "[..]"                    (SliceP [] (Just (WildP ())) [] ())
   , testP "foo!(x)"                 (MacP (Mac (Path False [("foo", NoParameters ())] ()) [Token mempty (IdentTok "x")]  ()) ())
   ]
-  where
-    -- Just a common pattern to make the tests above more straightforward
-    x :: Pat ()
-    x = IdentP (ByValue Immutable) "x" Nothing ()
-    
-    -- Just a common type to make the tests above more straightforward
-    i32 :: Ty ()
-    i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
 
   
 -- | Test parsing of expressions.
@@ -280,10 +268,12 @@ parserExpressions = testGroup "parsing expressions"
   , testP "|| 1" (Closure [] Ref (FnDecl [] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
   , testP "|_: ()| 1" (Closure [] Ref (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
   , testP "|_| 1" (Closure [] Ref (FnDecl [Arg (Just (WildP ())) (Infer ()) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
-  , testP "|_: ()| -> () { () }" (Closure [] Ref (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [NoSemi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
+  , testP "|_: ()| -> () { (); }" (Closure [] Ref (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [Semi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
   , testP "move || 1" (Closure [] Value (FnDecl [] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
   , testP "move |_: ()| 1" (Closure [] Value (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
   , testP "move |_| 1" (Closure [] Value (FnDecl [Arg (Just (WildP ())) (Infer ()) ()] Nothing False ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
+  , testP "move |_: ()| -> () { (); }" (Closure [] Value (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [Semi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
+  , testP "|_: ()| -> () { () }" (Closure [] Ref (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [NoSemi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
   , testP "move |_: ()| -> () { () }" (Closure [] Value (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] (Just (TupTy [] ())) False ()) (BlockExpr [] (Block [NoSemi (TupExpr [] [] ()) ()] DefaultBlock ()) ()) ())
   , testP "[(); 512]" (Repeat [] (TupExpr [] [] ()) (Lit [] (Int 512 Unsuffixed ()) ()) ())
   , testP "[]" (Vec [] [] ())
@@ -292,10 +282,78 @@ parserExpressions = testGroup "parsing expressions"
   , testP "[1,2]" (Vec [] [Lit [] (Int 1 Unsuffixed ()) (), Lit [] (Int 2 Unsuffixed ()) ()] ())
   , testP "{ 1; 2 }" (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) (), NoSemi (Lit [] (Int 2 Unsuffixed ()) ()) ()] DefaultBlock ()) ())
   , testP "unsafe { 1; 2 }" (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) (), NoSemi (Lit [] (Int 2 Unsuffixed ()) ()) ()] (UnsafeBlock False) ()) ())
+  , testP "{ 1; 2; }" (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int 2 Unsuffixed ()) ()) ()] DefaultBlock ()) ())
+  , testP "unsafe { 1; 2; }" (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int 2 Unsuffixed ()) ()) ()] (UnsafeBlock False) ()) ())
   , testP "return" (Ret [] Nothing ())
+  , testP "return 1" (Ret [] (Just (Lit [] (Int 1 Unsuffixed ()) ())) ())
   , testP "continue" (Continue [] Nothing ())
   , testP "break" (Break [] Nothing ())
   , testP "continue 'lbl" (Continue [] (Just (Lifetime (Name "lbl") ())) ())
   , testP "break 'lbl" (Break [] (Just (Lifetime (Name "lbl") ())) ())
+  , testP "math" (PathExpr [] Nothing (Path False [ ("math", NoParameters ()) ] ()) ())
+  , testP "math::PI" (PathExpr [] Nothing (Path False [ ("math", NoParameters ())
+                                                      , ("PI", NoParameters ()) ] ()) ())
+  , testP "math::<i32>" (PathExpr [] Nothing (Path False [ ("math", AngleBracketed [] [i32] [] ()) ] ()) ())
+  , testP "math::<i32>::PI" (PathExpr [] Nothing (Path False [ ("math", AngleBracketed [] [i32] [] ())
+                                                             , ("PI", AngleBracketed [] [] [] ()) ] ()) ())
+  , testP "<i32 as a(i32, i32)>::b::<'lt>::AssociatedItem"
+            (PathExpr [] (Just (QSelf i32 1)) (Path False [ ("a", Parenthesized [i32, i32] Nothing ())
+                                                          , ("b", AngleBracketed [Lifetime (Name "lt") ()] [] [] ())
+                                                          , ("AssociatedItem", NoParameters ())
+                                                          ] ()) ())
+  , testP "if true { 1; }"
+            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) 
+                Nothing ())
+  , testP "if true { 1; } else { 2; }"
+            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) 
+                (Just (BlockExpr [] (Block [Semi (Lit [] (Int 2 Unsuffixed ()) ()) ()] DefaultBlock ()) ())) ())
+  , testP "if true { 1; } else if false { 2; }"
+            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) 
+                (Just (If [] (Lit [] (Bool False Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 2 Unsuffixed ()) ()) ()] DefaultBlock ())
+                    Nothing ())) ())
+  , testP "if true { 1; } else if false { 2; } else { 3; }"
+            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) 
+                (Just (If [] (Lit [] (Bool False Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 2 Unsuffixed ()) ()) ()] DefaultBlock ())
+                    (Just (BlockExpr [] (Block [Semi (Lit [] (Int 3 Unsuffixed ()) ()) ()] DefaultBlock ()) ())) ())) ())
+  , testP "if let x = true { 1; }"
+            (IfLet [] x (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) 
+                Nothing ())
+  , testP "if let x = true { 1; } else { 2; }"
+            (IfLet [] x (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) 
+                (Just (BlockExpr [] (Block [Semi (Lit [] (Int 2 Unsuffixed ()) ()) ()] DefaultBlock ()) ())) ())
+  , testP "if true { 1; } else if let x = false { 2; }"
+            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) 
+                (Just (IfLet [] x (Lit [] (Bool False Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 2 Unsuffixed ()) ()) ()] DefaultBlock ())
+                    Nothing ())) ())
+  , testP "loop { 1; }" (Loop [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) Nothing ())
+  , testP "'lbl: loop { 1; }" (Loop [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime (Name "lbl") ())) ())
+  , testP "for x in [1,2,3] { 1; }" (ForLoop [] x (Vec [] [Lit [] (Int 1 Unsuffixed ()) (), Lit [] (Int 2 Unsuffixed ()) (), Lit [] (Int 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) Nothing ()) 
+  , testP "'lbl: for x in [1,2,3] { 1; }" (ForLoop [] x (Vec [] [Lit [] (Int 1 Unsuffixed ()) (), Lit [] (Int 2 Unsuffixed ()) (), Lit [] (Int 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime (Name "lbl") ())) ()) 
+  , testP "while true { 1; }" (While [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) Nothing ())
+  , testP "'lbl: while true { 1; }" (While [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime (Name "lbl") ())) ())
+  , testP "while let x = true { 1; }" (WhileLet [] x (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) Nothing ())
+  , testP "'lbl: while let x = true { 1; }" (WhileLet [] x (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime (Name "lbl") ())) ())
+  , testP "match true { }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [] ())
+  , testP "match true { _ => 2 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int 2 Unsuffixed ()) ()) ()] ())
+  , testP "match true { _ => 2, }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int 2 Unsuffixed ()) ()) ()] ())
+  , testP "match true { _ => 2, x | x => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int 2 Unsuffixed ()) ()) (), Arm [] [x,x] Nothing (Lit [] (Int 1 Unsuffixed ()) ()) ()] ())
+  , testP "match true { _ => 2, x | x => { 1; } }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int 2 Unsuffixed ()) ()) (), Arm [] [x,x] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) ()) ()] ())
+  , testP "match true { _ => 2, x | x => { 1; }, }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int 2 Unsuffixed ()) ()) (), Arm [] [x,x] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) ()) ()] ())
+  , testP "match true { _ => 2, x | x => { 1; }, _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int 2 Unsuffixed ()) ()) (), Arm [] [x,x] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) ()) (), Arm [] [WildP ()] Nothing (Lit [] (Int 1 Unsuffixed ()) ()) ()] ())
+  , testP "match true { _ => 2, x | x => { 1; } _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int 2 Unsuffixed ()) ()) (), Arm [] [x,x] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) ()) (), Arm [] [WildP ()] Nothing (Lit [] (Int 1 Unsuffixed ()) ()) ()] ())
+  , testP "println!()" (MacExpr [] (Mac (Path False [("println",NoParameters ())] ()) [] ()) ()) 
   ]
 
+
+toFix :: Test
+toFix = testGroup "should pass, but don't block tests for now"
+  [ ]
+
+
+-- Just a common pattern to make the tests above more straightforward
+x :: Pat ()
+x = IdentP (ByValue Immutable) "x" Nothing ()
+
+-- Just a common type to make the tests above more straightforward
+i32 :: Ty ()
+i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()

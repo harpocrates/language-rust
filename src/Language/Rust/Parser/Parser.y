@@ -41,8 +41,9 @@ import qualified Data.List.NonEmpty as N
 -- Conflicts caused in
 --  * sep_by1(segment,'::') parts of paths
 --  * complex_expr_path
+--  * something around empty returns
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 2
+%expect 3
 
 %token
 
@@ -694,36 +695,78 @@ field :: { Field Span }
 
 expr :: { Expr Span }
   : expr_needs_semi                        { $1 }
+  | expr_doesnt_need_semi                  { $1 }
 
 -- Expressions that need a semicolon to turn them into statements (except in tail position of a
 -- block)
 -- TODO: deal with attributes
 expr_needs_semi :: { Expr Span }
+  : expr_needs_semi_no_block               { $1 }
+  | block                                  {% withSpan $1 (BlockExpr [] $1) }
+
+expr_needs_semi_no_block :: { Expr Span }
   : lit_expr                               { $1 }
   | '(' ')'                                {% withSpan $1 (TupExpr [] []) }
   | '(' expr ')'                           {% withSpan $1 (ParenExpr [] $2) }
   | '(' expr ',' ')'                       {% withSpan $1 (TupExpr [] [$2]) }
   | '(' expr ',' sep_by1(expr,',') ')'     {% withSpan $1 (TupExpr [] ($2 : toList $4)) }
-  | block                                  {% withSpan $1 (BlockExpr [] $1) }
   | lambda_expr                            { $1 }
   | '[' expr ';' expr ']'                  {% withSpan $1 (Repeat [] $2 $4) } 
   | '[' ']'                                {% withSpan $1 (Vec [] []) }
   | '[' sep_by1(expr,',') ']'              {% withSpan $1 (Vec [] (toList $2)) }
   | '[' sep_by1(expr,',') ',' ']'          {% withSpan $1 (Vec [] (toList $2)) }
- -- | expr_path                              {% withSpan $1 (PathExpr [] Nothing $1) }  
- -- | expr_qual_path                         {% withSpan $1 (PathExpr [] (Just (fst $1)) (snd $1)) }  
+  | expr_path                              {% withSpan $1 (PathExpr [] Nothing $1) }
+  | expr_qual_path                         {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
   | return                                 {% withSpan $1 (Ret [] Nothing) }
- -- | return expr                            {% withSpan $1 (Ret [] (Just $2)) }
+  | return expr                            {% withSpan $1 (Ret [] (Just $2)) }
   | continue                               {% withSpan $1 (Continue [] Nothing) }
   | continue lifetime                      {% withSpan $1 (Continue [] (Just $2)) }
   | break                                  {% withSpan $1 (Break [] Nothing) }
   | break lifetime                         {% withSpan $1 (Break [] (Just $2)) }
+  | expr_mac                               {% withSpan $1 (MacExpr [] $1) }
 
-block :: { Block Span }
-  : alt(unsafe_block,safe_block)           { $1 }
+{- There is a convenience rule that allows one to omit the separating ; after if, match, loop, for, while -}
+-- TODO: expr_needs_semi requires the scrutinee _NOT_ to be a struct literal
+expr_doesnt_need_semi :: { Expr Span }
+  : if_expr                                                          { $1 }
+  |              loop                              safe_block        {% withSpan $1 (Loop [] $2 Nothing) }
+  | lifetime ':' loop                              safe_block        {% withSpan $1 (Loop [] $4 (Just $1)) }
+  |              for pat in expr_needs_semi        safe_block        {% withSpan $1 (ForLoop [] $2 $4 $5 Nothing) }
+  | lifetime ':' for pat in expr_needs_semi        safe_block        {% withSpan $1 (ForLoop [] $4 $6 $7 (Just $1)) }
+  |              while             expr_needs_semi safe_block        {% withSpan $1 (While [] $2 $3 Nothing) }
+  | lifetime ':' while             expr_needs_semi safe_block        {% withSpan $1 (While [] $4 $5 (Just $1)) }
+  |              while let pat '=' expr_needs_semi safe_block        {% withSpan $1 (WhileLet [] $3 $5 $6 Nothing) }
+  | lifetime ':' while let pat '=' expr_needs_semi safe_block        {% withSpan $1 (WhileLet [] $5 $7 $8 (Just $1)) }
+  | match expr_needs_semi '{' '}'                                    {% withSpan $1 (Match [] $2 []) }
+  | match expr_needs_semi '{' arms '}'                               {% withSpan $1 (Match [] $2 $4) }
 
-unsafe_block : unsafe '{' many(stmt) '}' {% withSpan $1 (Block $3 (UnsafeBlock False)) }
-safe_block   :        '{' many(stmt) '}' {% withSpan $1 (Block $2 DefaultBlock) }
+expr_no_block :: { Expr Span }
+  : alt(expr_doesnt_need_semi,expr_needs_semi_no_block)  { $1 }
+
+-- Match arms usually have to be seperated by commas (with an optional comma at the end). This
+-- condition is loosened (so that there is no seperator needed) if the arm ends in a safe block.
+arms :: { [Arm Span] }
+  : sep_by1(pat,'|') arm_guard '=>' safe_block             { [Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty] }
+  | sep_by1(pat,'|') arm_guard '=>' safe_block    ','      { [Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty] }
+  | sep_by1(pat,'|') arm_guard '=>' safe_block        arms { Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty : $> }
+  | sep_by1(pat,'|') arm_guard '=>' safe_block    ',' arms { Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty : $> }
+  | sep_by1(pat,'|') arm_guard '=>' expr_no_block          { [Arm [] $1 $2 $4 mempty] }
+  | sep_by1(pat,'|') arm_guard '=>' expr_no_block ','      { [Arm [] $1 $2 $4 mempty] }
+  | sep_by1(pat,'|') arm_guard '=>' expr_no_block ',' arms { Arm [] $1 $2 $4 mempty : $6 }
+
+arm_guard :: { Maybe (Expr Span) }
+  : {- empty -}  { Nothing }
+  | if expr      { Just $2 }
+
+-- TODO: expr_needs_semi requires the scrutinee _NOT_ to be a struct literal
+if_expr :: { Expr Span }
+  : if             expr_needs_semi safe_block else_expr {% withSpan $1 (If [] $2 $3 $4) }
+  | if let pat '=' expr_needs_semi safe_block else_expr {% withSpan $1 (IfLet [] $3 $5 $6 $7) }
+
+else_expr :: { Maybe (Expr Span) }
+  : else safe_block {% Just <\$> withSpan $1 (BlockExpr [] $2) }
+  | else if_expr    { Just $2 }
+  | {- empty -}     { Nothing }
 
 lambda_expr :: { Expr Span }
   : move args '->' ty safe_block {% withSpan $1 (Closure [] Value (FnDecl $2 (Just $4) False mempty) (BlockExpr [] $> mempty)) }
@@ -740,6 +783,22 @@ args :: { [Arg Span] }
   | '|' sep_by1(arg,',') '|'      { toList $2 }
   | '|' sep_by1(arg,',') ',' '|'  { toList $2 }
 
+block :: { Block Span }
+  : alt(unsafe_block,safe_block)           { $1 }
+
+unsafe_block :: { Block Span }
+  : unsafe '{' '}'                        {% withSpan $1 (Block [] (UnsafeBlock False)) }
+  | unsafe '{' stmts_possibly_no_semi '}' {% withSpan $1 (Block $3 (UnsafeBlock False)) }
+safe_block :: { Block Span }
+  :        '{' '}'                        {% withSpan $1 (Block [] DefaultBlock) }
+  |        '{' stmts_possibly_no_semi '}' {% withSpan $1 (Block $2 DefaultBlock) }
+
+-- List of statements where the last statement might be a no-semicolon statement.
+stmts_possibly_no_semi :: { [Stmt Span] }
+  : stmt stmts_possibly_no_semi              { $1 : $2 }
+  | stmt                                     { [$1] }
+  | expr_needs_semi                          { [NoSemi $1 mempty] }
+
 ----------------
 -- Statements --
 ----------------
@@ -748,8 +807,8 @@ args :: { [Arg Span] }
 stmt :: { Stmt Span }
   : let pat ':' ty '=' initializer ';'   {% withSpan $1 (Local $2 (Just $4) $6 []) }
   | let pat '=' initializer ';'          {% withSpan $1 (Local $2 Nothing $4 []) } 
-  | expr ';'                             {% withSpan $1 (Semi $1) }
-  | expr                                 {% withSpan $1 (NoSemi $1) }
+  | expr_needs_semi ';'                  {% withSpan $1 (Semi $1) }
+  | expr_doesnt_need_semi                {% withSpan $1 (NoSemi $1) }
 --  | ';'                                  
  
 initializer :: { Maybe (Expr Span) }
