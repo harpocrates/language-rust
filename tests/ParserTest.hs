@@ -342,6 +342,8 @@ parserExpressions = testGroup "parsing expressions"
   , testP "match true { _ => 2, x | x => { 1; }, _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int 2 Unsuffixed ()) ()) (), Arm [] [x,x] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) ()) (), Arm [] [WildP ()] Nothing (Lit [] (Int 1 Unsuffixed ()) ()) ()] ())
   , testP "match true { _ => 2, x | x => { 1; } _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int 2 Unsuffixed ()) ()) (), Arm [] [x,x] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) ()) (), Arm [] [WildP ()] Nothing (Lit [] (Int 1 Unsuffixed ()) ()) ()] ())
   , testP "println!()" (MacExpr [] (Mac (Path False [("println",NoParameters ())] ()) [] ()) ()) 
+  , testP "&x" (AddrOf [] Immutable (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) ())
+  , testP "&mut x" (AddrOf [] Mutable (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) ())
   ]
 
 

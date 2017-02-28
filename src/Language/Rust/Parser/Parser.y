@@ -205,6 +205,21 @@ import qualified Data.List.NonEmpty as N
 %nonassoc mut
 %nonassoc IDENT
 
+
+%left as ':'
+%left '*' '/' '%'
+%left '+' '-'
+%left '<<' '>>'
+%left '&'
+%left '^'
+%left '|'
+%nonassoc '==' '!=' '<' '>' '<=' '>='
+%left '&&'
+%left '||'
+%nonassoc '..' '...'
+%nonassoc '<-'
+%nonassoc '=' '<<=' '>>=' '-=' '&=' '|=' '+=' '*=' '/=' '^=' '%='
+
 %%
 
 
@@ -724,6 +739,54 @@ expr_needs_semi_no_block :: { Expr Span }
   | break                                  {% withSpan $1 (Break [] Nothing) }
   | break lifetime                         {% withSpan $1 (Break [] (Just $2)) }
   | expr_mac                               {% withSpan $1 (MacExpr [] $1) }
+  | '&' expr                               {% withSpan $1 (AddrOf [] Immutable $2) }
+  | '&' mut expr                           {% withSpan $1 (AddrOf [] Mutable $3) }
+
+{-
+The precedence of Rust binary operators is ordered as follows, going from strong to weak:
+
+%left as ':'
+%left '*' '/' '%'
+%left '+' '-'
+%left '<<' '>>'
+%left '&'
+%left '^'
+%left '|'
+%nonassoc '==' '!=' '<' '>' '<=' '>='
+%left '&&'
+%left '||'
+%nonassoc '..' '...'
+%nonassoc '<-'
+%nonassoc '=' '<<=' '>>=' '-=' '&=' '|=' '+=' '*=' '/=' '^=' '%='
+
+-}
+
+expr_bin :: { Expr Span }
+  : expr as ty      {% withSpan $1 (Cast [] $1 $3) } 
+  | expr ':' ty     {% withSpan $1 (TypeAscription [] $1 $3) }
+  | expr '*' expr   {% withSpan $1 (Binary [] MulOp $1 $3) }
+  | expr '/' expr   {% withSpan $1 (Binary [] DivOp $1 $3) }
+  | expr '+' expr   {% withSpan $1 (Binary [] AddOp $1 $3) }
+  | expr '-' expr   {% withSpan $1 (Binary [] SubOp $1 $3) }
+  | expr '<<' expr  {% withSpan $1 (Binary [] ShlOp $1 $3) }
+  | expr '>>' expr  {% withSpan $1 (Binary [] ShrOp $1 $3) }
+  | expr '&' expr   {% withSpan $1 (Binary [] AndOp $1 $3) }
+  | expr '^' expr   {% withSpan $1 (Binary [] BitXorOp $1 $3) }
+  | expr '|' expr   {% withSpan $1 (Binary [] BitOrOp $1 $3) }
+  | expr '==' expr  {% withSpan $1 (Binary [] EqOp $1 $3) }
+  | expr '!=' expr  {% withSpan $1 (Binary [] NeOp $1 $3) }
+  | expr '<' expr   {% withSpan $1 (Binary [] LtOp $1 $3) }
+  | expr '>' expr   {% withSpan $1 (Binary [] GtOp $1 $3) }
+  | expr '<=' expr  {% withSpan $1 (Binary [] LeOp $1 $3) }
+  | expr '>=' expr  {% withSpan $1 (Binary [] GeOp $1 $3) }
+  | expr '&&' expr  {% withSpan $1 (Binary [] AndOp $1 $3) }
+  | expr '||' expr  {% withSpan $1 (Binary [] OrOp $1 $3) }
+  | expr '..' expr  {% withSpan $1 (Range [] (Just $1) (Just $3) HalfClosed) }
+  | expr '...' expr {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
+  | expr '<-' expr  {% withSpan $1 (InPlace [] $1 $3) }
+  | expr '=' expr   {% withSpan $1 (Assign [] $1 $3) }
+
+
 
 {- There is a convenience rule that allows one to omit the separating ; after if, match, loop, for, while -}
 -- TODO: expr_needs_semi requires the scrutinee _NOT_ to be a struct literal
