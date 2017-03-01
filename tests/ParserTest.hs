@@ -301,6 +301,11 @@ parserExpressions = testGroup "parsing expressions"
                                                           , ("b", AngleBracketed [Lifetime (Name "lt") ()] [] [] ())
                                                           , ("AssociatedItem", NoParameters ())
                                                           ] ()) ())
+  , testP "Point { x: 1, y: 2 }" (Struct [] (Path False [("Point",NoParameters ())] ()) [Field "x" (Lit [] (Int 1 Unsuffixed ()) ()) (), Field "y" (Lit [] (Int 2 Unsuffixed ()) ()) ()] Nothing ())
+  , testP "Point { x: 1, y: 2, }" (Struct [] (Path False [("Point",NoParameters ())] ()) [Field "x" (Lit [] (Int 1 Unsuffixed ()) ()) (), Field "y" (Lit [] (Int 2 Unsuffixed ()) ()) ()] Nothing ())
+  , testP "Point { x: 1, ..p }" (Struct [] (Path False [("Point",NoParameters ())] ()) [Field "x" (Lit [] (Int 1 Unsuffixed ()) ()) ()] (Just (PathExpr [] Nothing (Path False [ ("p", NoParameters ()) ] ()) ())) ())
+  , testP "Point { ..p }" (Struct [] (Path False [("Point",NoParameters ())] ()) [] (Just (PathExpr [] Nothing (Path False [ ("p", NoParameters ()) ] ()) ())) ())
+  , testP "Point { }" (Struct [] (Path False [("Point",NoParameters ())] ()) [] Nothing ())
   , testP "if true { 1; }"
             (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) 
                 Nothing ())

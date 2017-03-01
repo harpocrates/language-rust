@@ -42,8 +42,9 @@ import qualified Data.List.NonEmpty as N
 --  * sep_by1(segment,'::') parts of paths
 --  * complex_expr_path
 --  * something around empty returns
+--  * deciding between expression paths and struct expressions
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 3
+%expect 4
 
 %token
 
@@ -383,7 +384,6 @@ qual_path(segs)
 
 -- parse_generic_values_after_lt()
 generic_values :: { ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
-generic_values
   : sep_by1(lifetime,',') ',' sep_by1(ty_sum,',') ',' sep_by1(binding,',')  { (toList $1, toList $3, toList $5) }
   | sep_by1(lifetime,',') ',' sep_by1(ty_sum,',')                           { (toList $1, toList $3, []) }
   | sep_by1(lifetime,',') ','                         sep_by1(binding,',')  { (toList $1, [],        toList $3) }
@@ -499,6 +499,9 @@ trait_ref :: { TraitRef Span }
 
 -- parse_ty()
 ty :: { Ty Span }
+  : alt(no_for_ty,for_ty)            { $1 }
+
+no_for_ty :: { Ty Span }
   : '_'                              {% withSpan $1 Infer }
   | '!'                              {% withSpan $1 Never }
   | '(' ')'                          {% withSpan $1 (TupTy []) }
@@ -521,7 +524,9 @@ ty :: { Ty Span }
   | fn_decl                          {% withSpan $1 (BareFn Normal Rust [] $1) }
   | typeof '(' expr ')'              {% withSpan $1 (Typeof $3) }
   | '[' ty ';' expr ']'              {% withSpan $1 (Array $2 $4) }
-  | for_lts unsafe extern abi fn_decl {% withSpan $1 (BareFn Unsafe $4 (unspan $1) $5) }
+
+for_ty :: { Ty Span }
+  : for_lts unsafe extern abi fn_decl {% withSpan $1 (BareFn Unsafe $4 (unspan $1) $5) }
   | for_lts unsafe fn_decl           {% withSpan $1 (BareFn Unsafe Rust (unspan $1) $3) }
   | for_lts extern abi fn_decl       {% withSpan $1 (BareFn Normal $3 (unspan $1) $4) }
   | for_lts fn_decl                  {% withSpan $1 (BareFn Normal Rust (unspan $1) $2) }
@@ -552,7 +557,6 @@ fn_decl :: { FnDecl Span }
   : fn '(' sep_by1(arg_general,',') ',' '...' ')' ret_ty  {% withSpan $1 (FnDecl (toList $3) $> True) }
   | fn '(' sep_by1(arg_general,',') ',' ')' ret_ty        {% withSpan $1 (FnDecl (toList $3) $> False) }
   | fn '(' sep_by(arg_general,',') ')' ret_ty             {% withSpan $1 (FnDecl $3 $5 False) }
-
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
 -- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+') 
@@ -705,9 +709,6 @@ at_pat :: { Maybe (Pat Span) }
 lit_expr :: { Expr Span }
   : lit       {% withSpan $1 (Lit [] $1) }
 
-field :: { Field Span }
-  : ident ':' expr  {% withSpan $1 (Field (unspan $1) $3) }
-
 expr :: { Expr Span }
   : expr_needs_semi                        { $1 }
   | expr_doesnt_need_semi                  { $1 }
@@ -716,10 +717,20 @@ expr :: { Expr Span }
 -- block)
 -- TODO: deal with attributes
 expr_needs_semi :: { Expr Span }
-  : expr_needs_semi_no_block               { $1 }
+  : expr_needs_semi_no_block_struct        { $1 }
   | block                                  {% withSpan $1 (BlockExpr [] $1) }
+  | struct_expr                            { $1 }
 
 expr_needs_semi_no_block :: { Expr Span }
+  : expr_needs_semi_no_block_struct        { $1 }
+  | struct_expr                            { $1 }
+
+expr_needs_semi_no_struct :: { Expr Span }
+  : block                                  {% withSpan $1 (BlockExpr [] $1) }
+  | expr_needs_semi_no_block_struct        { $1 }
+
+
+expr_needs_semi_no_block_struct :: { Expr Span }
   : lit_expr                               { $1 }
   | '(' ')'                                {% withSpan $1 (TupExpr [] []) }
   | '(' expr ')'                           {% withSpan $1 (ParenExpr [] $2) }
@@ -781,27 +792,26 @@ expr_bin :: { Expr Span }
   | expr '>=' expr  {% withSpan $1 (Binary [] GeOp $1 $3) }
   | expr '&&' expr  {% withSpan $1 (Binary [] AndOp $1 $3) }
   | expr '||' expr  {% withSpan $1 (Binary [] OrOp $1 $3) }
-  | expr '..' expr  {% withSpan $1 (Range [] (Just $1) (Just $3) HalfClosed) }
+  | expr '..' expr  {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
   | expr '...' expr {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
   | expr '<-' expr  {% withSpan $1 (InPlace [] $1 $3) }
   | expr '=' expr   {% withSpan $1 (Assign [] $1 $3) }
 
 
 
-{- There is a convenience rule that allows one to omit the separating ; after if, match, loop, for, while -}
--- TODO: expr_needs_semi requires the scrutinee _NOT_ to be a struct literal
+-- "There is a convenience rule that allows one to omit the separating ; after if, match, loop, for, while"
 expr_doesnt_need_semi :: { Expr Span }
-  : if_expr                                                          { $1 }
-  |              loop                              safe_block        {% withSpan $1 (Loop [] $2 Nothing) }
-  | lifetime ':' loop                              safe_block        {% withSpan $1 (Loop [] $4 (Just $1)) }
-  |              for pat in expr_needs_semi        safe_block        {% withSpan $1 (ForLoop [] $2 $4 $5 Nothing) }
-  | lifetime ':' for pat in expr_needs_semi        safe_block        {% withSpan $1 (ForLoop [] $4 $6 $7 (Just $1)) }
-  |              while             expr_needs_semi safe_block        {% withSpan $1 (While [] $2 $3 Nothing) }
-  | lifetime ':' while             expr_needs_semi safe_block        {% withSpan $1 (While [] $4 $5 (Just $1)) }
-  |              while let pat '=' expr_needs_semi safe_block        {% withSpan $1 (WhileLet [] $3 $5 $6 Nothing) }
-  | lifetime ':' while let pat '=' expr_needs_semi safe_block        {% withSpan $1 (WhileLet [] $5 $7 $8 (Just $1)) }
-  | match expr_needs_semi '{' '}'                                    {% withSpan $1 (Match [] $2 []) }
-  | match expr_needs_semi '{' arms '}'                               {% withSpan $1 (Match [] $2 $4) }
+  : if_expr                                                                    { $1 }
+  |              loop                                        safe_block        {% withSpan $1 (Loop [] $2 Nothing) }
+  | lifetime ':' loop                                        safe_block        {% withSpan $1 (Loop [] $4 (Just $1)) }
+  |              for pat in expr_needs_semi_no_struct        safe_block        {% withSpan $1 (ForLoop [] $2 $4 $5 Nothing) }
+  | lifetime ':' for pat in expr_needs_semi_no_struct        safe_block        {% withSpan $1 (ForLoop [] $4 $6 $7 (Just $1)) }
+  |              while             expr_needs_semi_no_struct safe_block        {% withSpan $1 (While [] $2 $3 Nothing) }
+  | lifetime ':' while             expr_needs_semi_no_struct safe_block        {% withSpan $1 (While [] $4 $5 (Just $1)) }
+  |              while let pat '=' expr_needs_semi_no_struct safe_block        {% withSpan $1 (WhileLet [] $3 $5 $6 Nothing) }
+  | lifetime ':' while let pat '=' expr_needs_semi_no_struct safe_block        {% withSpan $1 (WhileLet [] $5 $7 $8 (Just $1)) }
+  | match expr_needs_semi_no_struct '{' '}'                                    {% withSpan $1 (Match [] $2 []) }
+  | match expr_needs_semi_no_struct '{' arms '}'                               {% withSpan $1 (Match [] $2 $4) }
 
 expr_no_block :: { Expr Span }
   : alt(expr_doesnt_need_semi,expr_needs_semi_no_block)  { $1 }
@@ -821,10 +831,9 @@ arm_guard :: { Maybe (Expr Span) }
   : {- empty -}  { Nothing }
   | if expr      { Just $2 }
 
--- TODO: expr_needs_semi requires the scrutinee _NOT_ to be a struct literal
 if_expr :: { Expr Span }
-  : if             expr_needs_semi safe_block else_expr {% withSpan $1 (If [] $2 $3 $4) }
-  | if let pat '=' expr_needs_semi safe_block else_expr {% withSpan $1 (IfLet [] $3 $5 $6 $7) }
+  : if             expr_needs_semi_no_struct safe_block else_expr {% withSpan $1 (If [] $2 $3 $4) }
+  | if let pat '=' expr_needs_semi_no_struct safe_block else_expr {% withSpan $1 (IfLet [] $3 $5 $6 $7) }
 
 else_expr :: { Maybe (Expr Span) }
   : else safe_block {% Just <\$> withSpan $1 (BlockExpr [] $2) }
@@ -837,6 +846,17 @@ lambda_expr :: { Expr Span }
   |      args '->' ty safe_block {% withSpan $1 (Closure [] Ref   (FnDecl $1 (Just $3) False mempty) (BlockExpr [] $> mempty)) }
   |      args         expr       {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
 
+struct_expr :: { Expr Span }
+  : expr_path '{'                                  '}'   {% withSpan $1 (Struct [] $1 [] Nothing) }
+  | expr_path '{'                        '..' expr '}'   {% withSpan $1 (Struct [] $1 [] (Just $4)) }
+  | expr_path '{' sep_by1(field,',') ',' '..' expr '}'   {% withSpan $1 (Struct [] $1 (toList $3) (Just $6)) }
+  | expr_path '{' sep_by1(field,',')               '}'   {% withSpan $1 (Struct [] $1 (toList $3) Nothing) }
+  | expr_path '{' sep_by1(field,',') ','           '}'   {% withSpan $1 (Struct [] $1 (toList $3) Nothing) }
+
+field :: { Field Span }
+  : ident ':' expr  {% withSpan $1 (Field (unspan $1) $3) }
+  | ident           {% withSpan $1 (Field (unspan $1) (PathExpr [] Nothing (Path False ((unspan $1, NoParameters mempty) :| [])  mempty) mempty)) }
+
 arg :: { Arg Span }
   : pat ':' ty  {% withSpan $1 (Arg (Just $1) $3) }
   | pat         {% withSpan $1 (Arg (Just $1) (Infer mempty)) }
@@ -846,21 +866,6 @@ args :: { [Arg Span] }
   | '|' sep_by1(arg,',') '|'      { toList $2 }
   | '|' sep_by1(arg,',') ',' '|'  { toList $2 }
 
-block :: { Block Span }
-  : alt(unsafe_block,safe_block)           { $1 }
-
-unsafe_block :: { Block Span }
-  : unsafe '{' '}'                        {% withSpan $1 (Block [] (UnsafeBlock False)) }
-  | unsafe '{' stmts_possibly_no_semi '}' {% withSpan $1 (Block $3 (UnsafeBlock False)) }
-safe_block :: { Block Span }
-  :        '{' '}'                        {% withSpan $1 (Block [] DefaultBlock) }
-  |        '{' stmts_possibly_no_semi '}' {% withSpan $1 (Block $2 DefaultBlock) }
-
--- List of statements where the last statement might be a no-semicolon statement.
-stmts_possibly_no_semi :: { [Stmt Span] }
-  : stmt stmts_possibly_no_semi              { $1 : $2 }
-  | stmt                                     { [$1] }
-  | expr_needs_semi                          { [NoSemi $1 mempty] }
 
 ----------------
 -- Statements --
@@ -873,10 +878,101 @@ stmt :: { Stmt Span }
   | expr_needs_semi ';'                  {% withSpan $1 (Semi $1) }
   | expr_doesnt_need_semi                {% withSpan $1 (NoSemi $1) }
 --  | ';'                                  
- 
+
+-- List of statements where the last statement might be a no-semicolon statement.
+stmts_possibly_no_semi :: { [Stmt Span] }
+  : stmt stmts_possibly_no_semi              { $1 : $2 }
+  | stmt                                     { [$1] }
+  | expr_needs_semi                          { [NoSemi $1 mempty] }
+
 initializer :: { Maybe (Expr Span) }
   : '=' expr      { Just $2 }
   | {- empty -}   { Nothing }
+
+block :: { Block Span }
+  : alt(unsafe_block,safe_block)           { $1 }
+
+unsafe_block :: { Block Span }
+  : unsafe '{' '}'                        {% withSpan $1 (Block [] (UnsafeBlock False)) }
+  | unsafe '{' stmts_possibly_no_semi '}' {% withSpan $1 (Block $3 (UnsafeBlock False)) }
+safe_block :: { Block Span }
+  :        '{' '}'                        {% withSpan $1 (Block [] DefaultBlock) }
+  |        '{' stmts_possibly_no_semi '}' {% withSpan $1 (Block $2 DefaultBlock) }
+
+
+-----------
+-- Items --
+-----------
+
+foreign_item :: { ForeignItem Span }
+  : vis static ident ':' ty ';'
+      {% withSpan $1 (ForeignItem (unspan $3) [] (ForeignStatic $5 False) (unspan $1)) }
+  | vis static mut ident ':' ty ';'
+      {% withSpan $1 (ForeignItem (unspan $4) [] (ForeignStatic $6 True) (unspan $1)) }
+  | vis fn ident generics fn_decl where_clause ';'
+      {% withSpan $1 (ForeignItem (unspan $3) [] (ForeignFn $5 $4{ whereClause = $6 }) (unspan $1)) }
+
+-- parse_generics
+-- Leaves the WhereClause empty
+generics :: { Generics Span }
+  : {- empty -}                                                 { Generics [] [] (WhereClause [] mempty) mempty }
+  | '<' sep_by1(lifetime_def,',') ',' sep_by1(ty_param,',') '>' {% withSpan $1 (Generics (toList $2) (toList $4) (WhereClause [] mempty)) }
+  | '<' sep_by1(lifetime_def,',')                           '>' {% withSpan $1 (Generics (toList $2) []          (WhereClause [] mempty)) }
+  | '<'                               sep_by1(ty_param,',') '>' {% withSpan $1 (Generics []          (toList $2) (WhereClause [] mempty)) }
+  | '<'                                                     '>' {% withSpan $1 (Generics []          []          (WhereClause [] mempty)) }
+
+ty_param :: { TyParam Span }
+  : ident                                             {% withSpan $1 (TyParam [] (unspan $1) [] Nothing) }
+  | ident ':' sep_by1(ty_param_bound_mod,'+')         {% withSpan $1 (TyParam [] (unspan $1) (toList $3) Nothing) }
+  | ident                                     '=' ty  {% withSpan $1 (TyParam [] (unspan $1) [] (Just $>)) }
+  | ident ':' sep_by1(ty_param_bound_mod,'+') '=' ty  {% withSpan $1 (TyParam [] (unspan $1) (toList $3) (Just $>)) }
+
+
+-- parse_where_clause
+where_clause :: { WhereClause Span }
+  : {- empty -}                        { WhereClause [] mempty }
+  | where sep_by1(where_predicate,',') {% withSpan $1 (WhereClause (toList $2)) }
+
+where_predicate :: { WherePredicate Span }
+  : lifetime ':' sep_by(lifetime,'+')                      {% withSpan $1 (RegionPredicate $1 $3) }
+  | ty_path '=' ty                                         {% withSpan $1 (EqPredicate $1 $3) }
+  | no_for_ty                                              {% withSpan $1 (BoundPredicate [] $1 []) }
+  | no_for_ty ':' sep_by1(ty_param_bound_mod,'+')          {% withSpan $1 (BoundPredicate [] $1 (toList $3)) }
+  | for_lts no_for_ty                                      {% withSpan $1 (BoundPredicate (unspan $1) $2 []) }
+  | for_lts no_for_ty ':' sep_by1(ty_param_bound_mod,'+')  {% withSpan $1 (BoundPredicate (unspan $1) $2 (toList $4)) }
+
+
+-- TODO In last (MethodI) case:
+--   * self.parse_fn_decl_with_self should be used instead of fn_decl
+--   * check that block can indeed be unsafe
+impl_item :: { ImplItem Span }
+  : vis def type ident '=' ty ';'                      {% withSpan $1 (ImplItem (unspan $4) (unspan $1) $2 [] (TypeI $6)) }
+  | vis def const ident ':' ty '=' expr ';'            {% withSpan $1 (ImplItem (unspan $4) (unspan $1) $2 [] (ConstI $6 $8)) }
+  | vis def mod_mac                                    {% withSpan $1 (ImplItem (mkIdent "") (unspan $1) $2 [] (MacroI $3)) }
+  | vis def fn_front_matter fn ident generics fn_decl where_clause block
+     {% let (c, u, a) = $3
+        in withSpan $1 (ImplItem (unspan $5) (unspan $1) $2 [] (MethodI (MethodSig u c a $7 $6{ whereClause = $8 }) $>)) }
+
+-- parse_fn_front_matter
+fn_front_matter :: { (Constness, Unsafety, Abi) }
+  : const unsafe             { (Const,    Unsafe, Rust) }
+  | const                    { (Const,    Normal, Rust) }
+  |       unsafe             { (NotConst, Unsafe, Rust) }
+  |       unsafe extern      { (NotConst, Unsafe, C   ) }
+  |       unsafe extern abi  { (NotConst, Unsafe, $>  ) }
+  |                          { (NotConst, Normal, Rust) }
+  |              extern      { (NotConst, Normal, C   ) }
+  |              extern abi  { (NotConst, Normal, $>  ) }
+
+vis :: { Spanned (Visibility Span) }
+  : {- empty -}          { pure InheritedV }
+  | pub                  {% withSpan $1 (Spanned PublicV) }
+  | pub '(' crate ')'    {% withSpan $1 (Spanned CrateV) }
+  | pub '(' mod_path ')' {% withSpan $1 (Spanned (RestrictedV $3)) }
+
+def :: { Defaultness }
+  : {- empty -}          { Final }
+  | default              { Default }
 
 
 -------------------
@@ -892,6 +988,11 @@ ty_mac :: { Mac Span }
   : ty_path '!' '[' many(token_tree) ']'      {% withSpan $1 (Mac $1 $4) }
   | ty_path '!' '{' many(token_tree) '}'      {% withSpan $1 (Mac $1 $4) }
   | ty_path '!' '(' many(token_tree) ')'      {% withSpan $1 (Mac $1 $4) }
+
+mod_mac :: { Mac Span }
+  : mod_path '!' '[' many(token_tree) ']' ';'  {% withSpan $1 (Mac $1 $4) }
+  | mod_path '!' '{' many(token_tree) '}'      {% withSpan $1 (Mac $1 $4) }
+  | mod_path '!' '(' many(token_tree) ')' ';'  {% withSpan $1 (Mac $1 $4) }
 
 token_tree :: { TokenTree }
   : '(' many(token_tree) ')' { Delimited mempty Paren mempty $2 mempty }
