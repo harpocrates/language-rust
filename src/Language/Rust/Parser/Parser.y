@@ -274,38 +274,39 @@ ident : IDENT                         { let Spanned (IdentTok i) s = $1 in Spann
 -------------
 
 -- | One or more
--- some :: P a -> P (NonEmpty a)
-some(p)         : some_r(p)          { N.reverse $1 }
-some_r(p)       : some_r(p) p        { $2 <| $1 }
-                | p                  { $1 :| [] }
+some(p) :: { NonEmpty a }
+  : some_r(p)          { N.reverse $1 }
+some_r(p) :: { NonEmpty a }
+  : some_r(p) p        { $2 <| $1 }
+  | p                  { $1 :| [] }
 
 -- | Zero or more
--- many :: P a -> P [a]
-many(p)         : some(p)            { toList $1 }
-                | {- empty -}        { [] } 
+many(p) :: { [a] }
+  : some(p)            { toList $1 }
+  | {- empty -}        { [] }
 
 
 -- | One or more occurences of p, seperated by sep
--- sep_by1(p,sep) :: P a -> P b -> P (NonEmpty a)
 -- TODO: Use the commented out implementation (and understand why it currently makes more conlifcts)
 {-
 sep_by1(p,sep)  : sep_by1_r(p,sep)   { N.reverse $1 }
 sep_by1_r(p,s)  : sep_by1_r(p,s) s p { $3 <| $1 }
                 | p                  { $1 :| [] }
 -}
-sep_by1(p,sep)  : sep_by1(p,sep) sep p  { $1 |> $3 }
-                | p                     { $1 :| [] }
+sep_by1(p,sep) :: { NonEmpty a }
+  : sep_by1(p,sep) sep p  { $1 |> $3 }
+  | p                     { $1 :| [] }
 
 
 -- | Zero or more occurrences of p, separated by sep
--- sep_by :: P a -> P b -> P [a]
-sep_by(p,sep)   : sep_by1(p,sep)     { toList $1 }
-                | {- empty -}        { [] }
+sep_by(p,sep) :: { [a] }
+  : sep_by1(p,sep)     { toList $1 }
+  | {- empty -}        { [] }
 
 -- | One or the other, but of the same type
--- alt(l,r) :: P a -> P a -> P a
-alt(l,r)        : l                  { $1 }
-                | r                  { $1 }
+alt(l,r) :: { a }
+  : l                  { $1 }
+  | r                  { $1 }
 
 
 --------------------------
