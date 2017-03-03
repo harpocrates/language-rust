@@ -349,6 +349,7 @@ parserExpressions = testGroup "parsing expressions"
   , testP "println!()" (MacExpr [] (Mac (Path False [("println",NoParameters ())] ()) [] ()) ()) 
   , testP "&x" (AddrOf [] Immutable (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) ())
   , testP "&mut x" (AddrOf [] Mutable (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) ())
+  , testP "box x" (Box [] (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) ())
   ]
 
 

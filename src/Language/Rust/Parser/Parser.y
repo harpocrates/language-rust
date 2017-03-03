@@ -752,6 +752,119 @@ expr_needs_semi_no_block_struct :: { Expr Span }
   | expr_mac                               {% withSpan $1 (MacExpr [] $1) }
   | '&' expr                               {% withSpan $1 (AddrOf [] Immutable $2) }
   | '&' mut expr                           {% withSpan $1 (AddrOf [] Mutable $3) }
+  | box expr                               {% withSpan $1 (Box [] $2) }
+
+
+gen_postfix_expr(lhs,extra_postfix) :: { Expr Span }
+  : lit_expr                               { $1 }
+  | expr_path                              {% withSpan $1 (PathExpr [] Nothing $1) }
+  | expr_qual_path                         {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
+  | expr_mac                               {% withSpan $1 (MacExpr [] $1) }
+  | lhs '.' modsep                         { error "Unimplemented" }
+  | lhs '.' int                            { error "Unimplemented" }
+  | lhs '[' expr ']'                       {% withSpan $1 (Index [] $1 $3) }
+  | lhs '?'                                {% withSpan $1 (Try [] $1) }
+  | lhs '(' ')'                            {% withSpan $1 (Call [] $1 []) }
+  | lhs '(' sep_by1(expr,',') ')'          {% withSpan $1 (Call [] $1 $3) }
+  | lhs '(' sep_by1(expr,',') ',' ')'      {% withSpan $1 (Call [] $1 $3) }
+  | '[' ']'                                {% withSpan $1 (Vec [] []) }
+  | '[' sep_by1(expr,',') ']'              {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' sep_by1(expr,',') ',' ']'          {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' expr ';' expr ']'                  {% withSpan $1 (Repeat [] $2 $4) }
+
+gen_prefix_expr(lhs) :: { Expr Span }
+  : '*' lhs                                {% withSpan $1 (Unary [] Deref $2) }
+  | '!' lhs                                {% withSpan $1 (Unary [] Not $2) }
+  | '-' lhs                                {% withSpan $1 (Unary [] Neg $2) }
+  | '&' lhs                                {% withSpan $1 (AddrOf [] Immutable $2) }
+  | '&' mut lhs                            {% withSpan $1 (AddrOf [] Mutable $3) }
+  | box expr  {- non_paren_expr -}         {% withSpan $1 (Box [] $2) }
+  | gen_postfix_expr(lhs)                  { $1 }
+
+gen_binary12_expr(lhs,rhs) :: { Expr Span }
+  : lhs ':' ty                             {% withSpan $1 (TypeAscription [] $1 $3) }
+  | lhs as rhs                             {% withSpan $1 (Cast [] $1 $3) }
+  | gen_prefix_expr(lhs)                   { $1 }
+
+gen_binary11_expr(lhs,rhs) :: { Expr Span }
+  : lhs '*' rhs                            {% withSpan $1 (Binary [] MulOp $1 $3) }
+  | lhs '/' rhs                            {% withSpan $1 (Binary [] DivOp $1 $3) }
+  | lhs '%' rhs                            {% withSpan $1 (Binary [] RemOp $1 $3) }
+  | gen_binary12_expr(lhs,rhs)             { $1 }
+
+gen_binary10_expr(lhs,rhs) :: { Expr Span }
+  : lhs '+' rhs                            {% withSpan $1 (Binary [] AddOp $1 $3) }
+  | lhs '-' rhs                            {% withSpan $1 (Binary [] SubOp $1 $3) }
+  | gen_binary11_expr(lhs,rhs)             { $1 }
+
+gen_binary9_expr(lhs,rhs) :: { Expr Span }
+  : lhs '<<' rhs                           {% withSpan $1 (Binary [] ShlOp $1 $3) }
+  | lhs '>>' rhs                           {% withSpan $1 (Binary [] ShrOp $1 $3) }
+  | gen_binary10_expr(lhs,rhs)             { $1 }
+
+gen_binary8_expr(lhs,rhs) :: { Expr Span }
+  : lhs '&' rhs                            {% withSpan $1 (Binary [] BitAndOp $1 $3) }
+  | gen_binary9_expr(lhs,rhs)              { $1 }
+
+gen_binary7_expr(lhs,rhs) :: { Expr Span }
+  : lhs '^' rhs                            {% withSpan $1 (Binary [] BitXorOp $1 $3) }
+  | gen_binary8_expr(lhs,rhs)              { $1 }
+
+gen_binary6_expr(lhs,rhs) :: { Expr Span }
+  : lhs '|' rhs                            {% withSpan $1 (Binary [] BitOrOp $1 $3) }
+  | gen_binary7_expr(lhs,rhs)              { $1 }
+
+gen_binary5_expr(lhs,rhs) :: { Expr Span }
+  : lhs '==' rhs                           {% withSpan $1 (Binary [] EqOp $1 $3) }
+  | lhs '!=' rhs                           {% withSpan $1 (Binary [] NeOp $1 $3) }
+  | lhs '<'  rhs                           {% withSpan $1 (Binary [] LtOp $1 $3) }
+  | lhs '>'  rhs                           {% withSpan $1 (Binary [] GtOp $1 $3) }
+  | lhs '<=' rhs                           {% withSpan $1 (Binary [] LeOp $1 $3) }
+  | lhs '>=' rhs                           {% withSpan $1 (Binary [] GeOp $1 $3) }
+  | gen_binary6_expr(lhs,rhs)              { $1 }
+
+gen_binary4_expr(lhs,rhs) :: { Expr Span }
+  : lhs '&&' rhs                           {% withSpan $1 (Binary [] AndOp $1 $3) }
+  | gen_binary5_expr(lhs,rhs)              { $1 }
+
+gen_binary3_expr(lhs,rhs) :: { Expr Span }
+  : lhs '||' rhs                           {% withSpan $1 (Binary [] OrOp $1 $3) }
+  | gen_binary4_expr(lhs,rhs)              { $1 }
+
+-- TODO omitting lhs or rhs
+gen_binary2_expr(lhs,rhs) :: { Expr Span }
+  : lhs '..' rhs                           {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
+  | lhs '...' rhs                          {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
+  | gen_binary3_expr(lhs,rhs)              { $1 }
+
+gen_binary1_expr(lhs,rhs) :: { Expr Span }
+  : lhs '<-' rhs                           {% withSpan $1 (InPlace [] $1 $3) }
+  | gen_binary2_expr(lhs,rhs)              { $1 }
+
+gen_binary0_expr(lhs,rhs) :: { Expr Span }
+  : lhs '=' rhs                            {% withSpan $1 (Assign   [] $1 $3) }
+  | lhs '>>=' rhs                          {% withSpan $1 (AssignOp [] ShlOp $1 $3) }
+  | lhs '<<=' rhs                          {% withSpan $1 (AssignOp [] ShrOp $1 $3) }
+  | lhs '-=' rhs                           {% withSpan $1 (AssignOp [] SubOp $1 $3) }
+  | lhs '+=' rhs                           {% withSpan $1 (AssignOp [] AddOp $1 $3) }
+  | lhs '*=' rhs                           {% withSpan $1 (AssignOp [] MulOp $1 $3) }
+  | lhs '/=' rhs                           {% withSpan $1 (AssignOp [] DivOp $1 $3) }
+  | lhs '^=' rhs                           {% withSpan $1 (AssignOp [] BitXorOp $1 $3) }
+  | lhs '|=' rhs                           {% withSpan $1 (AssignOp [] BitOrOp $1 $3) }
+  | lhs '&=' rhs                           {% withSpan $1 (AssignOp [] BitAndOp $1 $3) }
+  | lhs '%=' rhs                           {% withSpan $1 (AssignOp [] RemOp $1 $3) }
+  | gen_binary1_expr(lhs,rhs)              { $1 }
+
+gen_expr(lhs,rhs) :: { Expr Span }
+  : return                                 {% withSpan $1 (Ret [] Nothing) }
+  | return expr                            {% withSpan $1 (Ret [] (Just $2)) }
+  | continue                               {% withSpan $1 (Continue [] Nothing) }
+  | continue lifetime                      {% withSpan $1 (Continue [] (Just $2)) }
+  | break                                  {% withSpan $1 (Break [] Nothing) }
+  | break lifetime                         {% withSpan $1 (Break [] (Just $2)) }
+  | gen_binary0_expr(lhs,rhs)              { $1 }
+
+
 
 {-
 The precedence of Rust binary operators is ordered as follows, going from strong to weak:
