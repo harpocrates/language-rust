@@ -710,27 +710,220 @@ at_pat :: { Maybe (Pat Span) }
 lit_expr :: { Expr Span }
   : lit       {% withSpan $1 (Lit [] $1) }
 
-expr :: { Expr Span }
-  : gen_expr(expr,expr)                    { $1 }
-  | paren_expr                             { $1 }
-  | block_expr                             { $1 }
-  | struct_expr                            { $1 }
-  | lambda_expr                            { $1 }
 
-nonparen_expr :: { Expr Span }
-  : gen_expr(nonparen_expr,nonparen_expr)  { $1 }
-  | block_expr                             { $1 }
-  | struct_expr                            { $1 }
+-- General expressions, not restrictions
+expr          :: { Expr Span }
+              : gen_expr                                        { $1 }
+              | binary0_expr                                    { $1 }
+              | paren_expr                                      { $1 }
+              | block_expr                                      { $1 }
+              | struct_expr                                     { $1 }
+              | lambda_expr                                     { $1 }
+binary0_expr  :: { Expr Span }
+              : gen_binary0_expr(binary0_expr,binary0_expr)     { $1 }
+              | binary1_expr                                    { $1 }
+binary1_expr  :: { Expr Span }
+              : gen_binary1_expr(binary1_expr,binary1_expr)     { $1 } 
+              | binary2_expr                                    { $1 } 
+binary2_expr  :: { Expr Span }
+              : gen_binary2_expr(binary2_expr,binary2_expr)     { $1 } 
+              | binary3_expr                                    { $1 } 
+binary3_expr  :: { Expr Span }
+              : gen_binary3_expr(binary3_expr,binary3_expr)     { $1 } 
+              | binary4_expr                                    { $1 } 
+binary4_expr  :: { Expr Span }
+              : gen_binary4_expr(binary4_expr,binary4_expr)     { $1 } 
+              | binary5_expr                                    { $1 } 
+binary5_expr  :: { Expr Span }
+              : gen_binary5_expr(binary5_expr,binary5_expr)     { $1 } 
+              | binary6_expr                                    { $1 } 
+binary6_expr  :: { Expr Span }
+              : gen_binary6_expr(binary6_expr,binary6_expr)     { $1 } 
+              | binary7_expr                                    { $1 } 
+binary7_expr  :: { Expr Span }
+              : gen_binary7_expr(binary7_expr,binary7_expr)     { $1 } 
+              | binary8_expr                                    { $1 } 
+binary8_expr  :: { Expr Span }
+              : gen_binary8_expr(binary8_expr,binary8_expr)     { $1 } 
+              | binary9_expr                                    { $1 } 
+binary9_expr  :: { Expr Span }
+              : gen_binary9_expr(binary9_expr,binary9_expr)     { $1 } 
+              | binary10_expr                                   { $1 } 
+binary10_expr :: { Expr Span }
+              : gen_binary10_expr(binary10_expr,binary10_expr)  { $1 } 
+              | binary11_expr                                   { $1 } 
+binary11_expr :: { Expr Span }
+              : gen_binary11_expr(binary11_expr,binary11_expr)  { $1 } 
+              | binary12_expr                                   { $1 } 
+binary12_expr :: { Expr Span }
+              : gen_binary12_expr(binary12_expr,binary12_expr)  { $1 } 
+              | prefix_expr                                     { $1 } 
+prefix_expr   :: { Expr Span }
+              : gen_prefix_expr(prefix_expr)                    { $1 } 
+              | postfix_expr                                    { $1 } 
+postfix_expr  :: { Expr Span }
+              : gen_postfix_expr(postfix_expr)                  { $1 } 
 
-nostruct_expr :: { Expr Span }
-  : gen_expr(nostruct_expr,nostruct_expr)  { $1 }
-  | block_expr                             { $1 }
-  | paren_expr                             { $1 }
 
-nonblock_expr :: { Expr Span }
-  : gen_expr(nonblock_expr,expr)           { $1 }
-  | paren_expr                             { $1 }
-  | struct_expr                            { $1 }
+-- General expressions, but no parens
+nonparen_expr    :: { Expr Span }
+                 : gen_expr                                              { $1 }
+                 | np_binary0_expr                                       { $1 }
+                 | block_expr                                            { $1 }
+                 | struct_expr                                           { $1 }
+                 | lambda_expr                                           { $1 }
+np_binary0_expr  :: { Expr Span }
+                 : gen_binary0_expr(np_binary0_expr,np_binary0_expr)     { $1 }
+                 | np_binary1_expr                                       { $1 }
+np_binary1_expr  :: { Expr Span }
+                 : gen_binary1_expr(np_binary1_expr,np_binary1_expr)     { $1 } 
+                 | np_binary2_expr                                       { $1 } 
+np_binary2_expr  :: { Expr Span }
+                 : gen_binary2_expr(np_binary2_expr,np_binary2_expr)     { $1 } 
+                 | np_binary3_expr                                       { $1 } 
+np_binary3_expr  :: { Expr Span }
+                 : gen_binary3_expr(np_binary3_expr,np_binary3_expr)     { $1 } 
+                 | np_binary4_expr                                       { $1 } 
+np_binary4_expr  :: { Expr Span }
+                 : gen_binary4_expr(np_binary4_expr,np_binary4_expr)     { $1 } 
+                 | np_binary5_expr                                       { $1 } 
+np_binary5_expr  :: { Expr Span }
+                 : gen_binary5_expr(np_binary5_expr,np_binary5_expr)     { $1 } 
+                 | np_binary6_expr                                       { $1 } 
+np_binary6_expr  :: { Expr Span }
+                 : gen_binary6_expr(np_binary6_expr,np_binary6_expr)     { $1 } 
+                 | np_binary7_expr                                       { $1 } 
+np_binary7_expr  :: { Expr Span }
+                 : gen_binary7_expr(np_binary7_expr,np_binary7_expr)     { $1 } 
+                 | np_binary8_expr                                       { $1 } 
+np_binary8_expr  :: { Expr Span }
+                 : gen_binary8_expr(np_binary8_expr,np_binary8_expr)     { $1 } 
+                 | np_binary9_expr                                       { $1 } 
+np_binary9_expr  :: { Expr Span }
+                 : gen_binary9_expr(np_binary9_expr,np_binary9_expr)     { $1 } 
+                 | np_binary10_expr                                      { $1 } 
+np_binary10_expr :: { Expr Span }
+                 : gen_binary10_expr(np_binary10_expr,np_binary10_expr)  { $1 } 
+                 | np_binary11_expr                                      { $1 } 
+np_binary11_expr :: { Expr Span }
+                 : gen_binary11_expr(np_binary11_expr,np_binary11_expr)  { $1 } 
+                 | np_binary12_expr                                      { $1 } 
+np_binary12_expr :: { Expr Span }
+                 : gen_binary12_expr(np_binary12_expr,np_binary12_expr)  { $1 } 
+                 | np_prefix_expr                                        { $1 } 
+np_prefix_expr   :: { Expr Span }
+                 : gen_prefix_expr(np_prefix_expr)                       { $1 } 
+                 | np_postfix_expr                                       { $1 } 
+np_postfix_expr  :: { Expr Span }
+                 : gen_postfix_expr(np_postfix_expr)                     { $1 } 
+
+
+-- General expressions, but no structs
+nostruct_expr    :: { Expr Span }
+                 : gen_expr                                              { $1 }
+                 | ns_binary0_expr                                       { $1 }
+                 | block_expr                                            { $1 }
+                 | paren_expr                                            { $1 }
+                 | lambda_expr_nostruct                                  { $1 }
+ns_binary0_expr  :: { Expr Span }
+                 : gen_binary0_expr(ns_binary0_expr,ns_binary0_expr)     { $1 }
+                 | ns_binary1_expr                                       { $1 }
+ns_binary1_expr  :: { Expr Span }
+                 : gen_binary1_expr(ns_binary1_expr,ns_binary1_expr)     { $1 } 
+                 | ns_binary2_expr                                       { $1 } 
+ns_binary2_expr  :: { Expr Span }
+                 : gen_binary2_expr(ns_binary2_expr,ns_binary2_expr)     { $1 } 
+                 | ns_binary3_expr                                       { $1 } 
+ns_binary3_expr  :: { Expr Span }
+                 : gen_binary3_expr(ns_binary3_expr,ns_binary3_expr)     { $1 } 
+                 | ns_binary4_expr                                       { $1 } 
+ns_binary4_expr  :: { Expr Span }
+                 : gen_binary4_expr(ns_binary4_expr,ns_binary4_expr)     { $1 } 
+                 | ns_binary5_expr                                       { $1 } 
+ns_binary5_expr  :: { Expr Span }
+                 : gen_binary5_expr(ns_binary5_expr,ns_binary5_expr)     { $1 } 
+                 | ns_binary6_expr                                       { $1 } 
+ns_binary6_expr  :: { Expr Span }
+                 : gen_binary6_expr(ns_binary6_expr,ns_binary6_expr)     { $1 } 
+                 | ns_binary7_expr                                       { $1 } 
+ns_binary7_expr  :: { Expr Span }
+                 : gen_binary7_expr(ns_binary7_expr,ns_binary7_expr)     { $1 } 
+                 | ns_binary8_expr                                       { $1 } 
+ns_binary8_expr  :: { Expr Span }
+                 : gen_binary8_expr(ns_binary8_expr,ns_binary8_expr)     { $1 } 
+                 | ns_binary9_expr                                       { $1 } 
+ns_binary9_expr  :: { Expr Span }
+                 : gen_binary9_expr(ns_binary9_expr,ns_binary9_expr)     { $1 } 
+                 | ns_binary10_expr                                      { $1 } 
+ns_binary10_expr :: { Expr Span }
+                 : gen_binary10_expr(ns_binary10_expr,ns_binary10_expr)  { $1 } 
+                 | ns_binary11_expr                                      { $1 } 
+ns_binary11_expr :: { Expr Span }
+                 : gen_binary11_expr(ns_binary11_expr,ns_binary11_expr)  { $1 } 
+                 | ns_binary12_expr                                      { $1 } 
+ns_binary12_expr :: { Expr Span }
+                 : gen_binary12_expr(ns_binary12_expr,ns_binary12_expr)  { $1 } 
+                 | ns_prefix_expr                                        { $1 } 
+ns_prefix_expr   :: { Expr Span }
+                 : gen_prefix_expr(ns_prefix_expr)                       { $1 } 
+                 | ns_postfix_expr                                       { $1 } 
+ns_postfix_expr  :: { Expr Span }
+                 : gen_postfix_expr(ns_postfix_expr)                     { $1 } 
+
+
+-- General expressions, but no blocks on the left
+nonblock_expr    :: { Expr Span }
+                 : gen_expr                                              { $1 }
+                 | nb_binary0_expr                                       { $1 }
+                 | paren_expr                                            { $1 }
+                 | struct_expr                                           { $1 }
+                 | lambda_expr_nostruct                                  { $1 }
+nb_binary0_expr  :: { Expr Span }
+                 : gen_binary0_expr(nb_binary0_expr,binary0_expr)        { $1 }
+                 | nb_binary1_expr                                       { $1 }
+nb_binary1_expr  :: { Expr Span } 
+                 : gen_binary1_expr(nb_binary1_expr,binary1_expr)        { $1 } 
+                 | nb_binary2_expr                                       { $1 } 
+nb_binary2_expr  :: { Expr Span }
+                 : gen_binary2_expr(nb_binary2_expr,binary2_expr)        { $1 } 
+                 | nb_binary3_expr                                       { $1 } 
+nb_binary3_expr  :: { Expr Span }
+                 : gen_binary3_expr(nb_binary3_expr,binary3_expr)        { $1 } 
+                 | nb_binary4_expr                                       { $1 } 
+nb_binary4_expr  :: { Expr Span }
+                 : gen_binary4_expr(nb_binary4_expr,binary4_expr)        { $1 } 
+                 | nb_binary5_expr                                       { $1 } 
+nb_binary5_expr  :: { Expr Span }
+                 : gen_binary5_expr(nb_binary5_expr,binary5_expr)        { $1 } 
+                 | nb_binary6_expr                                       { $1 } 
+nb_binary6_expr  :: { Expr Span }
+                 : gen_binary6_expr(nb_binary6_expr,binary6_expr)        { $1 } 
+                 | nb_binary7_expr                                       { $1 } 
+nb_binary7_expr  :: { Expr Span }
+                 : gen_binary7_expr(nb_binary7_expr,binary7_expr)        { $1 } 
+                 | nb_binary8_expr                                       { $1 } 
+nb_binary8_expr  :: { Expr Span }
+                 : gen_binary8_expr(nb_binary8_expr,binary8_expr)        { $1 } 
+                 | nb_binary9_expr                                       { $1 } 
+nb_binary9_expr  :: { Expr Span }
+                 : gen_binary9_expr(nb_binary9_expr,binary9_expr)        { $1 } 
+                 | nb_binary10_expr                                      { $1 } 
+nb_binary10_expr :: { Expr Span }
+                 : gen_binary10_expr(nb_binary10_expr,binary10_expr)     { $1 } 
+                 | nb_binary11_expr                                      { $1 } 
+nb_binary11_expr :: { Expr Span }
+                 : gen_binary11_expr(nb_binary11_expr,binary11_expr)     { $1 } 
+                 | nb_binary12_expr                                      { $1 } 
+nb_binary12_expr :: { Expr Span }
+                 : gen_binary12_expr(nb_binary12_expr,binary12_expr)     { $1 } 
+                 | nb_prefix_expr                                        { $1 } 
+nb_prefix_expr   :: { Expr Span }
+                 : gen_prefix_expr(nb_prefix_expr)                       { $1 } 
+                 | nb_postfix_expr                                       { $1 } 
+nb_postfix_expr  :: { Expr Span }
+                 : gen_postfix_expr(nb_postfix_expr)                     { $1 }
+
+
 
 -- "There is a convenience rule that allows one to omit the separating ; after if, match, loop, for, while"
 block_expr :: { Expr Span }
@@ -754,23 +947,21 @@ paren_expr :: { Expr Span }
   | '(' expr ',' ')'                       {% withSpan $1 (TupExpr [] [$2]) }
   | '(' expr ',' sep_by1(expr,',') ')'     {% withSpan $1 (TupExpr [] ($2 : toList $4)) }
 
+-- General postfix expression
 gen_postfix_expr(lhs) :: { Expr Span }
   : lit_expr                               { $1 }
   | expr_path                              {% withSpan $1 (PathExpr [] Nothing $1) }
   | expr_qual_path                         {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
   | expr_mac                               {% withSpan $1 (MacExpr [] $1) }
-  | lhs '.' mod_path                       { error "Unimplemented" }
+ -- | lhs '.' mod_path                       { error "Unimplemented" }
   | lhs '.' int                            { error "Unimplemented" }
-  | lhs '[' expr ']'                       {% withSpan $1 (Index [] $1 $3) }
+ -- | lhs '[' expr ']'                       {% withSpan $1 (Index [] $1 $3) }
   | lhs '?'                                {% withSpan $1 (Try [] $1) }
   | lhs '(' ')'                            {% withSpan $1 (Call [] $1 []) }
-  | lhs '(' sep_by1(expr,',') ')'          {% withSpan $1 (Call [] $1 (toList $3)) }
-  | lhs '(' sep_by1(expr,',') ',' ')'      {% withSpan $1 (Call [] $1 (toList $3)) }
-  | '[' ']'                                {% withSpan $1 (Vec [] []) }
-  | '[' sep_by1(expr,',') ']'              {% withSpan $1 (Vec [] (toList $2)) }
-  | '[' sep_by1(expr,',') ',' ']'          {% withSpan $1 (Vec [] (toList $2)) }
-  | '[' expr ';' expr ']'                  {% withSpan $1 (Repeat [] $2 $4) }
+--  | lhs '(' sep_by1(expr,',') ')'          {% withSpan $1 (Call [] $1 (toList $3)) }
+--  | lhs '(' sep_by1(expr,',') ',' ')'      {% withSpan $1 (Call [] $1 (toList $3)) }
 
+-- General prefix expression
 gen_prefix_expr(lhs) :: { Expr Span }
   : '*' lhs                                {% withSpan $1 (Unary [] Deref $2) }
   | '!' lhs                                {% withSpan $1 (Unary [] Not $2) }
@@ -778,40 +969,33 @@ gen_prefix_expr(lhs) :: { Expr Span }
   | '&' lhs                                {% withSpan $1 (AddrOf [] Immutable $2) }
   | '&' mut lhs                            {% withSpan $1 (AddrOf [] Mutable $3) }
   | box nonparen_expr                      {% withSpan $1 (Box [] $2) }
-  | gen_postfix_expr(lhs)                  { $1 }
 
+-- General binary expression
 gen_binary12_expr(lhs,rhs) :: { Expr Span }
   : lhs ':' ty                             {% withSpan $1 (TypeAscription [] $1 $3) }
   | lhs as ty                              {% withSpan $1 (Cast [] $1 $3) }
-  | gen_prefix_expr(lhs)                   { $1 }
 
 gen_binary11_expr(lhs,rhs) :: { Expr Span }
   : lhs '*' rhs                            {% withSpan $1 (Binary [] MulOp $1 $3) }
   | lhs '/' rhs                            {% withSpan $1 (Binary [] DivOp $1 $3) }
   | lhs '%' rhs                            {% withSpan $1 (Binary [] RemOp $1 $3) }
-  | gen_binary12_expr(lhs,rhs)             { $1 }
 
 gen_binary10_expr(lhs,rhs) :: { Expr Span }
   : lhs '+' rhs                            {% withSpan $1 (Binary [] AddOp $1 $3) }
   | lhs '-' rhs                            {% withSpan $1 (Binary [] SubOp $1 $3) }
-  | gen_binary11_expr(lhs,rhs)             { $1 }
 
 gen_binary9_expr(lhs,rhs) :: { Expr Span }
   : lhs '<<' rhs                           {% withSpan $1 (Binary [] ShlOp $1 $3) }
   | lhs '>>' rhs                           {% withSpan $1 (Binary [] ShrOp $1 $3) }
-  | gen_binary10_expr(lhs,rhs)             { $1 }
 
 gen_binary8_expr(lhs,rhs) :: { Expr Span }
   : lhs '&' rhs                            {% withSpan $1 (Binary [] BitAndOp $1 $3) }
-  | gen_binary9_expr(lhs,rhs)              { $1 }
 
 gen_binary7_expr(lhs,rhs) :: { Expr Span }
   : lhs '^' rhs                            {% withSpan $1 (Binary [] BitXorOp $1 $3) }
-  | gen_binary8_expr(lhs,rhs)              { $1 }
 
 gen_binary6_expr(lhs,rhs) :: { Expr Span }
   : lhs '|' rhs                            {% withSpan $1 (Binary [] BitOrOp $1 $3) }
-  | gen_binary7_expr(lhs,rhs)              { $1 }
 
 gen_binary5_expr(lhs,rhs) :: { Expr Span }
   : lhs '==' rhs                           {% withSpan $1 (Binary [] EqOp $1 $3) }
@@ -820,25 +1004,20 @@ gen_binary5_expr(lhs,rhs) :: { Expr Span }
   | lhs '>'  rhs                           {% withSpan $1 (Binary [] GtOp $1 $3) }
   | lhs '<=' rhs                           {% withSpan $1 (Binary [] LeOp $1 $3) }
   | lhs '>=' rhs                           {% withSpan $1 (Binary [] GeOp $1 $3) }
-  | gen_binary6_expr(lhs,rhs)              { $1 }
 
 gen_binary4_expr(lhs,rhs) :: { Expr Span }
   : lhs '&&' rhs                           {% withSpan $1 (Binary [] AndOp $1 $3) }
-  | gen_binary5_expr(lhs,rhs)              { $1 }
 
 gen_binary3_expr(lhs,rhs) :: { Expr Span }
   : lhs '||' rhs                           {% withSpan $1 (Binary [] OrOp $1 $3) }
-  | gen_binary4_expr(lhs,rhs)              { $1 }
 
 -- TODO omitting lhs or rhs
 gen_binary2_expr(lhs,rhs) :: { Expr Span }
   : lhs '..' rhs                           {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
   | lhs '...' rhs                          {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
-  | gen_binary3_expr(lhs,rhs)              { $1 }
 
 gen_binary1_expr(lhs,rhs) :: { Expr Span }
   : lhs '<-' rhs                           {% withSpan $1 (InPlace [] $1 $3) }
-  | gen_binary2_expr(lhs,rhs)              { $1 }
 
 gen_binary0_expr(lhs,rhs) :: { Expr Span }
   : lhs '=' rhs                            {% withSpan $1 (Assign   [] $1 $3) }
@@ -852,16 +1031,19 @@ gen_binary0_expr(lhs,rhs) :: { Expr Span }
   | lhs '|=' rhs                           {% withSpan $1 (AssignOp [] BitOrOp $1 $3) }
   | lhs '&=' rhs                           {% withSpan $1 (AssignOp [] BitAndOp $1 $3) }
   | lhs '%=' rhs                           {% withSpan $1 (AssignOp [] RemOp $1 $3) }
-  | gen_binary1_expr(lhs,rhs)              { $1 }
 
-gen_expr(lhs,rhs) :: { Expr Span }
+-- Lowest precedence generalized expression
+gen_expr :: { Expr Span }
   : return                                 {% withSpan $1 (Ret [] Nothing) }
   | return expr                            {% withSpan $1 (Ret [] (Just $2)) }
   | continue                               {% withSpan $1 (Continue [] Nothing) }
   | continue lifetime                      {% withSpan $1 (Continue [] (Just $2)) }
   | break                                  {% withSpan $1 (Break [] Nothing) }
   | break lifetime                         {% withSpan $1 (Break [] (Just $2)) }
-  | gen_binary0_expr(lhs,rhs)              { $1 }
+  | '[' ']'                                {% withSpan $1 (Vec [] []) }
+  | '[' sep_by1(expr,',') ']'              {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' sep_by1(expr,',') ',' ']'          {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' expr ';' expr ']'                  {% withSpan $1 (Repeat [] $2 $4) }
 
 
 
@@ -898,6 +1080,11 @@ lambda_expr :: { Expr Span }
   | move args         expr       {% withSpan $1 (Closure [] Value (FnDecl $2 Nothing   False mempty) $>) }
   |      args '->' ty safe_block {% withSpan $1 (Closure [] Ref   (FnDecl $1 (Just $3) False mempty) (BlockExpr [] $> mempty)) }
   |      args         expr       {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
+
+lambda_expr_nostruct :: { Expr Span }
+  : move args nostruct_expr      {% withSpan $1 (Closure [] Value (FnDecl $2 Nothing   False mempty) $>) }
+  |      args nostruct_expr      {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
+
 
 struct_expr :: { Expr Span }
   : expr_path '{'                                  '}'   {% withSpan $1 (Struct [] $1 [] Nothing) }
