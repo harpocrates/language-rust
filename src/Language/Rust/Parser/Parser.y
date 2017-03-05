@@ -756,7 +756,7 @@ binary11_expr :: { Expr Span }
               : gen_binary11_expr(binary11_expr,binary11_expr)  { $1 } 
               | binary12_expr                                   { $1 } 
 binary12_expr :: { Expr Span }
-              : gen_binary12_expr(binary12_expr,binary12_expr)  { $1 } 
+              : gen_binary12_expr(prefix_expr,binary12_expr)  { $1 } 
               | prefix_expr                                     { $1 } 
 prefix_expr   :: { Expr Span }
               : gen_prefix_expr(prefix_expr)                    { $1 } 
@@ -809,7 +809,7 @@ np_binary11_expr :: { Expr Span }
                  : gen_binary11_expr(np_binary11_expr,np_binary11_expr)  { $1 } 
                  | np_binary12_expr                                      { $1 } 
 np_binary12_expr :: { Expr Span }
-                 : gen_binary12_expr(np_binary12_expr,np_binary12_expr)  { $1 } 
+                 : gen_binary12_expr(np_prefix_expr,np_binary12_expr)  { $1 } 
                  | np_prefix_expr                                        { $1 } 
 np_prefix_expr   :: { Expr Span }
                  : gen_prefix_expr(np_prefix_expr)                       { $1 } 
@@ -862,7 +862,7 @@ ns_binary11_expr :: { Expr Span }
                  : gen_binary11_expr(ns_binary11_expr,ns_binary11_expr)  { $1 } 
                  | ns_binary12_expr                                      { $1 } 
 ns_binary12_expr :: { Expr Span }
-                 : gen_binary12_expr(ns_binary12_expr,ns_binary12_expr)  { $1 } 
+                 : gen_binary12_expr(ns_prefix_expr,ns_binary12_expr)  { $1 } 
                  | ns_prefix_expr                                        { $1 } 
 ns_prefix_expr   :: { Expr Span }
                  : gen_prefix_expr(ns_prefix_expr)                       { $1 } 
@@ -915,7 +915,7 @@ nb_binary11_expr :: { Expr Span }
                  : gen_binary11_expr(nb_binary11_expr,binary11_expr)     { $1 } 
                  | nb_binary12_expr                                      { $1 } 
 nb_binary12_expr :: { Expr Span }
-                 : gen_binary12_expr(nb_binary12_expr,binary12_expr)     { $1 } 
+                 : gen_binary12_expr(nb_prefix_expr,binary12_expr)     { $1 } 
                  | nb_prefix_expr                                        { $1 } 
 nb_prefix_expr   :: { Expr Span }
                  : gen_prefix_expr(nb_prefix_expr)                       { $1 } 
@@ -971,32 +971,40 @@ gen_prefix_expr(lhs) :: { Expr Span }
   | box nonparen_expr                      {% withSpan $1 (Box [] $2) }
 
 -- General binary expression
+-- (Although this isn't really a binary operation)
 gen_binary12_expr(lhs,rhs) :: { Expr Span }
   : lhs ':' ty                             {% withSpan $1 (TypeAscription [] $1 $3) }
   | lhs as ty                              {% withSpan $1 (Cast [] $1 $3) }
 
+-- should be left associative
 gen_binary11_expr(lhs,rhs) :: { Expr Span }
   : lhs '*' rhs                            {% withSpan $1 (Binary [] MulOp $1 $3) }
   | lhs '/' rhs                            {% withSpan $1 (Binary [] DivOp $1 $3) }
   | lhs '%' rhs                            {% withSpan $1 (Binary [] RemOp $1 $3) }
 
+-- should be left associative
 gen_binary10_expr(lhs,rhs) :: { Expr Span }
   : lhs '+' rhs                            {% withSpan $1 (Binary [] AddOp $1 $3) }
   | lhs '-' rhs                            {% withSpan $1 (Binary [] SubOp $1 $3) }
 
+-- should be left associative
 gen_binary9_expr(lhs,rhs) :: { Expr Span }
   : lhs '<<' rhs                           {% withSpan $1 (Binary [] ShlOp $1 $3) }
   | lhs '>>' rhs                           {% withSpan $1 (Binary [] ShrOp $1 $3) }
 
+-- should be left associative
 gen_binary8_expr(lhs,rhs) :: { Expr Span }
   : lhs '&' rhs                            {% withSpan $1 (Binary [] BitAndOp $1 $3) }
 
+-- should be left associative
 gen_binary7_expr(lhs,rhs) :: { Expr Span }
   : lhs '^' rhs                            {% withSpan $1 (Binary [] BitXorOp $1 $3) }
 
+-- should be left associative
 gen_binary6_expr(lhs,rhs) :: { Expr Span }
   : lhs '|' rhs                            {% withSpan $1 (Binary [] BitOrOp $1 $3) }
 
+-- should be left associative
 gen_binary5_expr(lhs,rhs) :: { Expr Span }
   : lhs '==' rhs                           {% withSpan $1 (Binary [] EqOp $1 $3) }
   | lhs '!=' rhs                           {% withSpan $1 (Binary [] NeOp $1 $3) }
@@ -1005,20 +1013,25 @@ gen_binary5_expr(lhs,rhs) :: { Expr Span }
   | lhs '<=' rhs                           {% withSpan $1 (Binary [] LeOp $1 $3) }
   | lhs '>=' rhs                           {% withSpan $1 (Binary [] GeOp $1 $3) }
 
+-- should be left associative
 gen_binary4_expr(lhs,rhs) :: { Expr Span }
   : lhs '&&' rhs                           {% withSpan $1 (Binary [] AndOp $1 $3) }
 
+-- should be left associative
 gen_binary3_expr(lhs,rhs) :: { Expr Span }
   : lhs '||' rhs                           {% withSpan $1 (Binary [] OrOp $1 $3) }
 
+-- should be nonassoc
 -- TODO omitting lhs or rhs
 gen_binary2_expr(lhs,rhs) :: { Expr Span }
   : lhs '..' rhs                           {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
   | lhs '...' rhs                          {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
 
+-- should be right associative
 gen_binary1_expr(lhs,rhs) :: { Expr Span }
   : lhs '<-' rhs                           {% withSpan $1 (InPlace [] $1 $3) }
 
+-- should be right associative
 gen_binary0_expr(lhs,rhs) :: { Expr Span }
   : lhs '=' rhs                            {% withSpan $1 (Assign   [] $1 $3) }
   | lhs '>>=' rhs                          {% withSpan $1 (AssignOp [] ShlOp $1 $3) }
