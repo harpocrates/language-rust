@@ -896,17 +896,23 @@ paren_expr :: { Expr Span }
 
 -- General postfix expression
 gen_postfix_expr(lhs) :: { Expr Span }
-  : lit_expr                               { $1 }
-  | expr_path                              {% withSpan $1 (PathExpr [] Nothing $1) }
-  | expr_qual_path                         {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
-  | expr_mac                               {% withSpan $1 (MacExpr [] $1) }
-  | lhs '[' expr ']'                       {% withSpan $1 (Index [] $1 $3) }
-  | lhs '?'                                {% withSpan $1 (Try [] $1) }
-  | lhs '(' ')'                            {% withSpan $1 (Call [] $1 []) }
-  | lhs '(' sep_by1(expr,',') ')'          {% withSpan $1 (Call [] $1 (toList $3)) }
-  | lhs '(' sep_by1(expr,',') ',' ')'      {% withSpan $1 (Call [] $1 (toList $3)) }
- -- | lhs '.' mod_path                       { error "Unimplemented" }
-  | lhs '.' int                            {%
+  : lit_expr                                                                    { $1 }
+  | expr_path                                                                   {% withSpan $1 (PathExpr [] Nothing $1) }
+  | expr_qual_path                                                              {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
+  | expr_mac                                                                    {% withSpan $1 (MacExpr [] $1) }
+  | lhs '[' expr ']'                                                            {% withSpan $1 (Index [] $1 $3) }
+  | lhs '?'                                                                     {% withSpan $1 (Try [] $1) }
+  | lhs '(' ')'                                                                 {% withSpan $1 (Call [] $1 []) }
+  | lhs '(' sep_by1(expr,',') ')'                                               {% withSpan $1 (Call [] $1 (toList $3)) }
+  | lhs '(' sep_by1(expr,',') ',' ')'                                           {% withSpan $1 (Call [] $1 (toList $3)) }
+  | lhs '.' ident '(' ')'                                                       {% withSpan $1 (MethodCall [] (unspan $3) [] ($1 :| [])) }
+  | lhs '.' ident '(' sep_by1(expr,',') ')'                                     {% withSpan $1 (MethodCall [] (unspan $3) [] ($1 <| $5)) }
+  | lhs '.' ident '(' sep_by1(expr,',') ',' ')'                                 {% withSpan $1 (MethodCall [] (unspan $3) [] ($1 <| $5)) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' ')'                       {% withSpan $1 (MethodCall [] (unspan $3) $6 ($1 :| [])) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ')'     {% withSpan $1 (MethodCall [] (unspan $3) $6 ($1 <| $9)) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ',' ')' {% withSpan $1 (MethodCall [] (unspan $3) $6 ($1 <| $9)) }
+  | lhs '.' ident                                                               {% withSpan $1 (FieldAccess [] $1 (unspan $3)) }
+  | lhs '.' int                                                                 {%
       case lit $3 of
         Int i Unsuffixed _ -> withSpan $1 (TupField [] $1 (fromIntegral i))
         _ -> fail "make better error message"
@@ -1000,6 +1006,10 @@ gen_binary0_expr(lhs,rhs) :: { Expr Span }
 gen_expr :: { Expr Span }
   : return                                 {% withSpan $1 (Ret [] Nothing) }
   | return expr                            {% withSpan $1 (Ret [] (Just $2)) }
+  | '..'                                   {% withSpan $1 (Range [] Nothing Nothing Closed) }
+  | '...'                                  {% withSpan $1 (Range [] Nothing Nothing HalfOpen) }
+  | '..' expr                              {% withSpan $1 (Range [] Nothing (Just $2) Closed) }
+  | '...' expr                             {% withSpan $1 (Range [] Nothing (Just $2) HalfOpen) }
   | continue                               {% withSpan $1 (Continue [] Nothing) }
   | continue lifetime                      {% withSpan $1 (Continue [] (Just $2)) }
   | break                                  {% withSpan $1 (Break [] Nothing) }
