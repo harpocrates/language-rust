@@ -1,3 +1,5 @@
+# NOTE: `language-rust` is not yet ready for general use!
+
 `language-rust` aspires to efficiently and accurately parse and pretty-print the [Rust language][0].
 The underlying AST structures are also intended to be as similar as possible to the AST `rustc` uses
 itself. When `language-rust` and `rustc` have diverging AST, the divergence should be detailed in
