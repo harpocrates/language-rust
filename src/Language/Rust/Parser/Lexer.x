@@ -952,6 +952,28 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 "%"             { token Percent }
 "^"             { token Caret }
 
+-- Problematic
+-- ">="            { token GreaterEqual }
+-- ">>="           { token GreaterGreaterEqual }
+-- "&&"            { token AmpersandAmpersand }
+-- "||"            { token PipePipe }
+-- "<<"            { token LessLess }
+-- ">>"            { token GreaterGreater }
+
+"=="            { token EqualEqual }
+"!="            { token NotEqual }
+"<="            { token LessEqual }
+"<<="           { token LessLessEqual }
+"-="            { token MinusEqual }
+"&="            { token AmpersandEqual }
+"|="            { token PipeEqual }
+"+="            { token PlusEqual }
+"*="            { token StarEqual }
+"/="            { token SlashEqual }
+"^="            { token CaretEqual }
+"%="            { token PercentEqual }
+ 
+
 "@"             { token At }          
 "."             { token Dot }        
 ".."            { token DotDot }     

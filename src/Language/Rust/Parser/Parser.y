@@ -95,6 +95,28 @@ import qualified Data.List.NonEmpty as N
   '$'        { Tok $$@(Spanned Dollar _) }
   '?'        { Tok $$@(Spanned Question _) }
 
+{- Problematic
+  '>='            { Tok $$@(Spanned GreaterEqual _) }
+  '>>='           { Tok $$@(Spanned GreaterGreaterEqual _) }
+  '&&'            { Tok $$@(Spanned AmpersandAmpersand _) }
+  '||'            { Tok $$@(Spanned PipePipe _) }
+  '<<'            { Tok $$@(Spanned LessLess _) }
+  '>>'            { Tok $$@(Spanned GreaterGreater _) }
+-}
+
+  '=='       { Tok $$@(Spanned EqualEqual _) }
+  '!='       { Tok $$@(Spanned NotEqual _) }
+  '<='       { Tok $$@(Spanned LessEqual _) }
+  '<<='      { Tok $$@(Spanned LessLessEqual _) }
+  '-='       { Tok $$@(Spanned MinusEqual _) }
+  '&='       { Tok $$@(Spanned AmpersandEqual _) }
+  '|='       { Tok $$@(Spanned PipeEqual _) }
+  '+='       { Tok $$@(Spanned PlusEqual _) }
+  '*='       { Tok $$@(Spanned StarEqual _) }
+  '/='       { Tok $$@(Spanned SlashEqual _) }
+  '^='       { Tok $$@(Spanned CaretEqual _) }
+  '%='       { Tok $$@(Spanned PercentEqual _) }
+
   '('        { Tok $$@(Spanned (OpenDelim Paren) _) }
   '['        { Tok $$@(Spanned (OpenDelim Bracket) _) }
   '{'        { Tok $$@(Spanned (OpenDelim Brace) _) }
@@ -245,21 +267,21 @@ import qualified Data.List.NonEmpty as N
 '|' : alt(PIPE, PIPE_S)           { $1 }
 
 -- All of these have type 'Spanned ()'
-'<<=' : '<' LT EQ      { () <\$ $1 <* $3 }
+--'<<=' : '<' LT EQ      { () <\$ $1 <* $3 }
 '>>=' : '>' GT EQ      { () <\$ $1 <* $3 }
-'-='  : '-' EQ         { () <\$ $1 <* $2 }
-'&='  : '&' EQ         { () <\$ $1 <* $2 }
-'|='  : '|' EQ         { () <\$ $1 <* $2 }
-'+='  : '+' EQ         { () <\$ $1 <* $2 }
-'*='  : '*' EQ         { () <\$ $1 <* $2 }
-'/='  : '/' EQ         { () <\$ $1 <* $2 }
-'^='  : '^' EQ         { () <\$ $1 <* $2 }
-'%='  : '%' EQ         { () <\$ $1 <* $2 }
+--'-='  : '-' EQ         { () <\$ $1 <* $2 }
+--'&='  : '&' EQ         { () <\$ $1 <* $2 }
+--'|='  : '|' EQ         { () <\$ $1 <* $2 }
+--'+='  : '+' EQ         { () <\$ $1 <* $2 }
+--'*='  : '*' EQ         { () <\$ $1 <* $2 }
+--'/='  : '/' EQ         { () <\$ $1 <* $2 }
+--'^='  : '^' EQ         { () <\$ $1 <* $2 }
+--'%='  : '%' EQ         { () <\$ $1 <* $2 }
 '||'  : '|' PIPE       { () <\$ $1 <* $2 }
 '&&'  : '&' AMPERSAND  { () <\$ $1 <* $2 }
-'=='  : '=' EQ         { () <\$ $1 <* $2 }
-'!='  : '!' EQ         { () <\$ $1 <* $2 }
-'<='  : '<' EQ         { () <\$ $1 <* $2 }
+--'=='  : '=' EQ         { () <\$ $1 <* $2 }
+--'!='  : '!' EQ         { () <\$ $1 <* $2 }
+--'<='  : '<' EQ         { () <\$ $1 <* $2 }
 '>='  : '>' EQ         { () <\$ $1 <* $2 }
 '<<'  : '<' LT         { () <\$ $1 <* $2 }
 '>>'  : '>' GT         { () <\$ $1 <* $2 }
