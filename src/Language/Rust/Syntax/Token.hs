@@ -41,7 +41,11 @@ data TokenSpace s = TokenSpace { getToken :: s Token, getSpace :: [s Token] }
 data Token
   -- Single character expression-operator symbols.
   = Equal | Less | Greater | Ampersand | Pipe | Exclamation | Tilde
-  | Plus | Minus | Star | Slash | Percent | Caret 
+  | Plus | Minus | Star | Slash | Percent | Caret
+  -- Multi character eexpression-operator symbols
+  | GreaterEqual | GreaterGreaterEqual | AmpersandAmpersand | PipePipe | LessLess | GreaterGreater  -- <- problematic row
+  | EqualEqual | NotEqual | LessEqual | LessLessEqual | MinusEqual | AmpersandEqual
+  | PipeEqual | PlusEqual | StarEqual | SlashEqual | CaretEqual | PercentEqual
   -- Structural symbols
   | At | Dot | DotDot | DotDotDot | Comma | Semicolon | Colon | ModSep | RArrow
   | LArrow | FatArrow | Pound | Dollar | Question
@@ -85,6 +89,25 @@ instance Show Token where
   show Star = "*"
   show Slash = "/"
   show Percent = "%"
+  -- Multi character eexpression-operator symbols
+  show GreaterEqual = ">="
+  show GreaterGreaterEqual = ">>="
+  show AmpersandAmpersand = "&&"
+  show PipePipe = "||"
+  show LessLess = "<<"
+  show GreaterGreater = ">>"
+  show EqualEqual = "=="
+  show NotEqual = "!="
+  show LessEqual = "<="
+  show LessLessEqual = "<<="
+  show MinusEqual = "-="
+  show AmpersandEqual = "&="
+  show PipeEqual = "|="
+  show PlusEqual = "+="
+  show StarEqual = "*="
+  show SlashEqual = "/="
+  show CaretEqual = "^="
+  show PercentEqual = "%="
   show Caret = "^"
   -- Structural symbols
   show At = "@"

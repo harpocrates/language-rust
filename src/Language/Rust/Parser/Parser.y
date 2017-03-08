@@ -32,11 +32,11 @@ import qualified Data.List.NonEmpty as N
 %name stmtP stmt
 %name expressionP expr
 
-%tokentype { TokenSpace Spanned }
+%tokentype { Spanned Token }
 
 %monad { P } { >>= } { return }
 %error { parseError }
-%lexer { lexRust } { Tok (Spanned Eof _) }
+%lexer { lexRust } { Spanned Eof _ }
 
 -- Conflicts caused in
 --  * sep_by1(segment,'::') parts of paths
@@ -44,162 +44,167 @@ import qualified Data.List.NonEmpty as N
 --  * something around empty returns
 --  * deciding between expression paths and struct expressions
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 4
+--%expect 4
 
 %token
 
   -- Expression-operator symbols. 
-  EQ         { NoSpTok $$@(Spanned Equal _) }
-  LT         { NoSpTok $$@(Spanned Less _) }
-  GT         { NoSpTok $$@(Spanned Greater _) }
-  NOT        { NoSpTok $$@(Spanned Exclamation _) }
-  TILDE      { NoSpTok $$@(Spanned Tilde _) }
-  
-  PLUS       { NoSpTok $$@(Spanned Plus _) }
-  MINUS      { NoSpTok $$@(Spanned Minus _) }
-  STAR       { NoSpTok $$@(Spanned Star _) }
-  SLASH      { NoSpTok $$@(Spanned Slash _) }
-  PERCENT    { NoSpTok $$@(Spanned Percent _) }
-  CARET      { NoSpTok $$@(Spanned Caret _) }
-  AMPERSAND  { NoSpTok $$@(Spanned Ampersand _) }
-  PIPE       { NoSpTok $$@(Spanned Pipe _) }
+  '='            { Spanned Equal _ }
+  '<'            { Spanned Less _ }
+  '>'            { Spanned Greater _ }
+  '!'            { Spanned Exclamation _ }
+  '~'            { Spanned Tilde _ }
 
-  EQ_S       { Tok $$@(Spanned Equal _) }
-  LT_S       { Tok $$@(Spanned Less _) }
-  GT_S       { Tok $$@(Spanned Greater _) }
-  NOT_S      { Tok $$@(Spanned Exclamation _) }
-  TILDE_S    { Tok $$@(Spanned Tilde _) }
-
-  PLUS_S     { Tok $$@(Spanned Plus _) }
-  MINUS_S    { Tok $$@(Spanned Minus _) }
-  STAR_S     { Tok $$@(Spanned Star _) }
-  SLASH_S    { Tok $$@(Spanned Slash _) }
-  PERCENT_S  { Tok $$@(Spanned Percent _) }
-  CARET_S    { Tok $$@(Spanned Caret _) }
-  AMPERSAND_S{ Tok $$@(Spanned Ampersand _) }
-  PIPE_S     { Tok $$@(Spanned Pipe _) }
+  '+'            { Spanned Plus _ }
+  '-'            { Spanned Minus _ }
+  '*'            { Spanned Star _ }
+  '/'            { Spanned Slash _ }
+  '%'            { Spanned Percent _ }
+  '^'            { Spanned Caret _ }
+  '&'            { Spanned Ampersand _ }
+  '|'            { Spanned Pipe _ }
 
   -- Structural symbols.
-  '@'        { Tok $$@(Spanned At _) }
-  '...'      { Tok $$@(Spanned DotDotDot _) }
-  '..'       { Tok $$@(Spanned DotDot _) }
-  '.'        { Tok $$@(Spanned Dot _) }
-  ','        { Tok $$@(Spanned Comma _) }
-  ';'        { Tok $$@(Spanned Semicolon _) }
-  '::'       { Tok $$@(Spanned ModSep _) }
-  ':'        { Tok $$@(Spanned Colon _) }
-  '->'       { Tok $$@(Spanned RArrow _) }
-  '<-'       { Tok $$@(Spanned LArrow _) }
-  '=>'       { Tok $$@(Spanned FatArrow _) }
-  '#'        { Tok $$@(Spanned Pound _) }
-  '$'        { Tok $$@(Spanned Dollar _) }
-  '?'        { Tok $$@(Spanned Question _) }
+  '@'            { Spanned At _ }
+  '...'          { Spanned DotDotDot _ }
+  '..'           { Spanned DotDot _ }
+  '.'            { Spanned Dot _ }
+  ','            { Spanned Comma _ }
+  ';'            { Spanned Semicolon _ }
+  '::'           { Spanned ModSep _ }
+  ':'            { Spanned Colon _ }
+  '->'           { Spanned RArrow _ }
+  '<-'           { Spanned LArrow _ }
+  '=>'           { Spanned FatArrow _ }
+  '#'            { Spanned Pound _ }
+  '$'            { Spanned Dollar _ }
+  '?'            { Spanned Question _ }
 
-  '('        { Tok $$@(Spanned (OpenDelim Paren) _) }
-  '['        { Tok $$@(Spanned (OpenDelim Bracket) _) }
-  '{'        { Tok $$@(Spanned (OpenDelim Brace) _) }
-  ')'        { Tok $$@(Spanned (CloseDelim Paren) _) }
-  ']'        { Tok $$@(Spanned (CloseDelim Bracket) _) }
-  '}'        { Tok $$@(Spanned (CloseDelim Brace) _) }
+  '||'           { Spanned PipePipe _ }
+  '&&'           { Spanned AmpersandAmpersand _ }
+  '>='           { Spanned GreaterEqual _ }
+  '>>='          { Spanned GreaterGreaterEqual _ }
+  '<<'           { Spanned LessLess _ }
+  '>>'           { Spanned GreaterGreater _ }
+
+  '=='           { Spanned EqualEqual _ }
+  '!='           { Spanned NotEqual _ }
+  '<='           { Spanned LessEqual _ }
+  '<<='          { Spanned LessLessEqual _ }
+  '-='           { Spanned MinusEqual _ }
+  '&='           { Spanned AmpersandEqual _ }
+  '|='           { Spanned PipeEqual _ }
+  '+='           { Spanned PlusEqual _ }
+  '*='           { Spanned StarEqual _ }
+  '/='           { Spanned SlashEqual _ }
+  '^='           { Spanned CaretEqual _ }
+  '%='           { Spanned PercentEqual _ }
+
+  '('            { Spanned (OpenDelim Paren) _ }
+  '['            { Spanned (OpenDelim Bracket) _ }
+  '{'            { Spanned (OpenDelim Brace) _ }
+  ')'            { Spanned (CloseDelim Paren) _ }
+  ']'            { Spanned (CloseDelim Bracket) _ }
+  '}'            { Spanned (CloseDelim Brace) _ }
 
   -- Literals.
-  byte       { Tok $$@(Spanned (LiteralTok ByteTok{} _) _) }
-  char       { Tok $$@(Spanned (LiteralTok CharTok{} _) _) }
-  int        { Tok $$@(Spanned (LiteralTok IntegerTok{} _) _) }
-  float      { Tok $$@(Spanned (LiteralTok FloatTok{} _) _) }
-  str        { Tok $$@(Spanned (LiteralTok StrTok{} _) _) }
-  byteStr    { Tok $$@(Spanned (LiteralTok ByteStrTok{} _) _) }
-  rawStr     { Tok $$@(Spanned (LiteralTok StrRawTok{} _) _) }
-  rawByteStr { Tok $$@(Spanned (LiteralTok ByteStrRawTok{} _) _) }
+  byte           { Spanned (LiteralTok ByteTok{} _) _ }
+  char           { Spanned (LiteralTok CharTok{} _) _ }
+  int            { Spanned (LiteralTok IntegerTok{} _) _ }
+  float          { Spanned (LiteralTok FloatTok{} _) _ }
+  str            { Spanned (LiteralTok StrTok{} _) _ }
+  byteStr        { Spanned (LiteralTok ByteStrTok{} _) _ }
+  rawStr         { Spanned (LiteralTok StrRawTok{} _) _ }
+  rawByteStr     { Spanned (LiteralTok ByteStrRawTok{} _) _ }
   
   -- Strict keywords used in the language
-  as         { Tok $$@(Identifier "as") }
-  box        { Tok $$@(Identifier "box") } 
-  break      { Tok $$@(Identifier "break") } 
-  const      { Tok $$@(Identifier "const") } 
-  continue   { Tok $$@(Identifier "continue") }
-  crate      { Tok $$@(Identifier "crate") } 
-  else       { Tok $$@(Identifier "else") }
-  enum       { Tok $$@(Identifier "enum") }
-  extern     { Tok $$@(Identifier "extern") }
-  false      { Tok $$@(Identifier "false") } 
-  fn         { Tok $$@(Identifier "fn") }
-  for        { Tok $$@(Identifier "for") } 
-  if         { Tok $$@(Identifier "if") }
-  impl       { Tok $$@(Identifier "impl") }
-  in         { Tok $$@(Identifier "in") }
-  let        { Tok $$@(Identifier "let") } 
-  loop       { Tok $$@(Identifier "loop") }
-  match      { Tok $$@(Identifier "match") } 
-  mod        { Tok $$@(Identifier "mod") } 
-  move       { Tok $$@(Identifier "move") }
-  mut        { Tok $$@(Identifier "mut") } 
-  pub        { Tok $$@(Identifier "pub") } 
-  ref        { Tok $$@(Identifier "ref") } 
-  return     { Tok $$@(Identifier "return") }
-  Self       { Tok $$@(Identifier "Self") }
-  self       { Tok $$@(Identifier "self") } 
-  static     { Tok $$@(Identifier "static") }
-  struct     { Tok $$@(Identifier "struct") }
-  super      { Tok $$@(Identifier "super") } 
-  trait      { Tok $$@(Identifier "trait") } 
-  true       { Tok $$@(Identifier "true") }
-  type       { Tok $$@(Identifier "type") }
-  unsafe     { Tok $$@(Identifier "unsafe") }
-  use        { Tok $$@(Identifier "use") } 
-  where      { Tok $$@(Identifier "where") } 
-  while      { Tok $$@(Identifier "while") } 
+  as             { Identifier "as" }
+  box            { Identifier "box" } 
+  break          { Identifier "break" } 
+  const          { Identifier "const" } 
+  continue       { Identifier "continue" }
+  crate          { Identifier "crate" } 
+  else           { Identifier "else" }
+  enum           { Identifier "enum" }
+  extern         { Identifier "extern" }
+  false          { Identifier "false" } 
+  fn             { Identifier "fn" }
+  for            { Identifier "for" } 
+  if             { Identifier "if" }
+  impl           { Identifier "impl" }
+  in             { Identifier "in" }
+  let            { Identifier "let" } 
+  loop           { Identifier "loop" }
+  match          { Identifier "match" } 
+  mod            { Identifier "mod" } 
+  move           { Identifier "move" }
+  mut            { Identifier "mut" } 
+  pub            { Identifier "pub" } 
+  ref            { Identifier "ref" } 
+  return         { Identifier "return" }
+  Self           { Identifier "Self" }
+  self           { Identifier "self" } 
+  static         { Identifier "static" }
+  struct         { Identifier "struct" }
+  super          { Identifier "super" } 
+  trait          { Identifier "trait" } 
+  true           { Identifier "true" }
+  type           { Identifier "type" }
+  unsafe         { Identifier "unsafe" }
+  use            { Identifier "use" } 
+  where          { Identifier "where" } 
+  while          { Identifier "while" } 
   
   -- Keywords reserved for future use
-  abstract   { Tok $$@(Identifier "abstract") }
-  alignof    { Tok $$@(Identifier "alignof") } 
-  become     { Tok $$@(Identifier "become") }
-  do         { Tok $$@(Identifier "do") }
-  final      { Tok $$@(Identifier "final") } 
-  macro      { Tok $$@(Identifier "macro") } 
-  offsetof   { Tok $$@(Identifier "offsetof") }
-  override   { Tok $$@(Identifier "override") }
-  priv       { Tok $$@(Identifier "priv") }
-  proc       { Tok $$@(Identifier "proc") }
-  pure       { Tok $$@(Identifier "pure") }
-  sizeof     { Tok $$@(Identifier "sizeof") }
-  typeof     { Tok $$@(Identifier "typeof") }
-  unsized    { Tok $$@(Identifier "unsized") } 
-  virtual    { Tok $$@(Identifier "virtual") } 
-  yield      { Tok $$@(Identifier "yield") } 
+  abstract       { Identifier "abstract" }
+  alignof        { Identifier "alignof" } 
+  become         { Identifier "become" }
+  do             { Identifier "do" }
+  final          { Identifier "final" } 
+  macro          { Identifier "macro" } 
+  offsetof       { Identifier "offsetof" }
+  override       { Identifier "override" }
+  priv           { Identifier "priv" }
+  proc           { Identifier "proc" }
+  pure           { Identifier "pure" }
+  sizeof         { Identifier "sizeof" }
+  typeof         { Identifier "typeof" }
+  unsized        { Identifier "unsized" } 
+  virtual        { Identifier "virtual" } 
+  yield          { Identifier "yield" } 
 
   -- Weak keywords, have special meaning only in specific contexts.
-  default    { Tok $$@(Identifier "default") } 
-  union      { Tok $$@(Identifier "union") } 
+  default        { Identifier "default" } 
+  union          { Identifier "union" } 
 
   -- Comments
-  outerDoc   { Tok $$@(Spanned (Doc _ OuterDoc) _) }
-  innerDoc   { Tok $$@(Spanned (Doc _ InnerDoc) _) }
+  outerDoc       { Spanned (Doc _ OuterDoc) _ }
+  innerDoc       { Spanned (Doc _ InnerDoc) _ }
 
   -- Identifiers.
-  IDENT      { Tok $$@(Identifier _) }
-  '_'        { Tok $$@(Spanned Underscore _) }
+  IDENT          { Identifier _ }
+  '_'            { Spanned Underscore _ }
 
   -- Lifetimes.
-  LIFETIME   { Tok $$@(Spanned (LifetimeTok _) _) }
+  LIFETIME       { Spanned (LifetimeTok _) _ }
 
   -- Interpolated
-  ntItem         { Tok $$@(Spanned (Interpolated (NtItem _)) _) }
-  ntBlock        { Tok $$@(Spanned (Interpolated (NtBlock _)) _) }
-  ntStmt         { Tok $$@(Spanned (Interpolated (NtStmt _)) _) }
-  ntPat          { Tok $$@(Spanned (Interpolated (NtPat _)) _) }
-  ntExpr         { Tok $$@(Spanned (Interpolated (NtExpr _)) _) }
-  ntTy           { Tok $$@(Spanned (Interpolated (NtTy _)) _) }
-  ntIdent        { Tok $$@(Spanned (Interpolated (NtIdent _)) _) }
-  ntMeta         { Tok $$@(Spanned (Interpolated (NtMeta _)) _) }
-  ntPath         { Tok $$@(Spanned (Interpolated (NtPath _)) _) }
-  ntTT           { Tok $$@(Spanned (Interpolated (NtTT _)) _) }
-  ntArm          { Tok $$@(Spanned (Interpolated (NtArm _)) _) }
-  ntImplItem     { Tok $$@(Spanned (Interpolated (NtImplItem _)) _) }
-  ntTraitItem    { Tok $$@(Spanned (Interpolated (NtTraitItem _)) _) }
-  ntGenerics     { Tok $$@(Spanned (Interpolated (NtGenerics _)) _) }
-  ntWhereClause  { Tok $$@(Spanned (Interpolated (NtWhereClause _)) _) }
-  ntArg          { Tok $$@(Spanned (Interpolated (NtArg _)) _) }
+  ntItem         { Spanned (Interpolated (NtItem _)) _ }
+  ntBlock        { Spanned (Interpolated (NtBlock _)) _ }
+  ntStmt         { Spanned (Interpolated (NtStmt _)) _ }
+  ntPat          { Spanned (Interpolated (NtPat _)) _ }
+  ntExpr         { Spanned (Interpolated (NtExpr _)) _ }
+  ntTy           { Spanned (Interpolated (NtTy _)) _ }
+  ntIdent        { Spanned (Interpolated (NtIdent _)) _ }
+  ntMeta         { Spanned (Interpolated (NtMeta _)) _ }
+  ntPath         { Spanned (Interpolated (NtPath _)) _ }
+  ntTT           { Spanned (Interpolated (NtTT _)) _ }
+  ntArm          { Spanned (Interpolated (NtArm _)) _ }
+  ntImplItem     { Spanned (Interpolated (NtImplItem _)) _ }
+  ntTraitItem    { Spanned (Interpolated (NtTraitItem _)) _ }
+  ntGenerics     { Spanned (Interpolated (NtGenerics _)) _ }
+  ntWhereClause  { Spanned (Interpolated (NtWhereClause _)) _ }
+  ntArg          { Spanned (Interpolated (NtArg _)) _ }
 
 -- 'mut' should be lower precedence than 'IDENT' so that in the pat rule,
 -- "& mut pat" has higher precedence than "binding_mode1 ident [@ pat]"
@@ -207,62 +212,21 @@ import qualified Data.List.NonEmpty as N
 %nonassoc IDENT
 
 
-%left as ':'
-%left '*' '/' '%'
-%left '+' '-'
-%left '<<' '>>'
-%left '&'
-%left '^'
-%left '|'
-%nonassoc '==' '!=' '<' '>' '<=' '>='
-%left '&&'
-%left '||'
-%nonassoc '..' '...'
-%nonassoc '<-'
-%nonassoc '=' '<<=' '>>=' '-=' '&=' '|=' '+=' '*=' '/=' '^=' '%='
+-- %left as ':'
+-- %left '*' '/' '%'
+-- %left '+' '-'
+-- %left '<<' '>>'
+-- %left '&'
+-- %left '^'
+-- %left '|'
+-- %nonassoc '==' '!=' '<' '>' '<=' '>='
+-- %left '&&'
+-- %left '||'
+-- %nonassoc '..' '...'
+-- %nonassoc '<-'
+-- %nonassoc '=' '<<=' '>>=' '-=' '&=' '|=' '+=' '*=' '/=' '^=' '%='
 
 %%
-
-
----------------------
--- Extended tokens --
----------------------
-
--- These tokens have both space and no space versions
-'=' : alt(EQ,EQ_S)                { $1 }
-'<' : alt(LT,LT_S)                { $1 }
-'>' : alt(GT,GT_S)                { $1 }
-'!' : alt(NOT,NOT_S)              { $1 }
-'~' : alt(TILDE,TILDE_S)          { $1 }
-
-'+' : alt(PLUS, PLUS_S)           { $1 }
-'-' : alt(MINUS, MINUS_S)         { $1 }
-'*' : alt(STAR, STAR_S)           { $1 }
-'/' : alt(SLASH, SLASH_S)         { $1 }
-'%' : alt(PERCENT, PERCENT_S)     { $1 }
-'^' : alt(CARET, CARET_S)         { $1 }
-'&' : alt(AMPERSAND, AMPERSAND_S) { $1 }
-'|' : alt(PIPE, PIPE_S)           { $1 }
-
--- All of these have type 'Spanned ()'
-'<<=' : '<' LT EQ      { () <\$ $1 <* $3 }
-'>>=' : '>' GT EQ      { () <\$ $1 <* $3 }
-'-='  : '-' EQ         { () <\$ $1 <* $2 }
-'&='  : '&' EQ         { () <\$ $1 <* $2 }
-'|='  : '|' EQ         { () <\$ $1 <* $2 }
-'+='  : '+' EQ         { () <\$ $1 <* $2 }
-'*='  : '*' EQ         { () <\$ $1 <* $2 }
-'/='  : '/' EQ         { () <\$ $1 <* $2 }
-'^='  : '^' EQ         { () <\$ $1 <* $2 }
-'%='  : '%' EQ         { () <\$ $1 <* $2 }
-'||'  : '|' PIPE       { () <\$ $1 <* $2 }
-'&&'  : '&' AMPERSAND  { () <\$ $1 <* $2 }
-'=='  : '=' EQ         { () <\$ $1 <* $2 }
-'!='  : '!' EQ         { () <\$ $1 <* $2 }
-'<='  : '<' EQ         { () <\$ $1 <* $2 }
-'>='  : '>' EQ         { () <\$ $1 <* $2 }
-'<<'  : '<' LT         { () <\$ $1 <* $2 }
-'>>'  : '>' GT         { () <\$ $1 <* $2 }
 
 -- Unwraps the IdentTok into just an Ident
 ident :: { Spanned Ident }
@@ -302,11 +266,6 @@ sep_by1(p,sep) :: { NonEmpty a }
 sep_by(p,sep) :: { [a] }
   : sep_by1(p,sep)     { toList $1 }
   | {- empty -}        { [] }
-
--- | One or the other, but of the same type
-alt(l,r) :: { a }
-  : l                  { $1 }
-  | r                  { $1 }
 
 
 --------------------------
@@ -500,7 +459,8 @@ trait_ref :: { TraitRef Span }
 
 -- parse_ty()
 ty :: { Ty Span }
-  : alt(no_for_ty,for_ty)            { $1 }
+  : no_for_ty                        { $1 }
+  | for_ty                           { $1 }
 
 no_for_ty :: { Ty Span }
   : '_'                              {% withSpan $1 Infer }
@@ -517,6 +477,10 @@ no_for_ty :: { Ty Span }
   | '&' mut ty                       {% withSpan $1 (Rptr Nothing Mutable $3) }
   | '&' lifetime ty                  {% withSpan $1 (Rptr (Just $2) Immutable $3) }
   | '&' lifetime mut ty              {% withSpan $1 (Rptr (Just $2) Mutable $4) }
+  | '&&' ty                          {% withSpan $1 (Rptr Nothing Immutable (Rptr Nothing Immutable $2 mempty)) }
+  | '&&' mut ty                      {% withSpan $1 (Rptr Nothing Immutable (Rptr Nothing Mutable $3 mempty)) }
+  | '&&' lifetime ty                 {% withSpan $1 (Rptr Nothing Immutable (Rptr (Just $2) Immutable $3 mempty)) }
+  | '&&' lifetime mut ty             {% withSpan $1 (Rptr Nothing Immutable (Rptr (Just $2) Mutable $4 mempty)) }
   | ty_path                          {% withSpan $1 (PathTy Nothing $1) }
   | ty_qual_path                     {% withSpan $1 (PathTy (Just (fst (unspan $1))) (snd (unspan $1))) }
   | unsafe extern abi fn_decl        {% withSpan $1 (BareFn Unsafe $3 [] $4) }
@@ -619,6 +583,8 @@ pat :: { Pat Span }
   : '_'                                         {% withSpan $1 WildP }
   | '&' mut pat                                 {% withSpan $1 (RefP $3 Mutable) }
   | '&' pat                                     {% withSpan $1 (RefP $2 Immutable) }
+  | '&&' mut pat                                {% withSpan $1 (RefP (RefP $3 Mutable mempty) Immutable) }
+  | '&&' pat                                    {% withSpan $1 (RefP (RefP $2 Immutable mempty) Immutable) }
   | binding_mode1 ident at_pat                  {% withSpan $1 (IdentP (unspan $1) (unspan $2) $3) }
   | ident at_pat                                {% withSpan $1 (IdentP (ByValue Immutable) (unspan $1) $2) }
   | lit_expr                                    {% withSpan $1 (LitP $1) }
@@ -710,112 +676,318 @@ at_pat :: { Maybe (Pat Span) }
 lit_expr :: { Expr Span }
   : lit       {% withSpan $1 (Lit [] $1) }
 
-expr :: { Expr Span }
-  : expr_needs_semi                        { $1 }
-  | expr_doesnt_need_semi                  { $1 }
 
--- Expressions that need a semicolon to turn them into statements (except in tail position of a
--- block)
--- TODO: deal with attributes
-expr_needs_semi :: { Expr Span }
-  : expr_needs_semi_no_block_struct        { $1 }
-  | block                                  {% withSpan $1 (BlockExpr [] $1) }
-  | struct_expr                            { $1 }
+-- General expressions, not restrictions
+expr          :: { Expr Span }
+              : gen_expr                                        { $1 }
+              | binary0_expr                                    { $1 }
+              | block_expr                                      { $1 }
+              | struct_expr                                     { $1 }
+              | lambda_expr                                     { $1 }
+binary0_expr  :: { Expr Span }
+              : gen_binary0_expr(binary1_expr,binary0_expr)     { $1 }
+              | binary1_expr                                    { $1 }
+binary1_expr  :: { Expr Span }
+              : gen_binary1_expr(binary2_expr,binary1_expr)     { $1 } 
+              | binary2_expr                                    { $1 } 
+binary2_expr  :: { Expr Span }
+              : gen_binary2_expr(binary3_expr,binary3_expr)     { $1 } 
+              | binary3_expr                                    { $1 } 
+binary3_expr  :: { Expr Span }
+              : gen_binary3_expr(binary3_expr,binary4_expr)     { $1 } 
+              | binary4_expr                                    { $1 } 
+binary4_expr  :: { Expr Span }
+              : gen_binary4_expr(binary4_expr,binary5_expr)     { $1 } 
+              | binary5_expr                                    { $1 } 
+binary5_expr  :: { Expr Span }
+              : gen_binary5_expr(binary5_expr,binary6_expr)     { $1 } 
+              | binary6_expr                                    { $1 } 
+binary6_expr  :: { Expr Span }
+              : gen_binary6_expr(binary6_expr,binary7_expr)     { $1 } 
+              | binary7_expr                                    { $1 } 
+binary7_expr  :: { Expr Span }
+              : gen_binary7_expr(binary7_expr,binary8_expr)     { $1 } 
+              | binary8_expr                                    { $1 } 
+binary8_expr  :: { Expr Span }
+              : gen_binary8_expr(binary8_expr,binary9_expr)     { $1 } 
+              | binary9_expr                                    { $1 } 
+binary9_expr  :: { Expr Span }
+              : gen_binary9_expr(binary9_expr,binary10_expr)     { $1 } 
+              | binary10_expr                                   { $1 } 
+binary10_expr :: { Expr Span }
+              : gen_binary10_expr(binary10_expr,binary11_expr)  { $1 } 
+              | binary11_expr                                   { $1 } 
+binary11_expr :: { Expr Span }
+              : gen_binary11_expr(binary11_expr,binary12_expr)  { $1 } 
+              | binary12_expr                                   { $1 } 
+binary12_expr :: { Expr Span }
+              : gen_binary12_expr(binary12_expr)                { $1 } 
+              | prefix_expr                                     { $1 } 
+prefix_expr   :: { Expr Span }
+              : gen_prefix_expr(prefix_expr)                    { $1 } 
+              | postfix_expr                                    { $1 } 
+postfix_expr  :: { Expr Span }
+              : gen_postfix_expr(postfix_expr)                  { $1 } 
+              | paren_expr                                      { $1 }
 
-expr_needs_semi_no_block :: { Expr Span }
-  : expr_needs_semi_no_block_struct        { $1 }
-  | struct_expr                            { $1 }
 
-expr_needs_semi_no_struct :: { Expr Span }
-  : block                                  {% withSpan $1 (BlockExpr [] $1) }
-  | expr_needs_semi_no_block_struct        { $1 }
+-- General expressions, but no structs
+nostruct_expr    :: { Expr Span }
+                 : gen_expr                                              { $1 }
+                 | ns_binary0_expr                                       { $1 }
+                 | block_expr                                            { $1 }
+                 | lambda_expr_nostruct                                  { $1 }
+ns_binary0_expr  :: { Expr Span }
+                 : gen_binary0_expr(ns_binary1_expr,ns_binary0_expr)     { $1 }
+                 | ns_binary1_expr                                       { $1 }
+ns_binary1_expr  :: { Expr Span }
+                 : gen_binary1_expr(ns_binary2_expr,ns_binary1_expr)     { $1 } 
+                 | ns_binary2_expr                                       { $1 } 
+ns_binary2_expr  :: { Expr Span }
+                 : gen_binary2_expr(ns_binary3_expr,ns_binary3_expr)     { $1 } 
+                 | ns_binary3_expr                                       { $1 } 
+ns_binary3_expr  :: { Expr Span }
+                 : gen_binary3_expr(ns_binary3_expr,ns_binary4_expr)     { $1 } 
+                 | ns_binary4_expr                                       { $1 } 
+ns_binary4_expr  :: { Expr Span }
+                 : gen_binary4_expr(ns_binary4_expr,ns_binary5_expr)     { $1 } 
+                 | ns_binary5_expr                                       { $1 } 
+ns_binary5_expr  :: { Expr Span }
+                 : gen_binary5_expr(ns_binary5_expr,ns_binary6_expr)     { $1 } 
+                 | ns_binary6_expr                                       { $1 } 
+ns_binary6_expr  :: { Expr Span }
+                 : gen_binary6_expr(ns_binary6_expr,ns_binary7_expr)     { $1 } 
+                 | ns_binary7_expr                                       { $1 } 
+ns_binary7_expr  :: { Expr Span }
+                 : gen_binary7_expr(ns_binary7_expr,ns_binary8_expr)     { $1 } 
+                 | ns_binary8_expr                                       { $1 } 
+ns_binary8_expr  :: { Expr Span }
+                 : gen_binary8_expr(ns_binary8_expr,ns_binary9_expr)     { $1 } 
+                 | ns_binary9_expr                                       { $1 } 
+ns_binary9_expr  :: { Expr Span }
+                 : gen_binary9_expr(ns_binary9_expr,ns_binary10_expr)     { $1 } 
+                 | ns_binary10_expr                                      { $1 } 
+ns_binary10_expr :: { Expr Span }
+                 : gen_binary10_expr(ns_binary10_expr,ns_binary11_expr)  { $1 } 
+                 | ns_binary11_expr                                      { $1 } 
+ns_binary11_expr :: { Expr Span }
+                 : gen_binary11_expr(ns_binary11_expr,ns_binary12_expr)  { $1 } 
+                 | ns_binary12_expr                                      { $1 } 
+ns_binary12_expr :: { Expr Span }
+                 : gen_binary12_expr(ns_binary12_expr)                   { $1 } 
+                 | ns_prefix_expr                                        { $1 } 
+ns_prefix_expr   :: { Expr Span }
+                 : gen_prefix_expr(ns_prefix_expr)                       { $1 } 
+                 | ns_postfix_expr                                       { $1 } 
+ns_postfix_expr  :: { Expr Span }
+                 : gen_postfix_expr(ns_postfix_expr)                     { $1 } 
+                 | paren_expr                                            { $1 }
 
 
-expr_needs_semi_no_block_struct :: { Expr Span }
-  : lit_expr                               { $1 }
-  | '(' ')'                                {% withSpan $1 (TupExpr [] []) }
-  | '(' expr ')'                           {% withSpan $1 (ParenExpr [] $2) }
-  | '(' expr ',' ')'                       {% withSpan $1 (TupExpr [] [$2]) }
-  | '(' expr ',' sep_by1(expr,',') ')'     {% withSpan $1 (TupExpr [] ($2 : toList $4)) }
-  | lambda_expr                            { $1 }
-  | '[' expr ';' expr ']'                  {% withSpan $1 (Repeat [] $2 $4) } 
-  | '[' ']'                                {% withSpan $1 (Vec [] []) }
-  | '[' sep_by1(expr,',') ']'              {% withSpan $1 (Vec [] (toList $2)) }
-  | '[' sep_by1(expr,',') ',' ']'          {% withSpan $1 (Vec [] (toList $2)) }
-  | expr_path                              {% withSpan $1 (PathExpr [] Nothing $1) }
-  | expr_qual_path                         {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
-  | return                                 {% withSpan $1 (Ret [] Nothing) }
-  | return expr                            {% withSpan $1 (Ret [] (Just $2)) }
-  | continue                               {% withSpan $1 (Continue [] Nothing) }
-  | continue lifetime                      {% withSpan $1 (Continue [] (Just $2)) }
-  | break                                  {% withSpan $1 (Break [] Nothing) }
-  | break lifetime                         {% withSpan $1 (Break [] (Just $2)) }
-  | expr_mac                               {% withSpan $1 (MacExpr [] $1) }
-  | '&' expr                               {% withSpan $1 (AddrOf [] Immutable $2) }
-  | '&' mut expr                           {% withSpan $1 (AddrOf [] Mutable $3) }
-
-{-
-The precedence of Rust binary operators is ordered as follows, going from strong to weak:
-
-%left as ':'
-%left '*' '/' '%'
-%left '+' '-'
-%left '<<' '>>'
-%left '&'
-%left '^'
-%left '|'
-%nonassoc '==' '!=' '<' '>' '<=' '>='
-%left '&&'
-%left '||'
-%nonassoc '..' '...'
-%nonassoc '<-'
-%nonassoc '=' '<<=' '>>=' '-=' '&=' '|=' '+=' '*=' '/=' '^=' '%='
-
--}
-
-expr_bin :: { Expr Span }
-  : expr as ty      {% withSpan $1 (Cast [] $1 $3) } 
-  | expr ':' ty     {% withSpan $1 (TypeAscription [] $1 $3) }
-  | expr '*' expr   {% withSpan $1 (Binary [] MulOp $1 $3) }
-  | expr '/' expr   {% withSpan $1 (Binary [] DivOp $1 $3) }
-  | expr '+' expr   {% withSpan $1 (Binary [] AddOp $1 $3) }
-  | expr '-' expr   {% withSpan $1 (Binary [] SubOp $1 $3) }
-  | expr '<<' expr  {% withSpan $1 (Binary [] ShlOp $1 $3) }
-  | expr '>>' expr  {% withSpan $1 (Binary [] ShrOp $1 $3) }
-  | expr '&' expr   {% withSpan $1 (Binary [] AndOp $1 $3) }
-  | expr '^' expr   {% withSpan $1 (Binary [] BitXorOp $1 $3) }
-  | expr '|' expr   {% withSpan $1 (Binary [] BitOrOp $1 $3) }
-  | expr '==' expr  {% withSpan $1 (Binary [] EqOp $1 $3) }
-  | expr '!=' expr  {% withSpan $1 (Binary [] NeOp $1 $3) }
-  | expr '<' expr   {% withSpan $1 (Binary [] LtOp $1 $3) }
-  | expr '>' expr   {% withSpan $1 (Binary [] GtOp $1 $3) }
-  | expr '<=' expr  {% withSpan $1 (Binary [] LeOp $1 $3) }
-  | expr '>=' expr  {% withSpan $1 (Binary [] GeOp $1 $3) }
-  | expr '&&' expr  {% withSpan $1 (Binary [] AndOp $1 $3) }
-  | expr '||' expr  {% withSpan $1 (Binary [] OrOp $1 $3) }
-  | expr '..' expr  {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
-  | expr '...' expr {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
-  | expr '<-' expr  {% withSpan $1 (InPlace [] $1 $3) }
-  | expr '=' expr   {% withSpan $1 (Assign [] $1 $3) }
+-- General expressions, but no blocks on the left
+nonblock_expr    :: { Expr Span }
+                 : gen_expr                                              { $1 }
+                 | nb_binary0_expr                                       { $1 }
+                 | struct_expr                                           { $1 }
+                 | lambda_expr_nostruct                                  { $1 }
+nb_binary0_expr  :: { Expr Span }
+                 : gen_binary0_expr(nb_binary1_expr,binary0_expr)        { $1 }
+                 | nb_binary1_expr                                       { $1 }
+nb_binary1_expr  :: { Expr Span } 
+                 : gen_binary1_expr(nb_binary2_expr,binary1_expr)        { $1 } 
+                 | nb_binary2_expr                                       { $1 } 
+nb_binary2_expr  :: { Expr Span }
+                 : gen_binary2_expr(nb_binary3_expr,binary3_expr)        { $1 } 
+                 | nb_binary3_expr                                       { $1 } 
+nb_binary3_expr  :: { Expr Span }
+                 : gen_binary3_expr(nb_binary3_expr,binary4_expr)        { $1 } 
+                 | nb_binary4_expr                                       { $1 } 
+nb_binary4_expr  :: { Expr Span }
+                 : gen_binary4_expr(nb_binary4_expr,binary5_expr)        { $1 } 
+                 | nb_binary5_expr                                       { $1 } 
+nb_binary5_expr  :: { Expr Span }
+                 : gen_binary5_expr(nb_binary5_expr,binary6_expr)        { $1 } 
+                 | nb_binary6_expr                                       { $1 } 
+nb_binary6_expr  :: { Expr Span }
+                 : gen_binary6_expr(nb_binary6_expr,binary7_expr)        { $1 } 
+                 | nb_binary7_expr                                       { $1 } 
+nb_binary7_expr  :: { Expr Span }
+                 : gen_binary7_expr(nb_binary7_expr,binary8_expr)        { $1 } 
+                 | nb_binary8_expr                                       { $1 } 
+nb_binary8_expr  :: { Expr Span }
+                 : gen_binary8_expr(nb_binary8_expr,binary9_expr)        { $1 } 
+                 | nb_binary9_expr                                       { $1 } 
+nb_binary9_expr  :: { Expr Span }
+                 : gen_binary9_expr(nb_binary9_expr,binary10_expr)        { $1 } 
+                 | nb_binary10_expr                                      { $1 } 
+nb_binary10_expr :: { Expr Span }
+                 : gen_binary10_expr(nb_binary10_expr,binary11_expr)     { $1 } 
+                 | nb_binary11_expr                                      { $1 } 
+nb_binary11_expr :: { Expr Span }
+                 : gen_binary11_expr(nb_binary11_expr,binary12_expr)     { $1 } 
+                 | nb_binary12_expr                                      { $1 } 
+nb_binary12_expr :: { Expr Span }
+                 : gen_binary12_expr(nb_binary12_expr)                   { $1 } 
+                 | nb_prefix_expr                                        { $1 } 
+nb_prefix_expr   :: { Expr Span }
+                 : gen_prefix_expr(nb_prefix_expr)                       { $1 } 
+                 | nb_postfix_expr                                       { $1 } 
+nb_postfix_expr  :: { Expr Span }
+                 : gen_postfix_expr(nb_postfix_expr)                     { $1 }
+                 | paren_expr                                            { $1 }
 
 
 
 -- "There is a convenience rule that allows one to omit the separating ; after if, match, loop, for, while"
-expr_doesnt_need_semi :: { Expr Span }
-  : if_expr                                                                    { $1 }
-  |              loop                                        safe_block        {% withSpan $1 (Loop [] $2 Nothing) }
-  | lifetime ':' loop                                        safe_block        {% withSpan $1 (Loop [] $4 (Just $1)) }
-  |              for pat in expr_needs_semi_no_struct        safe_block        {% withSpan $1 (ForLoop [] $2 $4 $5 Nothing) }
-  | lifetime ':' for pat in expr_needs_semi_no_struct        safe_block        {% withSpan $1 (ForLoop [] $4 $6 $7 (Just $1)) }
-  |              while             expr_needs_semi_no_struct safe_block        {% withSpan $1 (While [] $2 $3 Nothing) }
-  | lifetime ':' while             expr_needs_semi_no_struct safe_block        {% withSpan $1 (While [] $4 $5 (Just $1)) }
-  |              while let pat '=' expr_needs_semi_no_struct safe_block        {% withSpan $1 (WhileLet [] $3 $5 $6 Nothing) }
-  | lifetime ':' while let pat '=' expr_needs_semi_no_struct safe_block        {% withSpan $1 (WhileLet [] $5 $7 $8 (Just $1)) }
-  | match expr_needs_semi_no_struct '{' '}'                                    {% withSpan $1 (Match [] $2 []) }
-  | match expr_needs_semi_no_struct '{' arms '}'                               {% withSpan $1 (Match [] $2 $4) }
+block_expr :: { Expr Span }
+  : if_expr                                                        { $1 }
+  |              loop                            safe_block        {% withSpan $1 (Loop [] $2 Nothing) }
+  | lifetime ':' loop                            safe_block        {% withSpan $1 (Loop [] $4 (Just $1)) }
+  |              for pat in nostruct_expr        safe_block        {% withSpan $1 (ForLoop [] $2 $4 $5 Nothing) }
+  | lifetime ':' for pat in nostruct_expr        safe_block        {% withSpan $1 (ForLoop [] $4 $6 $7 (Just $1)) }
+  |              while             nostruct_expr safe_block        {% withSpan $1 (While [] $2 $3 Nothing) }
+  | lifetime ':' while             nostruct_expr safe_block        {% withSpan $1 (While [] $4 $5 (Just $1)) }
+  |              while let pat '=' nostruct_expr safe_block        {% withSpan $1 (WhileLet [] $3 $5 $6 Nothing) }
+  | lifetime ':' while let pat '=' nostruct_expr safe_block        {% withSpan $1 (WhileLet [] $5 $7 $8 (Just $1)) }
+  | match nostruct_expr '{' '}'                                    {% withSpan $1 (Match [] $2 []) }
+  | match nostruct_expr '{' arms '}'                               {% withSpan $1 (Match [] $2 $4) }
+  | expr_path '!' '{' many(token_tree) '}'                         {% withSpan $1 (MacExpr [] (Mac $1 $4 mempty)) }
+  | block                                                          {% withSpan $1 (BlockExpr [] $1) }
 
-expr_no_block :: { Expr Span }
-  : alt(expr_doesnt_need_semi,expr_needs_semi_no_block)  { $1 }
+paren_expr :: { Expr Span }
+  : '(' ')'                                {% withSpan $1 (TupExpr [] []) }
+  | '(' expr ')'                           {% withSpan $1 (ParenExpr [] $2) }
+  | '(' expr ',' ')'                       {% withSpan $1 (TupExpr [] [$2]) }
+  | '(' expr ',' sep_by1(expr,',') ')'     {% withSpan $1 (TupExpr [] ($2 : toList $4)) }
+
+-- General postfix expression
+gen_postfix_expr(lhs) :: { Expr Span }
+  : lit_expr                                                                    { $1 }
+  | expr_path                                                                   {% withSpan $1 (PathExpr [] Nothing $1) }
+  | expr_qual_path                                                              {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
+  | expr_mac                                                                    {% withSpan $1 (MacExpr [] $1) }
+  | lhs '[' expr ']'                                                            {% withSpan $1 (Index [] $1 $3) }
+  | lhs '?'                                                                     {% withSpan $1 (Try [] $1) }
+  | lhs '(' ')'                                                                 {% withSpan $1 (Call [] $1 []) }
+  | lhs '(' sep_by1(expr,',') ')'                                               {% withSpan $1 (Call [] $1 (toList $3)) }
+  | lhs '(' sep_by1(expr,',') ',' ')'                                           {% withSpan $1 (Call [] $1 (toList $3)) }
+  | lhs '.' ident '(' ')'                                                       {% withSpan $1 (MethodCall [] (unspan $3) [] ($1 :| [])) }
+  | lhs '.' ident '(' sep_by1(expr,',') ')'                                     {% withSpan $1 (MethodCall [] (unspan $3) [] ($1 <| $5)) }
+  | lhs '.' ident '(' sep_by1(expr,',') ',' ')'                                 {% withSpan $1 (MethodCall [] (unspan $3) [] ($1 <| $5)) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' ')'                       {% withSpan $1 (MethodCall [] (unspan $3) $6 ($1 :| [])) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ')'     {% withSpan $1 (MethodCall [] (unspan $3) $6 ($1 <| $9)) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ',' ')' {% withSpan $1 (MethodCall [] (unspan $3) $6 ($1 <| $9)) }
+  | lhs '.' ident                                                               {% withSpan $1 (FieldAccess [] $1 (unspan $3)) }
+  | lhs '.' int                                                                 {%
+      case lit $3 of
+        Int i Unsuffixed _ -> withSpan $1 (TupField [] $1 (fromIntegral i))
+        _ -> fail "make better error message"
+    }
+
+-- General prefix expression
+gen_prefix_expr(lhs) :: { Expr Span }
+  : '*' lhs                                {% withSpan $1 (Unary [] Deref $2) }
+  | '!' lhs                                {% withSpan $1 (Unary [] Not $2) }
+  | '-' lhs                                {% withSpan $1 (Unary [] Neg $2) }
+  | '&' lhs                                {% withSpan $1 (AddrOf [] Immutable $2) }
+  | '&' mut lhs                            {% withSpan $1 (AddrOf [] Mutable $3) }
+  | '&&' lhs                               {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Immutable $2 mempty)) }
+  | '&&' mut lhs                           {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Mutable $3 mempty)) }
+  | box lhs                                {% withSpan $1 (Box [] $2) }
+
+-- General binary expression
+-- (Although this isn't really a binary operation)
+gen_binary12_expr(lhs) :: { Expr Span }
+  : lhs ':' ty                             {% withSpan $1 (TypeAscription [] $1 $3) }
+  | lhs as ty                              {% withSpan $1 (Cast [] $1 $3) }
+
+-- should be left associative
+gen_binary11_expr(lhs,rhs) :: { Expr Span }
+  : lhs '*' rhs                            {% withSpan $1 (Binary [] MulOp $1 $3) }
+  | lhs '/' rhs                            {% withSpan $1 (Binary [] DivOp $1 $3) }
+  | lhs '%' rhs                            {% withSpan $1 (Binary [] RemOp $1 $3) }
+
+-- should be left associative
+gen_binary10_expr(lhs,rhs) :: { Expr Span }
+  : lhs '+' rhs                            {% withSpan $1 (Binary [] AddOp $1 $3) }
+  | lhs '-' rhs                            {% withSpan $1 (Binary [] SubOp $1 $3) }
+
+-- should be left associative
+gen_binary9_expr(lhs,rhs) :: { Expr Span }
+  : lhs '<<' rhs                           {% withSpan $1 (Binary [] ShlOp $1 $3) }
+  | lhs '>>' rhs                           {% withSpan $1 (Binary [] ShrOp $1 $3) }
+
+-- should be left associative
+gen_binary8_expr(lhs,rhs) :: { Expr Span }
+  : lhs '&' rhs                            {% withSpan $1 (Binary [] BitAndOp $1 $3) }
+
+-- should be left associative
+gen_binary7_expr(lhs,rhs) :: { Expr Span }
+  : lhs '^' rhs                            {% withSpan $1 (Binary [] BitXorOp $1 $3) }
+
+-- should be left associative
+gen_binary6_expr(lhs,rhs) :: { Expr Span }
+  : lhs '|' rhs                            {% withSpan $1 (Binary [] BitOrOp $1 $3) }
+
+-- should be left associative
+gen_binary5_expr(lhs,rhs) :: { Expr Span }
+  : lhs '==' rhs                           {% withSpan $1 (Binary [] EqOp $1 $3) }
+  | lhs '!=' rhs                           {% withSpan $1 (Binary [] NeOp $1 $3) }
+  | lhs '<'  rhs                           {% withSpan $1 (Binary [] LtOp $1 $3) }
+  | lhs '>'  rhs                           {% withSpan $1 (Binary [] GtOp $1 $3) }
+  | lhs '<=' rhs                           {% withSpan $1 (Binary [] LeOp $1 $3) }
+  | lhs '>=' rhs                           {% withSpan $1 (Binary [] GeOp $1 $3) }
+
+-- should be left associative
+gen_binary4_expr(lhs,rhs) :: { Expr Span }
+  : lhs '&&' rhs                           {% withSpan $1 (Binary [] AndOp $1 $3) }
+
+-- should be left associative
+gen_binary3_expr(lhs,rhs) :: { Expr Span }
+  : lhs '||' rhs                           {% withSpan $1 (Binary [] OrOp $1 $3) }
+
+-- should be nonassoc
+-- TODO omitting lhs or rhs
+gen_binary2_expr(lhs,rhs) :: { Expr Span }
+  : lhs '..' rhs                           {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
+  | lhs '...' rhs                          {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
+
+-- should be right associative
+gen_binary1_expr(lhs,rhs) :: { Expr Span }
+  : lhs '<-' rhs                           {% withSpan $1 (InPlace [] $1 $3) }
+
+-- should be right associative
+gen_binary0_expr(lhs,rhs) :: { Expr Span }
+  : lhs '=' rhs                            {% withSpan $1 (Assign   [] $1 $3) }
+  | lhs '>>=' rhs                          {% withSpan $1 (AssignOp [] ShrOp $1 $3) }
+  | lhs '<<=' rhs                          {% withSpan $1 (AssignOp [] ShlOp $1 $3) }
+  | lhs '-=' rhs                           {% withSpan $1 (AssignOp [] SubOp $1 $3) }
+  | lhs '+=' rhs                           {% withSpan $1 (AssignOp [] AddOp $1 $3) }
+  | lhs '*=' rhs                           {% withSpan $1 (AssignOp [] MulOp $1 $3) }
+  | lhs '/=' rhs                           {% withSpan $1 (AssignOp [] DivOp $1 $3) }
+  | lhs '^=' rhs                           {% withSpan $1 (AssignOp [] BitXorOp $1 $3) }
+  | lhs '|=' rhs                           {% withSpan $1 (AssignOp [] BitOrOp $1 $3) }
+  | lhs '&=' rhs                           {% withSpan $1 (AssignOp [] BitAndOp $1 $3) }
+  | lhs '%=' rhs                           {% withSpan $1 (AssignOp [] RemOp $1 $3) }
+
+-- Lowest precedence generalized expression
+gen_expr :: { Expr Span }
+  : return                                 {% withSpan $1 (Ret [] Nothing) }
+  | return expr                            {% withSpan $1 (Ret [] (Just $2)) }
+  | '..'                                   {% withSpan $1 (Range [] Nothing Nothing Closed) }
+  | '...'                                  {% withSpan $1 (Range [] Nothing Nothing HalfOpen) }
+  | '..' expr                              {% withSpan $1 (Range [] Nothing (Just $2) Closed) }
+  | '...' expr                             {% withSpan $1 (Range [] Nothing (Just $2) HalfOpen) }
+  | continue                               {% withSpan $1 (Continue [] Nothing) }
+  | continue lifetime                      {% withSpan $1 (Continue [] (Just $2)) }
+  | break                                  {% withSpan $1 (Break [] Nothing) }
+  | break lifetime                         {% withSpan $1 (Break [] (Just $2)) }
+  | '[' ']'                                {% withSpan $1 (Vec [] []) }
+  | '[' sep_by1(expr,',') ']'              {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' sep_by1(expr,',') ',' ']'          {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' expr ';' expr ']'                  {% withSpan $1 (Repeat [] $2 $4) }
+
+
 
 -- Match arms usually have to be seperated by commas (with an optional comma at the end). This
 -- condition is loosened (so that there is no seperator needed) if the arm ends in a safe block.
@@ -824,17 +996,17 @@ arms :: { [Arm Span] }
   | sep_by1(pat,'|') arm_guard '=>' safe_block    ','      { [Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty] }
   | sep_by1(pat,'|') arm_guard '=>' safe_block        arms { Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty : $> }
   | sep_by1(pat,'|') arm_guard '=>' safe_block    ',' arms { Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty : $> }
-  | sep_by1(pat,'|') arm_guard '=>' expr_no_block          { [Arm [] $1 $2 $4 mempty] }
-  | sep_by1(pat,'|') arm_guard '=>' expr_no_block ','      { [Arm [] $1 $2 $4 mempty] }
-  | sep_by1(pat,'|') arm_guard '=>' expr_no_block ',' arms { Arm [] $1 $2 $4 mempty : $6 }
+  | sep_by1(pat,'|') arm_guard '=>' nonblock_expr          { [Arm [] $1 $2 $4 mempty] }
+  | sep_by1(pat,'|') arm_guard '=>' nonblock_expr ','      { [Arm [] $1 $2 $4 mempty] }
+  | sep_by1(pat,'|') arm_guard '=>' nonblock_expr ',' arms { Arm [] $1 $2 $4 mempty : $6 }
 
 arm_guard :: { Maybe (Expr Span) }
   : {- empty -}  { Nothing }
   | if expr      { Just $2 }
 
 if_expr :: { Expr Span }
-  : if             expr_needs_semi_no_struct safe_block else_expr {% withSpan $1 (If [] $2 $3 $4) }
-  | if let pat '=' expr_needs_semi_no_struct safe_block else_expr {% withSpan $1 (IfLet [] $3 $5 $6 $7) }
+  : if             nostruct_expr safe_block else_expr {% withSpan $1 (If [] $2 $3 $4) }
+  | if let pat '=' nostruct_expr safe_block else_expr {% withSpan $1 (IfLet [] $3 $5 $6 $7) }
 
 else_expr :: { Maybe (Expr Span) }
   : else safe_block {% Just <\$> withSpan $1 (BlockExpr [] $2) }
@@ -846,6 +1018,11 @@ lambda_expr :: { Expr Span }
   | move args         expr       {% withSpan $1 (Closure [] Value (FnDecl $2 Nothing   False mempty) $>) }
   |      args '->' ty safe_block {% withSpan $1 (Closure [] Ref   (FnDecl $1 (Just $3) False mempty) (BlockExpr [] $> mempty)) }
   |      args         expr       {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
+
+lambda_expr_nostruct :: { Expr Span }
+  : move args nostruct_expr      {% withSpan $1 (Closure [] Value (FnDecl $2 Nothing   False mempty) $>) }
+  |      args nostruct_expr      {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
+
 
 struct_expr :: { Expr Span }
   : expr_path '{'                                  '}'   {% withSpan $1 (Struct [] $1 [] Nothing) }
@@ -864,6 +1041,7 @@ arg :: { Arg Span }
 
 args :: { [Arg Span] }
   : '|' '|'                       { [] }
+  | '||'                          { [] }
   | '|' sep_by1(arg,',') '|'      { toList $2 }
   | '|' sep_by1(arg,',') ',' '|'  { toList $2 }
 
@@ -876,22 +1054,24 @@ args :: { [Arg Span] }
 stmt :: { Stmt Span }
   : let pat ':' ty '=' initializer ';'   {% withSpan $1 (Local $2 (Just $4) $6 []) }
   | let pat '=' initializer ';'          {% withSpan $1 (Local $2 Nothing $4 []) } 
-  | expr_needs_semi ';'                  {% withSpan $1 (Semi $1) }
-  | expr_doesnt_need_semi                {% withSpan $1 (NoSemi $1) }
+  | nonblock_expr ';'                    {% withSpan $1 (Semi $1) }
+  | block_expr                           {% withSpan $1 (NoSemi $1) }
+--  | expr_doesnt_need_semi                {% withSpan $1 (NoSemi $1) }
 --  | ';'                                  
 
 -- List of statements where the last statement might be a no-semicolon statement.
 stmts_possibly_no_semi :: { [Stmt Span] }
   : stmt stmts_possibly_no_semi              { $1 : $2 }
   | stmt                                     { [$1] }
-  | expr_needs_semi                          { [NoSemi $1 mempty] }
+  | nonblock_expr                            { [NoSemi $1 mempty] }
 
 initializer :: { Maybe (Expr Span) }
   : '=' expr      { Just $2 }
   | {- empty -}   { Nothing }
 
 block :: { Block Span }
-  : alt(unsafe_block,safe_block)           { $1 }
+  : unsafe_block                          { $1 }
+  | safe_block                            { $1 }
 
 unsafe_block :: { Block Span }
   : unsafe '{' '}'                        {% withSpan $1 (Block [] (UnsafeBlock False)) }
@@ -982,7 +1162,6 @@ def :: { Defaultness }
 
 expr_mac :: { Mac Span }
   : expr_path '!' '[' many(token_tree) ']'      {% withSpan $1 (Mac $1 $4) }
-  | expr_path '!' '{' many(token_tree) '}'      {% withSpan $1 (Mac $1 $4) }
   | expr_path '!' '(' many(token_tree) ')'      {% withSpan $1 (Mac $1 $4) }
 
 ty_mac :: { Mac Span }
