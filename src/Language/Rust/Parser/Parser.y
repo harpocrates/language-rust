@@ -95,11 +95,11 @@ import qualified Data.List.NonEmpty as N
   '$'        { Tok $$@(Spanned Dollar _) }
   '?'        { Tok $$@(Spanned Question _) }
 
+  '||'       { Tok $$@(Spanned PipePipe _) }
+  '&&'       { Tok $$@(Spanned AmpersandAmpersand _) }
 {- Problematic
   '>='            { Tok $$@(Spanned GreaterEqual _) }
   '>>='           { Tok $$@(Spanned GreaterGreaterEqual _) }
-  '&&'            { Tok $$@(Spanned AmpersandAmpersand _) }
-  '||'            { Tok $$@(Spanned PipePipe _) }
   '<<'            { Tok $$@(Spanned LessLess _) }
   '>>'            { Tok $$@(Spanned GreaterGreater _) }
 -}
@@ -277,8 +277,8 @@ import qualified Data.List.NonEmpty as N
 --'/='  : '/' EQ         { () <\$ $1 <* $2 }
 --'^='  : '^' EQ         { () <\$ $1 <* $2 }
 --'%='  : '%' EQ         { () <\$ $1 <* $2 }
-'||'  : '|' PIPE       { () <\$ $1 <* $2 }
-'&&'  : '&' AMPERSAND  { () <\$ $1 <* $2 }
+--'||'  : '|' PIPE       { () <\$ $1 <* $2 }
+--'&&'  : '&' AMPERSAND  { () <\$ $1 <* $2 }
 --'=='  : '=' EQ         { () <\$ $1 <* $2 }
 --'!='  : '!' EQ         { () <\$ $1 <* $2 }
 --'<='  : '<' EQ         { () <\$ $1 <* $2 }
@@ -539,6 +539,10 @@ no_for_ty :: { Ty Span }
   | '&' mut ty                       {% withSpan $1 (Rptr Nothing Mutable $3) }
   | '&' lifetime ty                  {% withSpan $1 (Rptr (Just $2) Immutable $3) }
   | '&' lifetime mut ty              {% withSpan $1 (Rptr (Just $2) Mutable $4) }
+  | '&&' ty                          {% withSpan $1 (Rptr Nothing Immutable (Rptr Nothing Immutable $2 mempty)) }
+  | '&&' mut ty                      {% withSpan $1 (Rptr Nothing Immutable (Rptr Nothing Mutable $3 mempty)) }
+  | '&&' lifetime ty                 {% withSpan $1 (Rptr Nothing Immutable (Rptr (Just $2) Immutable $3 mempty)) }
+  | '&&' lifetime mut ty             {% withSpan $1 (Rptr Nothing Immutable (Rptr (Just $2) Mutable $4 mempty)) }
   | ty_path                          {% withSpan $1 (PathTy Nothing $1) }
   | ty_qual_path                     {% withSpan $1 (PathTy (Just (fst (unspan $1))) (snd (unspan $1))) }
   | unsafe extern abi fn_decl        {% withSpan $1 (BareFn Unsafe $3 [] $4) }
@@ -641,6 +645,8 @@ pat :: { Pat Span }
   : '_'                                         {% withSpan $1 WildP }
   | '&' mut pat                                 {% withSpan $1 (RefP $3 Mutable) }
   | '&' pat                                     {% withSpan $1 (RefP $2 Immutable) }
+  | '&&' mut pat                                {% withSpan $1 (RefP (RefP $3 Mutable mempty) Immutable) }
+  | '&&' pat                                    {% withSpan $1 (RefP (RefP $2 Immutable mempty) Immutable) }
   | binding_mode1 ident at_pat                  {% withSpan $1 (IdentP (unspan $1) (unspan $2) $3) }
   | ident at_pat                                {% withSpan $1 (IdentP (ByValue Immutable) (unspan $1) $2) }
   | lit_expr                                    {% withSpan $1 (LitP $1) }
@@ -947,6 +953,8 @@ gen_prefix_expr(lhs) :: { Expr Span }
   | '-' lhs                                {% withSpan $1 (Unary [] Neg $2) }
   | '&' lhs                                {% withSpan $1 (AddrOf [] Immutable $2) }
   | '&' mut lhs                            {% withSpan $1 (AddrOf [] Mutable $3) }
+  | '&&' lhs                               {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Immutable $2 mempty)) }
+  | '&&' mut lhs                           {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Mutable $3 mempty)) }
   | box lhs                                {% withSpan $1 (Box [] $2) }
 
 -- General binary expression
@@ -1013,8 +1021,8 @@ gen_binary1_expr(lhs,rhs) :: { Expr Span }
 -- should be right associative
 gen_binary0_expr(lhs,rhs) :: { Expr Span }
   : lhs '=' rhs                            {% withSpan $1 (Assign   [] $1 $3) }
-  | lhs '>>=' rhs                          {% withSpan $1 (AssignOp [] ShlOp $1 $3) }
-  | lhs '<<=' rhs                          {% withSpan $1 (AssignOp [] ShrOp $1 $3) }
+  | lhs '>>=' rhs                          {% withSpan $1 (AssignOp [] ShrOp $1 $3) }
+  | lhs '<<=' rhs                          {% withSpan $1 (AssignOp [] ShlOp $1 $3) }
   | lhs '-=' rhs                           {% withSpan $1 (AssignOp [] SubOp $1 $3) }
   | lhs '+=' rhs                           {% withSpan $1 (AssignOp [] AddOp $1 $3) }
   | lhs '*=' rhs                           {% withSpan $1 (AssignOp [] MulOp $1 $3) }
@@ -1095,6 +1103,7 @@ arg :: { Arg Span }
 
 args :: { [Arg Span] }
   : '|' '|'                       { [] }
+  | '||'                          { [] }
   | '|' sep_by1(arg,',') '|'      { toList $2 }
   | '|' sep_by1(arg,',') ',' '|'  { toList $2 }
 

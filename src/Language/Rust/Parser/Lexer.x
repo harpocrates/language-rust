@@ -952,11 +952,11 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 "%"             { token Percent }
 "^"             { token Caret }
 
+"||"            { token PipePipe }
+"&&"            { token AmpersandAmpersand }
 -- Problematic
 -- ">="            { token GreaterEqual }
 -- ">>="           { token GreaterGreaterEqual }
--- "&&"            { token AmpersandAmpersand }
--- "||"            { token PipePipe }
 -- "<<"            { token LessLess }
 -- ">>"            { token GreaterGreater }
 

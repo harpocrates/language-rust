@@ -413,6 +413,7 @@ parserExpressions = testGroup "parsing expressions"
   , testP "x ^ 1" (Binary [] BitXorOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
   , testP "x << 1" (Binary [] ShlOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
   , testP "x >> 1" (Binary [] ShrOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
+  , testP "&&&x&&&y" (Binary [] AndOp (AddrOf [] Immutable (AddrOf [] Immutable (AddrOf [] Immutable (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) ()) ()) ()) (AddrOf [] Immutable (PathExpr [] Nothing (Path False [(mkIdent "y", NoParameters ())] ()) ()) ()) ())
   ]
 
 
