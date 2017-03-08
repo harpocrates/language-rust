@@ -32,11 +32,11 @@ import qualified Data.List.NonEmpty as N
 %name stmtP stmt
 %name expressionP expr
 
-%tokentype { TokenSpace Spanned }
+%tokentype { Spanned Token }
 
 %monad { P } { >>= } { return }
 %error { parseError }
-%lexer { lexRust } { Tok (Spanned Eof _) }
+%lexer { lexRust } { Spanned Eof _ }
 
 -- Conflicts caused in
 --  * sep_by1(segment,'::') parts of paths
@@ -49,179 +49,162 @@ import qualified Data.List.NonEmpty as N
 %token
 
   -- Expression-operator symbols. 
-  EQ         { NoSpTok $$@(Spanned Equal _) }
-  LT         { NoSpTok $$@(Spanned Less _) }
-  GT         { NoSpTok $$@(Spanned Greater _) }
-  NOT        { NoSpTok $$@(Spanned Exclamation _) }
-  TILDE      { NoSpTok $$@(Spanned Tilde _) }
-  
-  PLUS       { NoSpTok $$@(Spanned Plus _) }
-  MINUS      { NoSpTok $$@(Spanned Minus _) }
-  STAR       { NoSpTok $$@(Spanned Star _) }
-  SLASH      { NoSpTok $$@(Spanned Slash _) }
-  PERCENT    { NoSpTok $$@(Spanned Percent _) }
-  CARET      { NoSpTok $$@(Spanned Caret _) }
-  AMPERSAND  { NoSpTok $$@(Spanned Ampersand _) }
-  PIPE       { NoSpTok $$@(Spanned Pipe _) }
+  '='            { Spanned Equal _ }
+  '<'            { Spanned Less _ }
+  '>'            { Spanned Greater _ }
+  '!'            { Spanned Exclamation _ }
+  '~'            { Spanned Tilde _ }
 
-  EQ_S       { Tok $$@(Spanned Equal _) }
-  LT_S       { Tok $$@(Spanned Less _) }
-  GT_S       { Tok $$@(Spanned Greater _) }
-  NOT_S      { Tok $$@(Spanned Exclamation _) }
-  TILDE_S    { Tok $$@(Spanned Tilde _) }
-
-  PLUS_S     { Tok $$@(Spanned Plus _) }
-  MINUS_S    { Tok $$@(Spanned Minus _) }
-  STAR_S     { Tok $$@(Spanned Star _) }
-  SLASH_S    { Tok $$@(Spanned Slash _) }
-  PERCENT_S  { Tok $$@(Spanned Percent _) }
-  CARET_S    { Tok $$@(Spanned Caret _) }
-  AMPERSAND_S{ Tok $$@(Spanned Ampersand _) }
-  PIPE_S     { Tok $$@(Spanned Pipe _) }
+  '+'            { Spanned Plus _ }
+  '-'            { Spanned Minus _ }
+  '*'            { Spanned Star _ }
+  '/'            { Spanned Slash _ }
+  '%'            { Spanned Percent _ }
+  '^'            { Spanned Caret _ }
+  '&'            { Spanned Ampersand _ }
+  '|'            { Spanned Pipe _ }
 
   -- Structural symbols.
-  '@'        { Tok $$@(Spanned At _) }
-  '...'      { Tok $$@(Spanned DotDotDot _) }
-  '..'       { Tok $$@(Spanned DotDot _) }
-  '.'        { Tok $$@(Spanned Dot _) }
-  ','        { Tok $$@(Spanned Comma _) }
-  ';'        { Tok $$@(Spanned Semicolon _) }
-  '::'       { Tok $$@(Spanned ModSep _) }
-  ':'        { Tok $$@(Spanned Colon _) }
-  '->'       { Tok $$@(Spanned RArrow _) }
-  '<-'       { Tok $$@(Spanned LArrow _) }
-  '=>'       { Tok $$@(Spanned FatArrow _) }
-  '#'        { Tok $$@(Spanned Pound _) }
-  '$'        { Tok $$@(Spanned Dollar _) }
-  '?'        { Tok $$@(Spanned Question _) }
+  '@'            { Spanned At _ }
+  '...'          { Spanned DotDotDot _ }
+  '..'           { Spanned DotDot _ }
+  '.'            { Spanned Dot _ }
+  ','            { Spanned Comma _ }
+  ';'            { Spanned Semicolon _ }
+  '::'           { Spanned ModSep _ }
+  ':'            { Spanned Colon _ }
+  '->'           { Spanned RArrow _ }
+  '<-'           { Spanned LArrow _ }
+  '=>'           { Spanned FatArrow _ }
+  '#'            { Spanned Pound _ }
+  '$'            { Spanned Dollar _ }
+  '?'            { Spanned Question _ }
 
-  '||'       { Tok $$@(Spanned PipePipe _) }
-  '&&'       { Tok $$@(Spanned AmpersandAmpersand _) }
-{- Problematic
-  '>='            { Tok $$@(Spanned GreaterEqual _) }
-  '>>='           { Tok $$@(Spanned GreaterGreaterEqual _) }
-  '<<'            { Tok $$@(Spanned LessLess _) }
-  '>>'            { Tok $$@(Spanned GreaterGreater _) }
--}
+  '||'           { Spanned PipePipe _ }
+  '&&'           { Spanned AmpersandAmpersand _ }
+  '>='           { Spanned GreaterEqual _ }
+  '>>='          { Spanned GreaterGreaterEqual _ }
+  '<<'           { Spanned LessLess _ }
+  '>>'           { Spanned GreaterGreater _ }
 
-  '=='       { Tok $$@(Spanned EqualEqual _) }
-  '!='       { Tok $$@(Spanned NotEqual _) }
-  '<='       { Tok $$@(Spanned LessEqual _) }
-  '<<='      { Tok $$@(Spanned LessLessEqual _) }
-  '-='       { Tok $$@(Spanned MinusEqual _) }
-  '&='       { Tok $$@(Spanned AmpersandEqual _) }
-  '|='       { Tok $$@(Spanned PipeEqual _) }
-  '+='       { Tok $$@(Spanned PlusEqual _) }
-  '*='       { Tok $$@(Spanned StarEqual _) }
-  '/='       { Tok $$@(Spanned SlashEqual _) }
-  '^='       { Tok $$@(Spanned CaretEqual _) }
-  '%='       { Tok $$@(Spanned PercentEqual _) }
+  '=='           { Spanned EqualEqual _ }
+  '!='           { Spanned NotEqual _ }
+  '<='           { Spanned LessEqual _ }
+  '<<='          { Spanned LessLessEqual _ }
+  '-='           { Spanned MinusEqual _ }
+  '&='           { Spanned AmpersandEqual _ }
+  '|='           { Spanned PipeEqual _ }
+  '+='           { Spanned PlusEqual _ }
+  '*='           { Spanned StarEqual _ }
+  '/='           { Spanned SlashEqual _ }
+  '^='           { Spanned CaretEqual _ }
+  '%='           { Spanned PercentEqual _ }
 
-  '('        { Tok $$@(Spanned (OpenDelim Paren) _) }
-  '['        { Tok $$@(Spanned (OpenDelim Bracket) _) }
-  '{'        { Tok $$@(Spanned (OpenDelim Brace) _) }
-  ')'        { Tok $$@(Spanned (CloseDelim Paren) _) }
-  ']'        { Tok $$@(Spanned (CloseDelim Bracket) _) }
-  '}'        { Tok $$@(Spanned (CloseDelim Brace) _) }
+  '('            { Spanned (OpenDelim Paren) _ }
+  '['            { Spanned (OpenDelim Bracket) _ }
+  '{'            { Spanned (OpenDelim Brace) _ }
+  ')'            { Spanned (CloseDelim Paren) _ }
+  ']'            { Spanned (CloseDelim Bracket) _ }
+  '}'            { Spanned (CloseDelim Brace) _ }
 
   -- Literals.
-  byte       { Tok $$@(Spanned (LiteralTok ByteTok{} _) _) }
-  char       { Tok $$@(Spanned (LiteralTok CharTok{} _) _) }
-  int        { Tok $$@(Spanned (LiteralTok IntegerTok{} _) _) }
-  float      { Tok $$@(Spanned (LiteralTok FloatTok{} _) _) }
-  str        { Tok $$@(Spanned (LiteralTok StrTok{} _) _) }
-  byteStr    { Tok $$@(Spanned (LiteralTok ByteStrTok{} _) _) }
-  rawStr     { Tok $$@(Spanned (LiteralTok StrRawTok{} _) _) }
-  rawByteStr { Tok $$@(Spanned (LiteralTok ByteStrRawTok{} _) _) }
+  byte           { Spanned (LiteralTok ByteTok{} _) _ }
+  char           { Spanned (LiteralTok CharTok{} _) _ }
+  int            { Spanned (LiteralTok IntegerTok{} _) _ }
+  float          { Spanned (LiteralTok FloatTok{} _) _ }
+  str            { Spanned (LiteralTok StrTok{} _) _ }
+  byteStr        { Spanned (LiteralTok ByteStrTok{} _) _ }
+  rawStr         { Spanned (LiteralTok StrRawTok{} _) _ }
+  rawByteStr     { Spanned (LiteralTok ByteStrRawTok{} _) _ }
   
   -- Strict keywords used in the language
-  as         { Tok $$@(Identifier "as") }
-  box        { Tok $$@(Identifier "box") } 
-  break      { Tok $$@(Identifier "break") } 
-  const      { Tok $$@(Identifier "const") } 
-  continue   { Tok $$@(Identifier "continue") }
-  crate      { Tok $$@(Identifier "crate") } 
-  else       { Tok $$@(Identifier "else") }
-  enum       { Tok $$@(Identifier "enum") }
-  extern     { Tok $$@(Identifier "extern") }
-  false      { Tok $$@(Identifier "false") } 
-  fn         { Tok $$@(Identifier "fn") }
-  for        { Tok $$@(Identifier "for") } 
-  if         { Tok $$@(Identifier "if") }
-  impl       { Tok $$@(Identifier "impl") }
-  in         { Tok $$@(Identifier "in") }
-  let        { Tok $$@(Identifier "let") } 
-  loop       { Tok $$@(Identifier "loop") }
-  match      { Tok $$@(Identifier "match") } 
-  mod        { Tok $$@(Identifier "mod") } 
-  move       { Tok $$@(Identifier "move") }
-  mut        { Tok $$@(Identifier "mut") } 
-  pub        { Tok $$@(Identifier "pub") } 
-  ref        { Tok $$@(Identifier "ref") } 
-  return     { Tok $$@(Identifier "return") }
-  Self       { Tok $$@(Identifier "Self") }
-  self       { Tok $$@(Identifier "self") } 
-  static     { Tok $$@(Identifier "static") }
-  struct     { Tok $$@(Identifier "struct") }
-  super      { Tok $$@(Identifier "super") } 
-  trait      { Tok $$@(Identifier "trait") } 
-  true       { Tok $$@(Identifier "true") }
-  type       { Tok $$@(Identifier "type") }
-  unsafe     { Tok $$@(Identifier "unsafe") }
-  use        { Tok $$@(Identifier "use") } 
-  where      { Tok $$@(Identifier "where") } 
-  while      { Tok $$@(Identifier "while") } 
+  as             { Identifier "as" }
+  box            { Identifier "box" } 
+  break          { Identifier "break" } 
+  const          { Identifier "const" } 
+  continue       { Identifier "continue" }
+  crate          { Identifier "crate" } 
+  else           { Identifier "else" }
+  enum           { Identifier "enum" }
+  extern         { Identifier "extern" }
+  false          { Identifier "false" } 
+  fn             { Identifier "fn" }
+  for            { Identifier "for" } 
+  if             { Identifier "if" }
+  impl           { Identifier "impl" }
+  in             { Identifier "in" }
+  let            { Identifier "let" } 
+  loop           { Identifier "loop" }
+  match          { Identifier "match" } 
+  mod            { Identifier "mod" } 
+  move           { Identifier "move" }
+  mut            { Identifier "mut" } 
+  pub            { Identifier "pub" } 
+  ref            { Identifier "ref" } 
+  return         { Identifier "return" }
+  Self           { Identifier "Self" }
+  self           { Identifier "self" } 
+  static         { Identifier "static" }
+  struct         { Identifier "struct" }
+  super          { Identifier "super" } 
+  trait          { Identifier "trait" } 
+  true           { Identifier "true" }
+  type           { Identifier "type" }
+  unsafe         { Identifier "unsafe" }
+  use            { Identifier "use" } 
+  where          { Identifier "where" } 
+  while          { Identifier "while" } 
   
   -- Keywords reserved for future use
-  abstract   { Tok $$@(Identifier "abstract") }
-  alignof    { Tok $$@(Identifier "alignof") } 
-  become     { Tok $$@(Identifier "become") }
-  do         { Tok $$@(Identifier "do") }
-  final      { Tok $$@(Identifier "final") } 
-  macro      { Tok $$@(Identifier "macro") } 
-  offsetof   { Tok $$@(Identifier "offsetof") }
-  override   { Tok $$@(Identifier "override") }
-  priv       { Tok $$@(Identifier "priv") }
-  proc       { Tok $$@(Identifier "proc") }
-  pure       { Tok $$@(Identifier "pure") }
-  sizeof     { Tok $$@(Identifier "sizeof") }
-  typeof     { Tok $$@(Identifier "typeof") }
-  unsized    { Tok $$@(Identifier "unsized") } 
-  virtual    { Tok $$@(Identifier "virtual") } 
-  yield      { Tok $$@(Identifier "yield") } 
+  abstract       { Identifier "abstract" }
+  alignof        { Identifier "alignof" } 
+  become         { Identifier "become" }
+  do             { Identifier "do" }
+  final          { Identifier "final" } 
+  macro          { Identifier "macro" } 
+  offsetof       { Identifier "offsetof" }
+  override       { Identifier "override" }
+  priv           { Identifier "priv" }
+  proc           { Identifier "proc" }
+  pure           { Identifier "pure" }
+  sizeof         { Identifier "sizeof" }
+  typeof         { Identifier "typeof" }
+  unsized        { Identifier "unsized" } 
+  virtual        { Identifier "virtual" } 
+  yield          { Identifier "yield" } 
 
   -- Weak keywords, have special meaning only in specific contexts.
-  default    { Tok $$@(Identifier "default") } 
-  union      { Tok $$@(Identifier "union") } 
+  default        { Identifier "default" } 
+  union          { Identifier "union" } 
 
   -- Comments
-  outerDoc   { Tok $$@(Spanned (Doc _ OuterDoc) _) }
-  innerDoc   { Tok $$@(Spanned (Doc _ InnerDoc) _) }
+  outerDoc       { Spanned (Doc _ OuterDoc) _ }
+  innerDoc       { Spanned (Doc _ InnerDoc) _ }
 
   -- Identifiers.
-  IDENT      { Tok $$@(Identifier _) }
-  '_'        { Tok $$@(Spanned Underscore _) }
+  IDENT          { Identifier _ }
+  '_'            { Spanned Underscore _ }
 
   -- Lifetimes.
-  LIFETIME   { Tok $$@(Spanned (LifetimeTok _) _) }
+  LIFETIME       { Spanned (LifetimeTok _) _ }
 
   -- Interpolated
-  ntItem         { Tok $$@(Spanned (Interpolated (NtItem _)) _) }
-  ntBlock        { Tok $$@(Spanned (Interpolated (NtBlock _)) _) }
-  ntStmt         { Tok $$@(Spanned (Interpolated (NtStmt _)) _) }
-  ntPat          { Tok $$@(Spanned (Interpolated (NtPat _)) _) }
-  ntExpr         { Tok $$@(Spanned (Interpolated (NtExpr _)) _) }
-  ntTy           { Tok $$@(Spanned (Interpolated (NtTy _)) _) }
-  ntIdent        { Tok $$@(Spanned (Interpolated (NtIdent _)) _) }
-  ntMeta         { Tok $$@(Spanned (Interpolated (NtMeta _)) _) }
-  ntPath         { Tok $$@(Spanned (Interpolated (NtPath _)) _) }
-  ntTT           { Tok $$@(Spanned (Interpolated (NtTT _)) _) }
-  ntArm          { Tok $$@(Spanned (Interpolated (NtArm _)) _) }
-  ntImplItem     { Tok $$@(Spanned (Interpolated (NtImplItem _)) _) }
-  ntTraitItem    { Tok $$@(Spanned (Interpolated (NtTraitItem _)) _) }
-  ntGenerics     { Tok $$@(Spanned (Interpolated (NtGenerics _)) _) }
-  ntWhereClause  { Tok $$@(Spanned (Interpolated (NtWhereClause _)) _) }
-  ntArg          { Tok $$@(Spanned (Interpolated (NtArg _)) _) }
+  ntItem         { Spanned (Interpolated (NtItem _)) _ }
+  ntBlock        { Spanned (Interpolated (NtBlock _)) _ }
+  ntStmt         { Spanned (Interpolated (NtStmt _)) _ }
+  ntPat          { Spanned (Interpolated (NtPat _)) _ }
+  ntExpr         { Spanned (Interpolated (NtExpr _)) _ }
+  ntTy           { Spanned (Interpolated (NtTy _)) _ }
+  ntIdent        { Spanned (Interpolated (NtIdent _)) _ }
+  ntMeta         { Spanned (Interpolated (NtMeta _)) _ }
+  ntPath         { Spanned (Interpolated (NtPath _)) _ }
+  ntTT           { Spanned (Interpolated (NtTT _)) _ }
+  ntArm          { Spanned (Interpolated (NtArm _)) _ }
+  ntImplItem     { Spanned (Interpolated (NtImplItem _)) _ }
+  ntTraitItem    { Spanned (Interpolated (NtTraitItem _)) _ }
+  ntGenerics     { Spanned (Interpolated (NtGenerics _)) _ }
+  ntWhereClause  { Spanned (Interpolated (NtWhereClause _)) _ }
+  ntArg          { Spanned (Interpolated (NtArg _)) _ }
 
 -- 'mut' should be lower precedence than 'IDENT' so that in the pat rule,
 -- "& mut pat" has higher precedence than "binding_mode1 ident [@ pat]"
@@ -229,62 +212,21 @@ import qualified Data.List.NonEmpty as N
 %nonassoc IDENT
 
 
-%left as ':'
-%left '*' '/' '%'
-%left '+' '-'
-%left '<<' '>>'
-%left '&'
-%left '^'
-%left '|'
-%nonassoc '==' '!=' '<' '>' '<=' '>='
-%left '&&'
-%left '||'
-%nonassoc '..' '...'
-%nonassoc '<-'
-%nonassoc '=' '<<=' '>>=' '-=' '&=' '|=' '+=' '*=' '/=' '^=' '%='
+-- %left as ':'
+-- %left '*' '/' '%'
+-- %left '+' '-'
+-- %left '<<' '>>'
+-- %left '&'
+-- %left '^'
+-- %left '|'
+-- %nonassoc '==' '!=' '<' '>' '<=' '>='
+-- %left '&&'
+-- %left '||'
+-- %nonassoc '..' '...'
+-- %nonassoc '<-'
+-- %nonassoc '=' '<<=' '>>=' '-=' '&=' '|=' '+=' '*=' '/=' '^=' '%='
 
 %%
-
-
----------------------
--- Extended tokens --
----------------------
-
--- These tokens have both space and no space versions
-'=' : alt(EQ,EQ_S)                { $1 }
-'<' : alt(LT,LT_S)                { $1 }
-'>' : alt(GT,GT_S)                { $1 }
-'!' : alt(NOT,NOT_S)              { $1 }
-'~' : alt(TILDE,TILDE_S)          { $1 }
-
-'+' : alt(PLUS, PLUS_S)           { $1 }
-'-' : alt(MINUS, MINUS_S)         { $1 }
-'*' : alt(STAR, STAR_S)           { $1 }
-'/' : alt(SLASH, SLASH_S)         { $1 }
-'%' : alt(PERCENT, PERCENT_S)     { $1 }
-'^' : alt(CARET, CARET_S)         { $1 }
-'&' : alt(AMPERSAND, AMPERSAND_S) { $1 }
-'|' : alt(PIPE, PIPE_S)           { $1 }
-
--- All of these have type 'Spanned ()'
---'<<=' : '<' LT EQ      { () <\$ $1 <* $3 }
-'>>=' : '>' GT EQ      { () <\$ $1 <* $3 }
---'-='  : '-' EQ         { () <\$ $1 <* $2 }
---'&='  : '&' EQ         { () <\$ $1 <* $2 }
---'|='  : '|' EQ         { () <\$ $1 <* $2 }
---'+='  : '+' EQ         { () <\$ $1 <* $2 }
---'*='  : '*' EQ         { () <\$ $1 <* $2 }
---'/='  : '/' EQ         { () <\$ $1 <* $2 }
---'^='  : '^' EQ         { () <\$ $1 <* $2 }
---'%='  : '%' EQ         { () <\$ $1 <* $2 }
---'||'  : '|' PIPE       { () <\$ $1 <* $2 }
---'&&'  : '&' AMPERSAND  { () <\$ $1 <* $2 }
---'=='  : '=' EQ         { () <\$ $1 <* $2 }
---'!='  : '!' EQ         { () <\$ $1 <* $2 }
---'<='  : '<' EQ         { () <\$ $1 <* $2 }
-'>='  : '>' EQ         { () <\$ $1 <* $2 }
-'<<'  : '<' LT         { () <\$ $1 <* $2 }
-'>>'  : '>' GT         { () <\$ $1 <* $2 }
 
 -- Unwraps the IdentTok into just an Ident
 ident :: { Spanned Ident }
@@ -324,11 +266,6 @@ sep_by1(p,sep) :: { NonEmpty a }
 sep_by(p,sep) :: { [a] }
   : sep_by1(p,sep)     { toList $1 }
   | {- empty -}        { [] }
-
--- | One or the other, but of the same type
-alt(l,r) :: { a }
-  : l                  { $1 }
-  | r                  { $1 }
 
 
 --------------------------
@@ -522,7 +459,8 @@ trait_ref :: { TraitRef Span }
 
 -- parse_ty()
 ty :: { Ty Span }
-  : alt(no_for_ty,for_ty)            { $1 }
+  : no_for_ty                        { $1 }
+  | for_ty                           { $1 }
 
 no_for_ty :: { Ty Span }
   : '_'                              {% withSpan $1 Infer }
@@ -1132,7 +1070,8 @@ initializer :: { Maybe (Expr Span) }
   | {- empty -}   { Nothing }
 
 block :: { Block Span }
-  : alt(unsafe_block,safe_block)           { $1 }
+  : unsafe_block                          { $1 }
+  | safe_block                            { $1 }
 
 unsafe_block :: { Block Span }
   : unsafe '{' '}'                        {% withSpan $1 (Block [] (UnsafeBlock False)) }

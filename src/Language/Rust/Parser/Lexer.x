@@ -954,11 +954,10 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 
 "||"            { token PipePipe }
 "&&"            { token AmpersandAmpersand }
--- Problematic
--- ">="            { token GreaterEqual }
--- ">>="           { token GreaterGreaterEqual }
--- "<<"            { token LessLess }
--- ">>"            { token GreaterGreater }
+">="            { token GreaterEqual }
+">>="           { token GreaterGreaterEqual }
+"<<"            { token LessLess }
+">>"            { token GreaterGreater }
 
 "=="            { token EqualEqual }
 "!="            { token NotEqual }
@@ -1143,8 +1142,8 @@ lexicalError = do
   fail ("Lexical error: the character " ++ show c ++ " does not fit here")
 
 -- | Signal a syntax error.
-parseError :: TokenSpace Spanned -> P a
-parseError (TokenSpace (Spanned tok _) _) = do
+parseError :: Spanned Token -> P a
+parseError (Spanned tok _)  = do
   fail ("Syntax error: the symbol `" ++ show tok ++ "' does not fit here")
 
 
@@ -1199,20 +1198,17 @@ lexToken = do
         pos' <- getPosition
         return (Spanned tok (Span pos pos'))
 
--- | lexer for one 'TokenSpace' - packages together a token with any space before it
-lexTokenSpace :: P (TokenSpace Spanned)
-lexTokenSpace = go []
-  where
-    go :: [Spanned Token] -> P (TokenSpace Spanned)
-    go spaces = do
-      sTok <- lexToken
-      case unspan sTok of
-        Space{} -> go (sTok : spaces)
-        _ -> pure (TokenSpace sTok spaces)
+-- | lexer for a non-whitespace token
+lexNonSpace :: P (Spanned Token)
+lexNonSpace = do
+  tok <- lexToken
+  case tok of
+    Spanned Space{} _ -> lexNonSpace
+    _ -> pure tok
 
 -- | lexer for a token, in a form useful for Happy
-lexRust :: ((TokenSpace Spanned) -> P a) -> P a
-lexRust = (lexTokenSpace >>=)
+lexRust :: ((Spanned Token) -> P a) -> P a
+lexRust = (lexNonSpace >>=)
 
 -- | continues to lex tokens up to (and not including) the EOF (not supposed
 -- to be efficient)

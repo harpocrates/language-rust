@@ -14,18 +14,6 @@ import Control.Monad.Trans.Except
 pattern Identifier :: String -> Spanned Token
 pattern Identifier s <- (Spanned (IdentTok (Ident (Name s) _)) _)
 
--- | Pattern for tokens preceded by space
-pattern SpTok :: Spanned Token -> TokenSpace Spanned
-pattern SpTok s <- (TokenSpace s (_:_))
-
--- | Pattern for tokens not preceded by space
-pattern NoSpTok :: Spanned Token -> TokenSpace Spanned
-pattern NoSpTok s <- (TokenSpace s [])
-
--- | Pattern for tokens (preceded or not by space)
-pattern Tok :: Spanned Token -> TokenSpace Spanned
-pattern Tok s <- (TokenSpace s _)
-
 -- | the result of running a parser
 data ParseResult a
   = Ok a !PState             -- ^ successful output
