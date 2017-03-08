@@ -35,6 +35,8 @@ data ParseResult a
 data PState = PState {
     curPos     :: !Position,       -- position at current input location
     curInput   :: !InputStream,    -- the current input
+    prevPos    ::  Position,       -- position at previous input location
+    prevInput  ::  InputStream,    -- the previous input
     prevToken  ::  Token,          -- the previous token
     savedToken ::  Token           -- and the token before that
  }
@@ -74,8 +76,22 @@ execParser (P parser) input pos =
   where initialState = PState
           { curPos = pos
           , curInput = input
+          , prevPos = error "ParseMonad.execParser: No previous position!"
+          , prevInput = error "ParseMonad.execParser: No previous input!"
           , prevToken = error "ParseMonad.execParser: Touched undefined token!"
           , savedToken = error "ParseMonad.execParser: Touched undefined token (saved token)!"
+          }
+
+-- | take back a token (note you can't call this two times in a row)
+pushBackLastToken :: P ()
+pushBackLastToken = P (Ok () . pushBack)
+  where pushBack s@PState{ prevPos = p, prevInput = i, savedToken = t } =
+         s{ curPos = p
+          , curInput = i
+          , prevPos = error "ParseMonad.pushBackLastToken: No previous position!"
+          , prevInput = error "ParseMonad.pushBackLastToken: No previous input!"
+          , prevToken = t
+          , savedToken = error "ParseMonad.pushBackLastToken: Touched undefined token (saved token)!"
           }
 
 -- | update the position of the parser
