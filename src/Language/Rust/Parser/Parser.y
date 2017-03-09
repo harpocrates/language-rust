@@ -1,6 +1,6 @@
 {
 module Language.Rust.Parser.Parser (
-  attributeP, typeP, literalP, patternP, expressionP
+  attributeP, typeP, literalP, patternP, expressionP, stmtP, itemP
 ) where
 
 import Language.Rust.Data.InputStream
@@ -31,6 +31,7 @@ import qualified Data.List.NonEmpty as N
 %name patternP pat
 %name stmtP stmt
 %name expressionP expr
+%name itemP item
 
 %tokentype { Spanned Token }
 
@@ -715,8 +716,6 @@ lit_expr :: { Expr Span }
 expr          :: { Expr Span }
               : gen_expr                                        { $1 }
               | binary0_expr                                    { $1 }
-              | block_expr                                      { $1 }
-              | struct_expr                                     { $1 }
               | lambda_expr                                     { $1 }
 binary0_expr  :: { Expr Span }
               : gen_binary0_expr(binary1_expr,binary0_expr)     { $1 }
@@ -763,13 +762,14 @@ prefix_expr   :: { Expr Span }
 postfix_expr  :: { Expr Span }
               : gen_postfix_expr(postfix_expr)                  { $1 } 
               | paren_expr                                      { $1 }
+              | struct_expr                                     { $1 }
+              | block_expr                                      { $1 }
 
 
 -- General expressions, but no structs
 nostruct_expr    :: { Expr Span }
                  : gen_expr                                              { $1 }
                  | ns_binary0_expr                                       { $1 }
-                 | block_expr                                            { $1 }
                  | lambda_expr_nostruct                                  { $1 }
 ns_binary0_expr  :: { Expr Span }
                  : gen_binary0_expr(ns_binary1_expr,ns_binary0_expr)     { $1 }
@@ -816,13 +816,13 @@ ns_prefix_expr   :: { Expr Span }
 ns_postfix_expr  :: { Expr Span }
                  : gen_postfix_expr(ns_postfix_expr)                     { $1 } 
                  | paren_expr                                            { $1 }
+                 | block_expr                                            { $1 }
 
 
 -- General expressions, but no blocks on the left
 nonblock_expr    :: { Expr Span }
                  : gen_expr                                              { $1 }
                  | nb_binary0_expr                                       { $1 }
-                 | struct_expr                                           { $1 }
                  | lambda_expr_nostruct                                  { $1 }
 nb_binary0_expr  :: { Expr Span }
                  : gen_binary0_expr(nb_binary1_expr,binary0_expr)        { $1 }
@@ -869,6 +869,7 @@ nb_prefix_expr   :: { Expr Span }
 nb_postfix_expr  :: { Expr Span }
                  : gen_postfix_expr(nb_postfix_expr)                     { $1 }
                  | paren_expr                                            { $1 }
+                 | struct_expr                                           { $1 }
 
 
 
@@ -1086,12 +1087,13 @@ args :: { [Arg Span] }
 
 -- TODO: consider attributes
 stmt :: { Stmt Span }
-  : let pat ':' ty '=' initializer ';'   {% withSpan $1 (Local $2 (Just $4) $6 []) }
-  | let pat '=' initializer ';'          {% withSpan $1 (Local $2 Nothing $4 []) } 
+  : let pat ':' ty initializer ';'       {% withSpan $1 (Local $2 (Just $4) $5 []) }
+  | let pat initializer ';'              {% withSpan $1 (Local $2 Nothing $3 []) } 
   | nonblock_expr ';'                    {% withSpan $1 (Semi $1) }
   | block_expr                           {% withSpan $1 (NoSemi $1) }
---  | expr_doesnt_need_semi                {% withSpan $1 (NoSemi $1) }
---  | ';'                                  
+  | stmt_item                            {% withSpan $1 (ItemStmt $1) }
+  | pub stmt_item                        {% withSpan $1 (ItemStmt (let Item i a n _ s = $2 in Item i a n PublicV s)) }
+ -- | ';'                                  {%  
 
 -- List of statements where the last statement might be a no-semicolon statement.
 stmts_possibly_no_semi :: { [Stmt Span] }
@@ -1119,6 +1121,13 @@ safe_block :: { Block Span }
 -- Items --
 -----------
 
+item :: { Item Span }
+  : vis stmt_item                                {% let Item i a n _ _ = $2 in withSpan $1 (Item i a n (unspan $1)) }
+  | expr_path '!' '[' many(token_tree) ']' ';'   {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
+  | expr_path '!' '(' many(token_tree) ')' ';'   {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
+  | expr_path '!' '{' many(token_tree) '}'       {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
+
+
 foreign_item :: { ForeignItem Span }
   : vis static ident ':' ty ';'
       {% withSpan $1 (ForeignItem (unspan $3) [] (ForeignStatic $5 False) (unspan $1)) }
@@ -1141,6 +1150,50 @@ ty_param :: { TyParam Span }
   | ident ':' sep_by1(ty_param_bound_mod,'+')         {% withSpan $1 (TyParam [] (unspan $1) (toList $3) Nothing) }
   | ident                                     '=' ty  {% withSpan $1 (TyParam [] (unspan $1) [] (Just $>)) }
   | ident ':' sep_by1(ty_param_bound_mod,'+') '=' ty  {% withSpan $1 (TyParam [] (unspan $1) (toList $3) (Just $>)) }
+
+
+stmt_item :: { Item Span }
+  : static ident ':' ty '=' expr ';'                     {% withSpan $1 (Item (unspan $2) [] (Static $4 Immutable $6) InheritedV) }
+  | static mut ident ':' ty '=' expr ';'                 {% withSpan $1 (Item (unspan $3) [] (Static $5 Mutable $7) InheritedV) }
+  | const ident ':' ty '=' expr ';'                      {% withSpan $1 (Item (unspan $2) [] (ConstItem $4 $6) InheritedV) }
+  | type ident generics where_clause '=' ty_sum ';'      {% withSpan $1 (Item (unspan $2) [] (TyAlias $6 $3{ whereClause = $4 }) InheritedV) }
+-- | USE view_path ';'
+  | extern crate ident ';'                               {% withSpan $1 (Item (unspan $3) [] (ExternCrate Nothing) InheritedV) } 
+  | extern crate ident as ident ';'                      {% withSpan $1 (Item (unspan $3) [] (ExternCrate (Just (unspan $5))) InheritedV) } 
+  | fn_front_matter fn ident generics fn_decl where_clause safe_block
+      {% let (c,u,a) = $1 in withSpan $2 (Item (unspan $3) [] (Fn $5 u c a $4{ whereClause = $6 } $7) InheritedV) }
+  | mod ident ';'                                        {% withSpan $1 (Item (unspan $2) [] (Mod []) InheritedV) }
+--  | mod ident '{' many(mod_item) '}'                     {% withSpan $1 (Item (unspan $2) [] (Mod $4) InheritedV) }
+--  | extern abi '{' many(foreign_item) '}'                {% withSpan $1 (Item (mkIdent "") [] (ForeignMod $2 $4) InheritedV) }
+  | struct ident generics where_clause struct_decl_args  {% withSpan $1 (Item (unspan $2) [] (StructItem $5 $3{ whereClause = $4 }) InheritedV) }
+  | union ident generics where_clause struct_decl_args   {% withSpan $1 (Item (unspan $2) [] (Union $5 $3{ whereClause = $4 }) InheritedV) }
+  | enum ident generics where_clause enum_defs           {% withSpan $1 (Item (unspan $2) [] (Enum $5 $3{ whereClause = $4 }) InheritedV) }
+-- | item_trait
+-- | item_impl
+
+struct_decl_args :: { VariantData Span }
+  : ';'                                                {% withSpan $1 (StructD []) }
+  | '{' '}'                                            {% withSpan $1 (StructD []) }
+  | '{' sep_by1(struct_decl_field,',') '}'             {% withSpan $1 (StructD (toList $2)) }
+  | '{' sep_by1(struct_decl_field,',') ',' '}'         {% withSpan $1 (StructD (toList $2)) }
+
+struct_decl_field :: { StructField Span }
+  : vis ident ':' ty_sum                               {% withSpan $1 (StructField (Just (unspan $2)) (unspan $1) $4 []) }
+
+enum_defs :: { [Variant Span] }
+  : '{' '}'                                            { [] }
+  | '{' sep_by1(enum_def,',')     '}'                  { toList $2 }
+  | '{' sep_by1(enum_def,',') ',' '}'                  { toList $2 }
+
+enum_def :: { Variant Span }
+  : ident '{' '}'                                       {% withSpan $1 (Variant (unspan $1) [] (StructD [] mempty) Nothing) }
+  | ident '{' sep_by1(struct_decl_field,',') '}'        {% withSpan $1 (Variant (unspan $1) [] (StructD (toList $3) mempty) Nothing) }
+  | ident '{' sep_by1(struct_decl_field,',') ',' '}'    {% withSpan $1 (Variant (unspan $1) [] (StructD (toList $3) mempty) Nothing) }
+  | ident '(' ')'                                       {% withSpan $1 (Variant (unspan $1) [] (TupleD [] mempty) Nothing) }
+  | ident '(' sep_by1(ty_sum,',') ')'                   {% withSpan $1 (Variant (unspan $1) [] (TupleD (toList $3) mempty) Nothing) }
+  | ident '(' sep_by1(ty_sum,',') ',' ')'               {% withSpan $1 (Variant (unspan $1) [] (TupleD (toList $3) mempty) Nothing) }
+  | ident '=' expr                                      {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) (Just $3)) }
+  | ident                                               {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) Nothing) }
 
 
 -- parse_where_clause
@@ -1228,24 +1281,24 @@ token_tree :: { TokenTree }
   | '^'        { Token mempty (unspan $1) }
   | '&'        { Token mempty (unspan $1) }
   | '|'        { Token mempty (unspan $1) }
-{-  | '<<='    {  }
-  | '>>='      {  }
-  | '-='       {  }
-  | '&='       {  }
-  | '|='       {  }
-  | '+='       {  }
-  | '*='       {  }
-  | '/='       {  }
-  | '^='       {  }
-  | '%='       {  }
-  | '||'       {  }
-  | '&&'       {  }
-  | '=='       {  }
-  | '!='       {  }
-  | '<='       {  }
-  | '>='       {  }
-  | '<<'       {  }
-  | '>>'       {  } -}
+  | '<<='      { Token mempty (unspan $1) }
+  | '>>='      { Token mempty (unspan $1) }
+  | '-='       { Token mempty (unspan $1) }
+  | '&='       { Token mempty (unspan $1) }
+  | '|='       { Token mempty (unspan $1) }
+  | '+='       { Token mempty (unspan $1) }
+  | '*='       { Token mempty (unspan $1) }
+  | '/='       { Token mempty (unspan $1) }
+  | '^='       { Token mempty (unspan $1) }
+  | '%='       { Token mempty (unspan $1) }
+  | '||'       { Token mempty (unspan $1) }
+  | '&&'       { Token mempty (unspan $1) }
+  | '=='       { Token mempty (unspan $1) }
+  | '!='       { Token mempty (unspan $1) }
+  | '<='       { Token mempty (unspan $1) }
+  | '>='       { Token mempty (unspan $1) }
+  | '<<'       { Token mempty (unspan $1) }
+  | '>>'       { Token mempty (unspan $1) }
   -- Structural symbols.
   | '@'        { Token mempty (unspan $1) } 
   | '...'      { Token mempty (unspan $1) } 
