@@ -337,21 +337,42 @@ unsuffixed :: { Lit Span }
 
 -- parse_qualified_path(PathStyle::Type)
 -- qual_path :: Spanned (NonEmpty (Ident, PathParameters Span)) -> P (Spanned (QSelf Span, Path Span))
-qual_path(segs)
-  : '<' ty_sum '>' '::' segs            {% withSpan $1 (Spanned (QSelf $2 0, Path False (unspan $5) (posOf $5))) }
-  | '<' ty_sum as ty_path '>' '::' segs {% let segs = segments $4 <> unspan $7
-                                           in withSpan $1 (Spanned (QSelf $2 (length (segments $4)), $4{ segments = segs })) }
+qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
+  : '<' qual_path_suf(segs)                                                        { $2 }
+  | '<<' ty_qual_path_suf as ty_path '>' '::' segs                                 {%
+      let segs = segments $4 <> unspan $7
+      in withSpan $1 (Spanned (QSelf $2 (length (segments $4)), $4{ segments = segs }))
+    }
 
--- parse_generic_values_after_lt()
+-- Basically a qualified path, but ignoring the very first '>' token
+qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
+  : ty_sum '>' '::' segs                {% withSpan $1 (Spanned (QSelf $1 0, Path False (unspan $4) (posOf $4))) }
+  | ty_sum as ty_path '>' '::' segs     {%
+      let segs = segments $3 <> unspan $6
+      in withSpan $1 (Spanned (QSelf $1 (length (segments $3)), $3{ segments = segs }))
+    }
+
+-- Usually qual_path_suf is for... type paths! (Since it deals with annoying '<<', like generic_values below!
+ty_qual_path_suf :: { Ty Span }
+  : qual_path_suf(path_segments_without_colons)
+     {% let (qself,path) = unspan $1 in withSpan $1 (PathTy (Just qself) path) }
+  | qual_path_suf(path_segments_without_colons) '+' sep_by1(ty_param_bound,'+')
+     {% let (qself,path) = unspan $1 in withSpan $1 (ObjectSum (PathTy (Just qself) path mempty) (toList $3)) }
+
+-- parse_generic_values_after_lt() but with the '<' '>'
 generic_values :: { ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
-  : sep_by1(lifetime,',') ',' sep_by1(ty_sum,',') ',' sep_by1(binding,',')  { (toList $1, toList $3, toList $5) }
-  | sep_by1(lifetime,',') ',' sep_by1(ty_sum,',')                           { (toList $1, toList $3, []) }
-  | sep_by1(lifetime,',') ','                         sep_by1(binding,',')  { (toList $1, [],        toList $3) }
-  | sep_by1(lifetime,',')                                                   { (toList $1, [],        []) }
-  |                           sep_by1(ty_sum,',') ',' sep_by1(binding,',')  { ([],        toList $1, toList $3) }
-  |                           sep_by1(ty_sum,',')                           { ([],        toList $1, []) }
-  |                                                   sep_by1(binding,',')  { ([],        [],        toList $1) }
-  |                                                                         { ([],        [],        []) }
+  : '<' sep_by1(lifetime,',') ',' sep_by1(ty_sum,',') ',' sep_by1(binding,',') '>' { (toList $2, toList $4, toList $6) }
+  | '<' sep_by1(lifetime,',') ',' sep_by1(ty_sum,',')                          '>' { (toList $2, toList $4, []) }
+  | '<' sep_by1(lifetime,',') ','                         sep_by1(binding,',') '>' { (toList $2, [],        toList $4) }
+  | '<' sep_by1(lifetime,',')                                                  '>' { (toList $2, [],        []) }
+  | '<'                           sep_by1(ty_sum,',') ',' sep_by1(binding,',') '>' { ([],        toList $2, toList $4) }
+  | '<'                           sep_by1(ty_sum,',')                          '>' { ([],        toList $2, []) }
+  | '<'                                                   sep_by1(binding,',') '>' { ([],        [],        toList $2) }
+  | '<'                                                                        '>' { ([],        [],        []) }
+  | '<<' ty_qual_path_suf     ',' sep_by1(ty_sum,',') ',' sep_by1(binding,',') '>' { ([],   $2 : toList $4, toList $6) }      
+  | '<<' ty_qual_path_suf     ',' sep_by1(ty_sum,',')                          '>' { ([],   $2 : toList $4, []) }
+  | '<<' ty_qual_path_suf                             ',' sep_by1(binding,',') '>' { ([],        [$2],      toList $4) }
+  | '<<' ty_qual_path_suf                                                      '>' { ([],        [$2],      []) }
 
 binding : ident '=' ty                             { (unspan $1, $3) }
 
@@ -378,7 +399,7 @@ path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
      }
 
 path_parameter1 :: { PathParameters Span }
-  : '<' generic_values '>'                    {% let (lts, tys, bds) = $2 in withSpan $1 (AngleBracketed lts tys bds) }
+  : generic_values                            { let (lts, tys, bds) = $1 in (AngleBracketed lts tys bds mempty) }
   | '(' sep_by(ty_sum,',') ')'                {% withSpan $1 (Parenthesized $2 Nothing) }
   | '(' sep_by1(ty_sum,',') ',' ')'           {% withSpan $1 (Parenthesized (toList $2) Nothing) }
   | '(' sep_by(ty_sum,',') ')' '->' ty        {% withSpan $1 (Parenthesized $2 (Just $>)) }
@@ -396,15 +417,15 @@ expr_path :: { Path Span }
 -- TODO: this duplicates a bunch of stuff
 -- TODO: abstract function to make path out into code block at bottom of file
 complex_expr_path :: { Path Span }
-  : ident '::' '<' generic_values '>'                                       
+  : ident '::' generic_values                                      
       {% if isPathSegmentIdent $1
-           then let (lts, tys, bds) = $4
+           then let (lts, tys, bds) = $3
                 in withSpan $1 (Path False (fromList [(unspan $1, AngleBracketed lts tys bds mempty)]))
            else fail "invalid path segment in expression path" }
   | ident '::' path_segments_with_colons                              
       {% withSpan $1 (Path False ((unspan $1, NoParameters mempty) <| unspan $3)) }
-  | ident '::' '<' generic_values '>' '::' path_segments_with_colons
-      {% let (lts, tys, bds) = $4 in withSpan $1 (Path False ((unspan $1, AngleBracketed lts tys bds mempty) <| unspan $7)) }
+  | ident '::' generic_values '::' path_segments_with_colons
+      {% let (lts, tys, bds) = $3 in withSpan $1 (Path False ((unspan $1, AngleBracketed lts tys bds mempty) <| unspan $5)) }
   | '::' path_segments_with_colons                                          {% withSpan $1 (Path True (unspan $2)) }
 
 expr_qual_path :: { Spanned (QSelf Span, Path Span) }
@@ -421,7 +442,7 @@ path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
     }
   
 path_parameter2 :: { Either ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) Ident }
-  : '<' generic_values '>' { Left $2 }
+  : generic_values         { Left $1 }
   | ident                  { Right (unspan $1) }
 
 
@@ -517,7 +538,8 @@ for_ty :: { Ty Span }
 ty_sum :: { Ty Span }
   : ty                                   { $1 }
   | ty '+' sep_by1(ty_param_bound,'+')   {% withSpan $1 (ObjectSum $1 (toList $3)) }
- 
+
+
 fn_decl :: { FnDecl Span }
   : fn '(' sep_by1(arg_general,',') ',' '...' ')' ret_ty  {% withSpan $1 (FnDecl (toList $3) $> True) }
   | fn '(' sep_by1(arg_general,',') ',' ')' ret_ty        {% withSpan $1 (FnDecl (toList $3) $> False) }
