@@ -7,6 +7,7 @@ import Language.Rust.Data.Position
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
+import Data.Maybe (listToMaybe)
 import Control.Monad
 import Control.Monad.Trans.Except
 
@@ -21,12 +22,11 @@ data ParseResult a
 
 -- | state that the parser passes along
 data PState = PState {
-    curPos     :: !Position,       -- position at current input location
-    curInput   :: !InputStream,    -- the current input
-    prevPos    ::  Position,       -- position at previous input location
-    prevInput  ::  InputStream,    -- the previous input
-    prevToken  ::  Token,          -- the previous token
-    savedToken ::  Token           -- and the token before that
+    curPos       :: !Position,             -- position at current input location
+    curInput     :: !InputStream,          -- the current input
+    prevToken    ::  Token,                -- the previous token
+    savedToken   ::  Token,                -- and the token before that
+    pushedTokens :: [Spanned Token]        -- possible user-pushed tokens
  }
 
 -- | parsing monad
@@ -64,23 +64,18 @@ execParser (P parser) input pos =
   where initialState = PState
           { curPos = pos
           , curInput = input
-          , prevPos = error "ParseMonad.execParser: No previous position!"
-          , prevInput = error "ParseMonad.execParser: No previous input!"
           , prevToken = error "ParseMonad.execParser: Touched undefined token!"
           , savedToken = error "ParseMonad.execParser: Touched undefined token (saved token)!"
+          , pushedTokens = []
           }
 
--- | take back a token (note you can't call this two times in a row)
-pushBackLastToken :: P ()
-pushBackLastToken = P (Ok () . pushBack)
-  where pushBack s@PState{ prevPos = p, prevInput = i, savedToken = t } =
-         s{ curPos = p
-          , curInput = i
-          , prevPos = error "ParseMonad.pushBackLastToken: No previous position!"
-          , prevInput = error "ParseMonad.pushBackLastToken: No previous input!"
-          , prevToken = t
-          , savedToken = error "ParseMonad.pushBackLastToken: Touched undefined token (saved token)!"
-          }
+-- | manually push on a token
+pushToken :: Spanned Token -> P ()
+pushToken tok = P $ \s@PState{ pushedTokens = toks } -> Ok () s{ pushedTokens = tok : toks }
+
+-- | pop a token (if there is one to pop, otherwise returns Nothing) 
+popToken :: P (Maybe (Spanned Token))
+popToken = P $ \s@PState{ pushedTokens = toks } -> Ok (listToMaybe toks) s{ pushedTokens = drop 1 toks }
 
 -- | update the position of the parser
 updatePosition :: (Position -> Position) -> P ()

@@ -32,9 +32,6 @@ data LitTok
   | ByteStrRawTok Name Int -- ^ raw byte str delimited by n hash symbols
   deriving (Eq, Show)
 
--- Represents a token bundled with preceding space tokens (if any)
-data TokenSpace s = TokenSpace { getToken :: s Token, getSpace :: [s Token] }
-
 
 -- Based loosely on <https://docs.serde.rs/syntex_syntax/parse/token/enum.Token.html>
 -- Inlined https://docs.serde.rs/syntex_syntax/parse/token/enum.BinOpToken.html

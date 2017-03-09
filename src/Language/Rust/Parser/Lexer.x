@@ -1,5 +1,5 @@
 {
-module Language.Rust.Parser.Lexer (lexToken, lexTokens, lexRust, lexicalError, parseError) where
+module Language.Rust.Parser.Lexer (lexToken, lexNonSpace, lexTokens, lexicalError, parseError) where
 
 import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position
@@ -12,6 +12,7 @@ import Data.Char (chr)
 
 -- Things to review:
 --   * improved error messages
+--   * spans being ignored with mempty
 --   * shebang
 
 -- Based heavily on:
@@ -1186,17 +1187,21 @@ alexMove pos _    = incPos pos 1
 -- | lexer for one token
 lexToken :: P (Spanned Token)
 lexToken = do
-  (pos,inp) <- getAlexInput
-  case alexScan (pos, inp) 0 of
-    AlexEOF        -> handleEofToken *> pure (Spanned Eof (Span pos pos))
-    AlexError _    -> fail "lexical error"
-    AlexSkip  ai _ -> setAlexInput ai *> lexToken
-    AlexToken ai len action -> do
-        setAlexInput ai
-        tok <- action (takeChars len inp)
-        setLastToken tok
-        pos' <- getPosition
-        return (Spanned tok (Span pos pos'))
+  tok_maybe <- popToken
+  case tok_maybe of
+    Just tok -> pure tok
+    Nothing -> do
+      (pos,inp) <- getAlexInput
+      case alexScan (pos, inp) 0 of
+        AlexEOF        -> handleEofToken *> pure (Spanned Eof (Span pos pos))
+        AlexError _    -> fail "lexical error"
+        AlexSkip  ai _ -> setAlexInput ai *> lexToken
+        AlexToken ai len action -> do
+            setAlexInput ai
+            tok <- action (takeChars len inp)
+            setLastToken tok
+            pos' <- getPosition
+            return (Spanned tok (Span pos pos'))
 
 -- | lexer for a non-whitespace token
 lexNonSpace :: P (Spanned Token)
@@ -1205,10 +1210,6 @@ lexNonSpace = do
   case tok of
     Spanned Space{} _ -> lexNonSpace
     _ -> pure tok
-
--- | lexer for a token, in a form useful for Happy
-lexRust :: ((Spanned Token) -> P a) -> P a
-lexRust = (lexNonSpace >>=)
 
 -- | continues to lex tokens up to (and not including) the EOF (not supposed
 -- to be efficient)

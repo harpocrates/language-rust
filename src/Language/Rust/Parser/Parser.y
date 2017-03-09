@@ -36,7 +36,7 @@ import qualified Data.List.NonEmpty as N
 
 %monad { P } { >>= } { return }
 %error { parseError }
-%lexer { lexRust } { Spanned Eof _ }
+%lexer { lexNonSpace >>= } { Spanned Eof _ }
 
 -- Conflicts caused in
 --  * sep_by1(segment,'::') parts of paths
@@ -230,8 +230,20 @@ import qualified Data.List.NonEmpty as N
 
 -- Unwraps the IdentTok into just an Ident
 ident :: { Spanned Ident }
-ident : IDENT                         { let Spanned (IdentTok i) s = $1 in Spanned i s }
+  : IDENT                         { let Spanned (IdentTok i) s = $1 in Spanned i s }
 
+-- This should precede any '>' token which could be absorbed in a '>>', '>=', or '>>=' token. Its
+-- purpose is to check if the lookahead token starts with '>' but contains more that. If that is
+-- the case, it pushes two tokens, the first of which is '>'. We exploit the %% feature of threaded
+-- lexers to discard what would have been the troublesome '>>', '>=', or '>>=' token.
+gt :: { () }
+  : {- empty -}   {%% \(Spanned tok s) ->
+      case tok of
+        GreaterGreater      -> pushToken (Spanned Greater s)      *> pushToken (Spanned Greater s)
+        GreaterEqual        -> pushToken (Spanned Equal s)        *> pushToken (Spanned Greater s)
+        GreaterGreaterEqual -> pushToken (Spanned GreaterEqual s) *> pushToken (Spanned Greater s)
+        _                   -> pushToken (Spanned tok s)
+    }
 
 -------------
 -- Utility --
@@ -361,18 +373,18 @@ ty_qual_path_suf :: { Ty Span }
 
 -- parse_generic_values_after_lt() but with the '<' '>'
 generic_values :: { ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
-  : '<' sep_by1(lifetime,',') ',' sep_by1(ty_sum,',') ',' sep_by1(binding,',') '>' { (toList $2, toList $4, toList $6) }
-  | '<' sep_by1(lifetime,',') ',' sep_by1(ty_sum,',')                          '>' { (toList $2, toList $4, []) }
-  | '<' sep_by1(lifetime,',') ','                         sep_by1(binding,',') '>' { (toList $2, [],        toList $4) }
-  | '<' sep_by1(lifetime,',')                                                  '>' { (toList $2, [],        []) }
-  | '<'                           sep_by1(ty_sum,',') ',' sep_by1(binding,',') '>' { ([],        toList $2, toList $4) }
-  | '<'                           sep_by1(ty_sum,',')                          '>' { ([],        toList $2, []) }
-  | '<'                                                   sep_by1(binding,',') '>' { ([],        [],        toList $2) }
-  | '<'                                                                        '>' { ([],        [],        []) }
-  | '<<' ty_qual_path_suf     ',' sep_by1(ty_sum,',') ',' sep_by1(binding,',') '>' { ([],   $2 : toList $4, toList $6) }      
-  | '<<' ty_qual_path_suf     ',' sep_by1(ty_sum,',')                          '>' { ([],   $2 : toList $4, []) }
-  | '<<' ty_qual_path_suf                             ',' sep_by1(binding,',') '>' { ([],        [$2],      toList $4) }
-  | '<<' ty_qual_path_suf                                                      '>' { ([],        [$2],      []) }
+  : '<' sep_by1(lifetime,',') ',' sep_by1(ty_sum,',') ',' sep_by1(binding,',') gt '>' { (toList $2, toList $4, toList $6) }
+  | '<' sep_by1(lifetime,',') ',' sep_by1(ty_sum,',')                          gt '>' { (toList $2, toList $4, []) }
+  | '<' sep_by1(lifetime,',') ','                         sep_by1(binding,',') gt '>' { (toList $2, [],        toList $4) }
+  | '<' sep_by1(lifetime,',')                                                  gt '>' { (toList $2, [],        []) }
+  | '<'                           sep_by1(ty_sum,',') ',' sep_by1(binding,',') gt '>' { ([],        toList $2, toList $4) }
+  | '<'                           sep_by1(ty_sum,',')                          gt '>' { ([],        toList $2, []) }
+  | '<'                                                   sep_by1(binding,',') gt '>' { ([],        [],        toList $2) }
+  | '<'                                                                        gt '>' { ([],        [],        []) }
+  | '<<' ty_qual_path_suf     ',' sep_by1(ty_sum,',') ',' sep_by1(binding,',') gt '>' { ([],   $2 : toList $4, toList $6) }      
+  | '<<' ty_qual_path_suf     ',' sep_by1(ty_sum,',')                          gt '>' { ([],   $2 : toList $4, []) }
+  | '<<' ty_qual_path_suf                             ',' sep_by1(binding,',') gt '>' { ([],        [$2],      toList $4) }
+  | '<<' ty_qual_path_suf                                                      gt '>' { ([],        [$2],      []) }
 
 binding : ident '=' ty                             { (unspan $1, $3) }
 
@@ -1118,11 +1130,11 @@ foreign_item :: { ForeignItem Span }
 -- parse_generics
 -- Leaves the WhereClause empty
 generics :: { Generics Span }
-  : {- empty -}                                                 { Generics [] [] (WhereClause [] mempty) mempty }
-  | '<' sep_by1(lifetime_def,',') ',' sep_by1(ty_param,',') '>' {% withSpan $1 (Generics (toList $2) (toList $4) (WhereClause [] mempty)) }
-  | '<' sep_by1(lifetime_def,',')                           '>' {% withSpan $1 (Generics (toList $2) []          (WhereClause [] mempty)) }
-  | '<'                               sep_by1(ty_param,',') '>' {% withSpan $1 (Generics []          (toList $2) (WhereClause [] mempty)) }
-  | '<'                                                     '>' {% withSpan $1 (Generics []          []          (WhereClause [] mempty)) }
+  : {- empty -}                                                    { Generics [] [] (WhereClause [] mempty) mempty }
+  | '<' sep_by1(lifetime_def,',') ',' sep_by1(ty_param,',') gt '>' {% withSpan $1 (Generics (toList $2) (toList $4) (WhereClause [] mempty)) }
+  | '<' sep_by1(lifetime_def,',')                           gt '>' {% withSpan $1 (Generics (toList $2) []          (WhereClause [] mempty)) }
+  | '<'                               sep_by1(ty_param,',') gt '>' {% withSpan $1 (Generics []          (toList $2) (WhereClause [] mempty)) }
+  | '<'                                                     gt '>' {% withSpan $1 (Generics []          []          (WhereClause [] mempty)) }
 
 ty_param :: { TyParam Span }
   : ident                                             {% withSpan $1 (TyParam [] (unspan $1) [] Nothing) }

@@ -1,9 +1,6 @@
-{-# LANGUAGE KindSignatures #-}
-
 module Language.Rust.Syntax.Token where
 
 data LitTok
-data TokenSpace (s :: * -> *)
 
 data Token
 instance Eq Token
