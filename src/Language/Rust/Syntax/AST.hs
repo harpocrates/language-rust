@@ -31,12 +31,17 @@ data Abi
 
 -- | An argument in a function header like `bar: usize` as in `fn foo(bar: usize)`
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Arg.html
+-- Inlined SelfKind and ExplicitSelf
 data Arg a
   = Arg
       { pat :: Maybe (Pat a)
       , ty :: Ty a
       , nodeInfo :: a
-      } deriving (Eq, Show, Functor)
+      }
+  | SelfValue Mutability a                         -- ^ `self`, `mut self`
+  | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ `&'lt self`, `&'lt mut self`
+  | SelfExplicit (Ty a) Mutability a               -- ^ `self: TYPE`, `mut self: TYPE`
+  deriving (Eq, Show, Functor)
 
 -- | An arm of a 'match'. E.g. `0...10 => { println!("match!") }` as in `match n { 0...10 => { println!("match!") }, /* .. */ }
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Arm.html
@@ -288,6 +293,9 @@ data Generics a
       , whereClause :: WhereClause a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+pattern NoGenerics :: a -> a -> Generics a
+pattern NoGenerics x y = Generics [] [] (WhereClause [] x) y
 
 -- https://docs.serde.rs/syntex_syntax/ast/struct.ImplItem.html
 data ImplItem a
@@ -824,7 +832,6 @@ data Ty a
   | Typeof (Expr a) a
   -- | TyKind::Infer means the type should be inferred instead of it having been specified. This can appear anywhere in a type.
   | Infer a
-  -- | Inferred type of a self or &self argument in a method.
   | ImplicitSelf a
   | MacTy (Mac a) a
   deriving (Eq, Functor, Show)
@@ -847,7 +854,7 @@ data TyParamBound a
   | RegionTyParamBound (Lifetime a)
   deriving (Eq, Functor, Show)
 
--- | Parition a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and 'RegionTyParamBound' variants.
+-- | Partion a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and 'RegionTyParamBound' variants.
 partitionTyParamBounds :: [TyParamBound a] -> ([TyParamBound a], [TyParamBound a])
 partitionTyParamBounds [] = ([],[])
 partitionTyParamBounds (tpb@TraitTyParamBound{} : ts) = let ~(tpbs,rpbs) = partitionTyParamBounds ts in (tpb:tpbs,rpbs)

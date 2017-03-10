@@ -16,7 +16,12 @@ instance Located (Spanned a) where
 instance Located a => Located [a] where
   posOf = foldMap posOf
 
-instance Located a => Located (Arg a) where posOf (Arg _ _ s) = posOf s
+instance Located a => Located (Arg a) where
+  posOf (Arg _ _ s) = posOf s
+  posOf (SelfValue _ s) = posOf s
+  posOf (SelfRegion _ _ s) = posOf s
+  posOf (SelfExplicit _ _ s) = posOf s
+
 instance Located a => Located (Arm a) where posOf (Arm _ _ _ _ s) = posOf s
 instance Located a => Located (Attribute a) where posOf (Attribute _ _ _ s) = posOf s
 instance Located a => Located (Block a) where posOf (Block _ _ s) = posOf s

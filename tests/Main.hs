@@ -9,4 +9,4 @@ import PrettyTest (prettySuite)
 import Test.Framework (Test, defaultMain)
 
 main :: IO ()
-main = hSetEncoding stdout utf8 *> defaultMain [ lexerSuite, parserSuite{-, prettySuite-} ]
+main = hSetEncoding stdout utf8 *> defaultMain [ lexerSuite, parserSuite, prettySuite ]

@@ -189,7 +189,6 @@ prettyTypes = testGroup "printing types"
   , testFlatten "(i32)" (printType (ParenTy i32 ()))
   , testFlatten "typeof(1i32)" (printType (Typeof (Lit [] (Int 1 I32 ()) ()) ()))
   , testFlatten "_" (printType (Infer ()))
-  , testFlatten "Self" (printType (ImplicitSelf ()))
   , testFlatten "HList![&str, bool, Vec<i32>]"
                 (printType (MacTy (Mac (Path False [("HList", AngleBracketed [] [] [] ())] ())
                                        [ Delimited mempty NoDelim mempty [ Token mempty Ampersand, Token mempty (IdentTok (mkIdent "str")) ] mempty 
@@ -363,14 +362,14 @@ prettyItems = testGroup "printing items"
   , testFlatten "unsafe impl Debug for .. { }" (printItem (Item (mkIdent "") [] (DefaultImpl Unsafe (TraitRef (Path False [debug] ()) ())) InheritedV ()))
   , testFlatten "impl Debug for i32 { }" (printItem (Item (mkIdent "") [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [debug] ()) ())) i32 []) InheritedV ()))
   , testFlatten "pub impl !Debug for i32 where 'lt: 'gt { }" (printItem (Item (mkIdent "") [] (Impl Normal Negative (Generics [] [] (WhereClause [RegionPredicate (Lifetime (Name "lt") ()) [Lifetime (Name "gt") ()] ()] ()) ()) (Just (TraitRef (Path False [debug] ()) ())) i32 []) PublicV ()))
-  , testFlatten "impl <T> GenVal<T> {\n  fn value(&self) -> &T { return 1; }\n}" 
+  , testFlatten "impl <T> GenVal<T> {\n  fn value(&mut self) -> &T { return 1; }\n}" 
                 (printItem (Item (mkIdent "") [] (Impl Normal Positive
                       (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())
                       Nothing
                       (PathTy Nothing (Path False [("GenVal", AngleBracketed [] [PathTy Nothing (Path False [(mkIdent "T", AngleBracketed [] [] [] ())] ()) ()] [] ())] ()) ())
                       [ ImplItem (mkIdent "value") InheritedV Final []
                           (MethodI (MethodSig Normal NotConst Rust
-                                      (FnDecl [Arg (Just (IdentP (ByValue Immutable) "self" Nothing ())) (Rptr Nothing Immutable (ImplicitSelf ()) ()) ()]
+                                      (FnDecl [SelfRegion Nothing Mutable ()]
                                               (Just (Rptr Nothing Immutable (PathTy Nothing (Path False [(mkIdent "T", AngleBracketed [] [] [] ())] ()) ()) ())) 
                                               False ())
                                       (Generics [] [] (WhereClause [] ()) ())) 
@@ -384,7 +383,7 @@ prettyItems = testGroup "printing items"
                       i32
                       [ ImplItem (mkIdent "value") InheritedV Final []
                           (MethodI (MethodSig Normal NotConst Rust
-                                      (FnDecl [Arg (Just (IdentP (ByValue Immutable) "self" Nothing ())) (Rptr Nothing Immutable (ImplicitSelf ()) ()) ()]
+                                      (FnDecl [SelfRegion Nothing Immutable ()]
                                               (Just i32) 
                                               False ())
                                       (Generics [] [] (WhereClause [] ()) ())) 
@@ -401,11 +400,11 @@ prettyItems = testGroup "printing items"
                                               , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "l3") ()) [Lifetime (Name "l1") (), Lifetime (Name "l2") ()] ()] (TraitRef (Path False [debug] ()) ()) ())  None
                                               , RegionTyParamBound (Lifetime (Name "l2") ())]
                                               []) InheritedV ()))
-  , testFlatten "pub trait Show {\n  fn value(&self) -> i32 ;\n  const pi: i32 = 1;\n  const e: i32;\n  type Size = i32;\n  type Length : 'l3;\n  type SomeType : 'l1 = f64;\n}"
+  , testFlatten "pub trait Show {\n  fn value(&mut self) -> i32 ;\n  const pi: i32 = 1;\n  const e: i32;\n  type Size = i32;\n  type Length : 'l3;\n  type SomeType : 'l1 = f64;\n}"
                 (printItem (Item (mkIdent "Show") [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) []
                       [ TraitItem (mkIdent "value") []
                           (MethodT (MethodSig Normal NotConst Rust
-                                      (FnDecl [Arg (Just (IdentP (ByValue Immutable) "self" Nothing ())) (Rptr Nothing Immutable (ImplicitSelf ()) ()) ()]
+                                      (FnDecl [SelfRegion Nothing Mutable ()]
                                               (Just i32) 
                                               False ())
                                       (Generics [] [] (WhereClause [] ()) ())) 

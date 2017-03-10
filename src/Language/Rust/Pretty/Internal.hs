@@ -126,8 +126,8 @@ printType (ImplTrait bs x)      = annotate x (printBounds "impl" (toList bs))
 printType (ParenTy ty x)        = annotate x ("(" <> printType ty <> ")")
 printType (Typeof e x)          = annotate x ("typeof(" <> printExpr e <> ")")
 printType (Infer x)             = annotate x "_"
-printType (ImplicitSelf x)      = annotate x "Self"
 printType (MacTy m x)           = annotate x (printMac m Bracket)
+printType (ImplicitSelf x)      = annotate x "Self"
 printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
                                                 </> printFnHeaderInfo u NotConst a InheritedV
                                                 <//> printFnArgsAndRet d)
@@ -777,13 +777,10 @@ printFnArgsAndRet (FnDecl args ret var x) = annotate x ("(" <> align (fillSep ar
 printArg :: Arg a -> Bool -> Doc a
 printArg (Arg (Just pat) (Infer x') x) True = annotate x $ annotate x' (printPat pat)
 printArg (Arg Nothing ty x) _ = annotate x (printType ty)
-printArg (Arg (Just (IdentP (ByValue m) "self" Nothing x')) ty x) _ = annotate x $ annotate x' $
-  case ty of
-      ImplicitSelf x'' -> annotate x'' (printMutability m <+> "self")
-      Rptr lt m (ImplicitSelf x''') x'' -> annotate x'' $ annotate x''' $
-        "&" <> perhaps printLifetime lt <+> printMutability m <+> "self"
-      _ -> printMutability m <+> "self" <> ":" <+> printType ty
 printArg (Arg (Just pat) ty x) _ = annotate x (printPat pat <> ":" <+> printType ty)
+printArg (SelfValue mut x) _ = annotate x (printMutability mut <+> "self")
+printArg (SelfRegion lt mut x) _ = annotate x ("&" <> hsep [perhaps printLifetime lt, printMutability mut, "self"])
+printArg (SelfExplicit ty mut x) _ = annotate x (printMutability mut <+> "self" <> ":" <+> printType ty)
 
 -- aka print_lifetime
 printLifetime :: Lifetime a -> Doc a
@@ -871,8 +868,10 @@ printForeignMod :: [ForeignItem a] -> [Attribute a] -> Doc a
 printForeignMod items attrs = vsep (printInnerAttrs attrs : (printForeignItem `map` items))
 
 -- aka  print_generics
+-- Remark: we are discarding the where clause because it gets printed seperately from the rest of
+-- the generic.
 printGenerics :: Generics a -> Doc a
-printGenerics (Generics lifetimes tyParams whereClause x)
+printGenerics (Generics lifetimes tyParams _ x)
   | null lifetimes && null tyParams = mempty
   | otherwise =  let lifetimes' = [ printOuterAttrs as <+> printLifetimeBounds lt bds | LifetimeDef as lt bds _ <- lifetimes ]
                      bounds' = [ printTyParam param | param<-tyParams ]
