@@ -49,7 +49,7 @@ import qualified Data.List.NonEmpty as N
 --  * field accesses are prefixes of method calls (all 3 types of exprs, so x3)
 --  * deciding between expression paths and struct expressions
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 13
+%expect 16
 
 %token
 
@@ -193,23 +193,27 @@ import qualified Data.List.NonEmpty as N
   -- Lifetimes.
   LIFETIME       { Spanned (LifetimeTok _) _ }
 
+  -- macro related
+  substNt        { Spanned (SubstNt _ _) _ }
+  matchNt        { Spanned (MatchNt _ _ _ _) _ }
+
   -- Interpolated
-  ntItem         { Spanned (Interpolated (NtItem _)) _ }
-  ntBlock        { Spanned (Interpolated (NtBlock _)) _ }
-  ntStmt         { Spanned (Interpolated (NtStmt _)) _ }
-  ntPat          { Spanned (Interpolated (NtPat _)) _ }
-  ntExpr         { Spanned (Interpolated (NtExpr _)) _ }
-  ntTy           { Spanned (Interpolated (NtTy _)) _ }
-  ntIdent        { Spanned (Interpolated (NtIdent _)) _ }
-  ntMeta         { Spanned (Interpolated (NtMeta _)) _ }
-  ntPath         { Spanned (Interpolated (NtPath _)) _ }
-  ntTT           { Spanned (Interpolated (NtTT _)) _ }
-  ntArm          { Spanned (Interpolated (NtArm _)) _ }
-  ntImplItem     { Spanned (Interpolated (NtImplItem _)) _ }
-  ntTraitItem    { Spanned (Interpolated (NtTraitItem _)) _ }
-  ntGenerics     { Spanned (Interpolated (NtGenerics _)) _ }
-  ntWhereClause  { Spanned (Interpolated (NtWhereClause _)) _ }
-  ntArg          { Spanned (Interpolated (NtArg _)) _ }
+  ntItem         { Spanned (Interpolated (NtItem $$)) _ }
+  ntBlock        { Spanned (Interpolated (NtBlock $$)) _ }
+  ntStmt         { Spanned (Interpolated (NtStmt $$)) _ }
+  ntPat          { Spanned (Interpolated (NtPat $$)) _ }
+  ntExpr         { Spanned (Interpolated (NtExpr $$)) _ }
+  ntTy           { Spanned (Interpolated (NtTy $$)) _ }
+  ntIdent        { Spanned (Interpolated (NtIdent $$)) _ }
+  ntMeta         { Spanned (Interpolated (NtMeta $$)) _ }
+  ntPath         { Spanned (Interpolated (NtPath $$)) _ }
+  ntTT           { Spanned (Interpolated (NtTT $$)) _ }
+  ntArm          { Spanned (Interpolated (NtArm $$)) _ }
+  ntImplItem     { Spanned (Interpolated (NtImplItem $$)) _ }
+  ntTraitItem    { Spanned (Interpolated (NtTraitItem $$)) _ }
+  ntGenerics     { Spanned (Interpolated (NtGenerics $$)) _ }
+  ntWhereClause  { Spanned (Interpolated (NtWhereClause $$)) _ }
+  ntArg          { Spanned (Interpolated (NtArg $$)) _ }
 
 -- 'mut' should be lower precedence than 'IDENT' so that in the pat rule,
 -- "& mut pat" has higher precedence than "binding_mode1 ident [@ pat]"
@@ -220,7 +224,8 @@ import qualified Data.List.NonEmpty as N
 
 -- Unwraps the IdentTok into just an Ident
 ident :: { Spanned Ident }
-  : IDENT                         { let Spanned (IdentTok i) s = $1 in Spanned i s }
+  : ntIdent                       { Spanned $1 mempty }
+  | IDENT                         { let Spanned (IdentTok i) s = $1 in Spanned i s }
 
 -- This should precede any '>' token which could be absorbed in a '>>', '>=', or '>>=' token. Its
 -- purpose is to check if the lookahead token starts with '>' but contains more that. If that is
@@ -298,7 +303,8 @@ inner_attribute :: { Attribute Span }
 
 -- parse_meta_item()
 meta_item :: { MetaItem Span }
-  : ident                                           {% withSpan $1 (Word (unspan $1)) }
+  : ntMeta                                          { $1 }
+  | ident                                           {% withSpan $1 (Word (unspan $1)) }
   | ident '=' unsuffixed                            {% withSpan $1 (NameValue (unspan $1) $3) }
   | ident '(' sep_by(meta_item_inner,',') ')'       {% withSpan $1 (List (unspan $1) $3) }
   | ident '(' sep_by1(meta_item_inner,',') ',' ')'  {% withSpan $1 (List (unspan $1) (toList $3)) }
@@ -382,8 +388,9 @@ binding : ident '=' ty                             { (unspan $1, $3) }
 -- Type related:
 -- parse_path(PathStyle::Type)
 ty_path :: { Path Span }
-  : path_segments_without_colons            {% withSpan $1 (Path False (unspan $1)) }
-  | '::' path_segments_without_colons       {% withSpan $1 (Path True (unspan $2)) }
+  : ntPath                                   { $1 }
+  | path_segments_without_colons             {% withSpan $1 (Path False (unspan $1)) }
+  | '::' path_segments_without_colons        {% withSpan $1 (Path True (unspan $2)) }
 
 ty_qual_path :: { Spanned (QSelf Span, Path Span) }
   : qual_path(path_segments_without_colons)  { $1 }
@@ -412,7 +419,8 @@ path_parameter1 :: { PathParameters Span }
 -- Expression related:
 -- parse_path(PathStyle::Expr)
 expr_path :: { Path Span }
-  : path_segments_with_colons               {% withSpan $1 (Path False (unspan $1)) }
+  : ntPath                                  { $1 }
+  | path_segments_with_colons               {% withSpan $1 (Path False (unspan $1)) }
   | '::' path_segments_with_colons          {% withSpan $1 (Path True (unspan $2)) }
 
 -- As expr_path, but disallowing one IDENT paths
@@ -451,6 +459,10 @@ path_parameter2 :: { Either ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) Ide
 -- Mod related:
 -- parse_path(PathStyle::Mod)
 mod_path :: { Path Span }
+  : ntPath                                   { $1 }
+  | path_segments_without_types              { $1 }
+
+path_segments_without_types :: { Path Span  }
   : path_segment_without_types               {% withSpan $1 (Path False (unspan $1 :| [])) }
   | '::' path_segment_without_types          {% withSpan $1 (Path True (unspan $2 :| [])) }
   | mod_path '::' path_segment_without_types {% withSpan $1 (Path (global $1) (segments $1 |> unspan $3)) }
@@ -475,7 +487,8 @@ trait_ref :: { TraitRef Span }
 
 -- parse_ty()
 ty :: { Ty Span }
-  : no_for_ty                        { $1 }
+  : ntTy                             { $1 }
+  | no_for_ty                        { $1 }
   | for_ty                           { $1 }
 
 ty_prim :: { Ty Span }
@@ -630,7 +643,8 @@ lifetime_def :: { LifetimeDef Span }
 
 -- TODO: Double-check that the error message in the one element tuple case makes sense. It should...
 pat :: { Pat Span }
-  : '_'                                         {% withSpan $1 WildP }
+  : ntPat                                       { $1 }
+  | '_'                                         {% withSpan $1 WildP }
   | '&' mut pat                                 {% withSpan $1 (RefP $3 Mutable) }
   | '&' pat                                     {% withSpan $1 (RefP $2 Immutable) }
   | '&&' mut pat                                {% withSpan $1 (RefP (RefP $3 Mutable mempty) Immutable) }
@@ -729,7 +743,8 @@ lit_expr :: { Expr Span }
 
 -- General expressions, not restrictions
 expr          :: { Expr Span }
-              : gen_expr                                        { $1 }
+              : ntExpr                                          { $1 }
+              | gen_expr                                        { $1 }
               | binary0_expr                                    { $1 }
               | lambda_expr                                     { $1 }
 binary0_expr  :: { Expr Span }
@@ -783,7 +798,8 @@ postfix_expr  :: { Expr Span }
 
 -- General expressions, but no structs
 nostruct_expr    :: { Expr Span }
-                 : gen_expr                                              { $1 }
+                 : ntExpr                                                { $1 }
+                 | gen_expr                                              { $1 }
                  | ns_binary0_expr                                       { $1 }
                  | lambda_expr_nostruct                                  { $1 }
 ns_binary0_expr  :: { Expr Span }
@@ -836,7 +852,8 @@ ns_postfix_expr  :: { Expr Span }
 
 -- General expressions, but no blocks on the left
 nonblock_expr    :: { Expr Span }
-                 : gen_expr                                              { $1 }
+                 : ntExpr                                                { $1 }
+                 | gen_expr                                              { $1 }
                  | nb_binary0_expr                                       { $1 }
                  | lambda_expr_nostruct                                  { $1 }
 nb_binary0_expr  :: { Expr Span }
@@ -1042,7 +1059,9 @@ gen_expr :: { Expr Span }
 -- Match arms usually have to be seperated by commas (with an optional comma at the end). This
 -- condition is loosened (so that there is no seperator needed) if the arm ends in a safe block.
 arms :: { [Arm Span] }
-  : sep_by1(pat,'|') arm_guard '=>' safe_block             { [Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty] }
+  : ntArm                                                  { [$1] }
+  | ntArm arms                                             { $1 : $2 }
+  | sep_by1(pat,'|') arm_guard '=>' safe_block             { [Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty] }
   | sep_by1(pat,'|') arm_guard '=>' safe_block    ','      { [Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty] }
   | sep_by1(pat,'|') arm_guard '=>' safe_block        arms { Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty : $> }
   | sep_by1(pat,'|') arm_guard '=>' safe_block    ',' arms { Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty : $> }
@@ -1086,7 +1105,8 @@ field :: { Field Span }
   | ident           {% withSpan $1 (Field (unspan $1) (PathExpr [] Nothing (Path False ((unspan $1, NoParameters mempty) :| [])  mempty) mempty)) }
 
 arg :: { Arg Span }
-  : pat ':' ty  {% withSpan $1 (Arg (Just $1) $3) }
+  : ntArg       { $1 }
+  | pat ':' ty  {% withSpan $1 (Arg (Just $1) $3) }
   | pat         {% withSpan $1 (Arg (Just $1) (Infer mempty)) }
 
 args :: { [Arg Span] }
@@ -1102,7 +1122,8 @@ args :: { [Arg Span] }
 
 -- TODO: consider attributes
 stmt :: { Stmt Span }
-  : let pat ':' ty initializer ';'       {% withSpan $1 (Local $2 (Just $4) $5 []) }
+  : ntStmt                               { $1 }
+  | let pat ':' ty initializer ';'       {% withSpan $1 (Local $2 (Just $4) $5 []) }
   | let pat initializer ';'              {% withSpan $1 (Local $2 Nothing $3 []) } 
   | nonblock_expr ';'                    {% withSpan $1 (Semi $1) }
   | block_expr                           {% withSpan $1 (NoSemi $1) }
@@ -1122,7 +1143,8 @@ initializer :: { Maybe (Expr Span) }
 
 
 block :: { Block Span }
-  : unsafe_block                          { $1 }
+  : ntBlock                               { $1 }
+  | unsafe_block                          { $1 }
   | safe_block                            { $1 }
 
 unsafe_block :: { Block Span }
@@ -1138,7 +1160,8 @@ safe_block :: { Block Span }
 -----------
 
 item :: { Item Span }
-  : stmt_item                                    { $1 }
+  : ntItem                                       { $1 }
+  | stmt_item                                    { $1 }
   | expr_path '!' '[' many(token_tree) ']' ';'   {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
   | expr_path '!' '(' many(token_tree) ')' ';'   {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
   | expr_path '!' '{' many(token_tree) '}'       {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
@@ -1158,6 +1181,7 @@ foreign_item :: { ForeignItem Span }
 -- Leaves the WhereClause empty
 generics :: { Generics Span }
   : {- empty -}                                                    { Generics [] [] (WhereClause [] mempty) mempty }
+  | ntGenerics                                                     { $1 }
   | '<' sep_by1(lifetime_def,',') ',' sep_by1(ty_param,',') gt '>' {% withSpan $1 (Generics (toList $2) (toList $4) (WhereClause [] mempty)) }
   | '<' sep_by1(lifetime_def,',')                           gt '>' {% withSpan $1 (Generics (toList $2) []          (WhereClause [] mempty)) }
   | '<'                               sep_by1(ty_param,',') gt '>' {% withSpan $1 (Generics []          (toList $2) (WhereClause [] mempty)) }
@@ -1231,6 +1255,7 @@ enum_def :: { Variant Span }
 -- parse_where_clause
 where_clause :: { WhereClause Span }
   : {- empty -}                        { WhereClause [] mempty }
+  | ntWhereClause                      { $1 } 
   | where sep_by1(where_predicate,',') {% withSpan $1 (WhereClause (toList $2)) }
 
 where_predicate :: { WherePredicate Span }
@@ -1260,7 +1285,8 @@ impl_items :: { [ImplItem Span] }
   | '{' sep_by1(impl_item,',') ',' '}'  { toList $2 }
 
 impl_item :: { ImplItem Span }
-  : vis def type ident '=' ty ';'                      {% withSpan $1 (ImplItem (unspan $4) (unspan $1) $2 [] (TypeI $6)) }
+  : ntImplItem                                         { $1 }
+  | vis def type ident '=' ty ';'                      {% withSpan $1 (ImplItem (unspan $4) (unspan $1) $2 [] (TypeI $6)) }
   | vis def const ident ':' ty '=' expr ';'            {% withSpan $1 (ImplItem (unspan $4) (unspan $1) $2 [] (ConstI $6 $8)) }
   | vis def mod_mac                                    {% withSpan $1 (ImplItem (mkIdent "") (unspan $1) $2 [] (MacroI $3)) }
   | vis def const safety fn ident generics fn_decl_with_self where_clause safe_block
@@ -1270,7 +1296,8 @@ impl_item :: { ImplItem Span }
 
 
 trait_item :: { TraitItem Span }
-  : const ident ':' ty_sum  '=' expr ';' {% withSpan $1 (TraitItem (unspan $2) [] (ConstT $4 (Just $6))) }
+  : ntTraitItem                          { $1 }
+  | const ident ':' ty_sum  '=' expr ';' {% withSpan $1 (TraitItem (unspan $2) [] (ConstT $4 (Just $6))) }
   | const ident ':' ty_sum           ';' {% withSpan $1 (TraitItem (unspan $2) [] (ConstT $4 Nothing)) }
   | mod_mac                              {% withSpan $1 (TraitItem (mkIdent "") [] (MacroT $1)) }
   | type ty_param ';'                    {% let TyParam _ i b d _ = $2 in withSpan $1 (TraitItem i [] (TypeT b d)) }
@@ -1336,134 +1363,151 @@ mod_mac :: { Mac Span }
   | mod_path '!' '(' many(token_tree) ')' ';'  {% withSpan $1 (Mac $1 $4) }
 
 token_tree :: { TokenTree }
-  : '(' many(token_tree) ')' { Delimited mempty Paren mempty $2 mempty }
-  | '{' many(token_tree) ')' { Delimited mempty Brace mempty $2 mempty }
-  | '[' many(token_tree) ']' { Delimited mempty Bracket mempty $2 mempty }
-  -- Baaad
-  | '$'        {% fail "unimplemented: this should do some SubstNt related stuff" } 
+  : ntTT                     { $1 }
+  -- # Delimited
+  | '(' many(token_tree) ')'                              { Delimited mempty Paren mempty $2 mempty }
+  | '{' many(token_tree) ')'                              { Delimited mempty Brace mempty $2 mempty }
+  | '[' many(token_tree) ']'                              { Delimited mempty Bracket mempty $2 mempty }
+  -- # Sequence
+  | '$' '(' many(token_tree) ')' token_not_plus_star '+'  { Sequence mempty $3 (Just (unspan $5)) OneOrMore } 
+  | '$' '(' many(token_tree) ')' token_not_plus_star '*'  { Sequence mempty $3 (Just (unspan $5)) ZeroOrMore }
+  | '$' '(' many(token_tree) ')' '+'                      { Sequence mempty $3 Nothing OneOrMore }
+  | '$' '(' many(token_tree) ')' '*'                      { Sequence mempty $3 Nothing ZeroOrMore }
+  -- # Token
   -- Expression-operator symbols. 
-  | '='        { Token mempty (unspan $1) }
-  | '<'        { Token mempty (unspan $1) }
-  | '>'        { Token mempty (unspan $1) }
-  | '!'        { Token mempty (unspan $1) }
-  | '~'        { Token mempty (unspan $1) }
-  | '+'        { Token mempty (unspan $1) }
-  | '-'        { Token mempty (unspan $1) }
-  | '*'        { Token mempty (unspan $1) }
-  | '/'        { Token mempty (unspan $1) }
-  | '%'        { Token mempty (unspan $1) }
-  | '^'        { Token mempty (unspan $1) }
-  | '&'        { Token mempty (unspan $1) }
-  | '|'        { Token mempty (unspan $1) }
-  | '<<='      { Token mempty (unspan $1) }
-  | '>>='      { Token mempty (unspan $1) }
-  | '-='       { Token mempty (unspan $1) }
-  | '&='       { Token mempty (unspan $1) }
-  | '|='       { Token mempty (unspan $1) }
-  | '+='       { Token mempty (unspan $1) }
-  | '*='       { Token mempty (unspan $1) }
-  | '/='       { Token mempty (unspan $1) }
-  | '^='       { Token mempty (unspan $1) }
-  | '%='       { Token mempty (unspan $1) }
-  | '||'       { Token mempty (unspan $1) }
-  | '&&'       { Token mempty (unspan $1) }
-  | '=='       { Token mempty (unspan $1) }
-  | '!='       { Token mempty (unspan $1) }
-  | '<='       { Token mempty (unspan $1) }
-  | '>='       { Token mempty (unspan $1) }
-  | '<<'       { Token mempty (unspan $1) }
-  | '>>'       { Token mempty (unspan $1) }
+  | token_not_plus_star                                   { mkTokenTree $1 }
+  | '+'                                                   { mkTokenTree $1 }
+  | '*'                                                   { mkTokenTree $1 }
+
+token_not_plus_star :: { Spanned Token }
+  : '='        { $1 }
+  | '<'        { $1 }
+  | '>'        { $1 }
+  | '!'        { $1 }
+  | '~'        { $1 }
+  | '-'        { $1 }
+  | '/'        { $1 }
+  | '%'        { $1 }
+  | '^'        { $1 }
+  | '&'        { $1 }
+  | '|'        { $1 }
+  | '<<='      { $1 }
+  | '>>='      { $1 }
+  | '-='       { $1 }
+  | '&='       { $1 }
+  | '|='       { $1 }
+  | '+='       { $1 }
+  | '*='       { $1 }
+  | '/='       { $1 }
+  | '^='       { $1 }
+  | '%='       { $1 }
+  | '||'       { $1 }
+  | '&&'       { $1 }
+  | '=='       { $1 }
+  | '!='       { $1 }
+  | '<='       { $1 }
+  | '>='       { $1 }
+  | '<<'       { $1 }
+  | '>>'       { $1 }
   -- Structural symbols.
-  | '@'        { Token mempty (unspan $1) } 
-  | '...'      { Token mempty (unspan $1) } 
-  | '..'       { Token mempty (unspan $1) } 
-  | '.'        { Token mempty (unspan $1) } 
-  | ','        { Token mempty (unspan $1) } 
-  | ';'        { Token mempty (unspan $1) } 
-  | '::'       { Token mempty (unspan $1) } 
-  | ':'        { Token mempty (unspan $1) } 
-  | '->'       { Token mempty (unspan $1) } 
-  | '<-'       { Token mempty (unspan $1) } 
-  | '=>'       { Token mempty (unspan $1) } 
-  | '#'        { Token mempty (unspan $1) } 
-  | '?'        { Token mempty (unspan $1) } 
+  | '@'        { $1 } 
+  | '...'      { $1 } 
+  | '..'       { $1 } 
+  | '.'        { $1 } 
+  | ','        { $1 } 
+  | ';'        { $1 } 
+  | '::'       { $1 } 
+  | ':'        { $1 } 
+  | '->'       { $1 } 
+  | '<-'       { $1 } 
+  | '=>'       { $1 } 
+  | '#'        { $1 } 
+  | '$'        { $1 } 
+  | '?'        { $1 } 
   -- Literals.
-  | byte       { Token mempty (unspan $1) } 
-  | char       { Token mempty (unspan $1) } 
-  | int        { Token mempty (unspan $1) } 
-  | float      { Token mempty (unspan $1) } 
-  | str        { Token mempty (unspan $1) } 
-  | byteStr    { Token mempty (unspan $1) } 
-  | rawStr     { Token mempty (unspan $1) } 
-  | rawByteStr { Token mempty (unspan $1) } 
+  | byte       { $1 } 
+  | char       { $1 } 
+  | int        { $1 } 
+  | float      { $1 } 
+  | str        { $1 } 
+  | byteStr    { $1 } 
+  | rawStr     { $1 } 
+  | rawByteStr { $1 } 
   -- Strict keywords used in the language
-  | as         { Token mempty (unspan $1) }
-  | box        { Token mempty (unspan $1) }
-  | break      { Token mempty (unspan $1) }
-  | const      { Token mempty (unspan $1) }
-  | continue   { Token mempty (unspan $1) }
-  | crate      { Token mempty (unspan $1) }
-  | else       { Token mempty (unspan $1) }
-  | enum       { Token mempty (unspan $1) }
-  | extern     { Token mempty (unspan $1) }
-  | false      { Token mempty (unspan $1) }
-  | fn         { Token mempty (unspan $1) }
-  | for        { Token mempty (unspan $1) }
-  | if         { Token mempty (unspan $1) }
-  | impl       { Token mempty (unspan $1) }
-  | in         { Token mempty (unspan $1) }
-  | let        { Token mempty (unspan $1) }
-  | loop       { Token mempty (unspan $1) }
-  | match      { Token mempty (unspan $1) }
-  | mod        { Token mempty (unspan $1) }
-  | move       { Token mempty (unspan $1) }
-  | mut        { Token mempty (unspan $1) }
-  | pub        { Token mempty (unspan $1) }
-  | ref        { Token mempty (unspan $1) }
-  | return     { Token mempty (unspan $1) }
-  | Self       { Token mempty (unspan $1) }
-  | self       { Token mempty (unspan $1) }
-  | static     { Token mempty (unspan $1) }
-  | struct     { Token mempty (unspan $1) }
-  | super      { Token mempty (unspan $1) }
-  | trait      { Token mempty (unspan $1) }
-  | true       { Token mempty (unspan $1) }
-  | type       { Token mempty (unspan $1) }
-  | unsafe     { Token mempty (unspan $1) }
-  | use        { Token mempty (unspan $1) }
-  | where      { Token mempty (unspan $1) }
-  | while      { Token mempty (unspan $1) }
+  | as         { $1 }
+  | box        { $1 }
+  | break      { $1 }
+  | const      { $1 }
+  | continue   { $1 }
+  | crate      { $1 }
+  | else       { $1 }
+  | enum       { $1 }
+  | extern     { $1 }
+  | false      { $1 }
+  | fn         { $1 }
+  | for        { $1 }
+  | if         { $1 }
+  | impl       { $1 }
+  | in         { $1 }
+  | let        { $1 }
+  | loop       { $1 }
+  | match      { $1 }
+  | mod        { $1 }
+  | move       { $1 }
+  | mut        { $1 }
+  | pub        { $1 }
+  | ref        { $1 }
+  | return     { $1 }
+  | Self       { $1 }
+  | self       { $1 }
+  | static     { $1 }
+  | struct     { $1 }
+  | super      { $1 }
+  | trait      { $1 }
+  | true       { $1 }
+  | type       { $1 }
+  | unsafe     { $1 }
+  | use        { $1 }
+  | where      { $1 }
+  | while      { $1 }
   -- Keywords reserved for future use
-  | abstract   { Token mempty (unspan $1) }
-  | alignof    { Token mempty (unspan $1) } 
-  | become     { Token mempty (unspan $1) }
-  | do         { Token mempty (unspan $1) }
-  | final      { Token mempty (unspan $1) }
-  | macro      { Token mempty (unspan $1) }
-  | offsetof   { Token mempty (unspan $1) }
-  | override   { Token mempty (unspan $1) }
-  | priv       { Token mempty (unspan $1) }
-  | proc       { Token mempty (unspan $1) }
-  | pure       { Token mempty (unspan $1) }
-  | sizeof     { Token mempty (unspan $1) }
-  | typeof     { Token mempty (unspan $1) }
-  | unsized    { Token mempty (unspan $1) } 
-  | virtual    { Token mempty (unspan $1) } 
-  | yield      { Token mempty (unspan $1) }
+  | abstract   { $1 }
+  | alignof    { $1 } 
+  | become     { $1 }
+  | do         { $1 }
+  | final      { $1 }
+  | macro      { $1 }
+  | offsetof   { $1 }
+  | override   { $1 }
+  | priv       { $1 }
+  | proc       { $1 }
+  | pure       { $1 }
+  | sizeof     { $1 }
+  | typeof     { $1 }
+  | unsized    { $1 } 
+  | virtual    { $1 } 
+  | yield      { $1 }
   -- Weak keywords, have special meaning only in specific contexts.
-  | default    { Token mempty (unspan $1) }
-  | union      { Token mempty (unspan $1) }
+  | default    { $1 }
+  | union      { $1 }
   -- Comments
-  | outerDoc   { Token mempty (unspan $1) }
-  | innerDoc   { Token mempty (unspan $1) }
+  | outerDoc   { $1 }
+  | innerDoc   { $1 }
   -- Identifiers.
-  | IDENT      { Token mempty (unspan $1) }
-  | '_'        { Token mempty (unspan $1) }
+  | IDENT      { $1 }
+  | '_'        { $1 }
   -- Lifetimes.
-  | LIFETIME   { Token mempty (unspan $1) }
+  | LIFETIME   { $1 }
+  -- Macro related
+  | substNt    { $1 }
+  | matchNt    { $1 }
 
 
 {
+
+-- | Given a spanned token, convert it to a token tree. Basically just move the Span
+mkTokenTree :: Spanned Token -> TokenTree
+mkTokenTree (Spanned t s) = Token s t
 
 -- | Given a 'LitTok' token that is expected to result in a valid literal, construct the associated
 -- literal. Note that this should _never_ fail on a token produced by the lexer.

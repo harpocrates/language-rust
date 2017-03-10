@@ -614,6 +614,9 @@ data Pat a
 -- | A "Path" is essentially Rust's notion of a name.
 -- It's represented as a sequence of identifiers, along with a bunch of supporting information.
 -- E.g. `std::cmp::PartialEq`
+--
+-- TODO: Consider adding something to say what _type_ of path it is (expr, ty, mod)
+--
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Path.html
 -- Inlined [PathSegment](https://docs.serde.rs/syntex_syntax/ast/struct.PathSegment.html)
 data Path a
@@ -624,6 +627,9 @@ data Path a
       , segments :: NonEmpty (Ident, PathParameters a) -- ^ The segments in the path: the things separated by ::.
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+pattern IdentPath :: Ident -> a -> a -> Path a
+pattern IdentPath i x y = Path False ((i, NoParameters x) :| []) y
 
 -- https://docs.serde.rs/syntex_syntax/ast/type.PathListItem.html
 -- https://docs.serde.rs/syntex_syntax/ast/struct.PathListItem_.html
@@ -758,7 +764,6 @@ data TokenTree
       , tts :: [TokenTree]         -- ^ The sequence of token trees
       , separator :: Maybe Token   -- ^ The optional separator
       , op :: KleeneOp             -- ^ Whether the sequence can be repeated zero (*), or one or more times (+)
-      , numCaptures :: Int         -- ^ The number of MatchNts that appear in the sequence (and subsequences)
       }
   deriving (Eq, Show)
 

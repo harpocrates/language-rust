@@ -29,11 +29,23 @@ commonCode = testGroup "lexing common code fragments"
              , Space Whitespace (Name " ")
              , Equal
              , Space Whitespace (Name " ")
-             , Dollar
-             , IdentTok (mkIdent "p")
+             , SubstNt (mkIdent "p") Plain
              , Dot
              , IdentTok (mkIdent "span")
              , Semicolon
+             ]
+  , testCode "$(p.span),+" 
+             [ Dollar
+             , OpenDelim Paren
+             , IdentTok (mkIdent "p")
+             , Dot
+             , IdentTok (mkIdent "span")
+             , CloseDelim Paren
+             , Comma
+             , Plus
+             ]
+  , testCode "$p:span" 
+             [ MatchNt (mkIdent "p") (mkIdent "span") Plain Plain
              ]
   , testCode "pub s: pp::Printer<'a>,"
              [ IdentTok (mkIdent "pub")

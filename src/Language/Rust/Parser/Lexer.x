@@ -872,11 +872,11 @@ import Data.Char (chr)
   | \xd87e [\xd400-\xd61c]
   | \xdb40 [\xdd00-\xddee]
 
-@ident = @xid_start @xid_continue*
+@ident             = @xid_start @xid_continue*
 
-@lifetime       = \' @ident
+@lifetime          = \' @ident
 
-$hexit = [0-9a-fA-F]
+$hexit             = [0-9a-fA-F]
 
 @char_escape
   = [nrt\\'"0]
@@ -913,27 +913,31 @@ $hexit = [0-9a-fA-F]
   | 0o [0-8_]+
   | 0x [0-9a-fA-F_]+
 
-@lit_float      = [0-9][0-9_]* (\. [0-9][0-9_]*)? ([eE] [\-\+]? [0-9][0-9_]*)?
-@lit_float2     = [0-9][0-9_]* \.
+@lit_float         = [0-9][0-9_]* (\. [0-9][0-9_]*)? ([eE] [\-\+]? [0-9][0-9_]*)?
+@lit_float2        = [0-9][0-9_]* \.
 
-@lit_str        = \" (\\\n | \\\r\n | \\ @char_escape | [^\"])* \"
-@lit_byte_str   = b @lit_str
+@lit_str           = \" (\\\n | \\\r\n | \\ @char_escape | [^\"])* \"
+@lit_byte_str      = b @lit_str
 
-@lit_raw_str    = r \#* \"
-@lit_raw_bstr   = rb \#* \"
+@lit_raw_str       = r \#* \"
+@lit_raw_bstr      = rb \#* \"
 
 
 -- Comments
 
-@outer_doc_line   = "///" [^\r\n]*
-@outer_doc_inline = "/**"
+@outer_doc_line    = "///" [^\r\n]*
+@outer_doc_inline  = "/**"
 
-@inner_doc_line   = "//!" [^\r\n]*
-@inner_doc_inline = "/*!"
+@inner_doc_line    = "//!" [^\r\n]*
+@inner_doc_inline  = "/*!"
 
-@line_comment   = "//" ( [^\n\/]* [^\n]* )?
-@inline_comment = "/*"
+@line_comment      = "//" ( [^\n\/]* [^\n]* )?
+@inline_comment    = "/*"
 
+-- Macro related
+
+@subst_nt          = "$" @ident
+@match_nt          = @subst_nt ":" @ident
 
 tokens :-
 
@@ -992,9 +996,8 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 "{"             { token (OpenDelim Brace) }      
 "}"             { token (CloseDelim Brace) }      
 "#"             { token Pound }     
-"$"             { token Dollar }    
+"$"             { token Dollar }     
 "_"             { token Underscore }
-
 
 @lit_integer    { \i -> literal (IntegerTok (Name i)) }
 @lit_float      { \f -> literal (FloatTok   (Name f)) }
@@ -1035,6 +1038,11 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 
 @line_comment     { \c -> pure (Space Comment (Name (drop 2 c))) }
 @inline_comment   { \_ -> Space Comment <$> (Name <$> nestedComment) }
+
+@subst_nt         { \(_:i) -> pure (SubstNt (mkIdent i) Plain) }
+@match_nt         { \(_:s) -> let (i,':':n) = Prelude.span (/= ':') s
+                              in pure (MatchNt (mkIdent i) (mkIdent n) Plain Plain)
+                  }
 
 {
 

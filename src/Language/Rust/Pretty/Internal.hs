@@ -149,7 +149,7 @@ delimiter NoDelim = id
 printTt :: TokenTree -> Doc a
 printTt (Token _ t) = printToken t 
 printTt (Delimited _ d _ tts _) = delimiter d (hcat (printTt <$> tts))
-printTt (Sequence _ tts s op _) = "$" <> parens body <> perhaps printToken s <> suf
+printTt (Sequence _ tts s op) = "$" <> parens body <> perhaps printToken s <> suf
   where body = cat [ printTt tt | tt <- tts ]
         suf = case op of ZeroOrMore -> "*"
                          OneOrMore -> "+"
@@ -181,7 +181,7 @@ printToken RArrow = "<-"
 printToken LArrow = "->"
 printToken FatArrow = "=>"
 printToken Pound = "#"
-printToken Dollar = "$"
+printToken Dollar = "#"
 printToken Question = "?"
 printToken (OpenDelim Paren) = "("
 printToken (OpenDelim Bracket) = "["

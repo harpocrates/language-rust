@@ -58,13 +58,13 @@ data Token
   | Doc String DocType      -- ^ Doc comment, contents, whether it is outer or not
   | Shebang
   | Eof
-  
-  -- NOT NEEDED IN TOKENIZATION!!
-  | Interpolated (Nonterminal Span)               -- ^ Can be expanded into several tokens.
   -- In left-hand-sides of MBE macros:
   | MatchNt Ident Ident IdentStyle IdentStyle     -- ^ Parse a nonterminal (name to bind, name of NT)
   -- In right-hand-sides of MBE macros:
   | SubstNt Ident IdentStyle                      -- ^ A syntactic variable that will be filled in by macro expansion.
+  
+  -- NOT NEEDED IN TOKENIZATION!!
+  | Interpolated (Nonterminal Span)               -- ^ Can be expanded into several tokens.
   | SpecialVarNt                                  -- ^ A macro variable with special meaning.
   deriving (Eq)
 

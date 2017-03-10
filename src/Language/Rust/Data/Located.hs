@@ -133,7 +133,7 @@ instance Located a => Located (StructField a) where posOf (StructField _ _ _ _ s
 instance Located TokenTree where
   posOf (Token s _) = s
   posOf (Delimited s _ _ _ _) = s
-  posOf (Sequence s _ _ _ _) = s
+  posOf (Sequence s _ _ _) = s
   
 instance Located a => Located (TraitItem a) where posOf (TraitItem _ _ _ s) = posOf s
 instance Located a => Located (TraitRef a) where posOf (TraitRef _ s) = posOf s
