@@ -16,7 +16,15 @@ import Control.Monad
 import Control.Monad.Trans.Except
 
 parserSuite :: Test
-parserSuite = testGroup "parser suite" [ parserLiterals, parserAttributes, parserTypes, parserPatterns, parserExpressions ]
+parserSuite = testGroup "parser suite"
+                [ parserLiterals
+                , parserAttributes
+                , parserTypes
+                , parserPatterns
+                , parserExpressions
+                , parserStatements
+                , parserItems
+                ]
 
 -- | Create a test for a code fragment that should parse to a type.
 testP inp x = testCase inp $ Right x @=? parseNoSpans parser (inputStreamFromString inp)
@@ -467,6 +475,43 @@ parserExpressions = testGroup "parsing expressions"
   , testP "x << 1" (Binary [] ShlOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
   , testP "x >> 1" (Binary [] ShrOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
   , testP "&&&x&&&y" (Binary [] AndOp (AddrOf [] Immutable (AddrOf [] Immutable (AddrOf [] Immutable (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) ()) ()) ()) (AddrOf [] Immutable (PathExpr [] Nothing (Path False [(mkIdent "y", NoParameters ())] ()) ()) ()) ())
+  ]
+
+
+-- | Test parsing of statements.
+parserStatements :: Test
+parserStatements = testGroup "parsing statements"
+  [ testP "let x: i32 = 1;" (Local x (Just i32) (Just (Lit [] (Int 1 Unsuffixed ()) ())) [] ()) 
+  , testP "let x: i32;"     (Local x (Just i32) Nothing                                  [] ())
+  , testP "let x = 1;"      (Local x Nothing    (Just (Lit [] (Int 1 Unsuffixed ()) ())) [] ())
+  , testP "let x;"          (Local x Nothing    Nothing                                  [] ())
+  , testP "x + 1;" (Semi (Binary [] AddOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ()) ())
+  , testP "x + { 1 };" (Semi (Binary [] AddOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (BlockExpr [] (Block [NoSemi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) ()) ()) ())
+  , testP "match true { }" (NoSemi (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [] ()) ())
+  , testP "static foo: i32 = 1;" (ItemStmt (Item "foo" [] (Static i32 Immutable (Lit [] (Int 1 Unsuffixed ()) ())) InheritedV ()) ())
+  ]
+
+
+-- | Test parsing of items.
+parserItems :: Test
+parserItems = testGroup "parsing items"
+  [ testP "static foo: i32 = 1;" (Item "foo" [] (Static i32 Immutable (Lit [] (Int 1 Unsuffixed ()) ())) InheritedV ())
+  , testP "static mut foo: i32 = 1;" (Item "foo" [] (Static i32 Mutable (Lit [] (Int 1 Unsuffixed ()) ())) InheritedV ())
+  , testP "const foo: i32 = 1;" (Item "foo" [] (ConstItem i32 (Lit [] (Int 1 Unsuffixed ()) ())) InheritedV ())
+  , testP "type Foo = i32;" (Item "Foo" [] (TyAlias i32 (Generics [] [] (WhereClause [] ()) ())) InheritedV ()) 
+  , testP "type Foo<> = i32;" (Item "Foo" [] (TyAlias i32 (Generics [] [] (WhereClause [] ()) ())) InheritedV ()) 
+  , testP "extern crate foo;" (Item "foo" [] (ExternCrate Nothing) InheritedV ())
+  , testP "extern crate foo as bar;" (Item "foo" [] (ExternCrate (Just "bar")) InheritedV ()) 
+  , testP "mod foo;" (Item "foo" [] (Mod []) InheritedV ())
+  , testP "struct Point;" (Item "Point" [] (StructItem (StructD [] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
+  , testP "struct Point { }" (Item "Point" [] (StructItem (StructD [] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
+  , testP "struct Point { x: i32, y: i32 }" (Item "Point" [] (StructItem (StructD [StructField (Just "x") InheritedV i32 [] (), StructField (Just "y") InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
+  , testP "struct Point { x: i32, y: i32, }" (Item "Point" [] (StructItem (StructD [StructField (Just "x") InheritedV i32 [] (), StructField (Just "y") InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
+  , testP "union Either { }" (Item "Either" [] (Union (StructD [] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
+  , testP "union Either { x: i32, y: i32 }" (Item "Either" [] (Union (StructD [StructField (Just "x") InheritedV i32 [] (), StructField (Just "y") InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
+  , testP "union Either { x: i32, y: i32, }" (Item "Either" [] (Union (StructD [StructField (Just "x") InheritedV i32 [] (), StructField (Just "y") InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
+--  , testP "union Expr generics where_clause struct_decl_args"    -- {% withSpan $1 (Item (unspan $2) [] (Union $5 $3{ whereClause = $4 }) InheritedV) }
+--  , testP "enum Color generics where_clause enum_defs"           -- {% withSpan $1 (Item (unspan $2) [] (Enum $5 $3{ whereClause = $4 }) InheritedV) }
   ]
 
 
