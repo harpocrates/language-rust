@@ -38,6 +38,7 @@ class PrettyAnnotated p where
   prettyAnn = text . show
 
 instance PrettyAnnotated Block where prettyAnn = printBlock
+instance PrettyAnnotated Crate where prettyAnn = printCrate
 instance PrettyAnnotated Expr where prettyAnn = printExpr
 instance PrettyAnnotated Field where prettyAnn = printField
 instance PrettyAnnotated FieldPat where prettyAnn = printFieldPat

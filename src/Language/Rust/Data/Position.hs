@@ -31,12 +31,12 @@ minPos p1 p2 = minimumBy (comparing absoluteOffset) [p1,p2]
 
 -- | starting position in a file
 initPos :: Position
-initPos = Position 0 1 1
+initPos = Position 0 1 0
 
 -- | advance column
 incPos :: Position -> Int -> Position
 incPos NoPosition _ = NoPosition
-incPos p@Position{ absoluteOffset = a, row = r } offset = p { absoluteOffset = a + offset, row = r + offset }
+incPos p@Position{ absoluteOffset = a, col = c } offset = p { absoluteOffset = a + offset, col = c + offset }
 
 -- | advance to the next line
 retPos :: Position -> Position

@@ -1,6 +1,7 @@
 {
 module Language.Rust.Parser.Parser (
-  attributeP, typeP, literalP, patternP, expressionP, stmtP, itemP, crateP
+  attributeP, typeP, literalP, patternP, expressionP, stmtP, itemP, crateP, blockP, implItemP,
+  traitItemP, tokenTreeP
 ) where
 
 import Language.Rust.Data.InputStream
@@ -14,8 +15,7 @@ import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Constants
 
 import Data.Semigroup ((<>))
-import Data.Maybe
-import Data.List.NonEmpty hiding (length, init, last, reverse)
+import Data.List.NonEmpty (NonEmpty(..), (<|), toList)
 import qualified Data.List.NonEmpty as N
 }
 
@@ -33,6 +33,10 @@ import qualified Data.List.NonEmpty as N
 %name expressionP expr
 %name itemP mod_item   -- the exported parser for items really is for mod items (with visibility)
 %name crateP crate_
+%name blockP block
+%name implItemP impl_item
+%name traitItemP trait_item
+%name tokenTreeP token_tree
 
 %tokentype { Spanned Token }
 
@@ -50,7 +54,7 @@ import qualified Data.List.NonEmpty as N
 --  * field accesses are prefixes of method calls (all 3 types of exprs, so x3)
 --  * deciding between expression paths and struct expressions
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 20 
+%expect 29 
 
 %token
 
@@ -205,7 +209,7 @@ import qualified Data.List.NonEmpty as N
   ntPat          { Spanned (Interpolated (NtPat $$)) _ }
   ntExpr         { Spanned (Interpolated (NtExpr $$)) _ }
   ntTy           { Spanned (Interpolated (NtTy $$)) _ }
-  ntIdent        { Spanned (Interpolated (NtIdent $$)) _ }
+  ntIdent        { Spanned (Interpolated (NtIdent _)) _ }
   ntMeta         { Spanned (Interpolated (NtMeta $$)) _ }
   ntPath         { Spanned (Interpolated (NtPath $$)) _ }
   ntTT           { Spanned (Interpolated (NtTT $$)) _ }
@@ -224,8 +228,14 @@ import qualified Data.List.NonEmpty as N
 %%
 
 -- Unwraps the IdentTok into just an Ident
+-- For questionable reasons of backwards compatibility, 'union' and 'default' can be used as
+-- identifiers, even if they are also keywords. They are "contextual" keywords.
+--
+-- Union's RFC: https://github.com/rust-lang/rfcs/blob/master/text/1444-union.md
 ident :: { Spanned Ident }
-  : ntIdent                       { Spanned $1 mempty }
+  : ntIdent                       { fmap (\(Interpolated (NtIdent i)) -> i) $1 }
+  | union                         { let Spanned (IdentTok i) s = $1 in Spanned i s }
+  | default                       { let Spanned (IdentTok i) s = $1 in Spanned i s }
   | IDENT                         { let Spanned (IdentTok i) s = $1 in Spanned i s }
 
 -- This should precede any '>' token which could be absorbed in a '>>', '>=', or '>>=' token. Its
@@ -240,6 +250,7 @@ gt :: { () }
         GreaterGreaterEqual -> pushToken (Spanned GreaterEqual s) *> pushToken (Spanned Greater s)
         _                   -> pushToken (Spanned tok s)
     }
+
 
 -------------
 -- Utility --
@@ -449,7 +460,7 @@ complex_expr_path :: { Path Span }
   : ident '::' generic_values                                      
       {% if isPathSegmentIdent $1
            then let (lts, tys, bds) = $3
-                in withSpan $1 (Path False (fromList [(unspan $1, AngleBracketed lts tys bds mempty)]))
+                in withSpan $1 (Path False ((unspan $1, AngleBracketed lts tys bds mempty) :| []))
            else fail "invalid path segment in expression path" }
   | ident '::' path_segments_with_colons                              
       {% withSpan $1 (Path False ((unspan $1, NoParameters mempty) <| unspan $3)) }
@@ -477,13 +488,14 @@ path_parameter2 :: { Either ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) Ide
 
 -- Mod related:
 -- parse_path(PathStyle::Mod)
-mod_path :: { Path Span }
+mod_path :: { Path Span  }
   : ntPath                                   { $1 }
-  | path_segments_without_types              { $1 }
-
-path_segments_without_types :: { Path Span  }
-  : path_segment_without_types               {% withSpan $1 (Path False (unspan $1 :| [])) }
+  | path_segment_without_types               {% withSpan $1 (Path False (unspan $1 :| [])) }
+  | self                                     {% withSpan $1 (Path False ((mkIdent "self", NoParameters mempty) :| [])) }
+  | super                                    {% withSpan $1 (Path False ((mkIdent "super", NoParameters mempty) :| [])) }
   | '::' path_segment_without_types          {% withSpan $1 (Path True (unspan $2 :| [])) }
+  | '::' self                                {% withSpan $1 (Path False ((mkIdent "self", NoParameters mempty) :| [])) }
+  | '::' super                               {% withSpan $1 (Path False ((mkIdent "super", NoParameters mempty) :| [])) }
   | mod_path '::' path_segment_without_types {% withSpan $1 (Path (global $1) (segments $1 |> unspan $3)) }
 
 path_segment_without_types :: { Spanned (Ident, PathParameters Span) }
@@ -611,6 +623,7 @@ ty_param_bound_mod :: { TyParamBound Span }
 arg_general :: { Arg Span } 
   : ty_sum                {% withSpan $1 (Arg Nothing $1) }
   | ident ':' ty_sum      {% withSpan $1 (Arg (Just (IdentP (ByValue Immutable) (unspan $1) Nothing mempty)) $3) }
+  | mut ident ':' ty_sum  {% withSpan $1 (Arg (Just (IdentP (ByValue Mutable) (unspan $2) Nothing mempty)) $4) }
   | '_'   ':' ty_sum      {% withSpan $1 (Arg (Just (WildP mempty)) $3) }
 
 arg_self :: { Arg Span }
@@ -676,9 +689,15 @@ pat :: { Pat Span }
   | complex_expr_path                           {% withSpan $1 (PathP Nothing $1) }
   | expr_qual_path                              {% withSpan $1 (PathP (Just (fst (unspan $1))) (snd (unspan $1))) }
   | lit_or_path '...' lit_or_path               {% withSpan $1 (RangeP $1 $3) }
-  | expr_path '{' '..' '}'                      {% withSpan $1 (StructP $1 [] True) }
-  | expr_path '{' pat_fields '}'                {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
-  | expr_path '(' pat_tup ')'                   {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
+ -- | expr_path '{' '..' '}'                      {% withSpan $1 (StructP $1 [] True) }
+  | ident '{' '..' '}'                          {% withSpan $1 (StructP (Path False ((unspan $1, NoParameters mempty) :| []) mempty) [] True) }
+  | complex_expr_path '{' '..' '}'              {% withSpan $1 (StructP $1 [] True) }
+ -- | expr_path '{' pat_fields '}'                {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
+  | ident '{' pat_fields '}'                    {% let (fs,b) = $3 in withSpan $1 (StructP (Path False ((unspan $1, NoParameters mempty) :| []) mempty) fs b) }
+  | complex_expr_path '{' pat_fields '}'        {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
+ -- | expr_path '(' pat_tup ')'                   {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
+  | ident '(' pat_tup ')'                       {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP (Path False ((unspan $1, NoParameters mempty) :| []) mempty) ps m) }
+  | complex_expr_path '(' pat_tup ')'           {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
   | expr_mac                                    {% withSpan $1 (MacP $1) }
   | '[' pat_slice ']'                           {% let (b,s,a) = $2 in withSpan $1 (SliceP b s a) }
   | '(' pat_tup ')'                             {%
@@ -719,7 +738,7 @@ pat_slice :: { ([Pat Span], Maybe (Pat Span), [Pat Span]) }
 
 
 lit_or_path :: { Expr Span }
-  : ident             {% withSpan $1 (PathExpr [] Nothing (Path False (fromList [(unspan $1, AngleBracketed [] [] [] mempty)]) mempty)) } 
+  : ident             {% withSpan $1 (PathExpr [] Nothing (Path False ((unspan $1, NoParameters mempty) :| []) mempty)) } 
   | complex_expr_path {% withSpan $1 (PathExpr [] Nothing $1) } 
   | expr_qual_path    {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
   | '-' lit_expr      {% withSpan $1 (Unary [] Neg $2) }
@@ -764,16 +783,13 @@ lit_expr :: { Expr Span }
 expr          :: { Expr Span }
               : ntExpr                                          { $1 }
               | gen_expr                                        { $1 }
-              | binary0_expr                                    { $1 }
-              | lambda_expr                                     { $1 }
-binary0_expr  :: { Expr Span }
-              : gen_binary0_expr(binary1_expr,binary0_expr)     { $1 }
               | binary1_expr                                    { $1 }
+              | lambda_expr                                     { $1 }
 binary1_expr  :: { Expr Span }
-              : gen_binary1_expr(binary2_expr,binary1_expr)     { $1 } 
-              | binary2_expr                                    { $1 } 
+              : gen_binary1_expr(binary2_expr,binary1_expr,ns_binary1_expr)     { $1 }
+              | binary2_expr                                    { $1 }
 binary2_expr  :: { Expr Span }
-              : gen_binary2_expr(binary3_expr,binary3_expr)     { $1 } 
+              : gen_binary2_expr(binary3_expr,binary2_expr)     { $1 } 
               | binary3_expr                                    { $1 } 
 binary3_expr  :: { Expr Span }
               : gen_binary3_expr(binary3_expr,binary4_expr)     { $1 } 
@@ -819,16 +835,13 @@ postfix_expr  :: { Expr Span }
 nostruct_expr    :: { Expr Span }
                  : ntExpr                                                { $1 }
                  | gen_expr                                              { $1 }
-                 | ns_binary0_expr                                       { $1 }
-                 | lambda_expr_nostruct                                  { $1 }
-ns_binary0_expr  :: { Expr Span }
-                 : gen_binary0_expr(ns_binary1_expr,ns_binary0_expr)     { $1 }
                  | ns_binary1_expr                                       { $1 }
+                 | lambda_expr_nostruct                                  { $1 }
 ns_binary1_expr  :: { Expr Span }
-                 : gen_binary1_expr(ns_binary2_expr,ns_binary1_expr)     { $1 } 
-                 | ns_binary2_expr                                       { $1 } 
+                 : gen_binary1_expr(ns_binary2_expr,ns_binary1_expr,ns_binary1_expr)     { $1 }
+                 | ns_binary2_expr                                       { $1 }
 ns_binary2_expr  :: { Expr Span }
-                 : gen_binary2_expr(ns_binary3_expr,ns_binary3_expr)     { $1 } 
+                 : gen_binary2_expr(ns_binary3_expr,ns_binary2_expr)     { $1 } 
                  | ns_binary3_expr                                       { $1 } 
 ns_binary3_expr  :: { Expr Span }
                  : gen_binary3_expr(ns_binary3_expr,ns_binary4_expr)     { $1 } 
@@ -873,16 +886,13 @@ ns_postfix_expr  :: { Expr Span }
 nonblock_expr    :: { Expr Span }
                  : ntExpr                                                { $1 }
                  | gen_expr                                              { $1 }
-                 | nb_binary0_expr                                       { $1 }
-                 | lambda_expr_nostruct                                  { $1 }
-nb_binary0_expr  :: { Expr Span }
-                 : gen_binary0_expr(nb_binary1_expr,binary0_expr)        { $1 }
                  | nb_binary1_expr                                       { $1 }
-nb_binary1_expr  :: { Expr Span } 
-                 : gen_binary1_expr(nb_binary2_expr,binary1_expr)        { $1 } 
-                 | nb_binary2_expr                                       { $1 } 
-nb_binary2_expr  :: { Expr Span }
-                 : gen_binary2_expr(nb_binary3_expr,binary3_expr)        { $1 } 
+                 | lambda_expr_nostruct                                  { $1 }
+nb_binary1_expr  :: { Expr Span }
+                 : gen_binary1_expr(nb_binary2_expr,binary1_expr,ns_binary1_expr)        { $1 }
+                 | nb_binary2_expr                                       { $1 }
+nb_binary2_expr  :: { Expr Span } 
+                 : gen_binary2_expr(nb_binary3_expr,binary2_expr)        { $1 } 
                  | nb_binary3_expr                                       { $1 } 
 nb_binary3_expr  :: { Expr Span }
                  : gen_binary3_expr(nb_binary3_expr,binary4_expr)        { $1 } 
@@ -953,9 +963,14 @@ paren_expr :: { Expr Span }
 -- General postfix expression
 gen_postfix_expr(lhs) :: { Expr Span }
   : lit_expr                                                                    { $1 }
+  | self                                                                        {% withSpan $1 (PathExpr [] Nothing (Path False ((mkIdent "self", NoParameters mempty) :| []) mempty)) }
   | expr_path                                                                   {% withSpan $1 (PathExpr [] Nothing $1) }
   | expr_qual_path                                                              {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
   | expr_mac                                                                    {% withSpan $1 (MacExpr [] $1) }
+  | '[' ']'                                {% withSpan $1 (Vec [] []) }
+  | '[' sep_by1(expr,',') ']'              {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' sep_by1(expr,',') ',' ']'          {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' expr ';' expr ']'                  {% withSpan $1 (Repeat [] $2 $4) }
   | lhs '[' expr ']'                                                            {% withSpan $1 (Index [] $1 $3) }
   | lhs '?'                                                                     {% withSpan $1 (Try [] $1) }
   | lhs '(' ')'                                                                 {% withSpan $1 (Call [] $1 []) }
@@ -1036,18 +1051,14 @@ gen_binary4_expr(lhs,rhs) :: { Expr Span }
 gen_binary3_expr(lhs,rhs) :: { Expr Span }
   : lhs '||' rhs                           {% withSpan $1 (Binary [] OrOp $1 $3) }
 
--- should be nonassoc
--- TODO omitting lhs or rhs
-gen_binary2_expr(lhs,rhs) :: { Expr Span }
-  : lhs '..' rhs                           {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
-  | lhs '...' rhs                          {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
-
 -- should be right associative
-gen_binary1_expr(lhs,rhs) :: { Expr Span }
+gen_binary2_expr(lhs,rhs) :: { Expr Span }
   : lhs '<-' rhs                           {% withSpan $1 (InPlace [] $1 $3) }
 
 -- should be right associative
-gen_binary0_expr(lhs,rhs) :: { Expr Span }
+-- '..' is funky. Basically, there is a hack to make sure the rhs doesn't start with a block
+-- to accomodate infinite loop syntax: <https://github.com/rust-lang/rust/pull/21374>
+gen_binary1_expr(lhs,rhs,rhs2) :: { Expr Span }
   : lhs '=' rhs                            {% withSpan $1 (Assign   [] $1 $3) }
   | lhs '>>=' rhs                          {% withSpan $1 (AssignOp [] ShrOp $1 $3) }
   | lhs '<<=' rhs                          {% withSpan $1 (AssignOp [] ShlOp $1 $3) }
@@ -1059,6 +1070,10 @@ gen_binary0_expr(lhs,rhs) :: { Expr Span }
   | lhs '|=' rhs                           {% withSpan $1 (AssignOp [] BitOrOp $1 $3) }
   | lhs '&=' rhs                           {% withSpan $1 (AssignOp [] BitAndOp $1 $3) }
   | lhs '%=' rhs                           {% withSpan $1 (AssignOp [] RemOp $1 $3) }
+  | lhs '..' rhs2                          {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
+  | lhs '...' rhs2                         {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
+ -- | lhs '..'                               {% withSpan $1 (Range [] (Just $1) Nothing Closed) }
+ -- | lhs '...'                              {% withSpan $1 (Range [] (Just $1) Nothing HalfOpen) }
 
 -- Lowest precedence generalized expression
 gen_expr :: { Expr Span }
@@ -1072,10 +1087,6 @@ gen_expr :: { Expr Span }
   | continue lifetime                      {% withSpan $1 (Continue [] (Just $2)) }
   | break                                  {% withSpan $1 (Break [] Nothing) }
   | break lifetime                         {% withSpan $1 (Break [] (Just $2)) }
-  | '[' ']'                                {% withSpan $1 (Vec [] []) }
-  | '[' sep_by1(expr,',') ']'              {% withSpan $1 (Vec [] (toList $2)) }
-  | '[' sep_by1(expr,',') ',' ']'          {% withSpan $1 (Vec [] (toList $2)) }
-  | '[' expr ';' expr ']'                  {% withSpan $1 (Repeat [] $2 $4) }
 
 
 
@@ -1159,7 +1170,9 @@ stmt :: { Stmt Span }
   |             nonblock_expr ';'               {% toStmt $1 True }
   | outer_attrs nonblock_expr ';'               {% toStmt (toList $1 `addAttrs` $2) True }
   |             block_expr                      {% toStmt $1 False }
+  |             block_expr ';'                  {% toStmt $1 True }
   | outer_attrs block_expr                      {% toStmt (toList $1 `addAttrs` $2) False }
+  | outer_attrs block_expr ';'                  {% toStmt (toList $1 `addAttrs` $2) True }
   |                 stmt_item                   {% withSpan $1 (ItemStmt $1) }
   | outer_attrs     stmt_item                   {% withSpan $1 (ItemStmt (let Item i a n v s = $2 in Item i (toList $1 ++ a) n v s)) }
   |             pub stmt_item                   {% withSpan $1 (ItemStmt (let Item i a n _ s = $2 in Item i a n PublicV s)) }
@@ -1194,9 +1207,12 @@ inner_attrs_block :: { ([Attribute Span], Block Span) }
 item :: { Item Span }
   : ntItem                                       { $1 }
   | stmt_item                                    { $1 }
-  | expr_path '!' '[' many(token_tree) ']' ';'   {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
-  | expr_path '!' '(' many(token_tree) ')' ';'   {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
-  | expr_path '!' '{' many(token_tree) '}'       {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
+  | expr_path '!' ident '[' many(token_tree) ']' ';'   {% withSpan $1 (Item (unspan $3) [] (MacItem (Mac $1 $5 mempty)) InheritedV) }
+  | expr_path '!'       '[' many(token_tree) ']' ';'   {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
+  | expr_path '!' ident '(' many(token_tree) ')' ';'   {% withSpan $1 (Item (unspan $3) [] (MacItem (Mac $1 $5 mempty)) InheritedV) }
+  | expr_path '!'       '(' many(token_tree) ')' ';'   {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
+  | expr_path '!' ident '{' many(token_tree) '}'       {% withSpan $1 (Item (unspan $3) [] (MacItem (Mac $1 $5 mempty)) InheritedV) }
+  | expr_path '!'       '{' many(token_tree) '}'       {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
 
 mod_item :: { Item Span }
   : outer_attrs vis item                         {% let Item i a n _ _ = $3 in withSpan $2 (Item i (toList $1 ++ a) n (unspan $2)) }
@@ -1274,6 +1290,9 @@ struct_decl_args :: { VariantData Span }
   | '{' '}'                                            {% withSpan $1 (StructD []) }
   | '{' sep_by1(struct_decl_field,',') '}'             {% withSpan $1 (StructD (toList $2)) }
   | '{' sep_by1(struct_decl_field,',') ',' '}'         {% withSpan $1 (StructD (toList $2)) }
+  | '(' ')' ';'                                        {% withSpan $1 (TupleD []) }
+  | '(' sep_by1(tuple_decl_field,',') ')' ';'          {% withSpan $1 (TupleD (toList $2)) }
+  | '(' sep_by1(tuple_decl_field,',') ',' ')' ';'      {% withSpan $1 (TupleD (toList $2)) }
 
 struct_decl_field :: { StructField Span }
   : outer_attrs vis ident ':' ty_sum                   {% withSpan $1 (StructField (Just (unspan $3)) (unspan $2) $5 (toList $1)) }
@@ -1285,8 +1304,7 @@ enum_defs :: { [Variant Span] }
   | '{' sep_by1(enum_def,',') ',' '}'                  { toList $2 }
 
 tuple_decl_field :: { StructField Span }
-  : outer_attrs ty_sum                                 {% withSpan $1 (StructField Nothing InheritedV $2 (toList $1)) }
-  |             ty_sum                                 {% withSpan $1 (StructField Nothing InheritedV $1 []) }
+  : many(outer_attribute) vis ty_sum                   {% withSpan $1 (StructField Nothing (unspan $2) $3 $1) }
 
 enum_def :: { Variant Span }
   : outer_attrs ident '{' '}'                                       {% withSpan $1 (Variant (unspan $2) (toList $1) (StructD [] mempty) Nothing) }
@@ -1309,9 +1327,10 @@ enum_def :: { Variant Span }
 
 -- parse_where_clause
 where_clause :: { WhereClause Span }
-  : {- empty -}                        { WhereClause [] mempty }
-  | ntWhereClause                      { $1 } 
-  | where sep_by1(where_predicate,',') {% withSpan $1 (WhereClause (toList $2)) }
+  : {- empty -}                            { WhereClause [] mempty }
+  | ntWhereClause                          { $1 } 
+  | where sep_by1(where_predicate,',')     {% withSpan $1 (WhereClause (toList $2)) }
+  | where sep_by1(where_predicate,',') ',' {% withSpan $1 (WhereClause (toList $2)) }
 
 where_predicate :: { WherePredicate Span }
   : lifetime ':' sep_by(lifetime,'+')                      {% withSpan $1 (RegionPredicate $1 $3) }
@@ -1345,12 +1364,8 @@ item_impl :: { Item Span }
     {% withSpan $1 (Item (mkIdent "") [] (case $2 of { Generics [] [] _ _ -> (DefaultImpl Normal $3); _ -> error "todo" }) InheritedV) }
 
 impl_items :: { ([Attribute Span], [ImplItem Span]) }
-  : '{'                                        '}'  { ([], []) }
-  | '{' inner_attrs                            '}'  { (toList $2, []) }
-  | '{'             sep_by1(impl_item,',')     '}'  { ([], toList $2) }
-  | '{' inner_attrs sep_by1(impl_item,',')     '}'  { (toList $2, toList $3) }
-  | '{'             sep_by1(impl_item,',') ',' '}'  { ([], toList $2) }
-  | '{' inner_attrs sep_by1(impl_item,',') ',' '}'  { (toList $2, toList $3) }
+  : '{'             many(impl_item) '}'  { ([], $2) }
+  | '{' inner_attrs many(impl_item) '}'  { (toList $2, $3) }
 
 impl_item :: { ImplItem Span }
   : ntImplItem                                          { $1 }
@@ -1424,7 +1439,9 @@ view_path :: { ViewPath Span }
 
 plist :: { PathListItem Span }
   : ident           {% withSpan $1 (PathListItem (unspan $1) Nothing) }
+  | self            {% withSpan $1 (PathListItem (mkIdent "self") Nothing) }
   | ident as ident  {% withSpan $1 (PathListItem (unspan $1) (Just (unspan $3))) }
+  | self as ident   {% withSpan $1 (PathListItem (mkIdent "self") (Just (unspan $3))) }
 
 -------------------
 -- Macro related --
@@ -1435,9 +1452,9 @@ expr_mac :: { Mac Span }
   | expr_path '!' '(' many(token_tree) ')'      {% withSpan $1 (Mac $1 $4) }
 
 ty_mac :: { Mac Span }
-  : ty_path '!' '[' many(token_tree) ']'      {% withSpan $1 (Mac $1 $4) }
-  | ty_path '!' '{' many(token_tree) '}'      {% withSpan $1 (Mac $1 $4) }
-  | ty_path '!' '(' many(token_tree) ')'      {% withSpan $1 (Mac $1 $4) }
+  : ty_path '!' '[' many(token_tree) ']'        {% withSpan $1 (Mac $1 $4) }
+  | ty_path '!' '{' many(token_tree) '}'        {% withSpan $1 (Mac $1 $4) }
+  | ty_path '!' '(' many(token_tree) ')'        {% withSpan $1 (Mac $1 $4) }
 
 mod_mac :: { Mac Span }
   : mod_path '!' '[' many(token_tree) ']' ';'  {% withSpan $1 (Mac $1 $4) }
@@ -1448,7 +1465,7 @@ token_tree :: { TokenTree }
   : ntTT                     { $1 }
   -- # Delimited
   | '(' many(token_tree) ')'                              { Delimited mempty Paren mempty $2 mempty }
-  | '{' many(token_tree) ')'                              { Delimited mempty Brace mempty $2 mempty }
+  | '{' many(token_tree) '}'                              { Delimited mempty Brace mempty $2 mempty }
   | '[' many(token_tree) ']'                              { Delimited mempty Bracket mempty $2 mempty }
   -- # Sequence
   | '$' '(' many(token_tree) ')' token_not_plus_star '+'  { Sequence mempty $3 (Just (unspan $5)) OneOrMore } 

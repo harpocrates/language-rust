@@ -1201,13 +1201,12 @@ lexToken = do
     Nothing -> do
       (pos,inp) <- getAlexInput
       case alexScan (pos, inp) 0 of
-        AlexEOF        -> handleEofToken *> pure (Spanned Eof (Span pos pos))
+        AlexEOF        -> pure (Spanned Eof (Span pos pos))
         AlexError _    -> fail "lexical error"
         AlexSkip  ai _ -> setAlexInput ai *> lexToken
         AlexToken ai len action -> do
             setAlexInput ai
             tok <- action (takeChars len inp)
-            setLastToken tok
             pos' <- getPosition
             return (Spanned tok (Span pos pos'))
 

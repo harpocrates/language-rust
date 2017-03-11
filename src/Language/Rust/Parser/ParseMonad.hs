@@ -24,8 +24,7 @@ data ParseResult a
 data PState = PState {
     curPos       :: !Position,             -- position at current input location
     curInput     :: !InputStream,          -- the current input
-    prevToken    ::  Token,                -- the previous token
-    savedToken   ::  Token,                -- and the token before that
+    prevPos      ::  Position,             -- position at previous input location
     pushedTokens :: [Spanned Token]        -- possible user-pushed tokens
  }
 
@@ -64,8 +63,7 @@ execParser (P parser) input pos =
   where initialState = PState
           { curPos = pos
           , curInput = input
-          , prevToken = error "ParseMonad.execParser: Touched undefined token!"
-          , savedToken = error "ParseMonad.execParser: Touched undefined token (saved token)!"
+          , prevPos = error "ParseMonad.execParser: Touched undefined position!"
           , pushedTokens = []
           }
 
@@ -76,10 +74,6 @@ pushToken tok = P $ \s@PState{ pushedTokens = toks } -> Ok () s{ pushedTokens = 
 -- | pop a token (if there is one to pop, otherwise returns Nothing) 
 popToken :: P (Maybe (Spanned Token))
 popToken = P $ \s@PState{ pushedTokens = toks } -> Ok (listToMaybe toks) s{ pushedTokens = drop 1 toks }
-
--- | update the position of the parser
-updatePosition :: (Position -> Position) -> P ()
-updatePosition update = P (\s@PState{ curPos = pos } -> Ok () s{ curPos = update pos })
 
 -- | retrieve the position of the parser
 getPosition :: P Position
@@ -97,19 +91,9 @@ getInput = P (\s@PState{ curInput = i } -> Ok i s)
 setInput :: InputStream -> P ()
 setInput i = P (\s -> Ok () s{ curInput = i })
 
--- | get the previous token
-getLastToken :: P Token
-getLastToken = P (\s@PState{ prevToken = tok } -> Ok tok s)
-
--- | get the previous, previous token
-getSavedToken :: P Token
-getSavedToken = P (\s@PState{ savedToken = tok} -> Ok tok s)
-
--- | update the last token
-setLastToken :: Token -> P ()
-setLastToken Eof = P (\s -> Ok () s{ savedToken = prevToken s })
-setLastToken tok = P (\s -> Ok () s{ prevToken = tok, savedToken = prevToken s })
-
--- | handle an End-Of-File token (changes savedToken)
-handleEofToken :: P ()
-handleEofToken = P (\s -> Ok () s{ savedToken = prevToken s })
+-- | go back to previous position
+popPosition :: P ()
+popPosition = P $ \s@PState{ prevPos = p } ->
+  Ok () s{ curPos = p
+         , prevPos = error "ParseMonad.popPosition: Touched undefined position!"
+         }

@@ -480,6 +480,10 @@ parserExpressions = testGroup "parsing expressions"
   , testP "x << 1" (Binary [] ShlOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
   , testP "x >> 1" (Binary [] ShrOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())
   , testP "&&&x&&&y" (Binary [] AndOp (AddrOf [] Immutable (AddrOf [] Immutable (AddrOf [] Immutable (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) ()) ()) ()) (AddrOf [] Immutable (PathExpr [] Nothing (Path False [(mkIdent "y", NoParameters ())] ()) ()) ()) ())
+  , testP "&[]" (AddrOf [] Immutable (Vec [] [] ()) ()) 
+  , testP "for _ in 1..2 { }" (ForLoop [] (WildP ()) (Range [] (Just (Lit [] (Int 1 Unsuffixed ()) ())) (Just (Lit [] (Int 2 Unsuffixed ()) ())) Closed ()) (Block [] DefaultBlock ()) Nothing ())
+  , testP "for _ in 1..x { }" (ForLoop [] (WildP ()) (Range [] (Just (Lit [] (Int 1 Unsuffixed ()) ())) (Just (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ())) Closed ()) (Block [] DefaultBlock ()) Nothing ())
+  , testP "for _ in 1.. { }" (ForLoop [] (WildP ()) (Range [] (Just (Lit [] (Int 1 Unsuffixed ()) ())) (Just (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ())) Closed ()) (Block [] DefaultBlock ()) Nothing ())
   ]
 
 
@@ -547,8 +551,8 @@ parserItems = testGroup "parsing items"
   , testP "impl Debug for i32 { type T = i32; }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "T" InheritedV Final [] (TypeI i32) ()]) InheritedV ())
   , testP "impl Debug for i32 { pub default type T = i32; }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "T" PublicV Default [] (TypeI i32) ()]) InheritedV ())
   , testP "impl Debug for i32 { const x: i32 = 1; }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "x" InheritedV Final [] (ConstI i32 (Lit [] (Int 1 Unsuffixed ()) ())) ()]) InheritedV ())
-  , testP "impl Debug for i32 { foo!(x); }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 26 27 1) (Position 27 28 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
-  , testP "impl Debug for i32 { foo!{x} }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 26 27 1) (Position 27 28 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
+  , testP "impl Debug for i32 { foo!(x); }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
+  , testP "impl Debug for i32 { foo!{x} }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
   , testP "impl Debug for i32 { const unsafe fn foo(x: i32) -> i32 { return x + 1 } }" 
   (Item "" [] (Impl Normal Positive
                     (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32

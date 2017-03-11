@@ -22,4 +22,6 @@ instance Parse (Pat Span) where parser = patternP
 instance Parse (Expr Span) where parser = expressionP
 instance Parse (Stmt Span) where parser = stmtP
 instance Parse (Item Span) where parser = itemP
+instance Parse (Crate Span) where parser = crateP
+instance Parse TokenTree where parser = tokenTreeP
 

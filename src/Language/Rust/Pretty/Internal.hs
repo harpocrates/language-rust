@@ -100,6 +100,11 @@ blockAttrsPunctuated as s ds = let (ds',d') = (Prelude.init ds, Prelude.last ds)
 
 -------------------------------------------
 
+-- | Pretty print a crate
+printCrate :: Crate a -> Doc a
+printCrate (Crate items as macs x) = annotate x (vcat ls)
+  where ls = [ printAttr a False | a <- as ] ++ [""] ++ [ printItem item | item <- items ]
+
 -- | Pretty print a name
 printName :: Name -> Doc a
 printName (Name s) = text s
