@@ -3,6 +3,8 @@ module Language.Rust.Data.Located where
 import Language.Rust.Data.Position
 import Language.Rust.Syntax.AST
 
+import Data.List.NonEmpty (NonEmpty(..))
+
 -- | Describes types that can be located - their span can be extracted
 class Located a where
   posOf :: a -> Span
@@ -16,6 +18,9 @@ instance Located (Spanned a) where
 instance Located a => Located [a] where
   posOf = foldMap posOf
 
+instance Located a => Located (NonEmpty a) where
+  posOf = foldMap posOf
+
 instance Located a => Located (Arg a) where
   posOf (Arg _ _ s) = posOf s
   posOf (SelfValue _ s) = posOf s
@@ -25,7 +30,7 @@ instance Located a => Located (Arg a) where
 instance Located a => Located (Arm a) where posOf (Arm _ _ _ _ s) = posOf s
 instance Located a => Located (Attribute a) where posOf (Attribute _ _ _ s) = posOf s
 instance Located a => Located (Block a) where posOf (Block _ _ s) = posOf s
-instance Located a => Located (Crate a) where posOf (Crate _ _ _ _ s) = posOf s
+instance Located a => Located (Crate a) where posOf (Crate _ _ _ s) = posOf s
 
 instance Located a => Located (Expr a) where
   posOf (Box _ _ s) = posOf s

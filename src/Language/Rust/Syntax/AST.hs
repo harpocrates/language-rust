@@ -126,7 +126,6 @@ data Crate a
   = Crate
       { module_ :: [Item a]
       , attrs :: [Attribute a]
-      , config :: MetaItem a
       , exportedMacros :: [MacroDef a]
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)

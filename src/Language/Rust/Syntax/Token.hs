@@ -56,7 +56,7 @@ data Token
   | LifetimeTok Ident
   | Space Space Name        -- ^ Whitespace
   | Doc String DocType      -- ^ Doc comment, contents, whether it is outer or not
-  | Shebang
+  | Shebang String          -- ^ Shebang followed by the rest of the line
   | Eof
   -- In left-hand-sides of MBE macros:
   | MatchNt Ident Ident IdentStyle IdentStyle     -- ^ Parse a nonterminal (name to bind, name of NT)
@@ -147,7 +147,7 @@ instance Show Token where
   show (Space Comment n) = "/*" ++ show n ++ " */"
   show (Doc d InnerDoc) = "/*!" ++ d ++ "*/"
   show (Doc d OuterDoc) = "/**" ++ d ++ "*/"
-  show Shebang = "#!"
+  show (Shebang s) = "#!" ++ s
   show Eof = "<EOF>"
   
   show Interpolated{} = "<Interpolated>"
