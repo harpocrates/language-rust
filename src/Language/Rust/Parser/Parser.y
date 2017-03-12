@@ -54,7 +54,7 @@ import qualified Data.List.NonEmpty as N
 --  * field accesses are prefixes of method calls (all 3 types of exprs, so x3)
 --  * deciding between expression paths and struct expressions
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 29 
+%expect 37
 
 %token
 
@@ -224,6 +224,22 @@ import qualified Data.List.NonEmpty as N
 -- "& mut pat" has higher precedence than "binding_mode1 ident [@ pat]"
 %nonassoc mut
 %nonassoc IDENT
+
+
+%right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%=' '..' '...' 
+%right '<-'
+%left '||'
+%left '&&'
+%left '==' '!=' '<' '>' '<=' '>='
+%left '|'
+%left '^'
+%left '&'
+%left '<<' '>>'
+%left '+' '-'
+%left '*' '/' '%'
+%left ':' as
+%left UNARY
+
 
 %%
 
@@ -780,162 +796,70 @@ lit_expr :: { Expr Span }
 
 
 -- General expressions, not restrictions
-expr          :: { Expr Span }
-              : ntExpr                                          { $1 }
-              | gen_expr                                        { $1 }
-              | binary1_expr                                    { $1 }
-              | lambda_expr                                     { $1 }
-binary1_expr  :: { Expr Span }
-              : gen_binary1_expr(binary2_expr,binary1_expr,ns_binary1_expr)     { $1 }
-              | binary2_expr                                    { $1 }
-binary2_expr  :: { Expr Span }
-              : gen_binary2_expr(binary3_expr,binary2_expr)     { $1 } 
-              | binary3_expr                                    { $1 } 
-binary3_expr  :: { Expr Span }
-              : gen_binary3_expr(binary3_expr,binary4_expr)     { $1 } 
-              | binary4_expr                                    { $1 } 
-binary4_expr  :: { Expr Span }
-              : gen_binary4_expr(binary4_expr,binary5_expr)     { $1 } 
-              | binary5_expr                                    { $1 } 
-binary5_expr  :: { Expr Span }
-              : gen_binary5_expr(binary5_expr,binary6_expr)     { $1 } 
-              | binary6_expr                                    { $1 } 
-binary6_expr  :: { Expr Span }
-              : gen_binary6_expr(binary6_expr,binary7_expr)     { $1 } 
-              | binary7_expr                                    { $1 } 
-binary7_expr  :: { Expr Span }
-              : gen_binary7_expr(binary7_expr,binary8_expr)     { $1 } 
-              | binary8_expr                                    { $1 } 
-binary8_expr  :: { Expr Span }
-              : gen_binary8_expr(binary8_expr,binary9_expr)     { $1 } 
-              | binary9_expr                                    { $1 } 
-binary9_expr  :: { Expr Span }
-              : gen_binary9_expr(binary9_expr,binary10_expr)     { $1 } 
-              | binary10_expr                                   { $1 } 
-binary10_expr :: { Expr Span }
-              : gen_binary10_expr(binary10_expr,binary11_expr)  { $1 } 
-              | binary11_expr                                   { $1 } 
-binary11_expr :: { Expr Span }
-              : gen_binary11_expr(binary11_expr,binary12_expr)  { $1 } 
-              | binary12_expr                                   { $1 } 
-binary12_expr :: { Expr Span }
-              : gen_binary12_expr(binary12_expr)                { $1 } 
-              | prefix_expr                                     { $1 } 
-prefix_expr   :: { Expr Span }
-              : gen_prefix_expr(prefix_expr)                    { $1 } 
-              | postfix_expr                                    { $1 } 
+expr :: { Expr Span }
+  : gen_expr                                                           { $1 }
+  | arithmetic_expr                                                    { $1 }
+  | lambda_expr                                                        { $1 }
+arithmetic_expr :: { Expr Span }
+  : gen_arithmetic(arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) { $1 }
+  | postfix_expr                                                       { $1 } 
 postfix_expr  :: { Expr Span }
-              : gen_postfix_expr(postfix_expr)                  { $1 } 
-              | paren_expr                                      { $1 }
-              | struct_expr                                     { $1 }
-              | block_expr                                      { $1 }
+  : gen_postfix_expr(postfix_expr)                                     { $1 } 
+  | paren_expr                                                         { $1 }
+  | struct_expr                                                        { $1 }
+  | block_expr                                                         { $1 }
 
 
 -- General expressions, but no structs
-nostruct_expr    :: { Expr Span }
-                 : ntExpr                                                { $1 }
-                 | gen_expr                                              { $1 }
-                 | ns_binary1_expr                                       { $1 }
-                 | lambda_expr_nostruct                                  { $1 }
-ns_binary1_expr  :: { Expr Span }
-                 : gen_binary1_expr(ns_binary2_expr,ns_binary1_expr,ns_binary1_expr)     { $1 }
-                 | ns_binary2_expr                                       { $1 }
-ns_binary2_expr  :: { Expr Span }
-                 : gen_binary2_expr(ns_binary3_expr,ns_binary2_expr)     { $1 } 
-                 | ns_binary3_expr                                       { $1 } 
-ns_binary3_expr  :: { Expr Span }
-                 : gen_binary3_expr(ns_binary3_expr,ns_binary4_expr)     { $1 } 
-                 | ns_binary4_expr                                       { $1 } 
-ns_binary4_expr  :: { Expr Span }
-                 : gen_binary4_expr(ns_binary4_expr,ns_binary5_expr)     { $1 } 
-                 | ns_binary5_expr                                       { $1 } 
-ns_binary5_expr  :: { Expr Span }
-                 : gen_binary5_expr(ns_binary5_expr,ns_binary6_expr)     { $1 } 
-                 | ns_binary6_expr                                       { $1 } 
-ns_binary6_expr  :: { Expr Span }
-                 : gen_binary6_expr(ns_binary6_expr,ns_binary7_expr)     { $1 } 
-                 | ns_binary7_expr                                       { $1 } 
-ns_binary7_expr  :: { Expr Span }
-                 : gen_binary7_expr(ns_binary7_expr,ns_binary8_expr)     { $1 } 
-                 | ns_binary8_expr                                       { $1 } 
-ns_binary8_expr  :: { Expr Span }
-                 : gen_binary8_expr(ns_binary8_expr,ns_binary9_expr)     { $1 } 
-                 | ns_binary9_expr                                       { $1 } 
-ns_binary9_expr  :: { Expr Span }
-                 : gen_binary9_expr(ns_binary9_expr,ns_binary10_expr)     { $1 } 
-                 | ns_binary10_expr                                      { $1 } 
-ns_binary10_expr :: { Expr Span }
-                 : gen_binary10_expr(ns_binary10_expr,ns_binary11_expr)  { $1 } 
-                 | ns_binary11_expr                                      { $1 } 
-ns_binary11_expr :: { Expr Span }
-                 : gen_binary11_expr(ns_binary11_expr,ns_binary12_expr)  { $1 } 
-                 | ns_binary12_expr                                      { $1 } 
-ns_binary12_expr :: { Expr Span }
-                 : gen_binary12_expr(ns_binary12_expr)                   { $1 } 
-                 | ns_prefix_expr                                        { $1 } 
-ns_prefix_expr   :: { Expr Span }
-                 : gen_prefix_expr(ns_prefix_expr)                       { $1 } 
-                 | ns_postfix_expr                                       { $1 } 
+nostruct_expr :: { Expr Span }
+  : gen_expr                                                           { $1 }
+  | ns_arithmetic_expr                                                 { $1 }
+  | lambda_expr_nostruct                                               { $1 }
+ns_arithmetic_expr :: { Expr Span }
+  : gen_arithmetic(ns_arithmetic_expr,ns_arithmetic_expr,nsb_arithmetic_expr) { $1 }
+  | ns_postfix_expr                                                    { $1 } 
 ns_postfix_expr  :: { Expr Span }
-                 : gen_postfix_expr(ns_postfix_expr)                     { $1 } 
-                 | paren_expr                                            { $1 }
-                 | block_expr                                            { $1 }
+  : gen_postfix_expr(ns_postfix_expr)                                  { $1 } 
+  | paren_expr                                                         { $1 }
+  | block_expr                                                         { $1 }
+
+
+-- General expressions, but no structs and no blocks (block-like things like if expressions or loops
+-- are fine)
+nostructblock_expr :: { Expr Span }
+  : gen_expr                                                           { $1 }
+  | nsb_arithmetic_expr                                                { $1 }
+  | lambda_expr_nostruct                                               { $1 }
+nsb_arithmetic_expr :: { Expr Span }
+  : gen_arithmetic(nsb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) { $1 }
+  | nsb_postfix_expr                                                   { $1 } 
+nsb_postfix_expr  :: { Expr Span }
+  : gen_postfix_expr(nsb_postfix_expr)                                 { $1 } 
+  | paren_expr                                                         { $1 }
+  | block_like_expr                                                    { $1 }
 
 
 -- General expressions, but no blocks on the left
-nonblock_expr    :: { Expr Span }
-                 : ntExpr                                                { $1 }
-                 | gen_expr                                              { $1 }
-                 | nb_binary1_expr                                       { $1 }
-                 | lambda_expr_nostruct                                  { $1 }
-nb_binary1_expr  :: { Expr Span }
-                 : gen_binary1_expr(nb_binary2_expr,binary1_expr,ns_binary1_expr)        { $1 }
-                 | nb_binary2_expr                                       { $1 }
-nb_binary2_expr  :: { Expr Span } 
-                 : gen_binary2_expr(nb_binary3_expr,binary2_expr)        { $1 } 
-                 | nb_binary3_expr                                       { $1 } 
-nb_binary3_expr  :: { Expr Span }
-                 : gen_binary3_expr(nb_binary3_expr,binary4_expr)        { $1 } 
-                 | nb_binary4_expr                                       { $1 } 
-nb_binary4_expr  :: { Expr Span }
-                 : gen_binary4_expr(nb_binary4_expr,binary5_expr)        { $1 } 
-                 | nb_binary5_expr                                       { $1 } 
-nb_binary5_expr  :: { Expr Span }
-                 : gen_binary5_expr(nb_binary5_expr,binary6_expr)        { $1 } 
-                 | nb_binary6_expr                                       { $1 } 
-nb_binary6_expr  :: { Expr Span }
-                 : gen_binary6_expr(nb_binary6_expr,binary7_expr)        { $1 } 
-                 | nb_binary7_expr                                       { $1 } 
-nb_binary7_expr  :: { Expr Span }
-                 : gen_binary7_expr(nb_binary7_expr,binary8_expr)        { $1 } 
-                 | nb_binary8_expr                                       { $1 } 
-nb_binary8_expr  :: { Expr Span }
-                 : gen_binary8_expr(nb_binary8_expr,binary9_expr)        { $1 } 
-                 | nb_binary9_expr                                       { $1 } 
-nb_binary9_expr  :: { Expr Span }
-                 : gen_binary9_expr(nb_binary9_expr,binary10_expr)        { $1 } 
-                 | nb_binary10_expr                                      { $1 } 
-nb_binary10_expr :: { Expr Span }
-                 : gen_binary10_expr(nb_binary10_expr,binary11_expr)     { $1 } 
-                 | nb_binary11_expr                                      { $1 } 
-nb_binary11_expr :: { Expr Span }
-                 : gen_binary11_expr(nb_binary11_expr,binary12_expr)     { $1 } 
-                 | nb_binary12_expr                                      { $1 } 
-nb_binary12_expr :: { Expr Span }
-                 : gen_binary12_expr(nb_binary12_expr)                   { $1 } 
-                 | nb_prefix_expr                                        { $1 } 
-nb_prefix_expr   :: { Expr Span }
-                 : gen_prefix_expr(nb_prefix_expr)                       { $1 } 
-                 | nb_postfix_expr                                       { $1 } 
-nb_postfix_expr  :: { Expr Span }
-                 : gen_postfix_expr(nb_postfix_expr)                     { $1 }
-                 | paren_expr                                            { $1 }
-                 | struct_expr                                           { $1 }
-
+nonblock_expr :: { Expr Span }
+  : gen_expr                                                           { $1 }
+  | nb_arithmetic_expr                                                 { $1 }
+  | lambda_expr_nostruct                                               { $1 }
+nb_arithmetic_expr :: { Expr Span }
+  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) { $1 }
+  | nb_postfix_expr                                                    { $1 } 
+nb_postfix_expr :: { Expr Span }
+  : gen_postfix_expr(nb_postfix_expr)                                  { $1 }
+  | paren_expr                                                         { $1 }
+  | struct_expr                                                        { $1 }
 
 
 -- "There is a convenience rule that allows one to omit the separating ; after if, match, loop, for, while"
 block_expr :: { Expr Span }
+  : block_like_expr                                           { $1 } 
+  | block                                                     {% withSpan $1 (BlockExpr [] $1) }
+
+-- Any block like expression except a block itself
+block_like_expr :: { Expr Span }
   : if_expr                                                   { $1 }
   |              loop                            block        {% withSpan $1 (Loop [] $2 Nothing) }
   | lifetime ':' loop                            block        {% withSpan $1 (Loop [] $4 (Just $1)) }
@@ -949,7 +873,6 @@ block_expr :: { Expr Span }
   | match nostruct_expr '{' arms '}'                          {% withSpan $1 (Match [] $2 $4) }
   | expr_path '!' '{' many(token_tree) '}'                    {% withSpan $1 (MacExpr [] (Mac $1 $4 mempty)) }
   | unsafe block                                              {% withSpan $1 (BlockExpr [] $2{ rules = UnsafeBlock False }) }
-  |        block                                              {% withSpan $1 (BlockExpr [] $1) }
 
 -- As per https://github.com/rust-lang/rust/issues/15701 (as of March 10 2017), the only way to have
 -- attributes on expressions should be with inner attributes on a paren expression.
@@ -989,77 +912,39 @@ gen_postfix_expr(lhs) :: { Expr Span }
         _ -> fail "make better error message"
     }
 
--- General prefix expression
-gen_prefix_expr(lhs) :: { Expr Span }
-  : '*' lhs                                {% withSpan $1 (Unary [] Deref $2) }
-  | '!' lhs                                {% withSpan $1 (Unary [] Not $2) }
-  | '-' lhs                                {% withSpan $1 (Unary [] Neg $2) }
-  | '&' lhs                                {% withSpan $1 (AddrOf [] Immutable $2) }
-  | '&' mut lhs                            {% withSpan $1 (AddrOf [] Mutable $3) }
-  | '&&' lhs                               {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Immutable $2 mempty)) }
-  | '&&' mut lhs                           {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Mutable $3 mempty)) }
-  | box lhs                                {% withSpan $1 (Box [] $2) }
-
--- General binary expression
--- (Although this isn't really a binary operation)
-gen_binary12_expr(lhs) :: { Expr Span }
-  : lhs ':' ty                             {% withSpan $1 (TypeAscription [] $1 $3) }
+-- Arithmetic (unary and binary) generalized expressions. Precedences are handled by Happy (right
+-- at the end of the token section)
+gen_arithmetic(lhs,rhs,rhs2) :: { Expr Span }
+  : '*' lhs                %prec UNARY     {% withSpan $1 (Unary [] Deref $2) }
+  | '!' lhs                %prec UNARY     {% withSpan $1 (Unary [] Not $2) }
+  | '-' lhs                %prec UNARY     {% withSpan $1 (Unary [] Neg $2) }
+  | '&' lhs                %prec UNARY     {% withSpan $1 (AddrOf [] Immutable $2) }
+  | '&' mut lhs            %prec UNARY     {% withSpan $1 (AddrOf [] Mutable $3) }
+  | '&&' lhs               %prec UNARY     {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Immutable $2 mempty)) }
+  | '&&' mut lhs           %prec UNARY     {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Mutable $3 mempty)) }
+  | box lhs                %prec UNARY     {% withSpan $1 (Box [] $2) }
+  | lhs ':' ty                             {% withSpan $1 (TypeAscription [] $1 $3) }
   | lhs as ty                              {% withSpan $1 (Cast [] $1 $3) }
-
--- should be left associative
-gen_binary11_expr(lhs,rhs) :: { Expr Span }
-  : lhs '*' rhs                            {% withSpan $1 (Binary [] MulOp $1 $3) }
+  | lhs '*' rhs                            {% withSpan $1 (Binary [] MulOp $1 $3) }
   | lhs '/' rhs                            {% withSpan $1 (Binary [] DivOp $1 $3) }
   | lhs '%' rhs                            {% withSpan $1 (Binary [] RemOp $1 $3) }
-
--- should be left associative
-gen_binary10_expr(lhs,rhs) :: { Expr Span }
-  : lhs '+' rhs                            {% withSpan $1 (Binary [] AddOp $1 $3) }
+  | lhs '+' rhs                            {% withSpan $1 (Binary [] AddOp $1 $3) }
   | lhs '-' rhs                            {% withSpan $1 (Binary [] SubOp $1 $3) }
-
--- should be left associative
-gen_binary9_expr(lhs,rhs) :: { Expr Span }
-  : lhs '<<' rhs                           {% withSpan $1 (Binary [] ShlOp $1 $3) }
+  | lhs '<<' rhs                           {% withSpan $1 (Binary [] ShlOp $1 $3) }
   | lhs '>>' rhs                           {% withSpan $1 (Binary [] ShrOp $1 $3) }
-
--- should be left associative
-gen_binary8_expr(lhs,rhs) :: { Expr Span }
-  : lhs '&' rhs                            {% withSpan $1 (Binary [] BitAndOp $1 $3) }
-
--- should be left associative
-gen_binary7_expr(lhs,rhs) :: { Expr Span }
-  : lhs '^' rhs                            {% withSpan $1 (Binary [] BitXorOp $1 $3) }
-
--- should be left associative
-gen_binary6_expr(lhs,rhs) :: { Expr Span }
-  : lhs '|' rhs                            {% withSpan $1 (Binary [] BitOrOp $1 $3) }
-
--- should be left associative
-gen_binary5_expr(lhs,rhs) :: { Expr Span }
-  : lhs '==' rhs                           {% withSpan $1 (Binary [] EqOp $1 $3) }
+  | lhs '&' rhs                            {% withSpan $1 (Binary [] BitAndOp $1 $3) }
+  | lhs '^' rhs                            {% withSpan $1 (Binary [] BitXorOp $1 $3) }
+  | lhs '|' rhs                            {% withSpan $1 (Binary [] BitOrOp $1 $3) }
+  | lhs '==' rhs                           {% withSpan $1 (Binary [] EqOp $1 $3) }
   | lhs '!=' rhs                           {% withSpan $1 (Binary [] NeOp $1 $3) }
   | lhs '<'  rhs                           {% withSpan $1 (Binary [] LtOp $1 $3) }
   | lhs '>'  rhs                           {% withSpan $1 (Binary [] GtOp $1 $3) }
   | lhs '<=' rhs                           {% withSpan $1 (Binary [] LeOp $1 $3) }
   | lhs '>=' rhs                           {% withSpan $1 (Binary [] GeOp $1 $3) }
-
--- should be left associative
-gen_binary4_expr(lhs,rhs) :: { Expr Span }
-  : lhs '&&' rhs                           {% withSpan $1 (Binary [] AndOp $1 $3) }
-
--- should be left associative
-gen_binary3_expr(lhs,rhs) :: { Expr Span }
-  : lhs '||' rhs                           {% withSpan $1 (Binary [] OrOp $1 $3) }
-
--- should be right associative
-gen_binary2_expr(lhs,rhs) :: { Expr Span }
-  : lhs '<-' rhs                           {% withSpan $1 (InPlace [] $1 $3) }
-
--- should be right associative
--- '..' is funky. Basically, there is a hack to make sure the rhs doesn't start with a block
--- to accomodate infinite loop syntax: <https://github.com/rust-lang/rust/pull/21374>
-gen_binary1_expr(lhs,rhs,rhs2) :: { Expr Span }
-  : lhs '=' rhs                            {% withSpan $1 (Assign   [] $1 $3) }
+  | lhs '&&' rhs                           {% withSpan $1 (Binary [] AndOp $1 $3) }
+  | lhs '||' rhs                           {% withSpan $1 (Binary [] OrOp $1 $3) }
+  | lhs '<-' rhs                           {% withSpan $1 (InPlace [] $1 $3) }
+  | lhs '=' rhs                            {% withSpan $1 (Assign   [] $1 $3) }
   | lhs '>>=' rhs                          {% withSpan $1 (AssignOp [] ShrOp $1 $3) }
   | lhs '<<=' rhs                          {% withSpan $1 (AssignOp [] ShlOp $1 $3) }
   | lhs '-=' rhs                           {% withSpan $1 (AssignOp [] SubOp $1 $3) }
@@ -1070,14 +955,15 @@ gen_binary1_expr(lhs,rhs,rhs2) :: { Expr Span }
   | lhs '|=' rhs                           {% withSpan $1 (AssignOp [] BitOrOp $1 $3) }
   | lhs '&=' rhs                           {% withSpan $1 (AssignOp [] BitAndOp $1 $3) }
   | lhs '%=' rhs                           {% withSpan $1 (AssignOp [] RemOp $1 $3) }
+  | lhs '..'                               {% withSpan $1 (Range [] (Just $1) Nothing Closed) }
+  | lhs '...'                              {% withSpan $1 (Range [] (Just $1) Nothing Closed) }
   | lhs '..' rhs2                          {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
   | lhs '...' rhs2                         {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
- -- | lhs '..'                               {% withSpan $1 (Range [] (Just $1) Nothing Closed) }
- -- | lhs '...'                              {% withSpan $1 (Range [] (Just $1) Nothing HalfOpen) }
 
 -- Lowest precedence generalized expression
 gen_expr :: { Expr Span }
-  : return                                 {% withSpan $1 (Ret [] Nothing) }
+  : ntExpr                                 { $1 }
+  | return                                 {% withSpan $1 (Ret [] Nothing) }
   | return expr                            {% withSpan $1 (Ret [] (Just $2)) }
   | '..'                                   {% withSpan $1 (Range [] Nothing Nothing Closed) }
   | '...'                                  {% withSpan $1 (Range [] Nothing Nothing HalfOpen) }
@@ -1093,22 +979,34 @@ gen_expr :: { Expr Span }
 -- Match arms usually have to be seperated by commas (with an optional comma at the end). This
 -- condition is loosened (so that there is no seperator needed) if the arm ends in a safe block.
 arms :: { [Arm Span] }
-  : ntArm                                                              { [$1] }
-  | ntArm arms                                                         { $1 : $2 }
-  | outer_attrs sep_by1(pat,'|') arm_guard '=>' block                  { [Arm (toList $1) $2 $3 (BlockExpr [] $5 mempty) mempty] }
-  |             sep_by1(pat,'|') arm_guard '=>' block                  { [Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty] }
-  | outer_attrs sep_by1(pat,'|') arm_guard '=>' block         ','      { [Arm (toList $1) $2 $3 (BlockExpr [] $5 mempty) mempty] }
-  |             sep_by1(pat,'|') arm_guard '=>' block         ','      { [Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty] }
-  | outer_attrs sep_by1(pat,'|') arm_guard '=>' block             arms { Arm (toList $1) $2 $3 (BlockExpr [] $5 mempty) mempty : $> }
-  |             sep_by1(pat,'|') arm_guard '=>' block             arms { Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty : $> }
-  | outer_attrs sep_by1(pat,'|') arm_guard '=>' block         ',' arms { Arm (toList $1) $2 $3 (BlockExpr [] $5 mempty) mempty : $> }
-  |             sep_by1(pat,'|') arm_guard '=>' block         ',' arms { Arm [] $1 $2 (BlockExpr [] $4 mempty) mempty : $> }
-  | outer_attrs sep_by1(pat,'|') arm_guard '=>' nonblock_expr          { [Arm (toList $1) $2 $3 $5 mempty] }
-  |             sep_by1(pat,'|') arm_guard '=>' nonblock_expr          { [Arm [] $1 $2 $4 mempty] }
-  | outer_attrs sep_by1(pat,'|') arm_guard '=>' nonblock_expr ','      { [Arm (toList $1) $2 $3 $5 mempty] }
-  |             sep_by1(pat,'|') arm_guard '=>' nonblock_expr ','      { [Arm [] $1 $2 $4 mempty] }
-  | outer_attrs sep_by1(pat,'|') arm_guard '=>' nonblock_expr ',' arms { Arm (toList $1) $2 $3 $5 mempty : $7 }
-  |             sep_by1(pat,'|') arm_guard '=>' nonblock_expr ',' arms { Arm [] $1 $2 $4 mempty : $6 }
+  : ntArm                                                     { [$1] }
+  | ntArm arms                                                { $1 : $2 }
+  | outer_attrs sep_by1(pat,'|') arm_guard '=>' expr_arms     { let (e,as) = $> in (Arm (toList $1) $2 $3 e mempty : as) }
+  |             sep_by1(pat,'|') arm_guard '=>' expr_arms     { let (e,as) = $> in (Arm [] $1 $2 e mempty : as) }
+
+comma_arms :: { [Arm Span] }
+  : {- empty -}    { [] }
+  | ','            { [] }
+  | ',' arms       { $2 }
+
+-- An expression followed by match arms. If there is a comma needed, it is added 
+expr_arms :: { (Expr Span, [Arm Span]) }
+  : gen_expr comma_arms                                               { ($1, $2) }
+  | lambda_expr_nostruct comma_arms                                   { ($1, $2) }
+  | arithmetic_expr_arms                                              { $1 }
+arithmetic_expr_arms :: { (Expr Span, [Arm Span]) }
+  : gen_arithmetic(arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) comma_arms  { ($1, $2) }
+  | postfix_expr_arms                                                 { $1 } 
+postfix_expr_arms :: { (Expr Span, [Arm Span]) }
+  : gen_postfix_expr(postfix_expr) comma_arms                         { ($1, $2) }
+  | paren_expr                     comma_arms                         { ($1, $2) }
+  | struct_expr                    comma_arms                         { ($1, $2) }
+  | block_like_expr                comma_arms                         { ($1, $2) }
+  | block                          comma_arms                         { (BlockExpr [] $1 mempty, $2) }
+  | block                                arms                         { (BlockExpr [] $1 mempty, $2) }
+  
+comma_nsb_arithmetic_expr(c) :: { Expr Span }
+  : nsb_arithmetic_expr c                                              { $1 }
 
 arm_guard :: { Maybe (Expr Span) }
   : {- empty -}  { Nothing }
@@ -1177,7 +1075,7 @@ stmt :: { Stmt Span }
   | outer_attrs     stmt_item                   {% withSpan $1 (ItemStmt (let Item i a n v s = $2 in Item i (toList $1 ++ a) n v s)) }
   |             pub stmt_item                   {% withSpan $1 (ItemStmt (let Item i a n _ s = $2 in Item i a n PublicV s)) }
   | outer_attrs pub stmt_item                   {% withSpan $1 (ItemStmt (let Item i a n _ s = $3 in Item i (toList $1 ++ a) n PublicV s)) }
- -- | ';'                                  {%  
+--  | ';'                                          
 
 -- List of statements where the last statement might be a no-semicolon statement.
 stmts_possibly_no_semi :: { [Stmt Span] }
@@ -1603,6 +1501,12 @@ token_not_plus_star :: { Spanned Token }
 
 
 {
+
+-- | Check if an expression is a BlockExpr
+isBlockExpr :: Expr a -> Bool
+isBlockExpr BlockExpr{} = True
+isBlockExpr _ = False
+
 
 -- | Try to convert an expression to a statement given information about whether there is a trailing
 -- semicolon
