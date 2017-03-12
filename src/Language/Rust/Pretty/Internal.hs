@@ -7,14 +7,13 @@ import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
-import Text.PrettyPrint.Annotated.WL (pretty, hcat, cat, indent, punctuate, group, angles, space, line, flatten, align, fillSep, text, vcat, char, annotate, noAnnotate, parens, brackets, (<>), (<//>), Doc)
+import Text.PrettyPrint.Annotated.WL (pretty, hcat, cat, indent, punctuate, group, angles, space, flatten, align, fillSep, text, vcat, char, annotate, noAnnotate, parens, brackets, (<>), (<//>), Doc)
 import qualified Text.PrettyPrint.Annotated.WL as WL
 
 import Data.ByteString (unpack)
 import Data.Char (intToDigit, ord, chr)
 import Data.Either (lefts, rights)
-import Data.Foldable (toList)
-import Data.List.NonEmpty (NonEmpty(..))
+import Data.List.NonEmpty (NonEmpty(..), toList)
 import qualified Data.List.NonEmpty as N
 import Data.Maybe (listToMaybe)
 import Data.Word (Word8)
@@ -94,9 +93,11 @@ blockAttrs as = blockAttrsPunctuated as mempty
 blockAttrsPunctuated :: Doc a -> Doc a -> [Doc a] -> Doc a
 blockAttrsPunctuated WL.Empty _ [] = "{ }"
 blockAttrsPunctuated as _ [] = "{" <+> as <+> "}"
-blockAttrsPunctuated as s ds = let (ds',d') = (Prelude.init ds, Prelude.last ds) in WL.Union
-  ("{" <+>           hsep (as : [ d <> s | d <- ds' ])  <+> d' <+> "}")
-  ("{" <#> indent 2 (vsep (as : [ d <> s | d <- ds  ])) <#>        "}")
+blockAttrsPunctuated as s ds = if all oneLine ds then WL.Union singleLine multiLine else multiLine
+  where
+    (ds',d') = (Prelude.init ds, Prelude.last ds)
+    singleLine = "{" <+>           hsep (as : [ d <> s | d <- ds' ])  <+> d' <+> "}"
+    multiLine = "{" <#> indent 2 (vsep (as : [ d <> s | d <- ds  ])) <#>        "}"
 
 -------------------------------------------
 
@@ -140,7 +141,7 @@ printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
 -- aka print_mac
 printMac :: Mac a -> DelimToken -> Doc a
 printMac (Mac path tts x) d = annotate x (printPath path False <> "!" <> delimiter d body)
-  where body = align (fillSep (punctuate "," [ printTt tt | tt <- tts ]))
+  where body = align (fillSep [ printTt tt | tt <- tts ])
  
 -- | Given a delimiter token, this wraps the 'Doc' with that delimiter. For the 'Brace' case, tries
 -- to fit everything on one line, but otherwise indents everything nicely.
@@ -210,14 +211,14 @@ printToken (SubstNt s _) = "$" <> printIdent s
 printToken _ = error "printToken"
 
 printLitTok :: LitTok -> Doc a
-printLitTok (ByteTok (Name v))         = text v
-printLitTok (CharTok (Name v))         = text v
+printLitTok (ByteTok (Name v))         = "b'" <> text v <> "'"
+printLitTok (CharTok (Name v))         = "'" <> text v <> "'"
 printLitTok (IntegerTok (Name v))      = text v
 printLitTok (FloatTok (Name v))        = text v
-printLitTok (StrTok (Name v))          = text v
-printLitTok (StrRawTok (Name v) _)     = text v
-printLitTok (ByteStrTok (Name v))      = text v
-printLitTok (ByteStrRawTok (Name v) _) = text v
+printLitTok (StrTok (Name v))          = "\"" <> text v <> "\""
+printLitTok (StrRawTok (Name v) n)     = let pad = text (replicate n '#') in "r" <> pad <> "\"" <> text v <> "\"" <> pad
+printLitTok (ByteStrTok (Name v))      = "b\"" <> text v <> "\""
+printLitTok (ByteStrRawTok (Name v) n) = let pad = text (replicate n '#') in "rb" <> pad <> "\"" <> text v <> "\"" <> pad
 
 printNonterminal :: Nonterminal a -> Doc a
 printNonterminal (NtItem item) = printItem item
@@ -235,7 +236,7 @@ printNonterminal (NtImplItem item) = printImplItem item
 printNonterminal (NtTraitItem item) = printTraitItem item
 printNonterminal (NtGenerics generics) = printGenerics generics
 printNonterminal (NtWhereClause clause) = printWhereClause clause
-printNonterminal (NtArg arg) = printArg arg True -- todo double check True
+printNonterminal (NtArg arg) = printArg arg True
 
 -- aka print_stmt
 printStmt :: Stmt a -> Doc a
@@ -576,11 +577,14 @@ printEitherAttrs attrs kind inline = unless (null attrs') (glue attrs')
 
 -- aka  print_attribute_inline / print_attribute
 printAttr :: Attribute a -> Bool -> Doc a
-printAttr a@(Attribute style value isSugaredDoc x) inline
+printAttr a@(Attribute Inner value isSugaredDoc x) inline
   | isSugaredDoc && inline = annotate x ("/*!" <+> perhaps text (valueStr a) <+> "*/")
-  | isSugaredDoc           = annotate x ("//!" <+> perhaps text (valueStr a) <> line)
-  | otherwise              = case style of Inner -> annotate x ("#![" <> printMetaItem value <> "]")
-                                           Outer -> annotate x ("#[" <> printMetaItem value <> "]")
+  | isSugaredDoc           = annotate x ("//!" <+> perhaps text (valueStr a))
+  | otherwise              = annotate x ("#![" <> printMetaItem value <> "]")
+printAttr a@(Attribute Outer value isSugaredDoc x) inline
+  | isSugaredDoc && inline = annotate x ("/**" <+> perhaps text (valueStr a) <+> "*/")
+  | isSugaredDoc           = annotate x ("///" <+> perhaps text (valueStr a))
+  | otherwise              = annotate x ("#[" <> printMetaItem value <> "]")
 
 valueStr :: Attribute a -> Maybe String
 valueStr (Attribute _ (NameValue _  (Str s _ _ _) _) _ _) = Just s
@@ -644,7 +648,7 @@ printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs a
 
 -- aka print_trait_item
 printTraitItem :: TraitItem a -> Doc a
-printTraitItem (TraitItem ident attrs node x) = annotate x $ printOuterAttrs attrs <+>
+printTraitItem (TraitItem ident attrs node x) = annotate x $ printOuterAttrs attrs <#>
   case node of
     ConstT ty default_m -> printAssociatedConst ident ty default_m InheritedV
     MethodT sig block_m -> printMethodSig ident sig InheritedV <+> maybe ";" (`printBlockWithAttrs` attrs) block_m
@@ -668,9 +672,8 @@ printFormalLifetimeList defs = "for" <> angles (align (fillSep (punctuate "," (p
 
 -- aka print_impl_item
 printImplItem :: ImplItem a -> Doc a
-printImplItem (ImplItem ident vis defaultness attrs node x) = annotate x $ hsep
-  [ printOuterAttrs attrs
-  , when (defaultness == Default) "default"
+printImplItem (ImplItem ident vis defaultness attrs node x) = annotate x $ printOuterAttrs attrs <#> hsep
+  [ when (defaultness == Default) "default"
   , case node of
       ConstI ty expr -> printAssociatedConst ident ty (Just expr) vis
       MethodI sig body -> printMethodSig ident sig vis <+> printBlockWithAttrs body attrs
@@ -722,15 +725,15 @@ printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a
 printStruct structDef generics ident printFinalizer annotateGenerics =
   printIdent ident <> gen
     <> case structDef of 
-          StructD fields _ -> space <> wc <+> blockComma (printStructField `map` fields)
-          TupleD fields _ -> parens (commas fields printStructField) <+> wc <+> when printFinalizer ";" 
-          UnitD _ -> wc <+> when printFinalizer ";"
+          StructD fields x -> annotate x $ space <> wc <+> blockComma (printStructField `map` fields)
+          TupleD fields x -> annotate x $ parens (commas fields printStructField) <+> wc <+> when printFinalizer ";" 
+          UnitD x -> annotate x $ wc <+> when printFinalizer ";"
   where gen = if annotateGenerics then printGenerics generics else noAnnotate (printGenerics generics)
         wc = printWhereClause (whereClause generics)
 
 
 printStructField :: StructField a -> Doc a
-printStructField (StructField i v t as x) = annotate x (hsep [ printOuterAttrs as, printVis v, perhaps (\i' -> printIdent i' <> ":") i, printType t ])
+printStructField (StructField i v t as x) = annotate x (printOuterAttrs as <#> hsep [ printVis v, perhaps (\i' -> printIdent i' <> ":") i, printType t ])
 
 -- aka print_unsafety
 printUnsafety :: Unsafety -> Doc a
@@ -742,7 +745,7 @@ printEnumDef :: [Variant a] -> Generics a -> Ident -> Visibility a -> Doc a
 printEnumDef variants generics ident vis =
   printVis vis <+> "enum" <+> (printIdent ident <> printGenerics generics)
     <+> printWhereClause (whereClause generics)
-    <+> blockComma [ printOuterAttrs as <+> printVariant v  | v@Variant{ attrs = as } <- variants ]
+    <+> blockComma [ printOuterAttrs as <#> printVariant v  | v@Variant{ attrs = as } <- variants ]
 
 -- print_variant
 printVariant :: Variant a -> Doc a
@@ -905,7 +908,7 @@ printPathParameters (AngleBracketed lts tys bds x) colons = annotate x (when col
 -- | second argument says whether to put colons before params
 -- aka print_path
 printPath :: Path a -> Bool -> Doc a
-printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (punctuate "::" (printSegment `map` N.toList segs)))
+printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (punctuate "::" (printSegment `map` toList segs)))
   where
   printSegment :: (Ident, PathParameters a) -> Doc a
   printSegment (ident,parameters) = printIdent ident <> printPathParameters parameters colons
