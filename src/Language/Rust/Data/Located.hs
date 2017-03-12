@@ -171,9 +171,9 @@ instance Located a => Located (VariantData a) where
   posOf (UnitD s) = posOf s
 
 instance Located a => Located (ViewPath a) where
-  posOf (ViewPathSimple _ _ s) = posOf s
-  posOf (ViewPathGlob _ s) = posOf s
-  posOf (ViewPathList _ _ s) = posOf s
+  posOf (ViewPathSimple _ _ _ s) = posOf s
+  posOf (ViewPathGlob _ _ s) = posOf s
+  posOf (ViewPathList _ _ _ s) = posOf s
 
 instance Located a => Located (WhereClause a) where
   posOf (WhereClause _ s) = posOf s

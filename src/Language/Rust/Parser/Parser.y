@@ -1322,24 +1322,35 @@ def :: { Defaultness }
 
 -- TODO: How to translate the commented out cases?
 view_path :: { ViewPath Span }
-  : mod_path                                     {% withSpan $1 (ViewPathSimple (fst (N.last (segments $1))) $1) }
-  | mod_path as ident                            {% withSpan $1 (ViewPathSimple (unspan $3) $1) }
-  | mod_path '::' '*'                            {% withSpan $1 (ViewPathGlob $1) }
-  | mod_path '::' '{'                        '}' {% withSpan $1 (ViewPathList $1 []) }
-  | mod_path '::' '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList $1 (toList $4)) }
-  | mod_path '::' '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList $1 (toList $4)) }
--- |         '::' '{'                '}'       { $$ = mk_node("ViewPathList", 1, mk_atom("ViewPathListEmpty")); }
--- |         '::' '{' idents_or_self '}'       { $$ = mk_node("ViewPathList", 1, $3); }
--- |         '::' '{' idents_or_self ',' '}'   { $$ = mk_node("ViewPathList", 1, $3); }
--- |              '{'                '}'       { $$ = mk_atom("ViewPathListEmpty"); }
--- |              '{' idents_or_self '}'       { $$ = mk_node("ViewPathList", 1, $2); }
--- |              '{' idents_or_self ',' '}'   { $$ = mk_node("ViewPathList", 1, $2); }
+  : '::' sep_by1(self_or_ident,'::')                                     {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) Nothing mempty)) }
+  | '::' sep_by1(self_or_ident,'::') as ident                            {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
+  | '::' sep_by1(self_or_ident,'::') '::' '*'                            {% withSpan $1 (ViewPathGlob True (fmap unspan $2)) }
+  | '::' sep_by1(self_or_ident,'::') '::' '{'                        '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) []) }
+  | '::' sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) (toList $5)) }
+  | '::' sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) (toList $5)) }
+  | '::'                                  '{'                        '}' {% withSpan $1 (ViewPathList True [] []) }
+  | '::'                                  '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList True [] (toList $3)) }
+  | '::'                                  '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList True [] (toList $3)) }
+  |      sep_by1(self_or_ident,'::')                                     {% let n = fmap unspan $1 in withSpan $1 (ViewPathSimple False (N.init n) (PathListItem (N.last n) Nothing mempty)) }
+  |      sep_by1(self_or_ident,'::') as ident                            {% let n = fmap unspan $1 in withSpan $1 (ViewPathSimple False (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
+  |      sep_by1(self_or_ident,'::') '::' '*'                            {% withSpan $1 (ViewPathGlob False (fmap unspan $1)) }
+  |      sep_by1(self_or_ident,'::') '::' '{'                        '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) []) }
+  |      sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) (toList $4)) }
+  |      sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) (toList $4)) }
+  |                                       '{'                        '}' {% withSpan $1 (ViewPathList False [] []) }
+  |                                       '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList False [] (toList $2)) }
+  |                                       '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList False [] (toList $2)) }
+
+
+self_or_ident :: { Spanned Ident }
+  : ident                   { $1 }
+  | self                    {% withSpan $1 (Spanned (mkIdent "self")) }
+  | super                   {% withSpan $1 (Spanned (mkIdent "super")) }
+
 
 plist :: { PathListItem Span }
-  : ident           {% withSpan $1 (PathListItem (unspan $1) Nothing) }
-  | self            {% withSpan $1 (PathListItem (mkIdent "self") Nothing) }
-  | ident as ident  {% withSpan $1 (PathListItem (unspan $1) (Just (unspan $3))) }
-  | self as ident   {% withSpan $1 (PathListItem (mkIdent "self") (Just (unspan $3))) }
+  : self_or_ident           {% withSpan $1 (PathListItem (unspan $1) Nothing) }
+  | self_or_ident as ident  {% withSpan $1 (PathListItem (unspan $1) (Just (unspan $3))) }
 
 -------------------
 -- Macro related --

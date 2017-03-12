@@ -898,11 +898,11 @@ data VariantData a
 -- https://docs.serde.rs/syntex_syntax/ast/enum.ViewPath_.html
 data ViewPath a
   -- | `foo::bar::baz as quux` or just `foo::bar::baz` (with `as baz` implicitly on the right)
-  = ViewPathSimple Ident (Path a) a
+  = ViewPathSimple Bool [Ident] (PathListItem a) a
   -- | foo::bar::*
-  | ViewPathGlob (Path a) a
+  | ViewPathGlob Bool (NonEmpty Ident) a
   -- | foo::bar::{a,b,c}
-  | ViewPathList (Path a) [PathListItem a] a
+  | ViewPathList Bool [Ident] [PathListItem a] a
   deriving (Eq, Functor, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.Visibility.html

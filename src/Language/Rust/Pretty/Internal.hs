@@ -925,15 +925,15 @@ printQPath (Path global segments x) (QSelf ty position) colons = annotate x $ hc
 
 -- aka print_view_path
 printViewPath :: ViewPath a -> Doc a
-printViewPath (ViewPathSimple ident path _) = printPath path False <+> when (fst (N.last (segments path)) /= ident) ("as" <+> printIdent ident)
-printViewPath (ViewPathGlob path _) = printPath path False <> "::*"
-printViewPath (ViewPathList path idents _) = prefix <> "::{" <> commas idents printPathListItem <> "}"
+printViewPath (ViewPathSimple global segs end x) = annotate x (when global "::" <> hcat (punctuate "::" (map printIdent segs ++ [printPathListItem end])))
+printViewPath (ViewPathGlob global segs x) = annotate x (when global "::" <> hcat (punctuate "::" (map printIdent (toList segs) ++ ["*"])))
+printViewPath (ViewPathList global segs ends x) = annotate x (when global "::" <> hcat (punctuate "::" (map printIdent segs ++ [end])))
   where
-  prefix = if null (segments path) then "{" else printPath path False
+  end = "{" <> hsep (punctuate "," (map printPathListItem ends)) <> "}"
 
-  printPathListItem :: PathListItem a -> Doc a
-  printPathListItem (PathListItem name (Just rename) _) = printIdent name <+> "as" <+> printIdent rename
-  printPathListItem (PathListItem name Nothing _) = printIdent name
+printPathListItem :: PathListItem a -> Doc a
+printPathListItem (PathListItem name (Just rename) _) = printIdent name <+> "as" <+> printIdent rename
+printPathListItem (PathListItem name Nothing _) = printIdent name
 
 
 -- aka print_ty_param
