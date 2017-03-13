@@ -24,11 +24,11 @@ commonCode :: Test
 commonCode = testGroup "lexing common code fragments"
   [ testCode "let span = $p.span;" 
              [ IdentTok (mkIdent "let")
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
              , IdentTok (mkIdent "span")
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
              , Equal
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
              , SubstNt (mkIdent "p") Plain
              , Dot
              , IdentTok (mkIdent "span")
@@ -49,10 +49,10 @@ commonCode = testGroup "lexing common code fragments"
              ]
   , testCode "pub s: pp::Printer<'a>,"
              [ IdentTok (mkIdent "pub")
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
              , IdentTok (mkIdent "s")
              , Colon
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
              , IdentTok (mkIdent "pp")
              , ModSep
              , IdentTok (mkIdent "Printer")
@@ -68,49 +68,49 @@ commonCode = testGroup "lexing common code fragments"
              , Comma
              , IdentTok (mkIdent "T")
              , Greater
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
              , IdentTok (mkIdent "Tr")
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
              , IdentTok (mkIdent "for")
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
              , Ampersand
              , LifetimeTok (mkIdent "a")
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
              , IdentTok (mkIdent "T")
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
              , OpenDelim Brace
              , CloseDelim Brace
              ]
   , testCode "x /* some comment */ y"
              [ IdentTok (mkIdent "x")
-             , Space Whitespace (Name " ")
-             , Space Comment (Name " some comment ")
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
+             , Space Comment " some comment "
+             , Space Whitespace " "
              , IdentTok (mkIdent "y")
              ]
   , testCode "x /* some /* nested */ comment */ y"
              [ IdentTok (mkIdent "x")
-             , Space Whitespace (Name " ")
-             , Space Comment (Name " some /* nested */ comment ")
-             , Space Whitespace (Name " ")
+             , Space Whitespace " "
+             , Space Comment " some /* nested */ comment "
+             , Space Whitespace " "
              , IdentTok (mkIdent "y")
              ]
    , testCode "fn ܐ_ܐ() { println!(\"Hello, čušpajž日本語\"); }"
               [ IdentTok (mkIdent "fn")
-              , Space Whitespace (Name " ")
+              , Space Whitespace " "
               , IdentTok (mkIdent "ܐ_ܐ")
               , OpenDelim Paren 
               , CloseDelim Paren
-              , Space Whitespace (Name " ")
+              , Space Whitespace " "
               , OpenDelim Brace
-              , Space Whitespace (Name " ")
+              , Space Whitespace " "
               , IdentTok (mkIdent "println")
               , Exclamation
               , OpenDelim Paren
-              , LiteralTok (StrTok (Name "Hello, čušpajž日本語")) Nothing
+              , LiteralTok (StrTok "Hello, čušpajž日本語") Nothing
               , CloseDelim Paren
               , Semicolon
-              , Space Whitespace (Name " ")
+              , Space Whitespace " "
               , CloseDelim Brace
               ]
   ]
@@ -121,41 +121,41 @@ commonCode = testGroup "lexing common code fragments"
 literals :: Test
 literals = testGroup "literals (numbers, characters, strings, etc.)"
   -- byte's
-  [ testCode "b'a'" [ LiteralTok (ByteTok (Name "a")) Nothing ]
-  , testCode "b'\\n'" [ LiteralTok (ByteTok (Name "\\n")) Nothing ]
-  , testCode "b'a'suffix" [ LiteralTok (ByteTok (Name "a")) (Just (Name "suffix")) ]
+  [ testCode "b'a'" [ LiteralTok (ByteTok "a") Nothing ]
+  , testCode "b'\\n'" [ LiteralTok (ByteTok "\\n") Nothing ]
+  , testCode "b'a'suffix" [ LiteralTok (ByteTok "a") (Just "suffix") ]
   -- char's
-  , testCode "'a'" [ LiteralTok (CharTok (Name "a")) Nothing ]
-  , testCode "'\\n'" [ LiteralTok (CharTok (Name "\\n")) Nothing ]
-  , testCode "'a'suffix" [ LiteralTok (CharTok (Name "a")) (Just (Name "suffix")) ]
+  , testCode "'a'" [ LiteralTok (CharTok "a") Nothing ]
+  , testCode "'\\n'" [ LiteralTok (CharTok  "\\n") Nothing ]
+  , testCode "'a'suffix" [ LiteralTok (CharTok "a") (Just "suffix") ]
   -- integers
-  , testCode "123" [ LiteralTok (IntegerTok (Name "123")) Nothing ]
-  , testCode "123i32" [ LiteralTok (IntegerTok (Name "123")) (Just (Name "i32")) ]
-  , testCode "0b1100_1101" [ LiteralTok (IntegerTok (Name "0b1100_1101")) Nothing ]
-  , testCode "0b1100_1101isize" [ LiteralTok (IntegerTok (Name "0b1100_1101")) (Just (Name "isize")) ]
-  , testCode "0o3170" [ LiteralTok (IntegerTok (Name "0o3170")) Nothing ]
-  , testCode "0o3170i64" [ LiteralTok (IntegerTok (Name "0o3170")) (Just (Name "i64")) ]
-  , testCode "0xAFAC" [ LiteralTok (IntegerTok (Name "0xAFAC")) Nothing ]
-  , testCode "0xAFACu32" [ LiteralTok (IntegerTok (Name "0xAFAC")) (Just (Name "u32")) ]
+  , testCode "123" [ LiteralTok (IntegerTok "123") Nothing ]
+  , testCode "123i32" [ LiteralTok (IntegerTok "123") (Just "i32") ]
+  , testCode "0b1100_1101" [ LiteralTok (IntegerTok "0b1100_1101") Nothing ]
+  , testCode "0b1100_1101isize" [ LiteralTok (IntegerTok "0b1100_1101") (Just "isize") ]
+  , testCode "0o3170" [ LiteralTok (IntegerTok "0o3170") Nothing ]
+  , testCode "0o3170i64" [ LiteralTok (IntegerTok "0o3170") (Just "i64") ]
+  , testCode "0xAFAC" [ LiteralTok (IntegerTok "0xAFAC") Nothing ]
+  , testCode "0xAFACu32" [ LiteralTok (IntegerTok "0xAFAC") (Just "u32") ]
   -- float's
-  , testCode "123.1" [ LiteralTok (FloatTok (Name "123.1")) Nothing ]
-  , testCode "123.f32" [ LiteralTok (FloatTok (Name "123.")) (Just (Name "f32")) ]
-  , testCode "123.1f32" [ LiteralTok (FloatTok (Name "123.1")) (Just (Name "f32")) ]
-  , testCode "123e-9f32" [ LiteralTok (FloatTok (Name "123e-9")) (Just (Name "f32")) ]
+  , testCode "123.1" [ LiteralTok (FloatTok "123.1") Nothing ]
+  , testCode "123.f32" [ LiteralTok (FloatTok "123.") (Just "f32") ]
+  , testCode "123.1f32" [ LiteralTok (FloatTok "123.1") (Just "f32") ]
+  , testCode "123e-9f32" [ LiteralTok (FloatTok "123e-9") (Just "f32") ]
   -- string's
-  , testCode "\"hello \\n world!\"" [ LiteralTok (StrTok (Name "hello \\n world!")) Nothing ]
-  , testCode "\"hello \\n world!\"suffix" [ LiteralTok (StrTok (Name "hello \\n world!")) (Just (Name "suffix")) ]
+  , testCode "\"hello \\n world!\"" [ LiteralTok (StrTok "hello \\n world!") Nothing ]
+  , testCode "\"hello \\n world!\"suffix" [ LiteralTok (StrTok "hello \\n world!") (Just "suffix") ]
   -- raw string's
-  , testCode "r\"hello \n world!\"" [ LiteralTok (StrRawTok (Name "hello \n world!") 0) Nothing ]
-  , testCode "r\"hello \n world!\"suffix" [ LiteralTok (StrRawTok (Name "hello \n world!") 0) (Just (Name "suffix")) ]
-  , testCode "r##\"hello \"#\n world!\"###suffix" [ LiteralTok (StrRawTok (Name "hello \"#\n world!") 2) (Just (Name "suffix")) ]
+  , testCode "r\"hello \n world!\"" [ LiteralTok (StrRawTok "hello \n world!" 0) Nothing ]
+  , testCode "r\"hello \n world!\"suffix" [ LiteralTok (StrRawTok "hello \n world!" 0) (Just "suffix") ]
+  , testCode "r##\"hello \"#\n world!\"###suffix" [ LiteralTok (StrRawTok "hello \"#\n world!" 2) (Just "suffix") ]
   -- bytestring's
-  , testCode "b\"hello \\n world!\"" [ LiteralTok (ByteStrTok (Name "hello \\n world!")) Nothing ]
-  , testCode "b\"hello \\n world!\"suffix" [ LiteralTok (ByteStrTok (Name "hello \\n world!")) (Just (Name "suffix")) ]
+  , testCode "b\"hello \\n world!\"" [ LiteralTok (ByteStrTok "hello \\n world!") Nothing ]
+  , testCode "b\"hello \\n world!\"suffix" [ LiteralTok (ByteStrTok "hello \\n world!") (Just "suffix") ]
   -- raw bytestring's
-  , testCode "rb\"hello \n world!\"" [ LiteralTok (ByteStrRawTok (Name "hello \n world!") 0) Nothing ]
-  , testCode "rb\"hello \n world!\"suffix" [ LiteralTok (ByteStrRawTok (Name "hello \n world!") 0) (Just (Name "suffix")) ]
-  , testCode "rb##\"hello \"#\n world!\"###suffix" [ LiteralTok (ByteStrRawTok (Name "hello \"#\n world!") 2) (Just (Name "suffix")) ]
+  , testCode "rb\"hello \n world!\"" [ LiteralTok (ByteStrRawTok "hello \n world!" 0) Nothing ]
+  , testCode "rb\"hello \n world!\"suffix" [ LiteralTok (ByteStrRawTok "hello \n world!" 0) (Just "suffix") ]
+  , testCode "rb##\"hello \"#\n world!\"###suffix" [ LiteralTok (ByteStrRawTok "hello \"#\n world!" 2) (Just "suffix") ]
   ]
 
 -- | Create a test for a code fragment that should tokenize.

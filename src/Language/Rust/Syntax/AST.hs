@@ -325,11 +325,11 @@ data ImplPolarity
 -- https://docs.serde.rs/syntex_syntax/ast/struct.InlineAsm.html
 data InlineAsm a
   = InlineAsm
-      { asm :: InternedString
+      { asm :: String
       , asmStrStyle :: StrStyle
       , outputs :: [InlineAsmOutput a]
-      , inputs :: [(InternedString, Expr a)]
-      , clobbers :: [InternedString]
+      , inputs :: [(String, Expr a)]
+      , clobbers :: [String]
       , volatile :: Bool
       , alignstack :: Bool
       , dialect :: AsmDialect
@@ -341,7 +341,7 @@ data InlineAsm a
 -- https://docs.serde.rs/syntex_syntax/ast/struct.InlineAsmOutput.html
 data InlineAsmOutput a
   = InlineAsmOutput
-      { constraint :: InternedString
+      { constraint :: String
       , expr :: Expr a
       , isRw :: Bool
       , isIndirect :: Bool

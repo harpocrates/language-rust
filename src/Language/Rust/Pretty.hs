@@ -21,7 +21,6 @@ instance Pretty Ident where pretty = printIdent
 instance Pretty ImplPolarity where pretty = printPolarity
 instance Pretty LitTok where pretty = printLitTok
 instance Pretty Mutability where pretty = printMutability
-instance Pretty Name where pretty = printName
 instance Pretty RangeLimits where pretty = printRangeLimits
 instance Pretty Token where pretty = printToken
 instance Pretty TokenTree where pretty = printTt

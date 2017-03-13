@@ -656,7 +656,7 @@ arg_self :: { Arg Span }
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Abi }
   : str             {% case unspan $1 of
-                         (LiteralTok (StrTok (Name s)) Nothing) | isAbi s -> pure (read s)
+                         (LiteralTok (StrTok s) Nothing) | isAbi s -> pure (read s)
                          _ -> fail "invalid ABI"
                     }
   | {- empty -}     { C }
@@ -1573,26 +1573,26 @@ mkTokenTree (Spanned t s) = Token s t
 -- | Given a 'LitTok' token that is expected to result in a valid literal, construct the associated
 -- literal. Note that this should _never_ fail on a token produced by the lexer.
 lit :: Spanned Token -> Lit Span
-lit (Spanned (IdentTok (Ident (Name "true") _)) s) = Bool True Unsuffixed s
-lit (Spanned (IdentTok (Ident (Name "false") _)) s) = Bool False Unsuffixed s
+lit (Spanned (IdentTok (Ident "true" _)) s) = Bool True Unsuffixed s
+lit (Spanned (IdentTok (Ident "false" _)) s) = Bool False Unsuffixed s
 lit (Spanned (LiteralTok litTok suffix_m) s) = parseLit litTok suffix s
   where
     suffix = case suffix_m of
                Nothing -> Unsuffixed
-               (Just (Name "isize")) -> Is
-               (Just (Name "usize")) -> Us
-               (Just (Name "i8"))    -> I8
-               (Just (Name "u8"))    -> U8
-               (Just (Name "i16"))   -> I16
-               (Just (Name "u16"))   -> U16
-               (Just (Name "i32"))   -> I32
-               (Just (Name "u32"))   -> U32
-               (Just (Name "i64"))   -> I64
-               (Just (Name "u64"))   -> U64
-               (Just (Name "i128"))  -> I128
-               (Just (Name "u128"))  -> U128
-               (Just (Name "f32"))   -> F32
-               (Just (Name "f64"))   -> F64
+               (Just "isize") -> Is
+               (Just "usize") -> Us
+               (Just "i8")    -> I8
+               (Just "u8")    -> U8
+               (Just "i16")   -> I16
+               (Just "u16")   -> U16
+               (Just "i32")   -> I32
+               (Just "u32")   -> U32
+               (Just "i64")   -> I64
+               (Just "u64")   -> U64
+               (Just "i128")  -> I128
+               (Just "u128")  -> U128
+               (Just "f32")   -> F32
+               (Just "f64")   -> F64
                _ -> error "lit"
 
 isPathSegmentIdent :: Spanned Ident -> Bool
@@ -1602,7 +1602,7 @@ isTypePathSegmentIdent :: Spanned Ident -> Bool
 isTypePathSegmentIdent i = True
 
 -- | Check if a given string is one of the accepted ABIs
-isAbi :: InternedString -> Bool
+isAbi :: String -> Bool
 isAbi s = s `elem` abis
   where abis = [ "Cdecl", "Stdcall", "Fastcall", "Vectorcall", "Aapcs", "Win64", "SysV64"
                , "Rust", "C", "System", "RustIntrinsic", "RustCall", "PlatformIntrinsic"

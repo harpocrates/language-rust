@@ -12,14 +12,14 @@ import Data.List (unfoldr)
 
 -- TODO make this have proper error handling
 parseLit :: LitTok -> Suffix -> a -> Lit a
-parseLit (ByteTok (Name s))         = let Just (w8,"") = unescapeByte s in Byte w8
-parseLit (CharTok (Name s))         = let Just (c,"")  = unescapeChar s in Char c
-parseLit (IntegerTok (Name s))      = Int (unescapeInteger s)  
-parseLit (FloatTok (Name s))        = Float (unescapeFloat s) 
-parseLit (StrTok (Name s))          = Str (unfoldr unescapeChar s) Cooked
-parseLit (StrRawTok (Name s) n)     = Str s (Raw n)
-parseLit (ByteStrTok (Name s))      = ByteStr (BS.pack (unfoldr unescapeByte s)) Cooked
-parseLit (ByteStrRawTok (Name s) n) = ByteStr (BSW.pack s) (Raw n) 
+parseLit (ByteTok s)         = let Just (w8,"") = unescapeByte s in Byte w8
+parseLit (CharTok s)         = let Just (c,"")  = unescapeChar s in Char c
+parseLit (IntegerTok s)      = Int (unescapeInteger s)  
+parseLit (FloatTok s)        = Float (unescapeFloat s) 
+parseLit (StrTok s)          = Str (unfoldr unescapeChar s) Cooked
+parseLit (StrRawTok s n)     = Str s (Raw n)
+parseLit (ByteStrTok s)      = ByteStr (BS.pack (unfoldr unescapeByte s)) Cooked
+parseLit (ByteStrRawTok s n) = ByteStr (BSW.pack s) (Raw n) 
   
 -- | Given a string of characters read from a Rust source, extract the next underlying char taking
 -- into account escapes and unicode.
@@ -89,6 +89,6 @@ readHex n cs = let digits = take n cs
                     else Nothing
 
 -- | Convert a list of characters to the number they represent.
-numBase :: Num a => a -> [Char] -> a
-numBase b cs = foldl (\n x -> fromIntegral (digitToInt x) + b * n) 0 cs
+numBase :: Num a => a -> String -> a
+numBase b = foldl (\n x -> fromIntegral (digitToInt x) + b * n) 0
 

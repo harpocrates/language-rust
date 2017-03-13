@@ -13,7 +13,7 @@ import Control.Monad.Trans.Except
 
 -- | Pattern for Identifiers
 pattern Identifier :: String -> Spanned Token
-pattern Identifier s <- (Spanned (IdentTok (Ident (Name s) _)) _)
+pattern Identifier s <- (Spanned (IdentTok (Ident s _)) _)
 
 -- | the result of running a parser
 data ParseResult a

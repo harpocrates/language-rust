@@ -109,10 +109,10 @@ parserTypes = testGroup "parsing types"
   , testP "*const i32" (Ptr Immutable i32 ())
   , testP "&()" (Rptr Nothing Immutable (TupTy [] ()) ())
   , testP "&mut !" (Rptr Nothing Mutable (Never ()) ())
-  , testP "&'lt ()" (Rptr (Just (Lifetime (Name "lt") ())) Immutable (TupTy [] ()) ())
-  , testP "&'lt mut !" (Rptr (Just (Lifetime (Name "lt") ())) Mutable (Never ()) ())
+  , testP "&'lt ()" (Rptr (Just (Lifetime "lt" ())) Immutable (TupTy [] ()) ())
+  , testP "&'lt mut !" (Rptr (Just (Lifetime "lt" ())) Mutable (Never ()) ())
   , testP "&i32" (Rptr Nothing Immutable i32 ())
-  , testP "&'lt mut i32" (Rptr (Just (Lifetime (Name "lt") ())) Mutable i32  ())
+  , testP "&'lt mut i32" (Rptr (Just (Lifetime "lt" ())) Mutable i32  ())
   , testP "typeof(123)" (Typeof (Lit [] (Int 123 Unsuffixed ()) ()) ())
   , testP "Vec<i32>" (PathTy Nothing (Path False [("Vec", AngleBracketed [] [i32] [] ())] ()) ())
   , testP "Vec<i32>" (PathTy Nothing (Path False [("Vec", AngleBracketed [] [i32] [] ())] ()) ())
@@ -131,7 +131,7 @@ parserTypes = testGroup "parsing types"
                                                             , (mkIdent "Vec", AngleBracketed [] [PathTy Nothing (Path False [(mkIdent "T", AngleBracketed [] [] [] ())] ()) ()] [] ())
                                                             ] ()) ())
   , testP "foo::baz<'a,A,B=!>" (PathTy Nothing (Path False [ (mkIdent "foo", AngleBracketed [] [] [] ())
-                                                              , (mkIdent "baz", AngleBracketed [Lifetime (Name "a") ()] 
+                                                              , (mkIdent "baz", AngleBracketed [Lifetime "a" ()] 
                                                                                                [PathTy Nothing (Path False [(mkIdent "A",AngleBracketed [] [] [] ())] ()) () ]
                                                                                                [(mkIdent "B", Never ())] ())
                                                               ] ()) ())
@@ -170,7 +170,7 @@ parserTypes = testGroup "parsing types"
                                  ] ())
                      ())
   , testP "< <i32 + 'static as a::b::Trait>::AssociatedItem as x>::Another"
-             (PathTy (Just (QSelf (PathTy (Just (QSelf (ObjectSum i32 [RegionTyParamBound (Lifetime (Name "static") ())] ()) 3)) 
+             (PathTy (Just (QSelf (PathTy (Just (QSelf (ObjectSum i32 [RegionTyParamBound (Lifetime "static" ())] ()) 3)) 
                                                 (Path False [ ("a", AngleBracketed [] [] [] ())
                                                       , ("b", AngleBracketed [] [] [] ())
                                                       , ("Trait", AngleBracketed [] [] [] ())
@@ -181,7 +181,7 @@ parserTypes = testGroup "parsing types"
                                  ] ())
                      ())
   , testP "<<i32 + 'static as a::b::Trait>::AssociatedItem as x>::Another"
-             (PathTy (Just (QSelf (PathTy (Just (QSelf (ObjectSum i32 [RegionTyParamBound (Lifetime (Name "static") ())] ()) 3)) 
+             (PathTy (Just (QSelf (PathTy (Just (QSelf (ObjectSum i32 [RegionTyParamBound (Lifetime "static" ())] ()) 3)) 
                                                 (Path False [ ("a", AngleBracketed [] [] [] ())
                                                       , ("b", AngleBracketed [] [] [] ())
                                                       , ("Trait", AngleBracketed [] [] [] ())
@@ -193,7 +193,7 @@ parserTypes = testGroup "parsing types"
                      ())
   , testP "<i32 as a(i32, i32)::b<'lt>::Trait(i32) -> i32>::AssociatedItem"
              (PathTy (Just (QSelf i32 3)) (Path False [ ("a", Parenthesized [i32, i32] Nothing ())
-                                                      , ("b", AngleBracketed [Lifetime (Name "lt") ()] [] [] ())
+                                                      , ("b", AngleBracketed [Lifetime "lt" ()] [] [] ())
                                                       , ("Trait", Parenthesized [i32] (Just i32) ())
                                                       , ("AssociatedItem", AngleBracketed [] [] [] ())
                                                       ] ()) ())
@@ -208,20 +208,20 @@ parserTypes = testGroup "parsing types"
   , testP "unsafe extern \"C\" fn(_: i32)"
              (BareFn Unsafe C [] (FnDecl [Arg (Just (WildP ())) i32 ()] Nothing False ()) ())
   , testP "PResult<'a, P<i32>>"
-             (PathTy Nothing (Path False [("PResult", AngleBracketed [ Lifetime (Name "a") () ]
+             (PathTy Nothing (Path False [("PResult", AngleBracketed [ Lifetime "a" () ]
                                                                      [ PathTy Nothing (Path False [("P", AngleBracketed [] [ i32 ] [] ())] ()) () ]
                                                                      [] ())] ()) ())
   , testP "for<'l1: 'l2 + 'l3, 'l4: 'l5> fn(_: i32 + 'l1) -> i32"
              (BareFn Normal Rust
-                            [ LifetimeDef [] (Lifetime (Name "l1") ()) [Lifetime (Name "l2") (), Lifetime (Name "l3") ()] ()
-                            , LifetimeDef [] (Lifetime (Name "l4") ()) [Lifetime (Name "l5") ()] () ]
-                            (FnDecl [Arg (Just (WildP ())) (ObjectSum i32 [RegionTyParamBound (Lifetime (Name "l1") ())] ()) ()] 
+                            [ LifetimeDef [] (Lifetime "l1" ()) [Lifetime "l2" (), Lifetime "l3" ()] ()
+                            , LifetimeDef [] (Lifetime "l4" ()) [Lifetime "l5" ()] () ]
+                            (FnDecl [Arg (Just (WildP ())) (ObjectSum i32 [RegionTyParamBound (Lifetime "l1" ())] ()) ()] 
                                     (Just i32) False ()) ())
   , testP "for <'a> Foo<&'a T>"
              (PolyTraitRefTy
                 [TraitTyParamBound
-                   (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()]
-                                 (TraitRef (Path False [("Foo", AngleBracketed [] [Rptr (Just (Lifetime (Name "a") ()))
+                   (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()]
+                                 (TraitRef (Path False [("Foo", AngleBracketed [] [Rptr (Just (Lifetime "a" ()))
                                                                                         Immutable
                                                                                         (PathTy Nothing (Path False [("T", AngleBracketed [] [] [] ())] ()) ())
                                                                                         ()]
@@ -232,12 +232,12 @@ parserTypes = testGroup "parsing types"
   --                                              (TraitRef (Path False [("Debug", AngleBracketed [] [] [] ())] ()) ()) ()) None] ())
   , testP "&for<'a> Tr<'a> + Send"
            (ObjectSum
-              (Rptr Nothing Immutable (PolyTraitRefTy [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime (Name "a") ()] [] [] ())] ()) ()) ()) None] ()) ())
+              (Rptr Nothing Immutable (PolyTraitRefTy [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime "a" ()] [] [] ())] ()) ()) ()) None] ()) ())
               [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",AngleBracketed [] [] [] ())] ()) ()) ()) None]
               ()) 
   , testP "&(for<'a> Tr<'a> + Send)"
            (Rptr Nothing Immutable (ParenTy (ObjectSum
-              (PolyTraitRefTy [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime (Name "a") ()] [] [] ())] ()) ()) ()) None] ())
+              (PolyTraitRefTy [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime  "a" ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime "a" ()] [] [] ())] ()) ()) ()) None] ())
               [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",AngleBracketed [] [] [] ())] ()) ()) ()) None]
               ()) ()) ()) 
   , testP "Fn() -> &(Object+Send)"
@@ -295,7 +295,7 @@ parserPatterns = testGroup "parsing patterns"
                                               [ x ] Nothing ())
   , testP "<i32 as a(i32, i32)>::b::<'lt>::AssociatedItem"
             (PathP (Just (QSelf i32 1)) (Path False [ ("a", Parenthesized [i32, i32] Nothing ())
-                                                    , ("b", AngleBracketed [Lifetime (Name "lt") ()] [] [] ())
+                                                    , ("b", AngleBracketed [Lifetime "lt" ()] [] [] ())
                                                     , ("AssociatedItem", AngleBracketed [] [] [] ())
                                                     ] ()) ())
   , testP "[1,2]"                   (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) ()
@@ -352,8 +352,8 @@ parserExpressions = testGroup "parsing expressions"
   , testP "return 1" (Ret [] (Just (Lit [] (Int 1 Unsuffixed ()) ())) ())
   , testP "continue" (Continue [] Nothing ())
   , testP "break" (Break [] Nothing ())
-  , testP "continue 'lbl" (Continue [] (Just (Lifetime (Name "lbl") ())) ())
-  , testP "break 'lbl" (Break [] (Just (Lifetime (Name "lbl") ())) ())
+  , testP "continue 'lbl" (Continue [] (Just (Lifetime "lbl" ())) ())
+  , testP "break 'lbl" (Break [] (Just (Lifetime "lbl" ())) ())
   , testP "math" (PathExpr [] Nothing (Path False [ ("math", NoParameters ()) ] ()) ())
   , testP "math::PI" (PathExpr [] Nothing (Path False [ ("math", NoParameters ())
                                                       , ("PI", NoParameters ()) ] ()) ())
@@ -362,7 +362,7 @@ parserExpressions = testGroup "parsing expressions"
                                                              , ("PI", AngleBracketed [] [] [] ()) ] ()) ())
   , testP "<i32 as a(i32, i32)>::b::<'lt>::AssociatedItem"
             (PathExpr [] (Just (QSelf i32 1)) (Path False [ ("a", Parenthesized [i32, i32] Nothing ())
-                                                          , ("b", AngleBracketed [Lifetime (Name "lt") ()] [] [] ())
+                                                          , ("b", AngleBracketed [Lifetime "lt" ()] [] [] ())
                                                           , ("AssociatedItem", NoParameters ())
                                                           ] ()) ())
   , testP "Point { x: 1, y: 2 }" (Struct [] (Path False [("Point",NoParameters ())] ()) [Field "x" (Lit [] (Int 1 Unsuffixed ()) ()) (), Field "y" (Lit [] (Int 2 Unsuffixed ()) ()) ()] Nothing ())
@@ -395,13 +395,13 @@ parserExpressions = testGroup "parsing expressions"
                 (Just (IfLet [] x (Lit [] (Bool False Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 2 Unsuffixed ()) ()) ()] DefaultBlock ())
                     Nothing ())) ())
   , testP "loop { 1; }" (Loop [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) Nothing ())
-  , testP "'lbl: loop { 1; }" (Loop [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime (Name "lbl") ())) ())
+  , testP "'lbl: loop { 1; }" (Loop [] (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime "lbl" ())) ())
   , testP "for x in [1,2,3] { 1; }" (ForLoop [] x (Vec [] [Lit [] (Int 1 Unsuffixed ()) (), Lit [] (Int 2 Unsuffixed ()) (), Lit [] (Int 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) Nothing ()) 
-  , testP "'lbl: for x in [1,2,3] { 1; }" (ForLoop [] x (Vec [] [Lit [] (Int 1 Unsuffixed ()) (), Lit [] (Int 2 Unsuffixed ()) (), Lit [] (Int 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime (Name "lbl") ())) ()) 
+  , testP "'lbl: for x in [1,2,3] { 1; }" (ForLoop [] x (Vec [] [Lit [] (Int 1 Unsuffixed ()) (), Lit [] (Int 2 Unsuffixed ()) (), Lit [] (Int 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime "lbl" ())) ()) 
   , testP "while true { 1; }" (While [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) Nothing ())
-  , testP "'lbl: while true { 1; }" (While [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime (Name "lbl") ())) ())
+  , testP "'lbl: while true { 1; }" (While [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime "lbl" ())) ())
   , testP "while let x = true { 1; }" (WhileLet [] x (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) Nothing ())
-  , testP "'lbl: while let x = true { 1; }" (WhileLet [] x (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime (Name "lbl") ())) ())
+  , testP "'lbl: while let x = true { 1; }" (WhileLet [] x (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int 1 Unsuffixed ()) ()) ()] DefaultBlock ()) (Just (Lifetime "lbl" ())) ())
   , testP "match true { }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [] ())
   , testP "match true { _ => 2 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int 2 Unsuffixed ()) ()) ()] ())
   , testP "match true { _ if true => 2 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] (Just (Lit [] (Bool True Unsuffixed ()) ())) (Lit [] (Int 2 Unsuffixed ()) ()) ()] ())

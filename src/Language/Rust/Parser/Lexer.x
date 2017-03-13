@@ -5,7 +5,7 @@ import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position
 import Language.Rust.Parser.ParseMonad
 import Language.Rust.Syntax.Token 
-import Language.Rust.Syntax.Ident (mkIdent, Ident(..), Name(..))
+import Language.Rust.Syntax.Ident (mkIdent, Ident(..))
 
 import Data.Word (Word8)
 import Data.Char (chr)
@@ -941,7 +941,7 @@ $hexit             = [0-9a-fA-F]
 
 tokens :-
 
-$white+         { \s -> pure (Space Whitespace (Name s))  }
+$white+         { \s -> pure (Space Whitespace s)  }
 
 "="             { token Equal }
 "<"             { token Less }
@@ -999,27 +999,27 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 "$"             { token Dollar }     
 "_"             { token Underscore }
 
-@lit_integer    { \i -> literal (IntegerTok (Name i)) }
-@lit_float      { \f -> literal (FloatTok   (Name f)) }
+@lit_integer    { \i -> literal (IntegerTok i) }
+@lit_float      { \f -> literal (FloatTok   f) }
 @lit_float / [^\._a-zA-Z]
-                { \f -> literal (FloatTok   (Name f)) }
+                { \f -> literal (FloatTok   f) }
 @lit_float2 / [^\.]
-                { \f -> literal (FloatTok   (Name f)) }
+                { \f -> literal (FloatTok   f) }
 
-@lit_byte       { \c -> literal (ByteTok    (Name (drop 2 (init c)))) }
-@lit_char       { \c -> literal (CharTok    (Name (drop 1 (init c)))) }
-@lit_str        { \s -> literal (StrTok     (Name (drop 1 (init s)))) }
-@lit_byte_str   { \s -> literal (ByteStrTok (Name (drop 2 (init s)))) }
+@lit_byte       { \c -> literal (ByteTok    (drop 2 (init c))) }
+@lit_char       { \c -> literal (CharTok    (drop 1 (init c))) }
+@lit_str        { \s -> literal (StrTok     (drop 1 (init s))) }
+@lit_byte_str   { \s -> literal (ByteStrTok (drop 2 (init s))) }
 
 @lit_raw_str    { \s -> let n = length s - 2
                         in do
                             str <- rawString n
-                            literal (StrRawTok (Name str) (fromIntegral n))
+                            literal (StrRawTok str (fromIntegral n))
                 }
 @lit_raw_bstr   { \s -> let n = length s - 3
                         in do
                             str <- rawString n
-                            literal (ByteStrRawTok (Name str) (fromIntegral n))
+                            literal (ByteStrRawTok str (fromIntegral n))
                 }
 
 <lits> ""       ;
@@ -1036,8 +1036,8 @@ $white+         { \s -> pure (Space Whitespace (Name s))  }
 @inner_doc_line   { \c -> pure (Doc (drop 3 c) InnerDoc) }
 @inner_doc_inline { \_ -> Doc <$> nestedComment <*> pure InnerDoc }
 
-@line_comment     { \c -> pure (Space Comment (Name (drop 2 c))) }
-@inline_comment   { \_ -> Space Comment <$> (Name <$> nestedComment) }
+@line_comment     { \c -> pure (Space Comment (drop 2 c)) }
+@inline_comment   { \_ -> Space Comment <$> nestedComment }
 
 @subst_nt         { \(_:i) -> pure (SubstNt (mkIdent i) Plain) }
 @match_nt         { \(_:s) -> let (i,':':n) = Prelude.span (/= ':') s

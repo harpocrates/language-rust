@@ -13,7 +13,8 @@ import qualified Text.PrettyPrint.Annotated.WL as WL
 import Data.ByteString (unpack)
 import Data.Char (intToDigit, ord, chr)
 import Data.Either (lefts, rights)
-import Data.List.NonEmpty (NonEmpty(..), toList)
+import Data.Foldable (toList)
+import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
 import Data.Maybe (listToMaybe)
 import Data.Word (Word8)
@@ -108,11 +109,11 @@ printCrate (Crate items as macs x) = annotate x (vcat ls)
 
 -- | Pretty print a name
 printName :: Name -> Doc a
-printName (Name s) = text s
+printName = text
 
 -- | Pretty print an identifier
 printIdent :: Ident -> Doc a
-printIdent (Ident (Name s) _) = text s
+printIdent (Ident s _) = text s
 
 -- | Pretty print a type
 -- aka 'print_type' (with 'print_ty_fn' inlined)
@@ -211,14 +212,14 @@ printToken (SubstNt s _) = "$" <> printIdent s
 printToken _ = error "printToken"
 
 printLitTok :: LitTok -> Doc a
-printLitTok (ByteTok (Name v))         = "b'" <> text v <> "'"
-printLitTok (CharTok (Name v))         = "'" <> text v <> "'"
-printLitTok (IntegerTok (Name v))      = text v
-printLitTok (FloatTok (Name v))        = text v
-printLitTok (StrTok (Name v))          = "\"" <> text v <> "\""
-printLitTok (StrRawTok (Name v) n)     = let pad = text (replicate n '#') in "r" <> pad <> "\"" <> text v <> "\"" <> pad
-printLitTok (ByteStrTok (Name v))      = "b\"" <> text v <> "\""
-printLitTok (ByteStrRawTok (Name v) n) = let pad = text (replicate n '#') in "rb" <> pad <> "\"" <> text v <> "\"" <> pad
+printLitTok (ByteTok n)         = "b'" <> printName n <> "'"
+printLitTok (CharTok n)         = "'" <> printName n <> "'"
+printLitTok (IntegerTok n)      = printName n
+printLitTok (FloatTok n)        = printName n
+printLitTok (StrTok n)          = "\"" <> printName n <> "\""
+printLitTok (StrRawTok n m)     = let pad = text (replicate m '#') in "r" <> pad <> "\"" <> printName n <> "\"" <> pad
+printLitTok (ByteStrTok n)      = "b\"" <> printName n <> "\""
+printLitTok (ByteStrRawTok n m) = let pad = text (replicate m '#') in "rb" <> pad <> "\"" <> printName n <> "\"" <> pad
 
 printNonterminal :: Nonterminal a -> Doc a
 printNonterminal (NtItem item) = printItem item
@@ -608,7 +609,7 @@ synthComment com = "/*" <+> text com <+> "*/"
 
 -- | Print ident as is, or as cooked string if containing a hyphen
 printCookedIdent :: Ident -> Doc a
-printCookedIdent ident@Ident{ name = Name str }
+printCookedIdent ident@Ident{ name = str }
   | '-' `elem` str = printStr Cooked str
   | otherwise = printIdent ident 
 
@@ -908,7 +909,7 @@ printPathParameters (AngleBracketed lts tys bds x) colons = annotate x (when col
 -- | second argument says whether to put colons before params
 -- aka print_path
 printPath :: Path a -> Bool -> Doc a
-printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (punctuate "::" (printSegment `map` toList segs)))
+printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (punctuate "::" (printSegment `map` N.toList segs)))
   where
   printSegment :: (Ident, PathParameters a) -> Doc a
   printSegment (ident,parameters) = printIdent ident <> printPathParameters parameters colons
