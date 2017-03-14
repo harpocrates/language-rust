@@ -1039,9 +1039,9 @@ $white+         { \s -> pure (Space Whitespace s)  }
 @line_comment     { \c -> pure (Space Comment (drop 2 c)) }
 @inline_comment   { \_ -> Space Comment <$> nestedComment }
 
-@subst_nt         { \(_:i) -> pure (SubstNt (mkIdent i) Plain) }
+@subst_nt         { \(_:i) -> pure (SubstNt (mkIdent i)) }
 @match_nt         { \(_:s) -> let (i,':':n) = Prelude.span (/= ':') s
-                              in pure (MatchNt (mkIdent i) (mkIdent n) Plain Plain)
+                              in pure (MatchNt (mkIdent i) (mkIdent n))
                   }
 
 {
@@ -1192,7 +1192,22 @@ alexMove pos '\n' = retPos pos
 alexMove pos '\r' = incOffset pos 1
 alexMove pos _    = incPos pos 1
 
--- | lexer for one token
+-- | Lexer for one token
+--
+-- As much as possible, this follows Rust's choices for tokenization, including punting some things
+-- to the parser. For instance, the last two '>' in 'Vec<Option<i32>>' are lexed as a single '>>'
+-- token. Things even get weirder: the last two tokens of 'Vec<Option<Option<i32>>>' are '>>' and
+-- '>'.
+--
+-- This sort of amguity where one token end up being larger than one would expect also arises from:
+--
+--    * '&&' in patterns like '&&mut x'
+--    * '||' in closures with no arguments like '|| x'
+--    * '<<' in qualified type paths like 'FromIterator<<A as IntoIterator>::Item>'
+--    * '>>' in qualified paths like '<Self as Foo<T>>::Bar'
+--    * '>=' possibly in equality predicates like 'F<A>=i32' (not yet in Rust)
+--    * '>>=' possibly in equality predicates?
+--
 lexToken :: P (Spanned Token)
 lexToken = do
   tok_maybe <- popToken

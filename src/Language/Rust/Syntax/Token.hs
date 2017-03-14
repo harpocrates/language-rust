@@ -1,77 +1,145 @@
-{-# LANGUAGE DuplicateRecordFields #-}
+{-|
+Module      : Language.Rust.Syntax.Token
+Description : Token definitions
+Copyright   : (c) Alec Theriault, 2017
+License     : BSD-style
+Maintainer  : alec.theriault@gmail.com
+Stability   : experimental
+Portability : portable
 
-module Language.Rust.Syntax.Token where
+Contains roughly the same stuff as @syntax::parse::token@ - data definitions for tokens.
+-}
 
-import Language.Rust.Syntax.Ident (Ident(..), Name)
-import Language.Rust.Data.Position
-import Language.Rust.Syntax.AST
+module Language.Rust.Syntax.Token (Token(..), DocType(..), Space(..), Delim(..), LitTok(..)) where
 
-------------------
--- Tokenization.
--- https://github.com/serde-rs/syntex/blob/master/syntex_syntax/src/parse/token.rs
-------------------
+import Language.Rust.Syntax.Ident (Ident, Name)
+import Language.Rust.Data.Position (Span)
+import Language.Rust.Syntax.AST (Nonterminal)
 
--- | A delimiter token
--- https://docs.serde.rs/syntex_syntax/parse/token/enum.DelimToken.html
-data DelimToken
-  = Paren   -- ^ A round parenthesis: ( or )
-  | Bracket -- ^ A square bracket: [ or ]
-  | Brace   -- ^ A curly brace: { or }
-  | NoDelim -- ^ An empty delimiter
+-- | A general token (based on @syntax::parse::token::Token@).
+--
+-- Unlike its @libsyntax@ counterpart, 'Token' has folded in @syntax::parse::token::BinOpToken@
+-- and @syntax::parse::token::BinOpEqToken@ as regular tokens.
+data Token
+  -- Single character expression-operator symbols.
+  = Equal                 -- ^ @=@ token 
+  | Less                  -- ^ @<@ token 
+  | Greater               -- ^ @>@ token 
+  | Ampersand             -- ^ @&@ token 
+  | Pipe                  -- ^ @|@ token 
+  | Exclamation           -- ^ @!@ token 
+  | Tilde                 -- ^ @~@ token 
+  | Plus                  -- ^ @+@ token 
+  | Minus                 -- ^ @-@ token 
+  | Star                  -- ^ @*@ token 
+  | Slash                 -- ^ @/@ token 
+  | Percent               -- ^ @%@ token 
+  | Caret                 -- ^ @^@ token 
+  
+  -- Multi character expression-operator symbols
+  | GreaterEqual          -- ^ @>=@ token
+  | GreaterGreaterEqual   -- ^ @>>=@ token
+  | AmpersandAmpersand    -- ^ @&&@ token
+  | PipePipe              -- ^ @||@ token
+  | LessLess              -- ^ @<<@ token
+  | GreaterGreater        -- ^ @>>@ token
+  | EqualEqual            -- ^ @==@ token
+  | NotEqual              -- ^ @!=@ token
+  | LessEqual             -- ^ @<=@ token
+  | LessLessEqual         -- ^ @<<=@ token
+  | MinusEqual            -- ^ @-=@ token
+  | AmpersandEqual        -- ^ @&=@ token
+  | PipeEqual             -- ^ @|=@ token
+  | PlusEqual             -- ^ @+=@ token
+  | StarEqual             -- ^ @*=@ token
+  | SlashEqual            -- ^ @/=@ token
+  | CaretEqual            -- ^ @^=@ token
+  | PercentEqual          -- ^ @%=@ token
+  
+  -- Structural symbols  
+  | At                    -- ^ @\@@ token
+  | Dot                   -- ^ @.@ token
+  | DotDot                -- ^ @..@ token
+  | DotDotDot             -- ^ @...@ token
+  | Comma                 -- ^ @,@ token
+  | Semicolon             -- ^ @;@ token
+  | Colon                 -- ^ @:@ token
+  | ModSep                -- ^ @::@ token
+  | RArrow                -- ^ @->@ token
+  | LArrow                -- ^ @<-@ token
+  | FatArrow              -- ^ @=>@ token
+  | Pound                 -- ^ @#@ token
+  | Dollar                -- ^ @$@ token
+  | Question              -- ^ @?@ token
+  
+  -- Delimiters
+  | OpenDelim !Delim      -- One of @(@, @[@, @{@
+  | CloseDelim !Delim     -- One of @)@, @]@, @}@
+  
+  -- Literals
+  | LiteralTok LitTok (Maybe Name) -- ^ a literal token with an optional suffix (something like @i32@)
+  
+  -- Name components
+  | IdentTok Ident        -- ^ an arbitrary identifier (something like @x@ or @foo@ or @and_then@)
+  | Underscore            -- ^ @_@ token
+  | LifetimeTok Ident     -- ^ a lifetime (something like @\'a@ or @\'static@)
+  | Space Space Name      -- ^ whitespace
+  | Doc String !DocType   -- ^ doc comment with its contents and whether it is outer/inner
+  | Shebang String        -- ^ shebang followed by the rest of the line
+  | Eof                   -- ^ end of file token
+  
+  -- Macro related:
+  | MatchNt Ident Ident   -- ^ matching form (in LHS) for @macro_rules!@ macros (something like @$x:item@)
+  | SubstNt Ident         -- ^ substitution form (in RHS) for @macro_rules!@ macros (something like @$x@)
+  
+  -- NOT PRODUCED IN TOKENIZATION!!
+  | Interpolated (Nonterminal Span) -- ^ can be expanded into several tokens in macro-expansion
+  deriving (Eq)
+
+
+-- | Possible styles of doc comments:
+--
+-- @
+-- /// Full line outer doc comment
+-- //! Full line inner doc comment
+-- \/** Inline outer doc comment *\/
+-- \/*! Inline inner doc comment *\/
+-- @
+--
+data DocType
+  = OuterDoc -- ^ comment refers to element that follows immediately after
+  | InnerDoc -- ^ comment refers to the closest enclosing element
+  deriving (Eq, Show, Enum, Bounded)
+
+-- | Rust is whitespace independent. Short of providing space between tokens, whitespace is all the
+-- same to the parser.
+data Space
+  = Whitespace  -- ^ usual white space: @[\\ \\t\\n\\f\\v\\r]+@
+  | Comment     -- ^ comment (either inline or not, see 'DocType')
+  deriving (Eq, Show, Enum, Bounded)
+
+-- | A delimiter token (@syntax::parse::token::DelimToken@)
+data Delim
+  = Paren   -- ^ round parenthesis: @(@ or @)@
+  | Bracket -- ^ square bracket: @[@ or @]@
+  | Brace   -- ^ curly brace: @{@ or @}@
+  | NoDelim -- ^ empty delimiter
   deriving (Eq, Enum, Bounded, Show)
 
--- https://docs.serde.rs/syntex_syntax/parse/token/enum.Lit.html
+-- | A literal token (@syntax::parse::token::Lit@)
 data LitTok
-  = ByteTok Name
-  | CharTok Name
-  | IntegerTok Name
-  | FloatTok Name
-  | StrTok Name
-  | StrRawTok Name Int     -- ^ raw str delimited by n hash symbols
-  | ByteStrTok Name
-  | ByteStrRawTok Name Int -- ^ raw byte str delimited by n hash symbols
+  = ByteTok Name            -- ^ byte
+  | CharTok Name            -- ^ character
+  | IntegerTok Name         -- ^ integral literal (could have type @i32@, @int@, @u128@, etc.)
+  | FloatTok Name           -- ^ floating point literal (could have type @f32@, @f64@, etc.)
+  | StrTok Name             -- ^ string literal
+  | StrRawTok Name !Int     -- ^ raw string literal and the number of @#@ marks around it
+  | ByteStrTok Name         -- ^ byte string literal
+  | ByteStrRawTok Name !Int -- ^ raw byte string literal and the number of @#@ marks around it
   deriving (Eq, Show)
 
 
--- Based loosely on <https://docs.serde.rs/syntex_syntax/parse/token/enum.Token.html>
--- Inlined https://docs.serde.rs/syntex_syntax/parse/token/enum.BinOpToken.html
-data Token
-  -- Single character expression-operator symbols.
-  = Equal | Less | Greater | Ampersand | Pipe | Exclamation | Tilde
-  | Plus | Minus | Star | Slash | Percent | Caret
-  -- Multi character eexpression-operator symbols
-  | GreaterEqual | GreaterGreaterEqual | AmpersandAmpersand | PipePipe | LessLess | GreaterGreater  -- <- problematic row
-  | EqualEqual | NotEqual | LessEqual | LessLessEqual | MinusEqual | AmpersandEqual
-  | PipeEqual | PlusEqual | StarEqual | SlashEqual | CaretEqual | PercentEqual
-  -- Structural symbols
-  | At | Dot | DotDot | DotDotDot | Comma | Semicolon | Colon | ModSep | RArrow
-  | LArrow | FatArrow | Pound | Dollar | Question
-  -- Delimiters, eg. '{', ']', '('
-  | OpenDelim DelimToken | CloseDelim DelimToken
-  -- Literals
-  | LiteralTok LitTok (Maybe Name)
-  -- Name components
-  | IdentTok Ident
-  | Underscore
-  | LifetimeTok Ident
-  | Space Space Name        -- ^ Whitespace
-  | Doc String DocType      -- ^ Doc comment, contents, whether it is outer or not
-  | Shebang String          -- ^ Shebang followed by the rest of the line
-  | Eof
-  -- In left-hand-sides of MBE macros:
-  | MatchNt Ident Ident IdentStyle IdentStyle     -- ^ Parse a nonterminal (name to bind, name of NT)
-  -- In right-hand-sides of MBE macros:
-  | SubstNt Ident IdentStyle                      -- ^ A syntactic variable that will be filled in by macro expansion.
-  
-  -- NOT NEEDED IN TOKENIZATION!!
-  | Interpolated (Nonterminal Span)               -- ^ Can be expanded into several tokens.
-  | SpecialVarNt                                  -- ^ A macro variable with special meaning.
-  deriving (Eq)
-
-data DocType = OuterDoc | InnerDoc deriving (Eq, Show, Enum, Bounded)
-data Space = Whitespace | Comment deriving (Eq, Show, Enum, Bounded)
-data IdentStyle = ModName | Plain deriving (Eq, Show, Enum, Bounded)
-
+-- | This instance is only for error messages and debugging purposes.
 instance Show Token where
   -- Single character expression-operator symbols.
   show Equal = "="
@@ -121,7 +189,7 @@ instance Show Token where
   show Pound = "#"
   show Dollar = "$"
   show Question = "?"
-  -- Delimiters, eg. '{', ']', '('
+  -- Delimiters, eg. @{@, @]@, @(@
   show (OpenDelim Paren) = "("
   show (OpenDelim Bracket) = "["
   show (OpenDelim Brace) = "{"
@@ -149,30 +217,8 @@ instance Show Token where
   show (Doc d OuterDoc) = "/**" ++ d ++ "*/"
   show (Shebang s) = "#!" ++ s
   show Eof = "<EOF>"
-  
+  -- Macro related 
   show Interpolated{} = "<Interpolated>"
-  show MatchNt{} = "<MatchNt>"
-  show SubstNt{} = "<SubstNt>"
-  show SpecialVarNt = "<SpecialVarNt>"
-
-canBeginExpr :: Token -> Bool
-canBeginExpr OpenDelim{}   = True
-canBeginExpr IdentTok{}    = True
-canBeginExpr Underscore    = True
-canBeginExpr Tilde         = True
-canBeginExpr LiteralTok{}  = True
-canBeginExpr Exclamation   = True
-canBeginExpr Minus         = True
-canBeginExpr Star          = True
-canBeginExpr Ampersand     = True
-canBeginExpr Pipe          = True -- in lambda syntax
-canBeginExpr DotDot        = True
-canBeginExpr DotDotDot     = True -- range notation
-canBeginExpr ModSep        = True
-canBeginExpr Pound         = True -- for expression attributes
-canBeginExpr (Interpolated NtExpr{})  = True
-canBeginExpr (Interpolated NtIdent{}) = True
-canBeginExpr (Interpolated NtBlock{}) = True
-canBeginExpr (Interpolated NtPath{})  = True
-canBeginExpr _ = False
+  show (MatchNt x t) = "$" ++ show x ++ ":" ++ show t
+  show (SubstNt x) = "$" ++ show x
 

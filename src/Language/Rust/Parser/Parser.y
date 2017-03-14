@@ -199,8 +199,8 @@ import qualified Data.List.NonEmpty as N
   LIFETIME       { Spanned (LifetimeTok _) _ }
 
   -- macro related
-  substNt        { Spanned (SubstNt _ _) _ }
-  matchNt        { Spanned (MatchNt _ _ _ _) _ }
+  substNt        { Spanned (SubstNt _ ) _ }
+  matchNt        { Spanned (MatchNt _ _) _ }
 
   -- Interpolated
   ntItem         { Spanned (Interpolated (NtItem $$)) _ }

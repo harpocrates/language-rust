@@ -1,16 +1,31 @@
+{-|
+Module      : Language.Rust.Syntax.AST
+Description : AST definitions
+Copyright   : (c) Alec Theriault, 2017
+License     : BSD-style
+Maintainer  : alec.theriault@gmail.com
+Stability   : experimental
+Portability : portable
+
+Contains roughly the same stuff as @syntax::ast@.
+-}
 {-# LANGUAGE DuplicateRecordFields, DeriveFunctor, PatternSynonyms #-}
 
 module Language.Rust.Syntax.AST where
 
-import {-# SOURCE #-} Language.Rust.Syntax.Token
-import Language.Rust.Syntax.Ident
+import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)
+import Language.Rust.Syntax.Ident (Ident, Name)
 import Language.Rust.Data.Position
 
 import Data.ByteString (ByteString)
 import Data.Word (Word8)
 import Data.List.NonEmpty (NonEmpty(..))
 
--- https://docs.serde.rs/syntex_syntax/abi/enum.Abi.html
+-- | ABIs support by Rust's foreign function interface (@syntax::abi::Abi@). Not that of these, only
+-- 'Rust', 'C', 'System', 'RustIntrinsic', 'RustCall', and 'PlatformIntrinsic' are cross-platform -
+-- all the rest are platform-specific.
+--
+-- Example: @"C"@ in @extern "C" fn foo(x: i32);@
 data Abi
   -- Platform-specific ABIs
   = Cdecl
@@ -29,22 +44,24 @@ data Abi
   | PlatformIntrinsic
   deriving (Eq, Enum, Bounded, Show, Read)
 
--- | An argument in a function header like `bar: usize` as in `fn foo(bar: usize)`
--- https://docs.serde.rs/syntex_syntax/ast/struct.Arg.html
--- Inlined SelfKind and ExplicitSelf
+-- | An argument in a function header (@syntax::ast::Arg@, except with @SelfKind@ and @ExplicitSelf@
+-- inlined).
+--
+-- Example: @bar: usize@ as in @fn foo(bar: usize)@
 data Arg a
   = Arg
       { pat :: Maybe (Pat a)
       , ty :: Ty a
       , nodeInfo :: a
       }
-  | SelfValue Mutability a                         -- ^ `self`, `mut self`
-  | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ `&'lt self`, `&'lt mut self`
-  | SelfExplicit (Ty a) Mutability a               -- ^ `self: TYPE`, `mut self: TYPE`
+  | SelfValue Mutability a                         -- ^ @self@, @mut self@
+  | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ @&'lt self@, @&'lt mut self@
+  | SelfExplicit (Ty a) Mutability a               -- ^ @self: i32@, @mut self: i32@
   deriving (Eq, Show, Functor)
 
--- | An arm of a 'match'. E.g. `0...10 => { println!("match!") }` as in `match n { 0...10 => { println!("match!") }, /* .. */ }
--- https://docs.serde.rs/syntex_syntax/ast/struct.Arm.html
+-- | An arm of a 'Match' expression (@syntax::ast::Arm@).
+--
+-- Example: @_ => { println!("match!") }@ as in @match n { _ => { println!("match!") } }@
 data Arm a
   = Arm
       { attrs :: [Attribute a]
@@ -55,7 +72,8 @@ data Arm a
       } deriving (Eq, Show, Functor)
 
 -- | Inline assembly dialect.
--- E.g. "intel" as in asm!("mov eax, 2" : "={eax}"(result) : : : "intel")
+--
+-- Example: @"intel"@ as in @asm!("mov eax, 2" : "={eax}"(result) : : : "intel")@
 data AsmDialect = Att | Intel deriving (Eq, Enum, Bounded, Show)
 
 -- | Doc-comments are promoted to attributes that have isSugaredDoc = true
@@ -751,7 +769,7 @@ data TokenTree
   -- Inlined [Delimited](https://docs.serde.rs/syntex_syntax/tokenstream/struct.Delimited.html)
   | Delimited
       { span :: Span 
-      , delim :: DelimToken        -- ^ The type of delimiter
+      , delim :: Delim             -- ^ The type of delimiter
       , openSpan :: Span           -- ^ The span covering the opening delimiter
       , tts :: [TokenTree]         -- ^ The delimited sequence of token trees
       , closeSpan :: Span          -- ^ The span covering the closing delimiter
