@@ -1,18 +1,30 @@
 {
-module Language.Rust.Parser.Parser (
-  attributeP, typeP, literalP, patternP, expressionP, stmtP, itemP, crateP, blockP, implItemP,
-  traitItemP, tokenTreeP
+{-|
+Module      : Language.Rust.Parser.Parser
+Description : Rust parser
+Copyright   : (c) Alec Theriault, 2017
+License     : BSD-style
+Maintainer  : alec.theriault@gmail.com
+Stability   : experimental
+Portability : portable
+
+The parsers in this file are all re-exported to 'Language.Rust.Parser' via the 'Parse' class.
+-}
+
+
+module Language.Rust.Parser.Internal (
+  parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseCrate,
+  parseBlock, parseImplItem, parseTraitItem, parseTt,
 ) where
 
 import Language.Rust.Data.InputStream
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 import Language.Rust.Data.Position
-import Language.Rust.Data.Located
 import Language.Rust.Parser.Lexer
 import Language.Rust.Parser.ParseMonad
 import Language.Rust.Syntax.AST
-import Language.Rust.Syntax.Constants
+import Language.Rust.Parser.Literals
 
 import Data.Semigroup ((<>))
 import Data.List.NonEmpty (NonEmpty(..), (<|), toList)
@@ -25,18 +37,18 @@ import qualified Data.List.NonEmpty as N
 -- To see conflicts: stack exec happy -- --info=happyinfo.txt -o /dev/null src/Language/Rust/Parser/Parser.y
 
 -- in order to document the parsers, we have to alias them
-%name literalP lit
-%name attributeP attribute
-%name typeP ty_sum     -- the exported parser for types really is for type sums (with object sums)
-%name patternP pat
-%name stmtP stmt
-%name expressionP expr
-%name itemP mod_item   -- the exported parser for items really is for mod items (with visibility)
-%name crateP crate_
-%name blockP block
-%name implItemP impl_item
-%name traitItemP trait_item
-%name tokenTreeP token_tree
+%name parseLit lit
+%name parseAttr attribute
+%name parseTy ty_sum     -- the exported parser for types really is for type sums (with object sums)
+%name parsePat pat
+%name parseStmt stmt
+%name parseExpr expr
+%name parseItem mod_item   -- the exported parser for items really is for mod items (with visibility)
+%name parseCrate crate_
+%name parseBlock block
+%name parseImplItem impl_item
+%name parseTraitItem trait_item
+%name parseTt token_tree
 
 %tokentype { Spanned Token }
 
@@ -89,6 +101,7 @@ import qualified Data.List.NonEmpty as N
   '#'            { Spanned Pound _ }
   '$'            { Spanned Dollar _ }
   '?'            { Spanned Question _ }
+  '#!'           { Spanned Shebang _ }
 
   '||'           { Spanned PipePipe _ }
   '&&'           { Spanned AmpersandAmpersand _ }
@@ -128,79 +141,79 @@ import qualified Data.List.NonEmpty as N
   rawByteStr     { Spanned (LiteralTok ByteStrRawTok{} _) _ }
   
   -- Strict keywords used in the language
-  as             { Identifier "as" }
-  box            { Identifier "box" } 
-  break          { Identifier "break" } 
-  const          { Identifier "const" } 
-  continue       { Identifier "continue" }
-  crate          { Identifier "crate" } 
-  else           { Identifier "else" }
-  enum           { Identifier "enum" }
-  extern         { Identifier "extern" }
-  false          { Identifier "false" } 
-  fn             { Identifier "fn" }
-  for            { Identifier "for" } 
-  if             { Identifier "if" }
-  impl           { Identifier "impl" }
-  in             { Identifier "in" }
-  let            { Identifier "let" } 
-  loop           { Identifier "loop" }
-  match          { Identifier "match" } 
-  mod            { Identifier "mod" } 
-  move           { Identifier "move" }
-  mut            { Identifier "mut" } 
-  pub            { Identifier "pub" } 
-  ref            { Identifier "ref" } 
-  return         { Identifier "return" }
-  Self           { Identifier "Self" }
-  self           { Identifier "self" } 
-  static         { Identifier "static" }
-  struct         { Identifier "struct" }
-  super          { Identifier "super" } 
-  trait          { Identifier "trait" } 
-  true           { Identifier "true" }
-  type           { Identifier "type" }
-  unsafe         { Identifier "unsafe" }
-  use            { Identifier "use" } 
-  where          { Identifier "where" } 
-  while          { Identifier "while" } 
+  as             { Spanned (IdentTok (Ident "as" _)) _ }
+  box            { Spanned (IdentTok (Ident "box" _)) _ } 
+  break          { Spanned (IdentTok (Ident "break" _)) _ } 
+  const          { Spanned (IdentTok (Ident "const" _)) _ } 
+  continue       { Spanned (IdentTok (Ident "continue" _)) _ }
+  crate          { Spanned (IdentTok (Ident "crate" _)) _ } 
+  else           { Spanned (IdentTok (Ident "else" _)) _ }
+  enum           { Spanned (IdentTok (Ident "enum" _)) _ }
+  extern         { Spanned (IdentTok (Ident "extern" _)) _ }
+  false          { Spanned (IdentTok (Ident "false" _)) _ } 
+  fn             { Spanned (IdentTok (Ident "fn" _)) _ }
+  for            { Spanned (IdentTok (Ident "for" _)) _ } 
+  if             { Spanned (IdentTok (Ident "if" _)) _ }
+  impl           { Spanned (IdentTok (Ident "impl" _)) _ }
+  in             { Spanned (IdentTok (Ident "in" _)) _ }
+  let            { Spanned (IdentTok (Ident "let" _)) _ } 
+  loop           { Spanned (IdentTok (Ident "loop" _)) _ }
+  match          { Spanned (IdentTok (Ident "match" _)) _ } 
+  mod            { Spanned (IdentTok (Ident "mod" _)) _ } 
+  move           { Spanned (IdentTok (Ident "move" _)) _ }
+  mut            { Spanned (IdentTok (Ident "mut" _)) _ } 
+  pub            { Spanned (IdentTok (Ident "pub" _)) _ } 
+  ref            { Spanned (IdentTok (Ident "ref" _)) _ } 
+  return         { Spanned (IdentTok (Ident "return" _)) _ }
+  Self           { Spanned (IdentTok (Ident "Self" _)) _ }
+  self           { Spanned (IdentTok (Ident "self" _)) _ } 
+  static         { Spanned (IdentTok (Ident "static" _)) _ }
+  struct         { Spanned (IdentTok (Ident "struct" _)) _ }
+  super          { Spanned (IdentTok (Ident "super" _)) _ } 
+  trait          { Spanned (IdentTok (Ident "trait" _)) _ } 
+  true           { Spanned (IdentTok (Ident "true" _)) _ }
+  type           { Spanned (IdentTok (Ident "type" _)) _ }
+  unsafe         { Spanned (IdentTok (Ident "unsafe" _)) _ }
+  use            { Spanned (IdentTok (Ident "use" _)) _ } 
+  where          { Spanned (IdentTok (Ident "where" _)) _ } 
+  while          { Spanned (IdentTok (Ident "while" _)) _ } 
   
   -- Keywords reserved for future use
-  abstract       { Identifier "abstract" }
-  alignof        { Identifier "alignof" } 
-  become         { Identifier "become" }
-  do             { Identifier "do" }
-  final          { Identifier "final" } 
-  macro          { Identifier "macro" } 
-  offsetof       { Identifier "offsetof" }
-  override       { Identifier "override" }
-  priv           { Identifier "priv" }
-  proc           { Identifier "proc" }
-  pure           { Identifier "pure" }
-  sizeof         { Identifier "sizeof" }
-  typeof         { Identifier "typeof" }
-  unsized        { Identifier "unsized" } 
-  virtual        { Identifier "virtual" } 
-  yield          { Identifier "yield" } 
+  abstract       { Spanned (IdentTok (Ident "abstract" _)) _ }
+  alignof        { Spanned (IdentTok (Ident "alignof" _)) _ } 
+  become         { Spanned (IdentTok (Ident "become" _)) _ }
+  do             { Spanned (IdentTok (Ident "do" _)) _ }
+  final          { Spanned (IdentTok (Ident "final" _)) _ } 
+  macro          { Spanned (IdentTok (Ident "macro" _)) _ } 
+  offsetof       { Spanned (IdentTok (Ident "offsetof" _)) _ }
+  override       { Spanned (IdentTok (Ident "override" _)) _ }
+  priv           { Spanned (IdentTok (Ident "priv" _)) _ }
+  proc           { Spanned (IdentTok (Ident "proc" _)) _ }
+  pure           { Spanned (IdentTok (Ident "pure" _)) _ }
+  sizeof         { Spanned (IdentTok (Ident "sizeof" _)) _ }
+  typeof         { Spanned (IdentTok (Ident "typeof" _)) _ }
+  unsized        { Spanned (IdentTok (Ident "unsized" _)) _ } 
+  virtual        { Spanned (IdentTok (Ident "virtual" _)) _ } 
+  yield          { Spanned (IdentTok (Ident "yield" _)) _ } 
 
   -- Weak keywords, have special meaning only in specific contexts.
-  default        { Identifier "default" } 
-  union          { Identifier "union" } 
+  default        { Spanned (IdentTok (Ident "default" _)) _ } 
+  union          { Spanned (IdentTok (Ident "union" _)) _ } 
 
   -- Comments
   outerDoc       { Spanned (Doc _ OuterDoc) _ }
   innerDoc       { Spanned (Doc _ InnerDoc) _ }
 
   -- Identifiers.
-  IDENT          { Identifier _ }
+  IDENT          { Spanned (IdentTok (Ident _ _)) _ }
   '_'            { Spanned Underscore _ }
 
   -- Lifetimes.
   LIFETIME       { Spanned (LifetimeTok _) _ }
 
   -- macro related
-  substNt        { Spanned (SubstNt _ _) _ }
-  matchNt        { Spanned (MatchNt _ _ _ _) _ }
+  substNt        { Spanned (SubstNt _ ) _ }
+  matchNt        { Spanned (MatchNt _ _) _ }
 
   -- Interpolated
   ntItem         { Spanned (Interpolated (NtItem $$)) _ }
@@ -336,6 +349,7 @@ outer_attrs :: { NonEmpty (Attribute Span) }
 
 inner_attribute :: { Attribute Span }
   : '#' '!' '[' meta_item ']'    {% withSpan $1 (Attribute Inner $4 False) } 
+  | '#!'    '[' meta_item ']'    {% withSpan $1 (Attribute Inner $3 False) } 
   | innerDoc                     {% let Doc docStr InnerDoc = unspan $1 in
                                     do { str <- withSpan $1 (Str docStr Cooked Unsuffixed)
                                        ; doc <- withSpan $1 (NameValue (mkIdent "doc") str)
@@ -400,7 +414,7 @@ qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
 
 -- Basically a qualified path, but ignoring the very first '>' token
 qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
-  : ty_sum '>' '::' segs                {% withSpan $1 (Spanned (QSelf $1 0, Path False (unspan $4) (posOf $4))) }
+  : ty_sum '>' '::' segs                {% withSpan $1 (Spanned (QSelf $1 0, Path False (unspan $4) (spanOf $4))) }
   | ty_sum as ty_path '>' '::' segs     {%
       let segs = segments $3 <> unspan $6
       in withSpan $1 (Spanned (QSelf $1 (length (segments $3)), $3{ segments = segs }))
@@ -1512,11 +1526,41 @@ token_not_plus_star :: { Spanned Token }
 
 
 {
+-- | Parser for literals.
+parseLit :: P (Lit Span)
 
--- | Check if an expression is a BlockExpr
-isBlockExpr :: Expr a -> Bool
-isBlockExpr BlockExpr{} = True
-isBlockExpr _ = False
+-- | Parser for attributes.
+parseAttr :: P (Attribute Span)
+
+-- | Parser for types.
+parseTy :: P (Ty Span)
+
+-- | Parser for patterns.
+parsePat :: P (Pat Span)
+
+-- | Parser for statements.
+parseStmt :: P (Stmt Span)
+
+-- | Parser for expressions.
+parseExpr :: P (Expr Span)
+
+-- | Parser for items.
+parseItem :: P (Item Span)
+
+-- | Parser for crates.
+parseCrate :: P (Crate Span)
+
+-- | Parser for blocks.
+parseBlock :: P (Block Span)
+
+-- | Parser for @impl@ items.
+parseImplItem :: P (ImplItem Span)
+
+-- | Parser for @trait@ items.
+parseTraitItem :: P (TraitItem Span)
+
+-- | Parser for token trees.
+parseTt :: P TokenTree
 
 
 -- | Try to convert an expression to a statement given information about whether there is a trailing
@@ -1575,7 +1619,7 @@ mkTokenTree (Spanned t s) = Token s t
 lit :: Spanned Token -> Lit Span
 lit (Spanned (IdentTok (Ident "true" _)) s) = Bool True Unsuffixed s
 lit (Spanned (IdentTok (Ident "false" _)) s) = Bool False Unsuffixed s
-lit (Spanned (LiteralTok litTok suffix_m) s) = parseLit litTok suffix s
+lit (Spanned (LiteralTok litTok suffix_m) s) = translateLit litTok suffix s
   where
     suffix = case suffix_m of
                Nothing -> Unsuffixed
@@ -1616,7 +1660,7 @@ isTraitTyParamBound _ = False
 -- start of the 'Span'. The end of the 'Span' is determined from the current parser position.
 withSpan :: Located node => node -> (Span -> a) -> P a
 withSpan node mkNode = do
-  let Span lo _ = posOf node
+  let Span lo _ = spanOf node
   hi <- getPosition
   pure (mkNode (Span lo hi))
 

@@ -13,7 +13,6 @@ import Language.Rust.Data.Position
 import Language.Rust.Data.InputStream
 
 import Control.Monad
-import Control.Monad.Trans.Except
 
 parserSuite :: Test
 parserSuite = testGroup "parser suite"
@@ -31,10 +30,7 @@ testP inp x = testCase inp $ Right x @=? parseNoSpans parser (inputStreamFromStr
 
 -- | Turn an InputStream into either an error or a parse.
 parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either (Position,String) (f ())
-parseNoSpans parser inp = runExcept (void <$> result)
-  where
-    -- result :: Except (Position,String) (f Span)
-    result = execParser parser inp initPos
+parseNoSpans parser inp = void <$> execParser parser inp initPos
 
 
 -- | Test parsing of literals.

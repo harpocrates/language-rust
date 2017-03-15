@@ -1,25 +1,40 @@
-module Language.Rust.Syntax.Constants where
+{-|
+Module      : Language.Rust.Parser.Literals
+Description : Parsing literals
+Copyright   : (c) Alec Theriault, 2017
+License     : BSD-style
+Maintainer  : alec.theriault@gmail.com
+Stability   : experimental
+Portability : portable
+
+Functions for parsing literals from valid literal tokens. Note the functions in this module fail
+badly is fed invalid 'LitTok's; it is expected their input is coming from Alex and is correct.
+-}
+
+module Language.Rust.Parser.Literals (
+  translateLit
+) where
 
 import Language.Rust.Syntax.Token
-import Language.Rust.Syntax.Ident
 import Language.Rust.Syntax.AST
 
 import Data.Char (chr, isHexDigit, digitToInt)
 import Data.Word (Word8)
-import qualified Data.ByteString.Char8 as BSW (pack)
-import qualified Data.ByteString as BS (pack)
 import Data.List (unfoldr)
 
--- TODO make this have proper error handling
-parseLit :: LitTok -> Suffix -> a -> Lit a
-parseLit (ByteTok s)         = let Just (w8,"") = unescapeByte s in Byte w8
-parseLit (CharTok s)         = let Just (c,"")  = unescapeChar s in Char c
-parseLit (IntegerTok s)      = Int (unescapeInteger s)  
-parseLit (FloatTok s)        = Float (unescapeFloat s) 
-parseLit (StrTok s)          = Str (unfoldr unescapeChar s) Cooked
-parseLit (StrRawTok s n)     = Str s (Raw n)
-parseLit (ByteStrTok s)      = ByteStr (BS.pack (unfoldr unescapeByte s)) Cooked
-parseLit (ByteStrRawTok s n) = ByteStr (BSW.pack s) (Raw n) 
+import qualified Data.ByteString.Char8 as BSW (pack)
+import qualified Data.ByteString as BS (pack)
+
+-- | Parse a valid 'LitTok' into a 'Lit'.
+translateLit :: LitTok -> Suffix -> a -> Lit a
+translateLit (ByteTok s)         = let Just (w8,"") = unescapeByte s in Byte w8
+translateLit (CharTok s)         = let Just (c,"")  = unescapeChar s in Char c
+translateLit (IntegerTok s)      = Int (unescapeInteger s)  
+translateLit (FloatTok s)        = Float (unescapeFloat s) 
+translateLit (StrTok s)          = Str (unfoldr unescapeChar s) Cooked
+translateLit (StrRawTok s n)     = Str s (Raw n)
+translateLit (ByteStrTok s)      = ByteStr (BS.pack (unfoldr unescapeByte s)) Cooked
+translateLit (ByteStrRawTok s n) = ByteStr (BSW.pack s) (Raw n) 
   
 -- | Given a string of characters read from a Rust source, extract the next underlying char taking
 -- into account escapes and unicode.

@@ -1,5 +1,43 @@
 {
-module Language.Rust.Parser.Lexer (lexToken, lexNonSpace, lexTokens, lexicalError, parseError) where
+{-|
+Module      : Language.Rust.Parser.Lexer
+Description : Rust lexer
+Copyright   : (c) Alec Theriault, 2017
+License     : BSD-style
+Maintainer  : alec.theriault@gmail.com
+Stability   : experimental
+Portability : portable
+
+As much as possible, this follows Rust's choices for tokenization, including punting some things to
+the parser. For instance, the last two @>@ in @Vec\<Option\<i32\>\>@ are lexed as a single
+'GreaterGreater' token while the last two tokens of @Vec\<Option\<Option\<i32\>\>\>@ are
+'GreaterGreater' and 'Greater'.
+
+Yet weirder (but very useful in parsing for dealing with conflicts and precedences of logical and,
+bitwise and, and unary reference), @&&&x&&&y@ lexes into 'AmpersandAmpersand', 'Ampersand',
+@'IdentTok' "x"@, 'AmpersandAmpersand', 'Ampersand', @'IdentTok' "y"@. Although the parser sometimes
+needs to "break apart" tokens, it never has to think about putting them together. That means it can
+easily figure out that @&&&x&&&y@ parses as @&(&(&x)) && (&y)@ and not @&(&(&x)) & (&(&y))@ even if
+bitwise conjunctions binds more tightly that logical conjunctions. 
+
+This sort of amguity where one tokens need to be broken up occurs for
+
+   * @&&@ in patterns like @&&mut x@
+   * @||@ in closures with no arguments like @|| x@
+   * @<<@ in qualified type paths like @FromIterator\<\<A as IntoIterator\>::Item\>@
+   * @>>@ in qualified paths like @\<Self as Foo\<T\>\>::Bar@
+   * @>=@ possibly in equality predicates like @F\<A\>=i32@ (not yet in Rust)
+   * @>>=@ possibly in equality predicates?
+-}
+
+module Language.Rust.Parser.Lexer (
+  -- * Lexing
+  lexToken, lexNonSpace, lexTokens,
+  -- * Tokens
+  Token(..),
+  -- * Error reporting
+  lexicalError,
+) where
 
 import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position
@@ -9,11 +47,10 @@ import Language.Rust.Syntax.Ident (mkIdent, Ident(..))
 
 import Data.Word (Word8)
 import Data.Char (chr)
+import Data.Functor (($>))
 
 -- Things to review:
 --   * improved error messages
---   * spans being ignored with mempty
---   * shebang
 
 -- Based heavily on:
 --  * <https://github.com/rust-lang/rust/blob/master/src/grammar/RustLexer.g4>
@@ -1039,9 +1076,11 @@ $white+         { \s -> pure (Space Whitespace s)  }
 @line_comment     { \c -> pure (Space Comment (drop 2 c)) }
 @inline_comment   { \_ -> Space Comment <$> nestedComment }
 
-@subst_nt         { \(_:i) -> pure (SubstNt (mkIdent i) Plain) }
+"#!"              { token Shebang } 
+
+@subst_nt         { \(_:i) -> pure (SubstNt (mkIdent i)) }
 @match_nt         { \(_:s) -> let (i,':':n) = Prelude.span (/= ':') s
-                              in pure (MatchNt (mkIdent i) (mkIdent n) Plain Plain)
+                              in pure (MatchNt (mkIdent i) (mkIdent n))
                   }
 
 {
@@ -1056,14 +1095,13 @@ token t _ = pure t
 -- This is for backwards compatibility if Rust decides to ever add suffixes. 
 literal :: LitTok -> P Token 
 literal lit = do
-  ai@(_, inp) <- getAlexInput
-  case alexScan ai lits of
-    AlexToken (pos', inp') len action -> do
+  pos <- getPosition
+  inp <- getInput
+  case alexScan (pos,inp) lits of
+    AlexToken (pos',inp') len action -> do
         tok <- action (takeChars len inp)
         case tok of
-          IdentTok (Ident suffix _) -> do
-            setAlexInput (pos', inp')
-            pure (LiteralTok lit (Just suffix))
+          IdentTok (Ident suf _) -> setPosition pos' *> setInput inp' $> LiteralTok lit (Just suf)
           _ -> pure (LiteralTok lit Nothing)
     _ -> pure (LiteralTok lit Nothing)
 
@@ -1114,16 +1152,16 @@ nestedComment = go 1 ""
 
 -- Monadic functions
 
--- | Retrieve the next character (if there is one), updating the parser state
--- accordingly.
+-- | Retrieve the next character (if there is one), updating the parser state accordingly.
 nextChar :: P (Maybe Char)
 nextChar = do
-  (pos,inp) <- getAlexInput
+  pos <- getPosition
+  inp <- getInput
   if inputStreamEmpty inp 
     then pure Nothing
     else let (c,inp') = takeChar inp
              pos' = alexMove pos c
-         in pos' `seq` (setAlexInput (pos',inp') *> pure (Just c))
+         in pos' `seq` (setPosition pos' *> setInput inp' $> Just c)
 
 -- | Retrieve the next character (if there is one), without updating the
 -- parser state.
@@ -1150,25 +1188,12 @@ lexicalError = do
   c <- peekChar
   fail ("Lexical error: the character " ++ show c ++ " does not fit here")
 
--- | Signal a syntax error.
-parseError :: Spanned Token -> P a
-parseError (Spanned tok _)  = do
-  fail ("Syntax error: the symbol `" ++ show tok ++ "' does not fit here")
-
 
 -- Functions required by Alex 
 
 -- | type passed around by Alex functions (required by Alex)
 type AlexInput = (Position,    -- current position,
                   InputStream) -- current input string
-
--- | retrieve the AlexInput
-getAlexInput :: P AlexInput
-getAlexInput = (,) <$> getPosition <*> getInput
-
--- | set the AlexInput
-setAlexInput :: AlexInput -> P ()
-setAlexInput (pos,inp) = setPosition pos *> setInput inp
 
 -- | get previous character (required by Alex). Since this is never used, the
 -- implementation just raises an error.
@@ -1192,25 +1217,27 @@ alexMove pos '\n' = retPos pos
 alexMove pos '\r' = incOffset pos 1
 alexMove pos _    = incPos pos 1
 
--- | lexer for one token
+-- | Lexer for one 'Token'. The only token this cannot produce is 'Interpolated'. 
 lexToken :: P (Spanned Token)
 lexToken = do
   tok_maybe <- popToken
   case tok_maybe of
     Just tok -> pure tok
     Nothing -> do
-      (pos,inp) <- getAlexInput
+      pos <- getPosition
+      inp <- getInput
       case alexScan (pos, inp) 0 of
-        AlexEOF        -> pure (Spanned Eof (Span pos pos))
-        AlexError _    -> fail "lexical error"
-        AlexSkip  ai _ -> setAlexInput ai *> lexToken
-        AlexToken ai len action -> do
-            setAlexInput ai
-            tok <- action (takeChars len inp)
-            pos' <- getPosition
-            return (Spanned tok (Span pos pos'))
+        AlexEOF                 -> pure (Spanned Eof (Span pos pos))
+        AlexError _             -> fail "lexical error"
+        AlexSkip  (pos',inp') _ -> setPosition pos' *> setInput inp' *> lexToken
+        AlexToken (pos',inp') len action -> do
+          setPosition pos'
+          setInput inp'
+          tok <- action (takeChars len inp)
+          return (Spanned tok (Span pos pos'))
 
--- | lexer for a non-whitespace token
+-- | Lexer for one non-whitespace 'Token'. The only tokens this cannot produce are 'Interpolated'
+-- and 'Space' (which includes comments that aren't doc comments).
 lexNonSpace :: P (Spanned Token)
 lexNonSpace = do
   tok <- lexToken
@@ -1218,13 +1245,13 @@ lexNonSpace = do
     Spanned Space{} _ -> lexNonSpace
     _ -> pure tok
 
--- | continues to lex tokens up to (and not including) the EOF (not supposed
--- to be efficient)
-lexTokens :: P [Spanned Token]
-lexTokens = do
-  tok <- lexToken
+-- | Apply the given lexer repeatedly until (but not including) the 'Eof' token. Meant for debugging
+-- purposes - in general this defeats the point of a threaded lexer.
+lexTokens :: P (Spanned Token) -> P [Spanned Token]
+lexTokens lexer = do
+  tok <- lexer
   case tok of
     Spanned Eof _ -> pure []
-    _ -> (tok :) <$> lexTokens
+    _ -> (tok :) <$> lexTokens lexer
 
 }

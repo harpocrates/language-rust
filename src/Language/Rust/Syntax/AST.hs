@@ -1,16 +1,31 @@
+{-|
+Module      : Language.Rust.Syntax.AST
+Description : AST definitions
+Copyright   : (c) Alec Theriault, 2017
+License     : BSD-style
+Maintainer  : alec.theriault@gmail.com
+Stability   : experimental
+Portability : portable
+
+Contains roughly the same stuff as @syntax::ast@.
+-}
 {-# LANGUAGE DuplicateRecordFields, DeriveFunctor, PatternSynonyms #-}
 
 module Language.Rust.Syntax.AST where
 
-import {-# SOURCE #-} Language.Rust.Syntax.Token
-import Language.Rust.Syntax.Ident
+import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)
+import Language.Rust.Syntax.Ident (Ident, Name)
 import Language.Rust.Data.Position
 
 import Data.ByteString (ByteString)
 import Data.Word (Word8)
 import Data.List.NonEmpty (NonEmpty(..))
 
--- https://docs.serde.rs/syntex_syntax/abi/enum.Abi.html
+-- | ABIs support by Rust's foreign function interface (@syntax::abi::Abi@). Note that of these,
+-- only 'Rust', 'C', 'System', 'RustIntrinsic', 'RustCall', and 'PlatformIntrinsic' are
+-- cross-platform - all the rest are platform-specific.
+--
+-- Example: @\"C\"@ as in @extern \"C\" fn foo(x: i32);@
 data Abi
   -- Platform-specific ABIs
   = Cdecl
@@ -29,22 +44,30 @@ data Abi
   | PlatformIntrinsic
   deriving (Eq, Enum, Bounded, Show, Read)
 
--- | An argument in a function header like `bar: usize` as in `fn foo(bar: usize)`
--- https://docs.serde.rs/syntex_syntax/ast/struct.Arg.html
--- Inlined SelfKind and ExplicitSelf
+-- | An argument in a function header (@syntax::ast::Arg@, except with @SelfKind@ and @ExplicitSelf@
+-- inlined).
+--
+-- Example: @bar: usize@ as in @fn foo(bar: usize)@
 data Arg a
   = Arg
       { pat :: Maybe (Pat a)
       , ty :: Ty a
       , nodeInfo :: a
       }
-  | SelfValue Mutability a                         -- ^ `self`, `mut self`
-  | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ `&'lt self`, `&'lt mut self`
-  | SelfExplicit (Ty a) Mutability a               -- ^ `self: TYPE`, `mut self: TYPE`
+  | SelfValue Mutability a                         -- ^ @self@, @mut self@
+  | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ @&'lt self@, @&'lt mut self@
+  | SelfExplicit (Ty a) Mutability a               -- ^ @self: i32@, @mut self: i32@
   deriving (Eq, Show, Functor)
 
--- | An arm of a 'match'. E.g. `0...10 => { println!("match!") }` as in `match n { 0...10 => { println!("match!") }, /* .. */ }
--- https://docs.serde.rs/syntex_syntax/ast/struct.Arm.html
+instance Located a => Located (Arg a) where
+  spanOf (Arg _ _ s) = spanOf s
+  spanOf (SelfValue _ s) = spanOf s
+  spanOf (SelfRegion _ _ s) = spanOf s
+  spanOf (SelfExplicit _ _ s) = spanOf s
+
+-- | An arm of a 'Match' expression (@syntax::ast::Arm@).
+--
+-- Example: @_ => { println!("match!") }@ as in @match n { _ => { println!("match!") } }@
 data Arm a
   = Arm
       { attrs :: [Attribute a]
@@ -54,23 +77,32 @@ data Arm a
       , nodeInfo :: a
       } deriving (Eq, Show, Functor)
 
+instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
+
 -- | Inline assembly dialect.
--- E.g. "intel" as in asm!("mov eax, 2" : "={eax}"(result) : : : "intel")
+--
+-- Example: @"intel"@ as in @asm!("mov eax, 2" : "={eax}"(result) : : : "intel")@
 data AsmDialect = Att | Intel deriving (Eq, Enum, Bounded, Show)
 
--- | Doc-comments are promoted to attributes that have isSugaredDoc = true
--- https://docs.serde.rs/syntex_syntax/ast/struct.Attribute_.html
+-- | Attributes which annotate other AST nodes (@syntax::ast::Attribute@). Note that doc-comments
+-- are promoted to attributes that have 'isSugaredDoc = True'.
+--
+-- Example: @#[repr(C)]@ in @#[derive(Clone, Copy)] struct Complex { re: f32, im: f32 }@
 data Attribute a
   = Attribute
-      { style :: AttrStyle
-      , value :: MetaItem a
-      , isSugaredDoc :: Bool
+      { style :: AttrStyle   -- ^ whether attribute is inner or outer
+      , value :: MetaItem a  -- ^ actual content of attribute
+      , isSugaredDoc :: Bool -- ^ whether the attribute was initially a doc-comment
       , nodeInfo :: a
       } deriving (Eq, Show, Functor)
 
--- | Distinguishes between Attributes that decorate items and Attributes that are contained as statements
--- within items. These two cases need to be distinguished for pretty-printing.
--- https://docs.serde.rs/syntex_syntax/ast/enum.AttrStyle.html
+instance Located a => Located (Attribute a) where spanOf (Attribute _ _ _ s) = spanOf s
+
+-- | Distinguishes between Attributes that decorate what follows them and Attributes that are
+-- describe the node that contains them (@syntax::ast::AttrStyle@). These two cases need to be
+-- distinguished only for pretty-printing - they are otherwise fundamentally equivalent.
+--
+-- Example: @#[repr(C)]@ is an outer attribute while @#![repr(C)]@ is an inner one.
 data AttrStyle = Outer | Inner deriving (Eq, Enum, Bounded, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.BinOpKind.html
@@ -110,6 +142,8 @@ data Block a
       , nodeInfo :: a
       } deriving (Eq, Show, Functor)
 
+instance Located a => Located (Block a) where spanOf (Block _ _ s) = spanOf s
+
 -- https://docs.serde.rs/syntex_syntax/ast/enum.BlockCheckMode.html
 -- Inlined [UnsafeSource](-- https://docs.serde.rs/syntex_syntax/ast/enum.UnsafeSource.html)
 data BlockCheckMode = DefaultBlock | UnsafeBlock { compilerGenerated :: Bool } deriving (Eq, Show)
@@ -130,6 +164,8 @@ data Crate a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
+instance Located a => Located (Crate a) where spanOf (Crate _ _ _ s) = spanOf s
+
 -- | The set of MetaItems that define the compilation environment of the crate, used to drive conditional compilation
 -- https://docs.serde.rs/syntex_syntax/ast/type.CrateConfig.html
 type CrateConfig a = [MetaItem a]
@@ -141,15 +177,15 @@ data Defaultness = Default | Final deriving (Eq, Enum, Bounded, Show)
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Expr.html
 -- Inlined [ExprKind](https://docs.serde.rs/syntex_syntax/ast/enum.ExprKind.html)
 data Expr a
-  -- | A `box x` expression.
+  -- | A @box x@ expression.
   = Box [Attribute a] (Expr a) a
   -- |  First expr is the place; second expr is the value.
   | InPlace [Attribute a] (Expr a) (Expr a) a
-  -- |  An array (`[a, b, c, d]`)
+  -- |  An array @[a, b, c, d]@ literal
   | Vec [Attribute a] [Expr a] a
   -- | A function call. The first field resolves to the function itself, and the second field is the list of arguments
   | Call [Attribute a] (Expr a) [Expr a] a
-  -- | A method call (x.foo::<Bar, Baz>(a, b, c, d)).
+  -- | A method call @x.foo::<Bar, Baz>(a, b, c, d)@.
   -- The Ident is the identifier for the method name. The vector of Tys are the ascripted
   -- type parameters for the method (within the angle brackets).
 
@@ -157,16 +193,16 @@ data Expr a
   -- which the method is being called on (the receiver), and the remaining elements are the rest
   -- of the arguments.
 
-  -- Thus, `x.foo::<Bar, Baz>(a, b, c, d)` is represented as
-  -- `ExprKind::MethodCall(foo, [Bar, Baz], [x, a, b, c, d])`. -}
+  -- Thus, @x.foo::<Bar, Baz>(a, b, c, d)@ is represented as
+  -- @ExprKind::MethodCall(foo, [Bar, Baz], [x, a, b, c, d])@. -}
   | MethodCall [Attribute a] Ident [Ty a] (NonEmpty (Expr a)) a
-  -- |  A tuple (`(a, b, c ,d)`)
+  -- |  A tuple (@(a, b, c ,d)@)
   | TupExpr [Attribute a] [Expr a] a
-  -- | A binary operation (For example: `a + b`, `a * b`)
+  -- | A binary operation (For example: @a + b@, @a * b@)
   | Binary [Attribute a] BinOp (Expr a) (Expr a) a
-  -- | A unary operation (For example: `!x`, `*x`)
+  -- | A unary operation (For example: @!x@, @*x@)
   | Unary [Attribute a] UnOp (Expr a) a
-  -- | A literal (For example: `1`, `"foo"`)
+  -- | A literal (For example: @1@, @"foo"@)
   | Lit [Attribute a] (Lit a) a
   -- | A cast (`foo as f64`)
   | Cast [Attribute a] (Expr a) (Ty a) a
@@ -235,6 +271,45 @@ data Expr a
   | Try [Attribute a] (Expr a) a
   deriving (Eq, Functor, Show)
 
+instance Located a => Located (Expr a) where
+  spanOf (Box _ _ s) = spanOf s
+  spanOf (InPlace _ _ _ s) = spanOf s
+  spanOf (Vec _ _ s) = spanOf s
+  spanOf (Call _ _ _ s) = spanOf s
+  spanOf (MethodCall _ _ _ _ s) = spanOf s
+  spanOf (TupExpr _ _ s) = spanOf s
+  spanOf (Binary _ _ _ _ s) = spanOf s
+  spanOf (Unary _ _ _ s) = spanOf s
+  spanOf (Lit _ _ s) = spanOf s
+  spanOf (Cast _ _ _ s) = spanOf s
+  spanOf (TypeAscription _ _ _ s) = spanOf s
+  spanOf (If _ _ _ _ s) = spanOf s
+  spanOf (IfLet _ _ _ _ _ s) = spanOf s
+  spanOf (While _ _ _ _ s) = spanOf s
+  spanOf (WhileLet _ _ _ _ _ s) = spanOf s
+  spanOf (ForLoop _ _ _ _ _ s) = spanOf s
+  spanOf (Loop _ _ _ s) = spanOf s
+  spanOf (Match _ _ _ s) = spanOf s
+  spanOf (Closure _ _ _ _ s) = spanOf s
+  spanOf (BlockExpr _ _ s) = spanOf s
+  spanOf (Assign _ _ _ s) = spanOf s
+  spanOf (AssignOp _ _ _ _ s) = spanOf s
+  spanOf (FieldAccess _ _ _ s) = spanOf s
+  spanOf (TupField _ _ _ s) = spanOf s
+  spanOf (Index _ _ _ s) = spanOf s
+  spanOf (Range _ _ _ _ s) = spanOf s
+  spanOf (PathExpr _ _ _ s) = spanOf s
+  spanOf (AddrOf _ _ _ s) = spanOf s
+  spanOf (Break _ _ s) = spanOf s
+  spanOf (Continue _ _ s) = spanOf s
+  spanOf (Ret _ _ s) = spanOf s
+  spanOf (InlineAsmExpr _ _ s) = spanOf s
+  spanOf (MacExpr _ _ s) = spanOf s
+  spanOf (Struct _ _ _ _ s) = spanOf s
+  spanOf (Repeat _ _ _ s) = spanOf s
+  spanOf (ParenExpr _ _ s) = spanOf s
+  spanOf (Try _ _ s) = spanOf s
+
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Field.html
 data Field a
   = Field
@@ -242,6 +317,8 @@ data Field a
       , expr :: Expr a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (Field a) where spanOf (Field _ _ s) = spanOf s
 
 -- A single field in a struct pattern
 -- https://docs.serde.rs/syntex_syntax/ast/struct.FieldPat.html
@@ -251,6 +328,8 @@ data FieldPat a
       , pat :: Pat a         -- ^ The pattern the field is destructured to - has to be IdentP when ident is Nothing
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (FieldPat a) where spanOf (FieldPat _ _ s) = spanOf s
 
 -- | Header (not the body) of a function declaration.
 -- E.g. `fn foo(bar: baz)`
@@ -266,6 +345,8 @@ data FnDecl a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
+instance Located a => Located (FnDecl a) where spanOf (FnDecl _ _ _ s) = spanOf s
+
 -- https://docs.serde.rs/syntex_syntax/ast/struct.ForeignItem.html
 data ForeignItem a
   = ForeignItem
@@ -275,6 +356,8 @@ data ForeignItem a
       , vis :: Visibility a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (ForeignItem a) where spanOf (ForeignItem _ _ _ _ s) = spanOf s
 
 -- | An item within an extern block
 -- https://docs.serde.rs/syntex_syntax/ast/enum.ForeignItemKind.html
@@ -293,6 +376,8 @@ data Generics a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
+instance Located a => Located (Generics a) where spanOf (Generics _ _ _ s) = spanOf s
+
 pattern NoGenerics :: a -> a -> Generics a
 pattern NoGenerics x y = Generics [] [] (WhereClause [] x) y
 
@@ -306,6 +391,8 @@ data ImplItem a
       , node :: ImplItemKind a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (ImplItem a) where spanOf (ImplItem _ _ _ _ _ s) = spanOf s
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.ImplItemKind.html
 data ImplItemKind a
@@ -347,6 +434,8 @@ data InlineAsmOutput a
       , isIndirect :: Bool
       } deriving (Eq, Functor, Show)
 
+instance Located a => Located (InlineAsm a) where spanOf (InlineAsm _ _ _ _ _ _ _ _ s) = spanOf s
+
 -- | An item
 -- The name might be a dummy name in case of anonymous items
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Item.html
@@ -358,6 +447,8 @@ data Item a
       , vis :: Visibility a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (Item a) where spanOf (Item _ _ _ _ s) = spanOf s
 
 data ItemKind a
   -- | An extern crate item, with optional original crate name.
@@ -421,6 +512,8 @@ data Lifetime a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
+instance Located a => Located (Lifetime a) where spanOf (Lifetime _ s) = spanOf s
+
 -- pattern synonym (Static s) = Lifetime (Name "'static") s
 
 -- | A lifetime definition, e.g. 'a: 'b+'c+'d
@@ -432,6 +525,8 @@ data LifetimeDef a
       , bounds :: [Lifetime a]
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (LifetimeDef a) where spanOf (LifetimeDef _ _ _ s) = spanOf s
 
 -- Merged [LitIntType](https://docs.serde.rs/syntex_syntax/ast/enum.LitIntType.html)
 -- Merged [IntTy](https://docs.serde.rs/syntex_syntax/ast/enum.IntTy.html)
@@ -474,6 +569,15 @@ data Lit a
   | Bool Bool Suffix a                      -- ^ A boolean literal
   deriving (Eq, Functor, Show)
 
+instance Located a => Located (Lit a) where
+  spanOf (Str _ _ _ s) = spanOf s
+  spanOf (ByteStr _ _ _ s) = spanOf s
+  spanOf (Char _ _ s) = spanOf s
+  spanOf (Byte _ _ s) = spanOf s
+  spanOf (Int _ _ s) = spanOf s
+  spanOf (Float _ _ s) = spanOf s
+  spanOf (Bool _ _ s) = spanOf s
+
 suffix :: Lit a -> Suffix
 suffix (Str _ _ s _) = s
 suffix (ByteStr _ _ s _) = s
@@ -497,6 +601,8 @@ data Mac a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
+instance Located a => Located (Mac a) where spanOf (Mac _ _ s) = spanOf s
+
 -- https://docs.serde.rs/syntex_syntax/ast/enum.MacStmtStyle.html
 data MacStmtStyle
   = SemicolonMac -- ^ The macro statement had a trailing semicolon, e.g. foo! { ... }; foo!(...);, foo![...];
@@ -519,6 +625,8 @@ data MacroDef a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
+instance Located a => Located (MacroDef a) where spanOf (MacroDef _ _ _ _ _ _ _ s) = spanOf s
+
 -- | A compile-time attribute item.
 -- E.g. #[test], #[derive(..)] or #[feature = "foo"]
 -- https://docs.serde.rs/syntex_syntax/ast/type.MetaItem.html
@@ -529,6 +637,11 @@ data MetaItem a
   | List Ident [NestedMetaItem a] a -- ^ List meta item.        E.g. derive(..) as in #[derive(..)]
   | NameValue Ident (Lit a) a       -- ^ Name value meta item.  E.g. feature = "foo" as in #[feature = "foo"]
   deriving (Eq, Functor, Show)
+
+instance Located a => Located (MetaItem a) where
+  spanOf (Word _ s) = spanOf s
+  spanOf (List _ _ s) = spanOf s 
+  spanOf (NameValue _ _ s) = spanOf s
 
 -- | Represents a method's signature in a trait declaration, or in an implementation.
 -- https://docs.serde.rs/syntex_syntax/ast/struct.MethodSig.html
@@ -551,6 +664,10 @@ data NestedMetaItem a
   = MetaItem (MetaItem a) a -- ^ A full MetaItem, for recursive meta items.
   | Literal (Lit a) a      -- ^ A literal. E.g. "foo", 64, true
   deriving (Eq, Functor, Show)
+
+instance Located a => Located (NestedMetaItem a) where
+  spanOf (MetaItem _ s) = spanOf s
+  spanOf (Literal _ s) = spanOf s
 
 -- | For interpolation during macro expansion.
 -- https://docs.serde.rs/syntex_syntax/parse/token/enum.Nonterminal.html
@@ -610,6 +727,20 @@ data Pat a
   | MacP (Mac a) a
   deriving (Eq, Functor, Show)
 
+instance Located a => Located (Pat a) where
+  spanOf (WildP s) = spanOf s
+  spanOf (IdentP _ _ _ s) = spanOf s
+  spanOf (StructP _ _ _ s) = spanOf s
+  spanOf (TupleStructP _ _ _ s) = spanOf s
+  spanOf (PathP _ _ s) = spanOf s
+  spanOf (TupleP _ _ s) = spanOf s
+  spanOf (BoxP _ s) = spanOf s
+  spanOf (RefP _ _ s) = spanOf s
+  spanOf (LitP _ s) = spanOf s
+  spanOf (RangeP _ _ s) = spanOf s
+  spanOf (SliceP _ _ _ s) = spanOf s 
+  spanOf (MacP _ s) = spanOf s
+
 -- | A "Path" is essentially Rust's notion of a name.
 -- It's represented as a sequence of identifiers, along with a bunch of supporting information.
 -- E.g. `std::cmp::PartialEq`
@@ -627,6 +758,8 @@ data Path a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
+instance Located a => Located (Path a) where spanOf (Path _ _ s) = spanOf s
+
 pattern IdentPath :: Ident -> a -> a -> Path a
 pattern IdentPath i x y = Path False ((i, NoParameters x) :| []) y
 
@@ -638,6 +771,8 @@ data PathListItem a
       , rename :: Maybe Ident -- ^ renamed in list, e.g. `use foo::{bar as baz};`
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (PathListItem a) where spanOf (PathListItem _ _ s) = spanOf s
 
 -- | Parameters of a path segment.
 -- E.g. <A, B> as in Foo<A, B> or (A, B) as in Foo(A, B)
@@ -661,6 +796,10 @@ data PathParameters a
       }
   deriving (Eq, Functor, Show)
 
+instance Located a => Located (PathParameters a) where
+  spanOf (AngleBracketed _ _ _ s) = spanOf s
+  spanOf (Parenthesized _ _ s) = spanOf s
+
 pattern NoParameters :: a -> PathParameters a
 pattern NoParameters x = AngleBracketed [] [] [] x
 
@@ -671,6 +810,8 @@ data PolyTraitRef a
       , traitRef :: TraitRef a            -- ^ The `Foo<&'a T>` in `<'a> Foo<&'a T>`
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (PolyTraitRef a) where spanOf (PolyTraitRef _ _ s) = spanOf s 
 
 -- |The explicit Self type in a "qualified path". The actual path, including the trait and the associated item, is stored
 -- separately. position represents the index of the associated item qualified with this Self type.
@@ -715,6 +856,13 @@ data Stmt a
   | MacStmt (Mac a) MacStmtStyle [Attribute a] a
   deriving (Eq, Functor, Show)
 
+instance Located a => Located (Stmt a) where
+  spanOf (Local _ _ _ _ s) = spanOf s
+  spanOf (ItemStmt _ s) = spanOf s
+  spanOf (NoSemi _ s) = spanOf s
+  spanOf (Semi _ s) = spanOf s
+  spanOf (MacStmt _ _ _ s) = spanOf s
+
 -- https://docs.serde.rs/syntex_syntax/ast/enum.StrStyle.html
 data StrStyle
   = Cooked     -- ^ A regular string, like "foo"
@@ -731,6 +879,8 @@ data StructField a
       , attrs :: [Attribute a]
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (StructField a) where spanOf (StructField _ _ _ _ s) = spanOf s
 
 -- | When the main rust parser encounters a syntax-extension invocation, it parses the arguments to the invocation
 -- as a token-tree. This is a very loose structure, such that all sorts of different AST-fragments can be passed to
@@ -751,7 +901,7 @@ data TokenTree
   -- Inlined [Delimited](https://docs.serde.rs/syntex_syntax/tokenstream/struct.Delimited.html)
   | Delimited
       { span :: Span 
-      , delim :: DelimToken        -- ^ The type of delimiter
+      , delim :: Delim             -- ^ The type of delimiter
       , openSpan :: Span           -- ^ The span covering the opening delimiter
       , tts :: [TokenTree]         -- ^ The delimited sequence of token trees
       , closeSpan :: Span          -- ^ The span covering the closing delimiter
@@ -765,6 +915,11 @@ data TokenTree
       , op :: KleeneOp             -- ^ Whether the sequence can be repeated zero (*), or one or more times (+)
       }
   deriving (Eq, Show)
+
+instance Located TokenTree where
+  spanOf (Token s _) = s
+  spanOf (Delimited s _ _ _ _) = s
+  spanOf (Sequence s _ _ _) = s
 
 -- | A modifier on a bound, currently this is only used for ?Sized, where the modifier is Maybe. Negative
 -- bounds should also be handled here.
@@ -781,6 +936,8 @@ data TraitItem a
       , node :: TraitItemKind a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (TraitItem a) where spanOf (TraitItem _ _ _ s) = spanOf s
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.TraitItemKind.html
 data TraitItemKind a
@@ -800,6 +957,8 @@ data TraitRef a
       { path :: Path a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (TraitRef a) where spanOf (TraitRef _ s) = spanOf s
 
 -- | The different kinds of types recognized by the compiler
 -- Inlined [TyKind](https://docs.serde.rs/syntex_syntax/ast/enum.TyKind.html)
@@ -840,6 +999,24 @@ data Ty a
   | MacTy (Mac a) a
   deriving (Eq, Functor, Show)
 
+instance Located a => Located (Ty a) where
+  spanOf (Slice _ s) = spanOf s
+  spanOf (Array _ _ s) = spanOf s
+  spanOf (Ptr _ _ s) = spanOf s
+  spanOf (Rptr _ _ _ s) = spanOf s
+  spanOf (BareFn _ _ _ _ s) = spanOf s
+  spanOf (Never s) = spanOf s
+  spanOf (TupTy _ s) = spanOf s
+  spanOf (PathTy _ _ s) = spanOf s
+  spanOf (ObjectSum _ _ s) = spanOf s
+  spanOf (PolyTraitRefTy _ s) = spanOf s
+  spanOf (ImplTrait _ s) = spanOf s
+  spanOf (ParenTy _ s) = spanOf s
+  spanOf (Typeof _ s) = spanOf s
+  spanOf (Infer s) = spanOf s
+  spanOf (ImplicitSelf s) = spanOf s
+  spanOf (MacTy _ s) = spanOf s
+
 -- https://docs.serde.rs/syntex_syntax/ast/struct.TyParam.html
 data TyParam a
   = TyParam
@@ -849,6 +1026,8 @@ data TyParam a
       , default_ :: Maybe (Ty a)
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (TyParam a) where spanOf (TyParam _ _ _ _ s) = spanOf s
 
 -- | The AST represents all type param bounds as types. typeck::collect::compute_bounds matches these against the
 -- "special" built-in traits (see middle::lang_items) and detects Copy, Send and Sync.
@@ -885,6 +1064,8 @@ data Variant a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
+instance Located a => Located (Variant a) where spanOf (Variant _ _ _ _ s) = spanOf s
+
 -- | Fields and Ids of enum variants and structs
 -- 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.VariantData.html
@@ -893,6 +1074,11 @@ data VariantData a
   | TupleD [StructField a] a  -- ^ Tuple variant. E.g. Bar(..) as in enum Foo { Bar(..) }
   | UnitD a                   -- ^ Unit variant. E.g. Bar = .. as in enum Foo { Bar = .. }
   deriving (Eq, Functor, Show)
+
+instance Located a => Located (VariantData a) where
+  spanOf (StructD _ s) = spanOf s
+  spanOf (TupleD _ s) = spanOf s
+  spanOf (UnitD s) = spanOf s
 
 -- https://docs.serde.rs/syntex_syntax/ast/type.ViewPath.html
 -- https://docs.serde.rs/syntex_syntax/ast/enum.ViewPath_.html
@@ -904,6 +1090,11 @@ data ViewPath a
   -- | foo::bar::{a,b,c}
   | ViewPathList Bool [Ident] [PathListItem a] a
   deriving (Eq, Functor, Show)
+
+instance Located a => Located (ViewPath a) where
+  spanOf (ViewPathSimple _ _ _ s) = spanOf s
+  spanOf (ViewPathGlob _ _ s) = spanOf s
+  spanOf (ViewPathList _ _ _ s) = spanOf s
 
 -- https://docs.serde.rs/syntex_syntax/ast/enum.Visibility.html
 data Visibility a
@@ -920,6 +1111,8 @@ data WhereClause a
       { predicates :: [WherePredicate a] -- NonEmpty?
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
+
+instance Located a => Located (WhereClause a) where spanOf (WhereClause _ s) = spanOf s
 
 -- | A single predicate in a where clause
 -- https://docs.serde.rs/syntex_syntax/ast/enum.WherePredicate.html
@@ -947,4 +1140,9 @@ data WherePredicate a
       , nodeInfo :: a
       }
   deriving (Eq, Functor, Show)
+
+instance Located a => Located (WherePredicate a) where
+  spanOf (BoundPredicate _ _ _ s) = spanOf s
+  spanOf (RegionPredicate _ _ s) = spanOf s
+  spanOf (EqPredicate _ _ s) = spanOf s
 

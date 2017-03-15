@@ -11,7 +11,6 @@ import Language.Rust.Syntax.Ident
 import Language.Rust.Pretty.Internal
 
 import Control.Monad
-import Control.Monad.Trans.Except
 import Text.PrettyPrint.Annotated.WL (Doc, flatten, renderPretty, renderPrettyDefault, display, renderCompact)
 
 prettySuite :: Test

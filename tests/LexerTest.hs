@@ -13,7 +13,6 @@ import Language.Rust.Data.Position
 import Language.Rust.Data.InputStream
 
 import Control.Monad
-import Control.Monad.Trans.Except
 
 lexerSuite :: Test
 lexerSuite = testGroup "lexer suite" [ commonCode, literals ]
@@ -29,7 +28,7 @@ commonCode = testGroup "lexing common code fragments"
              , Space Whitespace " "
              , Equal
              , Space Whitespace " "
-             , SubstNt (mkIdent "p") Plain
+             , SubstNt (mkIdent "p")
              , Dot
              , IdentTok (mkIdent "span")
              , Semicolon
@@ -45,7 +44,7 @@ commonCode = testGroup "lexing common code fragments"
              , Plus
              ]
   , testCode "$p:span" 
-             [ MatchNt (mkIdent "p") (mkIdent "span") Plain Plain
+             [ MatchNt (mkIdent "p") (mkIdent "span")
              ]
   , testCode "pub s: pp::Printer<'a>,"
              [ IdentTok (mkIdent "pub")
@@ -164,8 +163,5 @@ testCode inp toks = testCase inp $ Right toks @=? lexTokensNoSpans (inputStreamF
 
 -- | Turn an InputStream into either an error or a list of tokens.
 lexTokensNoSpans :: InputStream -> Either (Position,String) [Token]
-lexTokensNoSpans inp = runExcept (map unspan <$> tokens)
-  where
-    tokens :: Except (Position,String) [Spanned Token]
-    tokens = execParser lexTokens inp initPos
+lexTokensNoSpans inp = map unspan <$> execParser (lexTokens lexToken) inp initPos
 

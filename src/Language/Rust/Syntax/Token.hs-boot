@@ -6,13 +6,10 @@ data Token
 instance Eq Token
 instance Show Token
 
-data DelimToken
-instance Eq DelimToken
-instance Show DelimToken
+data Delim
+instance Eq Delim
+instance Show Delim
 
 data DocType
 data Space
-data IdentStyle
-
-canBeginExpr :: Token -> Bool
 

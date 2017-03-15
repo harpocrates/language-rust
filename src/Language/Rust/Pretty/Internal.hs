@@ -140,13 +140,13 @@ printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
                                                 <//> printFnArgsAndRet d)
 
 -- aka print_mac
-printMac :: Mac a -> DelimToken -> Doc a
+printMac :: Mac a -> Delim -> Doc a
 printMac (Mac path tts x) d = annotate x (printPath path False <> "!" <> delimiter d body)
   where body = align (fillSep [ printTt tt | tt <- tts ])
  
 -- | Given a delimiter token, this wraps the 'Doc' with that delimiter. For the 'Brace' case, tries
 -- to fit everything on one line, but otherwise indents everything nicely.
-delimiter :: DelimToken -> Doc a -> Doc a
+delimiter :: Delim -> Doc a -> Doc a
 delimiter Paren   = parens
 delimiter Bracket = brackets
 delimiter Brace   = block
@@ -204,11 +204,11 @@ printToken Underscore = "_"
 printToken (LifetimeTok i) = "'" <> printIdent i
 printToken (Space _ _) = error "Unimplemented"        --  Whitespace
 printToken (Doc _ _) = error "Unimplemented"      --  Doc comment, contents, whether it is outer or not
-printToken (Shebang _) = error "Unimplemented"
+printToken Shebang = "#!"
 printToken Eof = mempty
 printToken (Interpolated n) = noAnnotate (printNonterminal n)
-printToken (MatchNt i s _ _) = "$" <> printIdent i <> ":" <> printIdent s
-printToken (SubstNt s _) = "$" <> printIdent s
+printToken (MatchNt i s) = "$" <> printIdent i <> ":" <> printIdent s
+printToken (SubstNt s) = "$" <> printIdent s
 printToken _ = error "printToken"
 
 printLitTok :: LitTok -> Doc a
