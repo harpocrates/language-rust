@@ -9,6 +9,7 @@ Portability : portable
 
 Everything to do with describing a position or a contiguous region in a file.
 -}
+{-# LANGUAGE DeriveDataTypeable, DeriveGeneric #-}
 
 module Language.Rust.Data.Position (
   -- * Positions in files
@@ -16,6 +17,10 @@ module Language.Rust.Data.Position (
   -- * Spans in files
   Span(..), subsetOf, Spanned(..), Located(..),
 ) where
+
+import GHC.Generics (Generic)
+import Data.Data (Data)
+import Data.Typeable (Typeable)
 
 import Data.Ord (comparing)
 import Data.List (maximumBy, minimumBy)
@@ -32,7 +37,7 @@ data Position = Position {
     col :: {-# UNPACK #-} !Int             -- ^ column in the source file.
   }
   | NoPosition
-  deriving (Eq)
+  deriving (Eq, Data, Typeable, Generic)
 
 instance Show Position where
   show NoPosition = "$"
@@ -87,7 +92,7 @@ incOffset p@Position{ absoluteOffset = a } offset = p { absoluteOffset = a + off
 
 -- | Spans represent a contiguous region of code, delimited by two 'Position's. The endpoints are
 -- inclusive. Analogous to the information encoded in a selection.
-data Span = Span { lo :: Position, hi :: Position } deriving (Eq)
+data Span = Span { lo :: Position, hi :: Position } deriving (Eq, Data, Typeable, Generic)
 
 -- | Check if a span is a subset of another span
 subsetOf :: Span -> Span -> Bool
@@ -105,7 +110,7 @@ instance Show Span where
   show (Span lo' hi') = show lo' ++ " - " ++ show hi'
 
 -- | A "tagging" of something with a 'Span' that describes its extent.
-data Spanned a = Spanned { unspan :: a, span :: Span }
+data Spanned a = Spanned { unspan :: a, span :: Span } deriving (Data, Typeable, Generic)
 
 instance Functor Spanned where
   fmap f (Spanned x s) = Spanned (f x) s

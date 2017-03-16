@@ -123,7 +123,6 @@ popToken = P $ \s@PState{ pushedTokens = toks } -> Ok (listToMaybe toks) s{ push
 
 -- | Signal a syntax error.
 parseError :: Show b => b -> P a
-parseError b = do
-  fail ("Syntax error: the symbol `" ++ show b ++ "' does not fit here")
+parseError b = fail ("Syntax error: the symbol `" ++ show b ++ "' does not fit here")
 
 

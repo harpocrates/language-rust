@@ -9,8 +9,13 @@ Portability : portable
 
 Contains roughly the same stuff as @syntax::parse::token@ - data definitions for tokens.
 -}
+{-# LANGUAGE DeriveDataTypeable, DeriveGeneric #-}
 
 module Language.Rust.Syntax.Token (Token(..), DocType(..), Space(..), Delim(..), LitTok(..)) where
+
+import GHC.Generics (Generic)
+import Data.Data (Data)
+import Data.Typeable (Typeable)
 
 import Language.Rust.Syntax.Ident (Ident, Name)
 import Language.Rust.Data.Position (Span)
@@ -94,7 +99,7 @@ data Token
   
   -- NOT PRODUCED IN TOKENIZATION!!
   | Interpolated (Nonterminal Span) -- ^ can be expanded into several tokens in macro-expansion
-  deriving (Eq)
+  deriving (Eq, Data, Typeable, Generic)
 
 
 -- | Possible styles of doc comments:
@@ -109,14 +114,14 @@ data Token
 data DocType
   = OuterDoc -- ^ comment refers to element that follows immediately after
   | InnerDoc -- ^ comment refers to the closest enclosing element
-  deriving (Eq, Show, Enum, Bounded)
+  deriving (Eq, Show, Enum, Bounded, Data, Typeable, Generic)
 
 -- | Rust is whitespace independent. Short of providing space between tokens, whitespace is all the
 -- same to the parser.
 data Space
   = Whitespace  -- ^ usual white space: @[\\ \\t\\n\\f\\v\\r]+@
   | Comment     -- ^ comment (either inline or not, see 'DocType')
-  deriving (Eq, Show, Enum, Bounded)
+  deriving (Eq, Show, Enum, Bounded, Data, Typeable, Generic)
 
 -- | A delimiter token (@syntax::parse::token::DelimToken@)
 data Delim
@@ -124,7 +129,7 @@ data Delim
   | Bracket -- ^ square bracket: @[@ or @]@
   | Brace   -- ^ curly brace: @{@ or @}@
   | NoDelim -- ^ empty delimiter
-  deriving (Eq, Enum, Bounded, Show)
+  deriving (Eq, Enum, Bounded, Show, Data, Typeable, Generic)
 
 -- | A literal token (@syntax::parse::token::Lit@)
 data LitTok
@@ -136,7 +141,7 @@ data LitTok
   | StrRawTok Name !Int     -- ^ raw string literal and the number of @#@ marks around it
   | ByteStrTok Name         -- ^ byte string literal
   | ByteStrRawTok Name !Int -- ^ raw byte string literal and the number of @#@ marks around it
-  deriving (Eq, Show)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 
 -- | This instance is only for error messages and debugging purposes.

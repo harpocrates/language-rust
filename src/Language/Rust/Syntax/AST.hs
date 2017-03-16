@@ -11,13 +11,17 @@ The abstract syntax tree(s) of the Rust language. Based on the definitions in th
 crate of @rustc@](https://manishearth.github.io/rust-internals-docs/syntax/ast/index.html) whenever
 possible.
 -}
-{-# LANGUAGE DuplicateRecordFields, DeriveFunctor, PatternSynonyms #-}
+{-# LANGUAGE DuplicateRecordFields, DeriveFunctor, DeriveDataTypeable, DeriveGeneric, PatternSynonyms #-}
 
 module Language.Rust.Syntax.AST where
 
 import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)
 import Language.Rust.Syntax.Ident (Ident, Name)
 import Language.Rust.Data.Position
+
+import GHC.Generics (Generic)
+import Data.Data (Data)
+import Data.Typeable (Typeable)
 
 import Data.ByteString (ByteString)
 import Data.Word (Word8)
@@ -44,7 +48,7 @@ data Abi
   | RustIntrinsic
   | RustCall
   | PlatformIntrinsic
-  deriving (Eq, Enum, Bounded, Show, Read)
+  deriving (Eq, Enum, Bounded, Show, Read, Typeable, Data, Generic)
 
 -- | An argument in a function header (@syntax::ast::Arg@, except with @SelfKind@ and @ExplicitSelf@
 -- inlined).
@@ -59,7 +63,7 @@ data Arg a
   | SelfValue Mutability a                         -- ^ @self@, @mut self@
   | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ @&'lt self@, @&'lt mut self@
   | SelfExplicit (Ty a) Mutability a               -- ^ @self: i32@, @mut self: i32@
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Show, Functor, Typeable, Data, Generic)
 
 instance Located a => Located (Arg a) where
   spanOf (Arg _ _ s) = spanOf s
@@ -77,14 +81,14 @@ data Arm a
       , guard :: Maybe (Expr a)
       , body :: Expr a
       , nodeInfo :: a
-      } deriving (Eq, Show, Functor)
+      } deriving (Eq, Show, Functor, Typeable, Data, Generic)
 
 instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
 
 -- | Inline assembly dialect.
 --
 -- Example: @"intel"@ as in @asm!("mov eax, 2" : "={eax}"(result) : : : "intel")@
-data AsmDialect = Att | Intel deriving (Eq, Enum, Bounded, Show)
+data AsmDialect = Att | Intel deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | 'MetaItem's are annotations for other AST nodes (@syntax::ast::Attribute@). Note that
 -- doc-comments are promoted to attributes that have @isSugaredDoc = True@.
@@ -96,7 +100,7 @@ data Attribute a
       , value :: MetaItem a  -- ^ actual content of attribute
       , isSugaredDoc :: Bool -- ^ whether the attribute was initially a doc-comment
       , nodeInfo :: a
-      } deriving (Eq, Show, Functor)
+      } deriving (Eq, Show, Functor, Typeable, Data, Generic)
 
 instance Located a => Located (Attribute a) where spanOf (Attribute _ _ _ s) = spanOf s
 
@@ -105,7 +109,7 @@ instance Located a => Located (Attribute a) where spanOf (Attribute _ _ _ s) = s
 -- distinguished only for pretty-printing - they are otherwise fundamentally equivalent.
 --
 -- Example: @#[repr(C)]@ is an outer attribute while @#![repr(C)]@ is an inner one
-data AttrStyle = Outer | Inner deriving (Eq, Enum, Bounded, Show)
+data AttrStyle = Outer | Inner deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | Binary operators, used in the 'Binary' and 'AssignOp' constructors of 'Expr'
 -- (@syntax::ast::BinOp@).
@@ -130,7 +134,7 @@ data BinOp
   | NeOp     -- ^ @!=@ operator (not equal to)
   | GeOp     -- ^ @>=@ operator (greater than or equal to)
   | GtOp     -- ^ @>@ operator (greater than)
-  deriving (Eq, Enum, Bounded, Show)
+  deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | Describes how a value bound to an identifier in a pattern is going to be borrowed
 -- (@syntax::ast::BindingMode@). 
@@ -139,7 +143,7 @@ data BinOp
 data BindingMode
   = ByRef Mutability
   | ByValue Mutability
-  deriving (Eq, Show)
+  deriving (Eq, Show, Typeable, Data, Generic)
 
 -- | A curly brace delimited sequence of statements (@syntax::ast::Block@).
 --
@@ -151,7 +155,7 @@ data Block a
       , rules :: Unsafety  -- ^ Distinguishes between regular (safe) blocks and unsafe blocks such
                            -- as  @unsafe { x += 1 }@.
       , nodeInfo :: a
-      } deriving (Eq, Show, Functor)
+      } deriving (Eq, Show, Functor, Typeable, Data, Generic)
 
 instance Located a => Located (Block a) where spanOf (Block _ _ s) = spanOf s
  
@@ -159,14 +163,14 @@ instance Located a => Located (Block a) where spanOf (Block _ _ s) = spanOf s
 data CaptureBy
   = Value -- ^ make copies of free variables closed over (@move@ closures)
   | Ref   -- ^ borrow free variables closed over
-  deriving (Eq, Enum, Bounded, Show)
+  deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | Const annotation to specify if a function or method is allowed to be called in constants
 -- context with constant arguments (@syntax::ast::Constness@). [Relevant
 -- RFC](https://github.com/rust-lang/rfcs/blob/master/text/0911-const-fn.md) 
 --
 -- Example: @const@ in @const fn inc(x: i32) -> i32 { x + 1 }@
-data Constness = Const | NotConst deriving (Eq, Enum, Bounded, Show)
+data Constness = Const | NotConst deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Crate.html
 data Crate a
@@ -175,7 +179,7 @@ data Crate a
       , attrs :: [Attribute a]
       , exportedMacros :: [MacroDef a]
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Crate a) where spanOf (Crate _ _ _ s) = spanOf s
 
@@ -184,7 +188,7 @@ instance Located a => Located (Crate a) where spanOf (Crate _ _ _ s) = spanOf s
 type CrateConfig a = [MetaItem a]
 
 -- | 'ImplItem's can be marked @default@ (@syntax::ast::Defaultness@).  
-data Defaultness = Default | Final deriving (Eq, Enum, Bounded, Show)
+data Defaultness = Default | Final deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | Expression (@syntax::ast::Expr@). Note that Rust pushes into expressions an unusual number
 -- of constructs including @if@, @while@, @match@, etc.
@@ -268,7 +272,7 @@ data Expr a
   | ParenExpr [Attribute a] (Expr a) a
   -- | sugar for error handling with @Result@ (example: @parsed_result?@)
   | Try [Attribute a] (Expr a) a
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Expr a) where
   spanOf (Box _ _ s) = spanOf s
@@ -317,7 +321,7 @@ data Field a
       { ident :: Ident  -- ^ the field name
       , expr :: Expr a  -- ^ value assigned to the field
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Field a) where spanOf (Field _ _ s) = spanOf s
 
@@ -330,7 +334,7 @@ data FieldPat a
       , pat :: Pat a         -- ^ the pattern the field is destructured to - must be 'IdentP'
                              -- when the @ident@ field is 'Nothing'
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (FieldPat a) where spanOf (FieldPat _ _ s) = spanOf s
 
@@ -344,7 +348,7 @@ data FnDecl a
                                -- 'Nothing', functions default to @()@ and closures to inference.
       , variadic :: Bool       -- ^ whether the argument list ends in @...@
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (FnDecl a) where spanOf (FnDecl _ _ _ s) = spanOf s
 
@@ -358,7 +362,7 @@ data ForeignItem a
       , node :: ForeignItemKind a -- ^ actual item
       , vis :: Visibility a       -- ^ visibility
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (ForeignItem a) where spanOf (ForeignItem _ _ _ _ s) = spanOf s
 
@@ -366,7 +370,7 @@ instance Located a => Located (ForeignItem a) where spanOf (ForeignItem _ _ _ _ 
 data ForeignItemKind a
   = ForeignFn (FnDecl a) (Generics a) -- ^ foreign function
   | ForeignStatic (Ty a) Bool         -- ^ foreign static variable optionally mutable (as indicated by the 'Bool')
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | Represents lifetimes and type parameters attached to a declaration of a functions, enums,
 -- traits, etc. (@syntax::ast::Generics@). Note that lifetime definitions are always required to be
@@ -384,7 +388,7 @@ data Generics a
       , tyParams :: [TyParam a]       -- ^ type parameters defined (possibly with bounds)
       , whereClause :: WhereClause a  -- ^ constraints on the lifetimes and type parameters
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Generics a) where spanOf (Generics _ _ _ s) = spanOf s
 
@@ -405,7 +409,7 @@ data ImplItem a
       , attrs :: [Attribute a]     -- ^ attributes attached to it
       , node :: ImplItemKind a     -- ^ actual item
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (ImplItem a) where spanOf (ImplItem _ _ _ _ _ s) = spanOf s
 
@@ -415,14 +419,14 @@ data ImplItemKind a
   | MethodI (MethodSig a) (Block a) -- ^ methods (example: @fn area(&self) -> f64 { 1f64 }@)
   | TypeI (Ty a)                    -- ^ associated types (example: @type N = i32@)
   | MacroI (Mac a)                  -- ^ call to a macro
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | For traits with a default impl, one can "opt out" of that impl with a negative impl, by adding
 -- @!@ mark before the trait name. [RFC on builtin
 -- traits](https://github.com/rust-lang/rfcs/blob/master/text/0019-opt-in-builtin-traits.md)
 --
 -- Example: @!@ as in @impl !Trait for Foo { }@
-data ImplPolarity = Positive | Negative deriving (Eq, Enum, Bounded, Show)
+data ImplPolarity = Positive | Negative deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | Expanded inline assembly macro (@syntax::ast::InlineAsm@).
 --
@@ -438,7 +442,7 @@ data InlineAsm a
       , alignstack :: Bool
       , dialect :: AsmDialect
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | Outputs for inline assembly (@syntax::ast::InlineAsmOutput@)
 -- 
@@ -449,7 +453,7 @@ data InlineAsmOutput a
       , expr :: Expr a
       , isRw :: Bool
       , isIndirect :: Bool
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (InlineAsm a) where spanOf (InlineAsm _ _ _ _ _ _ _ _ s) = spanOf s
 
@@ -463,7 +467,7 @@ data Item a
       , node :: ItemKind a     -- ^ actual item
       , vis :: Visibility a    -- ^ visibility
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Item a) where spanOf (Item _ _ _ _ s) = spanOf s
 
@@ -516,13 +520,13 @@ data ItemKind a
   -- | generated from a call to a macro 
   -- Example: @macro_rules! foo { .. }@ or @foo!(..)@
   | MacItem (Mac a)
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | A Kleene-style repetition operator for token sequences (@syntax::ast::KleeneOp@). This refers
 -- to the @*@ or @+@ suffix on a 'Sequence' token tree. 
 --
 -- Examples: @+@ as in @$($inits:expr),+@
-data KleeneOp = ZeroOrMore | OneOrMore deriving (Eq, Enum, Bounded, Show)
+data KleeneOp = ZeroOrMore | OneOrMore deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | A lifetime is a name for a scope in a program (@syntax::ast::Lifetime@). One of the novel
 -- features of Rust is that code can be parametrized over lifetimes. Syntactically, they are like
@@ -533,7 +537,7 @@ data Lifetime a
   = Lifetime
       { name :: Name   -- ^ string that is the actual name part (so omits the tick @\'@)
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Lifetime a) where spanOf (Lifetime _ s) = spanOf s
 
@@ -547,7 +551,7 @@ data LifetimeDef a
       , lifetime :: Lifetime a   -- ^ lifetime being defined (@\'a@ in the example)
       , bounds :: [Lifetime a]   -- ^ other lifetimes which bound it (@\'b+\'c+\'d@ in the example)
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (LifetimeDef a) where spanOf (LifetimeDef _ _ _ s) = spanOf s
 
@@ -563,7 +567,7 @@ data Suffix
   | Is | I8 | I16 | I32 | I64 | I128 
   | Us | U8 | U16 | U32 | U64 | U128
   |                 F32 | F64
-   deriving (Eq, Enum, Bounded)
+   deriving (Eq, Enum, Bounded, Typeable, Data, Generic)
 
 -- | renders suffixes faithfully to their source form 
 instance Show Suffix where
@@ -593,7 +597,7 @@ data Lit a
   | Int Integer Suffix a                    -- ^ integer (example: @1i32@)
   | Float Double Suffix a                   -- ^ float (example: @1.12e4@)
   | Bool Bool Suffix a                      -- ^ boolean (example: @true@)
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Lit a) where
   spanOf (Str _ _ _ s) = spanOf s
@@ -620,7 +624,7 @@ suffix (Bool _ s _) = s
 --
 -- Quoted from the source "NB: the additional ident for a macro_rules-style macro is actually
 -- stored in the enclosing item. Oog."
-data Mac a = Mac (Path a) [TokenTree] a deriving (Eq, Functor, Show)
+data Mac a = Mac (Path a) [TokenTree] a deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Mac a) where spanOf (Mac _ _ s) = spanOf s
 
@@ -628,7 +632,7 @@ instance Located a => Located (Mac a) where spanOf (Mac _ _ s) = spanOf s
 data MacStmtStyle
   = SemicolonMac -- ^ trailing semicolon (example: @foo! { ... };@, @ foo!(...);@, and @foo![...];@)
   | BracesMac    -- ^ braces (example: @foo! { ... }@)
-  deriving (Eq, Enum, Bounded, Show)
+  deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- A macro definition, in this crate or imported from another.
 -- Not parsed directly, but created on macro import or macro_rules! expansion.
@@ -643,7 +647,7 @@ data MacroDef a
       , allowInternalUnstable :: Bool
       , body :: [TokenTree]
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (MacroDef a) where spanOf (MacroDef _ _ _ _ _ _ _ s) = spanOf s
 
@@ -652,7 +656,7 @@ data MetaItem a
   = Word Ident a                    -- ^ @test@ as in @#[test]@
   | List Ident [NestedMetaItem a] a -- ^ @derive(..)@ as in @#[derive(..)]@
   | NameValue Ident (Lit a) a       -- ^ @feature = "foo"@ as in @#[feature = "foo"]@
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (MetaItem a) where
   spanOf (Word _ s) = spanOf s
@@ -660,17 +664,17 @@ instance Located a => Located (MetaItem a) where
   spanOf (NameValue _ _ s) = spanOf s
 
 -- | Represents a method's signature in a trait declaration, or in an implementation.
-data MethodSig a = MethodSig Unsafety Constness Abi (FnDecl a) (Generics a) deriving (Eq, Functor, Show)
+data MethodSig a = MethodSig Unsafety Constness Abi (FnDecl a) (Generics a) deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | Encodes whether something can be updated or changed (@syntax::ast::Mutability@).
-data Mutability = Mutable | Immutable deriving (Eq, Enum, Bounded, Show)
+data Mutability = Mutable | Immutable deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | Possible values inside of 'MetaItem's. This needs to be seperate from 'MetaItem' in order to
 -- disallow literals in (top-level) 'MetaItem's. 
 data NestedMetaItem a
   = MetaItem (MetaItem a) a -- ^ full 'MetaItem', for recursive meta items.
   | Literal (Lit a) a       -- ^ literal (example: @\"foo\"@, @64@, @true@)
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (NestedMetaItem a) where
   spanOf (MetaItem _ s) = spanOf s
@@ -694,7 +698,7 @@ data Nonterminal a
   | NtGenerics (Generics a)
   | NtWhereClause (WhereClause a)
   | NtArg (Arg a)
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | Patterns (@syntax::ast::Pat@).
 data Pat a
@@ -727,7 +731,7 @@ data Pat a
   | SliceP [Pat a] (Maybe (Pat a)) [Pat a] a
   -- | generated from a call to a macro (example: @LinkedList!(1,2,3)@)
   | MacP (Mac a) a
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Pat a) where
   spanOf (WildP s) = spanOf s
@@ -758,7 +762,7 @@ data Path a
       -- Each segment consists of an identifier, an optional lifetime, and a set of types. E.g. std, String or Box<T>
       , segments :: NonEmpty (Ident, PathParameters a) -- ^ The segments in the path: the things separated by ::.
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Path a) where spanOf (Path _ _ s) = spanOf s
 
@@ -768,7 +772,7 @@ data PathListItem a
       { name :: Ident         -- ^ name of element (examples: @foo@)
       , rename :: Maybe Ident -- ^ optional renames (examples: @as bar@)
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (PathListItem a) where spanOf (PathListItem _ _ s) = spanOf s
 
@@ -797,7 +801,7 @@ data PathParameters a
   -- is considered a subcase of 'AngleBracketed'. However, I want to be able to distinguish between
   -- @foo<>@ and @foo@ for faithful pretty-printing purposes.
   | NoParameters a
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (PathParameters a) where
   spanOf (AngleBracketed _ _ _ s) = spanOf s
@@ -812,7 +816,7 @@ data PolyTraitRef a
       { boundLifetimes :: [LifetimeDef a] -- ^ lifetime introduced (@\'a'@ in the example)
       , traitRef :: TraitRef a            -- ^ trait ref using those lifetimes (@Foo\<&\'a T\>@ in the example)
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (PolyTraitRef a) where spanOf (PolyTraitRef _ _ s) = spanOf s 
 
@@ -822,13 +826,13 @@ data QSelf a
   = QSelf
       { ty :: Ty a       -- ^ type given to @Self@
       , position :: Int  -- ^ index of the associated qualified with this @Self@ type
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | Limit types of a 'Range'
 data RangeLimits
   = HalfOpen -- ^ Inclusive at the beginning, exclusive at the end
   | Closed   -- ^ Inclusive at the beginning and end
-  deriving (Eq, Enum, Bounded, Show)
+  deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | A statement (@syntax::ast::Stmt@). Rust has relatively few types of statements by turning both
 -- expressions (sometimes with a required semicolon at the end) and items into statements.
@@ -849,7 +853,7 @@ data Stmt a
   | Semi (Expr a) a
   -- | A macro call (example: @println!("hello world")@)
   | MacStmt (Mac a) MacStmtStyle [Attribute a] a
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Stmt a) where
   spanOf (Local _ _ _ _ s) = spanOf s
@@ -862,7 +866,7 @@ instance Located a => Located (Stmt a) where
 data StrStyle
   = Cooked     -- ^ regular strings (example: @\"foo\"@)
   | Raw Int    -- ^ raw strings, with the number of @#@ delimiters (example: @r##\"foo\"##@)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Typeable, Data, Generic)
 
 -- | Field of a struct (@syntax::ast::StructField@) used in declarations
 --
@@ -874,7 +878,7 @@ data StructField a
       , ty :: Ty a              -- ^ type of the field
       , attrs :: [Attribute a]  -- ^ attributes on the field
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (StructField a) where spanOf (StructField _ _ _ _ s) = spanOf s
 
@@ -908,7 +912,7 @@ data TokenTree
       , separator :: Maybe Token   -- ^ The optional separator
       , op :: KleeneOp             -- ^ Whether the sequence can be repeated zero (*), or one or more times (+)
       }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Typeable, Data, Generic)
 
 instance Located TokenTree where
   spanOf (Token s _) = s
@@ -917,7 +921,7 @@ instance Located TokenTree where
 
 -- | A modifier on a bound, currently this is only used for @?Sized@, where the modifier is @Maybe@. Negative
 -- bounds should also be handled here.
-data TraitBoundModifier = None | Maybe deriving (Eq, Enum, Bounded, Show)
+data TraitBoundModifier = None | Maybe deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | item declaration within a trait declaration (@syntax::ast::TraitItem@), possibly including a default
 -- implementation. A trait item is either required (meaning it doesn't have an implementation, just a
@@ -928,7 +932,7 @@ data TraitItem a
       , attrs :: [Attribute a]     -- ^ attributes attached to it
       , node :: TraitItemKind a    -- ^ actual item
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (TraitItem a) where spanOf (TraitItem _ _ _ s) = spanOf s
 
@@ -938,7 +942,7 @@ data TraitItemKind a
   | MethodT (MethodSig a) (Maybe (Block a))  -- ^ method with optional body (example: @fn area(&self) -> f64;@)
   | TypeT [TyParamBound a] (Maybe (Ty a))    -- ^ associated types (example: @type N: fmt::Display;@)
   | MacroT (Mac a)                           -- ^ call to a macro
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | TraitRef's appear in impls.
 -- resolve maps each TraitRef's ref_id to its defining trait; that's all that the ref_id is for.
@@ -949,7 +953,7 @@ data TraitRef a
   = TraitRef
       { path :: Path a
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (TraitRef a) where spanOf (TraitRef _ s) = spanOf s
 
@@ -989,7 +993,7 @@ data Ty a
   | ImplicitSelf a
   -- | generated from a call to a macro (example: @HList![i32,(),u8]@)
   | MacTy (Mac a) a
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Ty a) where
   spanOf (Slice _ s) = spanOf s
@@ -1017,7 +1021,7 @@ data TyParam a
       , bounds :: [TyParamBound a]
       , default_ :: Maybe (Ty a)
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (TyParam a) where spanOf (TyParam _ _ _ _ s) = spanOf s
 
@@ -1026,7 +1030,7 @@ instance Located a => Located (TyParam a) where spanOf (TyParam _ _ _ _ s) = spa
 data TyParamBound a
   = TraitTyParamBound (PolyTraitRef a) TraitBoundModifier -- ^ trait bound
   | RegionTyParamBound (Lifetime a)                       -- ^ lifetime bound
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | Partion a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and 'RegionTyParamBound' variants.
 partitionTyParamBounds :: [TyParamBound a] -> ([TyParamBound a], [TyParamBound a])
@@ -1041,13 +1045,13 @@ data UnOp
   = Deref -- ^ @*@ operator (dereferencing)
   | Not   -- ^ @!@ operator (logical inversion)
   | Neg   -- ^ @-@ operator (negation)
-  deriving (Eq, Enum, Bounded, Show)
+  deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | Qualifies whether something is using unsafe Rust or not (@syntax::ast::Unsafety@). Note that we
 -- also use this to describe whether a 'Block' is unsafe or not, while Rust has a seperate structure
 -- (@syntax::ast::BlockCheckMode@) for that. This is because they also need to keep track of whether
 -- an unsafe block is compiler generated.
-data Unsafety = Unsafe | Normal deriving (Eq, Enum, Bounded, Show)
+data Unsafety = Unsafe | Normal deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- https://docs.serde.rs/syntex_syntax/ast/type.Variant.html
 -- https://docs.serde.rs/syntex_syntax/ast/struct.Variant_.html
@@ -1058,7 +1062,7 @@ data Variant a
       , data_ :: VariantData a
       , disrExpr :: Maybe (Expr a) -- ^ Explicit discriminant, e.g. Foo = 1
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Variant a) where spanOf (Variant _ _ _ _ s) = spanOf s
 
@@ -1069,7 +1073,7 @@ data VariantData a
   = StructD [StructField a] a -- ^ Struct variant. E.g. Bar { .. } as in enum Foo { Bar { .. } }
   | TupleD [StructField a] a  -- ^ Tuple variant. E.g. Bar(..) as in enum Foo { Bar(..) }
   | UnitD a                   -- ^ Unit variant. E.g. Bar = .. as in enum Foo { Bar = .. }
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (VariantData a) where
   spanOf (StructD _ s) = spanOf s
@@ -1090,7 +1094,7 @@ data ViewPath a
   --
   -- Example: @foo::bar::{a,b,c as d}@
   | ViewPathList Bool [Ident] [PathListItem a] a
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (ViewPath a) where
   spanOf (ViewPathSimple _ _ _ s) = spanOf s
@@ -1105,7 +1109,7 @@ data Visibility a
   | CrateV                -- ^ @pub(crate)@ is accessible from within the crate
   | RestrictedV (Path a)  -- ^ for some path @p@, @pub(p)@ is visible at that path
   | InheritedV            -- ^ if no visbility is specified, this is the default
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | A @where@ clause in a definition, where one can apply a series of constraints to the types
 -- introduced and used by a 'Generic' clause (@syntax::ast::WhereClause@). In many cases, @where@ 
@@ -1120,7 +1124,7 @@ data WhereClause a
   = WhereClause
       { predicates :: [WherePredicate a]  -- ^ predicates enforced by the clause
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (WhereClause a) where spanOf (WhereClause _ s) = spanOf s
 
@@ -1148,7 +1152,7 @@ data WherePredicate a
       , ty :: Ty a                              -- ^ RHS of the equality predicate (@int@ in the example)
       , nodeInfo :: a
       }
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (WherePredicate a) where
   spanOf (BoundPredicate _ _ _ s) = spanOf s

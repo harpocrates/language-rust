@@ -9,8 +9,13 @@ Portability : portable
 
 Data structure behind identifiers.
 -}
+{-# LANGUAGE DeriveDataTypeable, DeriveGeneric #-}
 
 module Language.Rust.Syntax.Ident (Ident(..), mkIdent, invalidIdent, Name) where
+
+import GHC.Generics (Generic)
+import Data.Data (Data)
+import Data.Typeable (Typeable)
 
 import Data.List (foldl')
 import Data.Char (ord)
@@ -20,7 +25,7 @@ import Data.String (IsString(..))
 data Ident
   = Ident { name :: Name  -- ^ payload of the identifier
           , hash :: !Int  -- ^ hash for quick comparision
-          }
+          } deriving (Data, Typeable, Generic)
 
 instance Show Ident where
   show = show . name

@@ -38,6 +38,8 @@ library
                      , OverloadedLists
                      , DuplicateRecordFields
                      , InstanceSigs
+                     , DeriveGeneric
+                     , DeriveDataTypeable
                      , CPP
                      , DeriveFunctor
 
