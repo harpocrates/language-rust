@@ -221,23 +221,23 @@ parserTypes = testGroup "parsing types"
                                                                                         Immutable
                                                                                         (PathTy Nothing (Path False [("T", NoParameters ())] ()) ())
                                                                                         ()]
-                                                                                  [] ())] ()) ()) ()) None] ())
+                                                                                  [] ())] ())) ()) None] ())
   --, testP "for <'a,> Debug + for <'b> Clone + for <'c> Clone"
   --           (TraitObject
   --             [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime (Name "a") ()) [] ()]
   --                                              (TraitRef (Path False [("Debug", NoParameters ())] ()) ()) ()) None] ())
   , testP "&for<'a> Tr<'a> + Send"
            (ObjectSum
-              (Rptr Nothing Immutable (TraitObject [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime "a" ()] [] [] ())] ()) ()) ()) None] ()) ())
-              [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ()) ()) ()) None]
+              (Rptr Nothing Immutable (TraitObject [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime "a" ()] [] [] ())] ())) ()) None] ()) ())
+              [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None]
               ()) 
   , testP "&(for<'a> Tr<'a> + Send)"
            (Rptr Nothing Immutable (ParenTy (ObjectSum
-              (TraitObject [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime  "a" ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime "a" ()] [] [] ())] ()) ()) ()) None] ())
-              [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ()) ()) ()) None]
+              (TraitObject [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime  "a" ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime "a" ()] [] [] ())] ())) ()) None] ())
+              [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None]
               ()) ()) ()) 
   , testP "Fn() -> &(Object+Send)"
-           (PathTy Nothing (Path False [("Fn", Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (ObjectSum (PathTy Nothing (Path False [("Object",NoParameters ())] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ()) ()) ()) None] ()) ()) ())) ())] ()) ())
+           (PathTy Nothing (Path False [("Fn", Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (ObjectSum (PathTy Nothing (Path False [("Object",NoParameters ())] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None] ()) ()) ())) ())] ()) ())
   ]
 
 
@@ -524,6 +524,8 @@ parserItems = testGroup "parsing items"
   , testP "use std::math;" (Item "" [] (Use (ViewPathSimple False ["std"] (PathListItem "math" Nothing ()) ())) InheritedV ())
   , testP "use std::math as m;" (Item "" [] (Use (ViewPathSimple False ["std"] (PathListItem "math" (Just "m") ()) ())) InheritedV ())
   , testP "use std::math::*;" (Item "" [] (Use (ViewPathGlob False ["std","math"] ())) InheritedV ())
+  , testP "use *;" (Item "" [] (Use (ViewPathGlob False [] ())) InheritedV ())
+  , testP "use ::*;" (Item "" [] (Use (ViewPathGlob True [] ())) InheritedV ())
   , testP "use std::math::{};" (Item "" [] (Use (ViewPathList False ["std","math"] [] ())) InheritedV ()) 
   , testP "use std::math::{sqrt, pi as p};" (Item "" [] (Use (ViewPathList False ["std","math"] [PathListItem "sqrt" Nothing (), PathListItem "pi" (Just "p") ()] ())) InheritedV ()) 
   , testP "use std::math::{sqrt};" (Item "" [] (Use (ViewPathList False ["std","math"] [PathListItem "sqrt" Nothing ()] ())) InheritedV ()) 
@@ -547,41 +549,41 @@ parserItems = testGroup "parsing items"
   , testP "unsafe impl i32 { }" (Item "" [] (Impl Unsafe Positive (Generics [] [] (WhereClause [] ()) ()) Nothing i32 []) InheritedV ())
   , testP "impl (<i32 as a>::b) { }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) Nothing (PathTy (Just (QSelf i32 1)) (Path False [("a", NoParameters ()), ("b", NoParameters ()) ] ()) ()) []) InheritedV ())
   , testP "impl (<i32 as a>::b) { }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) Nothing (PathTy (Just (QSelf i32 1)) (Path False [("a", NoParameters ()), ("b", NoParameters ()) ] ()) ()) []) InheritedV ())
-  , testP "impl !Debug for i32 { }" (Item "" [] (Impl Normal Negative (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 []) InheritedV ())
-  , testP "impl Debug for i32 { }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 []) InheritedV ())
-  , testP "impl Debug for .. { }" (Item "" [] (DefaultImpl Normal (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) InheritedV ())
-  , testP "impl Debug for i32 { type T = i32; }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "T" InheritedV Final [] (TypeI i32) ()]) InheritedV ())
-  , testP "impl Debug for i32 { pub default type T = i32; }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "T" PublicV Default [] (TypeI i32) ()]) InheritedV ())
-  , testP "impl Debug for i32 { const x: i32 = 1; }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "x" InheritedV Final [] (ConstI i32 (Lit [] (Int 1 Unsuffixed ()) ())) ()]) InheritedV ())
+  , testP "impl !Debug for i32 { }" (Item "" [] (Impl Normal Negative (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 []) InheritedV ())
+  , testP "impl Debug for i32 { }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 []) InheritedV ())
+  , testP "impl Debug for .. { }" (Item "" [] (DefaultImpl Normal (TraitRef (Path False [("Debug",NoParameters ())] ()))) InheritedV ())
+  , testP "impl Debug for i32 { type T = i32; }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 [ImplItem "T" InheritedV Final [] (TypeI i32) ()]) InheritedV ())
+  , testP "impl Debug for i32 { pub default type T = i32; }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 [ImplItem "T" PublicV Default [] (TypeI i32) ()]) InheritedV ())
+  , testP "impl Debug for i32 { const x: i32 = 1; }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 [ImplItem "x" InheritedV Final [] (ConstI i32 (Lit [] (Int 1 Unsuffixed ()) ())) ()]) InheritedV ())
   , testP "impl Debug for i32 { const unsafe fn foo(x: i32) -> i32 { return x + 1 } }" 
   (Item "" [] (Impl Normal Positive
-                    (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32
+                    (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32
                     [ImplItem "foo" InheritedV Final []
                        (MethodI (MethodSig Unsafe Const Rust (FnDecl [Arg (Just x) i32 ()] (Just i32) False ()) (Generics [] [] (WhereClause [] ()) ()))
                                 (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())) ()) ()] Normal ())) ()]) InheritedV ())  
   , testP "impl Debug for i32 { pub default extern \"C\" fn foo(x: i32) -> i32 { return x + 1 } }" 
   (Item "" [] (Impl Normal Positive
-                    (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32
+                    (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32
                     [ImplItem "foo" PublicV Default []
                        (MethodI (MethodSig Normal NotConst C (FnDecl [Arg (Just x) i32 ()] (Just i32) False ()) (Generics [] [] (WhereClause [] ()) ()))
                                 (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())) ()) ()] Normal ())) ()]) InheritedV ())  
   , testP "impl Debug for i32 { fn foo(&self) -> i32 { return x + 1 } }" 
   (Item "" [] (Impl Normal Positive
-                    (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32
+                    (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32
                     [ImplItem "foo" InheritedV Final []
                        (MethodI (MethodSig Normal NotConst Rust (FnDecl [SelfRegion Nothing Immutable ()] (Just i32) False ()) (Generics [] [] (WhereClause [] ()) ()))
                                 (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int 1 Unsuffixed ()) ()) ())) ()) ()] Normal ())) ()]) InheritedV ()) 
   , testP "trait Trace { }" (Item "Trace" [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) [] []) InheritedV ()) 
   , testP "unsafe trait Trace { }" (Item "Trace" [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [] []) InheritedV ()) 
-  , testP "trait Trace: Debug { }" (Item "Trace" [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ()) ()) ()) None] []) InheritedV ()) 
-  , testP "unsafe trait Trace: Debug { }" (Item "Trace" [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ()) ()) ()) None] []) InheritedV ()) 
+  , testP "trait Trace: Debug { }" (Item "Trace" [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None] []) InheritedV ()) 
+  , testP "unsafe trait Trace: Debug { }" (Item "Trace" [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None] []) InheritedV ()) 
   ] 
 
 
 toFix :: Test
 toFix = testGroup "should pass, but don't block tests for now"
-  [ testP "impl Debug for i32 { foo!(x); }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
-  , testP "impl Debug for i32 { foo!{x} }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()) ())) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
+  [ testP "impl Debug for i32 { foo!(x); }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
+  , testP "impl Debug for i32 { foo!{x} }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
   , testP "foo!(x)"                 (MacP (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 5 6 1) (Position 6 7 1)) (IdentTok "x")]  ()) ())
   , testP "foo![x]"                 (MacTy (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 5 6 1) (Position 6 7 1)) (IdentTok "x")]  ()) ())
   ]

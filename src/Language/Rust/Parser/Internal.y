@@ -1,6 +1,6 @@
 {
 {-|
-Module      : Language.Rust.Parser.Parser
+Module      : Language.Rust.Parser.Internal
 Description : Rust parser
 Copyright   : (c) Alec Theriault, 2017
 License     : BSD-style
@@ -10,6 +10,7 @@ Portability : portable
 
 The parsers in this file are all re-exported to 'Language.Rust.Parser' via the 'Parse' class.
 -}
+{-# OPTIONS_HADDOCK hide, not-home #-}
 
 
 module Language.Rust.Parser.Internal (
@@ -543,7 +544,7 @@ lifetime :: { Lifetime Span }
 
 -- parse_trait_ref()
 trait_ref :: { TraitRef Span }
-  : ty_path                          {% withSpan $1 (TraitRef $1) }
+  : ty_path                          { TraitRef $1 }
 
 -- parse_ty()
 ty :: { Ty Span }
@@ -1339,7 +1340,8 @@ def :: { Defaultness }
 view_path :: { ViewPath Span }
   : '::' sep_by1(self_or_ident,'::')                                     {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) Nothing mempty)) }
   | '::' sep_by1(self_or_ident,'::') as ident                            {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
-  | '::' sep_by1(self_or_ident,'::') '::' '*'                            {% withSpan $1 (ViewPathGlob True (fmap unspan $2)) }
+  | '::'                                  '*'                            {% withSpan $1 (ViewPathGlob True []) }
+  | '::' sep_by1(self_or_ident,'::') '::' '*'                            {% withSpan $1 (ViewPathGlob True (fmap unspan (toList $2))) }
   | '::' sep_by1(self_or_ident,'::') '::' '{'                        '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) []) }
   | '::' sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) (toList $5)) }
   | '::' sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) (toList $5)) }
@@ -1348,7 +1350,8 @@ view_path :: { ViewPath Span }
   | '::'                                  '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList True [] (toList $3)) }
   |      sep_by1(self_or_ident,'::')                                     {% let n = fmap unspan $1 in withSpan $1 (ViewPathSimple False (N.init n) (PathListItem (N.last n) Nothing mempty)) }
   |      sep_by1(self_or_ident,'::') as ident                            {% let n = fmap unspan $1 in withSpan $1 (ViewPathSimple False (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
-  |      sep_by1(self_or_ident,'::') '::' '*'                            {% withSpan $1 (ViewPathGlob False (fmap unspan $1)) }
+  |                                       '*'                            {% withSpan $1 (ViewPathGlob False []) }
+  |      sep_by1(self_or_ident,'::') '::' '*'                            {% withSpan $1 (ViewPathGlob False (fmap unspan (toList $1))) }
   |      sep_by1(self_or_ident,'::') '::' '{'                        '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) []) }
   |      sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) (toList $4)) }
   |      sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) (toList $4)) }

@@ -10,15 +10,14 @@ Portability : portable
 Selecting the right parser may require adding an annotation to avoid an 'Ambiguous type variable'
 error.
 
-@
-ghci> import Language.Rust.Syntax.AST
-ghci> import Language.Data.Position (Span)
-ghci> import Language.Rust.Parser
-ghci> inp <- readInputStream "hello_world.rs"
+>>> import Language.Rust.Syntax.AST
+>>> import Language.Data.Position (Span)
+>>> import Language.Rust.Parser
+>>> inp <- readInputStream "hello_world.rs"
 inp :: InputStream
-ghci> Right crateAst = execParser (parser :: P (Crate Span)) inp initPos
+>>> Right crateAst = execParser (parser :: P (Crate Span)) inp initPos
 crateAst :: Crate Span
-@
+
 -}
 
 {-# LANGUAGE FlexibleInstances #-}

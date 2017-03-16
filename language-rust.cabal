@@ -7,7 +7,7 @@ license:             BSD3
 license-file:        LICENSE
 author:              Alec Theriault
 maintainer:          alec.theriault@gmail.com
--- copyright:           
+copyright:           (c) Alec Theriault, 2017
 category:            Language
 build-type:          Simple
 extra-source-files:  ChangeLog.md
@@ -20,19 +20,19 @@ library
   build-tools:         alex, happy
   default-language:    Haskell2010
 
-  exposed-modules:     Language.Rust.Pretty
-                       Language.Rust.Pretty.Internal
-                       Language.Rust.Syntax.Token
-                       Language.Rust.Syntax.Ident
+  exposed-modules:     Language.Rust.Syntax.Ident
                        Language.Rust.Syntax.AST
+                       Language.Rust.Syntax.Token
                        Language.Rust.Parser
                        Language.Rust.Parser.ParseMonad
                        Language.Rust.Parser.Lexer
                        Language.Rust.Parser.Literals
-                       Language.Rust.Parser.Internal
+                       Language.Rust.Pretty
                        Language.Rust.Data.Position
                        Language.Rust.Data.InputStream
-  -- other-modules:
+ 
+  other-modules:       Language.Rust.Parser.Internal
+                       Language.Rust.Pretty.Internal
 
   other-extensions:    OverloadedStrings
                      , OverloadedLists

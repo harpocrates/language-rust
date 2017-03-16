@@ -1,19 +1,45 @@
 {-|
 Module      : Language.Rust.Syntax.AST
-Description : AST definitions
+Description : Non-token AST definitions
 Copyright   : (c) Alec Theriault, 2017
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-The abstract syntax tree(s) of the Rust language. Based on the definitions in the [@syntax::ast@
-crate of @rustc@](https://manishearth.github.io/rust-internals-docs/syntax/ast/index.html) whenever
-possible.
+The abstract syntax tree(s) of the Rust language. Based on the definitions in the @syntax::ast@
+crate of @rustc@ whenever possible. Unfortunately, since the internals of @rustc@ are not exposed
+themselves, there are no official docs for them - the current working docs
+are [here](https://manishearth.github.io/rust-internals-docs/syntax/ast/index.html).
 -}
 {-# LANGUAGE DuplicateRecordFields, DeriveFunctor, DeriveDataTypeable, DeriveGeneric, PatternSynonyms #-}
 
-module Language.Rust.Syntax.AST where
+module Language.Rust.Syntax.AST (
+  -- * General
+  Mutability(..), Unsafety(..), Arg(..), FnDecl(..),
+  -- * Paths
+  Path(..), PathListItem(..), PathParameters(..), QSelf(..),
+  -- * Attributes
+  Attribute(..), AttrStyle(..), MetaItem(..), NestedMetaItem(..),
+  -- * Crates
+  Crate(..), CrateConfig, 
+  -- * Literals
+  Lit(..), Suffix(..), suffix, StrStyle(..),
+  -- * Expressions
+  Expr(..), Abi(..), Arm(..), AsmDialect(..), UnOp(..), BinOp(..), CaptureBy(..), Field(..), InlineAsm(..), InlineAsmOutput(..), RangeLimits(..),
+  -- * Types and lifetimes
+  Ty(..), Generics(..), pattern NoGenerics, Lifetime(..), LifetimeDef(..), TyParam(..), TyParamBound(..), partitionTyParamBounds, WhereClause(..), WherePredicate(..), PolyTraitRef(..), TraitRef(..), TraitBoundModifier(..), 
+  -- * Patterns
+  Pat(..), BindingMode(..), FieldPat(..),
+  -- * Statements
+  Stmt(..),
+  -- * Items
+  Item(..), ItemKind(..), ForeignItem(..), ForeignItemKind(..), ImplItem(..), ImplItemKind(..), Defaultness(..), ImplPolarity(..), StructField(..), TraitItem(..), TraitItemKind(..), Variant(..), VariantData(..), ViewPath(..), Visibility(..), Constness(..), MethodSig(..),
+  -- * Blocks
+  Block(..),
+  -- * Token trees
+  TokenTree(..), Nonterminal(..), KleeneOp(..), Mac(..), MacStmtStyle(..), MacroDef(..),
+) where
 
 import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)
 import Language.Rust.Syntax.Ident (Ident, Name)
@@ -747,20 +773,18 @@ instance Located a => Located (Pat a) where
   spanOf (SliceP _ _ _ s) = spanOf s 
   spanOf (MacP _ s) = spanOf s
 
--- | A "Path" is essentially Rust's notion of a name.
--- It's represented as a sequence of identifiers, along with a bunch of supporting information.
--- E.g. `std::cmp::PartialEq`
+-- | Everything in Rust is namespaced using nested modules. A 'Path' represents a path into nested
+-- modules, possibly instantiating type parameters along the way (@syntax::ast::Path@). Much like
+-- file paths, these paths can be relative or absolute (global) with respect to the crate root.
 --
--- TODO: Consider adding something to say what _type_ of path it is (expr, ty, mod)
+-- Paths are used to identify expressions (see 'PathExpr'), types (see 'PathTy'), and modules
+-- (indirectly through 'ViewPath' and such).
 --
--- https://docs.serde.rs/syntex_syntax/ast/struct.Path.html
--- Inlined [PathSegment](https://docs.serde.rs/syntex_syntax/ast/struct.PathSegment.html)
+-- Example: @std::cmp::PartialEq@
 data Path a
   = Path
-      { global :: Bool  -- ^ A ::foo path, is relative to the crate root rather than current module (like paths in an import).
-      -- see https://github.com/rust-lang/rust/issues/3420
-      -- Each segment consists of an identifier, an optional lifetime, and a set of types. E.g. std, String or Box<T>
-      , segments :: NonEmpty (Ident, PathParameters a) -- ^ The segments in the path: the things separated by ::.
+      { global :: Bool                                 -- ^ is the path relative or absolute (with respect to the crate root) 
+      , segments :: NonEmpty (Ident, PathParameters a) -- ^ segments in the path (the things separated by @::@)
       , nodeInfo :: a
       } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
@@ -882,35 +906,29 @@ data StructField a
 
 instance Located a => Located (StructField a) where spanOf (StructField _ _ _ _ s) = spanOf s
 
--- | When the main rust parser encounters a syntax-extension invocation, it parses the arguments to the invocation
--- as a token-tree. This is a very loose structure, such that all sorts of different AST-fragments can be passed to
--- syntax extensions using a uniform type.
---
--- If the syntax extension is an MBE macro, it will attempt to match its LHS token tree against the provided token
--- tree, and if it finds a match, will transcribe the RHS token tree, splicing in any captured
--- macro_parser::matched_nonterminals into the SubstNts it finds.
---
--- The RHS of an MBE macro is the only place SubstNts are substituted. Nothing special happens to misnamed or
--- misplaced SubstNts.
+-- | When the parser encounters a macro call, it parses what follows as a 'Delimited' token tree.
+-- Basically, token trees let you store raw tokens or 'Sequence' forms inside of balanced
+-- parens or braces or brackets. This is a very loose structure, such that all sorts of different
+-- AST-fragments can be passed to syntax extensions using a uniform type.
 data TokenTree
   -- | A single token
   = Token Span Token
-  -- | A delimited sequence of token trees
-  -- Inlined [Delimited](https://docs.serde.rs/syntex_syntax/tokenstream/struct.Delimited.html)
+  -- | A delimited sequence of token trees (@syntax::tokenstream::Delimited@)
+  -- Example: @{ [-\>+\<] }@ in @brainfuck!{ [-\>+\<] };@
   | Delimited
       { span :: Span 
-      , delim :: Delim             -- ^ The type of delimiter
-      , openSpan :: Span           -- ^ The span covering the opening delimiter
-      , tts :: [TokenTree]         -- ^ The delimited sequence of token trees
-      , closeSpan :: Span          -- ^ The span covering the closing delimiter
+      , delim :: Delim             -- ^ type of delimiter
+      , openSpan :: Span           -- ^ span covering the opening delimiter
+      , tts :: [TokenTree]         -- ^ delimited sequence of token trees
+      , closeSpan :: Span          -- ^ span covering the closing delimiter
       }
-  -- | A kleene-style repetition sequence of token trees with a span
-  -- Inlined [SequenceRepetition](https://docs.serde.rs/syntex_syntax/tokenstream/struct.SequenceRepetition.html)
+  -- | A kleene-style repetition sequence of token trees (@syntax::tokenstream::SequenceRepition@).
+  -- Example: @$($inits:expr),+@
   | Sequence 
       { span :: Span 
-      , tts :: [TokenTree]         -- ^ The sequence of token trees
-      , separator :: Maybe Token   -- ^ The optional separator
-      , op :: KleeneOp             -- ^ Whether the sequence can be repeated zero (*), or one or more times (+)
+      , tts :: [TokenTree]         -- ^ sequence of token trees
+      , separator :: Maybe Token   -- ^ optional separator
+      , op :: KleeneOp             -- ^ sequence can be repeated zero (@*@), or one or more times (@+@)
       }
   deriving (Eq, Show, Typeable, Data, Generic)
 
@@ -919,7 +937,7 @@ instance Located TokenTree where
   spanOf (Delimited s _ _ _ _) = s
   spanOf (Sequence s _ _ _) = s
 
--- | A modifier on a bound, currently this is only used for @?Sized@, where the modifier is @Maybe@. Negative
+-- | modifier on a bound, currently this is only used for @?Sized@, where the modifier is @Maybe@. Negative
 -- bounds should also be handled here.
 data TraitBoundModifier = None | Maybe deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
@@ -944,18 +962,10 @@ data TraitItemKind a
   | MacroT (Mac a)                           -- ^ call to a macro
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
--- | TraitRef's appear in impls.
--- resolve maps each TraitRef's ref_id to its defining trait; that's all that the ref_id is for.
--- The impl_id maps to the "self type" of this impl. If this impl is an ItemKind::Impl, the impl_id
--- is redundant (it could be the same as the impl's node id).
--- https://docs.serde.rs/syntex_syntax/ast/struct.TraitRef.html
-data TraitRef a
-  = TraitRef
-      { path :: Path a
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
+-- | A 'TraitRef' is a path which identifies a trait (@syntax::ast::TraitRef@).
+newtype TraitRef a = TraitRef (Path a) deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
-instance Located a => Located (TraitRef a) where spanOf (TraitRef _ s) = spanOf s
+instance Located a => Located (TraitRef a) where spanOf (TraitRef p) = spanOf p
 
 -- | Types (@syntax::ast::Ty@).
 data Ty a
@@ -1013,13 +1023,13 @@ instance Located a => Located (Ty a) where
   spanOf (ImplicitSelf s) = spanOf s
   spanOf (MacTy _ s) = spanOf s
 
--- https://docs.serde.rs/syntex_syntax/ast/struct.TyParam.html
+-- | type parameter definition used in 'Generics' (@syntax::ast::TyParam@).
 data TyParam a
   = TyParam
       { attrs :: [Attribute a]
-      , ident :: Ident
-      , bounds :: [TyParamBound a]
-      , default_ :: Maybe (Ty a)
+      , ident :: Ident             -- ^ name of the type parameter
+      , bounds :: [TyParamBound a] -- ^ lifetime or trait bounds on the parameter
+      , default_ :: Maybe (Ty a)   -- ^ a possible default type
       , nodeInfo :: a
       } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
@@ -1053,26 +1063,25 @@ data UnOp
 -- an unsafe block is compiler generated.
 data Unsafety = Unsafe | Normal deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
--- https://docs.serde.rs/syntex_syntax/ast/type.Variant.html
--- https://docs.serde.rs/syntex_syntax/ast/struct.Variant_.html
+-- | A variant in Rust is a constructor (either in a 'StructItem', 'Union', or 'Enum') which groups
+-- together fields (@syntax::ast::Variant@). In the case of a unit variant, there can also be an
+-- explicit discriminant expression.
 data Variant a
   = Variant
-      { name :: Ident
-      , attrs :: [Attribute a]
-      , data_ :: VariantData a
-      , disrExpr :: Maybe (Expr a) -- ^ Explicit discriminant, e.g. Foo = 1
+      { name :: Ident              -- ^ name of the constructor
+      , attrs :: [Attribute a]     -- ^ attributes attached to it
+      , data_ :: VariantData a     -- ^ fields and form of the constructor
+      , disrExpr :: Maybe (Expr a) -- ^ explicit discriminant, e.g. Foo = 1
       , nodeInfo :: a
       } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Variant a) where spanOf (Variant _ _ _ _ s) = spanOf s
 
--- | Fields and Ids of enum variants and structs
--- 
--- https://docs.serde.rs/syntex_syntax/ast/enum.VariantData.html
+-- | Main payload in a 'Variant' (@syntax::ast::VariantData@).
 data VariantData a
-  = StructD [StructField a] a -- ^ Struct variant. E.g. Bar { .. } as in enum Foo { Bar { .. } }
-  | TupleD [StructField a] a  -- ^ Tuple variant. E.g. Bar(..) as in enum Foo { Bar(..) }
-  | UnitD a                   -- ^ Unit variant. E.g. Bar = .. as in enum Foo { Bar = .. }
+  = StructD [StructField a] a -- ^ struct variant (example: @Bar { .. }@ as in @enum Foo { Bar { .. } }@)
+  | TupleD [StructField a] a  -- ^ tuple variant (exmaple: @Bar(..)@ as in enum Foo { Bar(..) }@)
+  | UnitD a                   -- ^ unit variant (example @Bar@ as in @enum Foo { Bar = .. }@)
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (VariantData a) where
@@ -1089,7 +1098,7 @@ data ViewPath a
   -- | A regular mod path ending in a glob pattern
   --
   -- Example: @foo::bar::*@
-  | ViewPathGlob Bool (NonEmpty Ident) a
+  | ViewPathGlob Bool [Ident] a
   -- | A regular mod path ending in a list of identifiers or renamed identifiers.
   --
   -- Example: @foo::bar::{a,b,c as d}@
