@@ -74,7 +74,7 @@ inputStreamEmpty = BS.null . coerce
 takeChars n = BE.toString . BE.take n . coerce
 readInputStream f = coerce <$> BS.readFile f
 inputStreamToString = BE.toString . coerce
-inputStreamFromString = coerce . BE.fromString 
+inputStreamFromString = IS . BE.fromString 
 countLines = length . BE.lines . coerce
 
 #else
@@ -90,7 +90,7 @@ inputStreamEmpty = null . coerce
 takeChars n str = take n str . coerce
 readInputStream f = coerce <$> readFile f
 inputStreamToString = coerce
-inputStreamFromString = coerce
+inputStreamFromString = IS
 countLines = length . lines . coerce
 
 #endif

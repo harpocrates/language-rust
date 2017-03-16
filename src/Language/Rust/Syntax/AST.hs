@@ -7,7 +7,9 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-Contains roughly the same stuff as @syntax::ast@.
+The abstract syntax tree(s) of the Rust language. Based on the definitions in the [@syntax::ast@
+crate of @rustc@](https://manishearth.github.io/rust-internals-docs/syntax/ast/index.html) whenever
+possible.
 -}
 {-# LANGUAGE DuplicateRecordFields, DeriveFunctor, PatternSynonyms #-}
 
@@ -50,8 +52,8 @@ data Abi
 -- Example: @bar: usize@ as in @fn foo(bar: usize)@
 data Arg a
   = Arg
-      { pat :: Maybe (Pat a)
-      , ty :: Ty a
+      { pat :: Maybe (Pat a) -- ^ argument pattern (may be restricted to 'IdentP' in some cases)
+      , ty :: Ty a           -- ^ type of argument
       , nodeInfo :: a
       }
   | SelfValue Mutability a                         -- ^ @self@, @mut self@
@@ -67,7 +69,7 @@ instance Located a => Located (Arg a) where
 
 -- | An arm of a 'Match' expression (@syntax::ast::Arm@).
 --
--- Example: @_ => { println!("match!") }@ as in @match n { _ => { println!("match!") } }@
+-- Example: @_ if 1 == 1 => { println!("match!") }@ as in @match n { _ if 1 == 1 => { println!("match!") } }@
 data Arm a
   = Arm
       { attrs :: [Attribute a]
@@ -84,8 +86,8 @@ instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
 -- Example: @"intel"@ as in @asm!("mov eax, 2" : "={eax}"(result) : : : "intel")@
 data AsmDialect = Att | Intel deriving (Eq, Enum, Bounded, Show)
 
--- | Attributes which annotate other AST nodes (@syntax::ast::Attribute@). Note that doc-comments
--- are promoted to attributes that have @isSugaredDoc = True@.
+-- | 'MetaItem's are annotations for other AST nodes (@syntax::ast::Attribute@). Note that
+-- doc-comments are promoted to attributes that have @isSugaredDoc = True@.
 --
 -- Example: @#[repr(C)]@ in @#[derive(Clone, Copy)] struct Complex { re: f32, im: f32 }@
 data Attribute a
@@ -98,7 +100,7 @@ data Attribute a
 
 instance Located a => Located (Attribute a) where spanOf (Attribute _ _ _ s) = spanOf s
 
--- | Distinguishes between Attributes that decorate what follows them and Attributes that are
+-- | Distinguishes between attributes that decorate what follows them and attributes that are
 -- describe the node that contains them (@syntax::ast::AttrStyle@). These two cases need to be
 -- distinguished only for pretty-printing - they are otherwise fundamentally equivalent.
 --
@@ -144,22 +146,20 @@ data BindingMode
 -- Example: @{ let x = 1; return x + y }@ as in @fn foo() { let x = 1; return x + y }@
 data Block a
   = Block
-      { stmts :: [Stmt a]       -- ^ Statements in the block. Note that the last statement in the
-                                -- block can always be a 'NoSemi' expression.
-      , rules :: BlockCheckMode -- ^ Distinguishes between regular (safe) blocks and unsafe blocks
-                                -- such as  @unsafe { x += 1 }@.
+      { stmts :: [Stmt a]  -- ^ Statements in the block. Note that the last statement in the block
+                           -- can always be a 'NoSemi' expression.
+      , rules :: Unsafety  -- ^ Distinguishes between regular (safe) blocks and unsafe blocks such
+                           -- as  @unsafe { x += 1 }@.
       , nodeInfo :: a
       } deriving (Eq, Show, Functor)
 
 instance Located a => Located (Block a) where spanOf (Block _ _ s) = spanOf s
  
--- https://docs.serde.rs/syntex_syntax/ast/enum.BlockCheckMode.html
--- Inlined [UnsafeSource](-- https://docs.serde.rs/syntex_syntax/ast/enum.UnsafeSource.html)
-data BlockCheckMode = DefaultBlock | UnsafeBlock { compilerGenerated :: Bool } deriving (Eq, Show)
-
--- | A capture clause
--- https://docs.serde.rs/syntex_syntax/ast/enum.CaptureBy.html
-data CaptureBy = Value | Ref deriving (Eq, Enum, Bounded, Show)
+-- | Describes how a 'Closure' should close over its free variables (@syntax::ast::CaptureBy@).
+data CaptureBy
+  = Value -- ^ make copies of free variables closed over (@move@ closures)
+  | Ref   -- ^ borrow free variables closed over
+  deriving (Eq, Enum, Bounded, Show)
 
 -- | Const annotation to specify if a function or method is allowed to be called in constants
 -- context with constant arguments (@syntax::ast::Constness@). [Relevant
@@ -179,107 +179,94 @@ data Crate a
 
 instance Located a => Located (Crate a) where spanOf (Crate _ _ _ s) = spanOf s
 
--- | The set of MetaItems that define the compilation environment of the crate, used to drive conditional compilation
+-- The set of MetaItems that define the compilation environment of the crate, used to drive conditional compilation
 -- https://docs.serde.rs/syntex_syntax/ast/type.CrateConfig.html
 type CrateConfig a = [MetaItem a]
 
--- https://docs.serde.rs/syntex_syntax/ast/enum.Defaultness.html
+-- | 'ImplItem's can be marked @default@ (@syntax::ast::Defaultness@).  
 data Defaultness = Default | Final deriving (Eq, Enum, Bounded, Show)
 
--- | An expression (@syntax::ast::Expr@). Note that Rust pushes into expressions an unusual number
+-- | Expression (@syntax::ast::Expr@). Note that Rust pushes into expressions an unusual number
 -- of constructs including @if@, @while@, @match@, etc.
 data Expr a
-  -- | A @box x@ expression.
+  -- | box expression (example:  @box x@)
   = Box [Attribute a] (Expr a) a
-  -- |  First expr is the place; second expr is the value.
+  -- | in-place expression - first 'Expr' is the place, second one is the value (example: @x <- y@)
   | InPlace [Attribute a] (Expr a) (Expr a) a
-  -- |  An array @[a, b, c, d]@ literal
+  -- | array literal (example: @[a, b, c, d]@)
   | Vec [Attribute a] [Expr a] a
-  -- | A function call. The first field resolves to the function itself, and the second field is the list of arguments
+  -- | function call where the first 'Expr' is the function itself, and the @['Expr']@ is the list of
+  -- arguments (example: @foo(1,2,x)@)
   | Call [Attribute a] (Expr a) [Expr a] a
-  -- | A method call @x.foo::<Bar, Baz>(a, b, c, d)@.
-  -- The Ident is the identifier for the method name. The vector of Tys are the ascripted
-  -- type parameters for the method (within the angle brackets).
-
-  -- The first element of the vector of Exprs is the expression that evaluates to the object on
-  -- which the method is being called on (the receiver), and the remaining elements are the rest
-  -- of the arguments.
-
-  -- Thus, @x.foo::<Bar, Baz>(a, b, c, d)@ is represented as
-  -- @ExprKind::MethodCall(foo, [Bar, Baz], [x, a, b, c, d])@. -}
-  | MethodCall [Attribute a] Ident [Ty a] (NonEmpty (Expr a)) a
-  -- |  A tuple (@(a, b, c ,d)@)
+  -- | method call where the first 'Expr' is the receiver, 'Ident' is the method name, @Maybe ['Ty']@
+  -- the list of type arguments and '[Expr]' the arguments to the method.
+  -- (example: @x.foo::\<Bar, Baz\>(a, b, c, d)@
+  | MethodCall [Attribute a] (Expr a) Ident (Maybe [Ty a]) [Expr a] a
+  -- | tuple (example: @(a, b, c ,d)@)
   | TupExpr [Attribute a] [Expr a] a
-  -- | A binary operation (For example: @a + b@, @a * b@)
+  -- | binary operation (example: @a + b@, @a * b@)
   | Binary [Attribute a] BinOp (Expr a) (Expr a) a
-  -- | A unary operation (For example: @!x@, @*x@)
+  -- | unary operation (example: @!x@, @*x@)
   | Unary [Attribute a] UnOp (Expr a) a
-  -- | A literal (For example: @1@, @"foo"@)
+  -- | literal (example: @1@, @"foo"@)
   | Lit [Attribute a] (Lit a) a
-  -- | A cast (`foo as f64`)
+  -- | cast (example: @foo as f64@)
   | Cast [Attribute a] (Expr a) (Ty a) a
-  -- | Experimental annotation
+  -- | type annotation (example: @x: i32@) 
   | TypeAscription [Attribute a] (Expr a) (Ty a) a
-  -- | An if block, with an optional else block `if expr { block } else { expr }`
+  -- | if expression, with an optional @else@ block. In the case the @else@ block is missing, the
+  -- type of the @if@ is inferred to be @()@. (example: @if 1 == 2 { (1,1) } else { (2,2) }@
   | If [Attribute a] (Expr a) (Block a) (Maybe (Expr a)) a
-  -- | An `if let` expression with an optional else block
-  -- `if let pat = expr { block } else { expr }`
-  -- This is desugared to a match expression.
+  -- | if-let expression with an optional else block (example: @if let Some(x) = None { () }@)
   | IfLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Expr a)) a
-  -- | A while loop, with an optional label `'label: while expr { block }`
+  -- | while loop, with an optional label (example: @'lbl: while 1 == 1 { break 'lbl }@)
   | While [Attribute a] (Expr a) (Block a) (Maybe (Lifetime a)) a
-  -- | A while-let loop, with an optional label
-  -- 'label: while let pat = expr { block }
-  -- This is desugared to a combination of loop and match expressions.
+  -- | while-let loop, with an optional label (example: @while let Some(x) = None { x }@)
   | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Lifetime a)) a
-  -- | A for loop, with an optional label
-  -- 'label: for pat in expr { block }
-  -- This is desugared to a combination of loop and match expressions.
+  -- | for loop, with an optional label (example: @for i in 1..10 { println!("{}",i) }@)
   | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Lifetime a)) a
-  -- | Conditionless loop (can be exited with break, continue, or return) 'label: loop { block }
+  -- | conditionless loop (can be exited with 'Break', 'Continue', or 'Ret')
   | Loop [Attribute a] (Block a) (Maybe (Lifetime a)) a
-  -- | A match block.
+  -- | match block
   | Match [Attribute a] (Expr a) [Arm a] a
-  -- | A closure (for example, `move |a, b, c| {a + b + c}`).
+  -- | closure (example: @move |a, b, c| { a + b + c }@)
   | Closure [Attribute a] CaptureBy (FnDecl a) (Expr a) a
-  -- | A block (`{ ... }`)
+  -- | (possibly unsafe) block (example: @unsafe { 1 }@)
   | BlockExpr [Attribute a] (Block a) a
-  -- | An assignment (a = foo())
+  -- | assignment (example: @a = foo()@)
   | Assign [Attribute a] (Expr a) (Expr a) a
-  -- | An assignment with an operator. For example, a += 1.
+  -- | assignment with an operator (example: @a += 1@)
   | AssignOp [Attribute a] BinOp (Expr a) (Expr a) a
-  -- | Access of a named struct field (obj.foo)
+  -- | access of a named struct field (example: @obj.foo@)
   | FieldAccess [Attribute a] (Expr a) Ident a
-  -- | Access of an unnamed field of a struct or tuple-struct. For example, foo.0.
+  -- | access of an unnamed field of a struct or tuple-struct (example: @foo.0@)
   | TupField [Attribute a] (Expr a) Int a
-  -- | An indexing operation (foo[2])
+  -- | indexing operation (example: @foo[2]@)
   | Index [Attribute a] (Expr a) (Expr a) a
-  -- | A range (1..2, 1.., ..2, 1...2, 1..., ...2)
+  -- | range (examples: @1..2@, @1..@, @..2@, @1...2@, @1...@, @...2@)
   | Range [Attribute a] (Maybe (Expr a)) (Maybe (Expr a)) RangeLimits a
-  -- | Variable reference, possibly containing :: and/or type parameters, e.g. foo::bar::.
-  -- Optionally "qualified", E.g. <Vec<T> as SomeTrait>::SomeType.
+  -- | variable reference 
   | PathExpr [Attribute a] (Maybe (QSelf a)) (Path a) a
-  -- | A referencing operation (&a or &mut a)
+  -- | referencing operation (example: @&a or &mut a@)
   | AddrOf [Attribute a] Mutability (Expr a) a
-  -- | A break, with an optional label to break
-  | Break [Attribute a] (Maybe (Lifetime a)) a
-  -- | A continue, with an optional label
+  -- | @break@ with an optional label and expression denoting what to break out of and what to
+  -- return (example: @break 'lbl 1@) 
+  | Break [Attribute a] (Maybe (Lifetime a)) (Maybe (Expr a)) a
+  -- | @continue@ with an optional label (example: @continue@)
   | Continue [Attribute a] (Maybe (Lifetime a)) a
-  -- | A return, with an optional value to be returned
+  -- | @return@ with an optional value to be returned (example: @return 1@)
   | Ret [Attribute a] (Maybe (Expr a)) a
-  -- | Output of the asm!() macro
+  -- | processed output of the @asm!()@ macro
   | InlineAsmExpr [Attribute a] (InlineAsm a) a
-  -- | A macro invocation; pre-expansion
+  -- | macro invocation before expansion
   | MacExpr [Attribute a] (Mac a) a
-  -- | A struct literal expression. For example, Foo {x: 1, y: 2}, or Foo {x: 1, .. base}, where
-  -- base is the (Maybe Expr).
+  -- | struct literal expression (examples: @Foo { x: 1, y: 2 }@ or @Foo { x: 1, ..base }@)
   | Struct [Attribute a] (Path a) [Field a] (Maybe (Expr a)) a
-  -- | An array literal constructed from one repeated element. For example, [1; 5]. The first
-  -- expression is the element to be repeated; the second is the number of times to repeat it.
+  -- | array literal constructed from one repeated element (example: @[1; 5]@)
   | Repeat [Attribute a] (Expr a) (Expr a) a
-  -- | No-op: used solely so we can pretty-print faithfully
+  -- | no-op: used solely so we can pretty-print faithfully
   | ParenExpr [Attribute a] (Expr a) a
-  -- | `expr?`
+  -- | sugar for error handling with @Result@ (example: @parsed_result?@)
   | Try [Attribute a] (Expr a) a
   deriving (Eq, Functor, Show)
 
@@ -288,7 +275,7 @@ instance Located a => Located (Expr a) where
   spanOf (InPlace _ _ _ s) = spanOf s
   spanOf (Vec _ _ s) = spanOf s
   spanOf (Call _ _ _ s) = spanOf s
-  spanOf (MethodCall _ _ _ _ s) = spanOf s
+  spanOf (MethodCall _ _ _ _ _ s) = spanOf s
   spanOf (TupExpr _ _ s) = spanOf s
   spanOf (Binary _ _ _ _ s) = spanOf s
   spanOf (Unary _ _ _ s) = spanOf s
@@ -312,7 +299,7 @@ instance Located a => Located (Expr a) where
   spanOf (Range _ _ _ _ s) = spanOf s
   spanOf (PathExpr _ _ _ s) = spanOf s
   spanOf (AddrOf _ _ _ s) = spanOf s
-  spanOf (Break _ _ s) = spanOf s
+  spanOf (Break _ _ _ s) = spanOf s
   spanOf (Continue _ _ s) = spanOf s
   spanOf (Ret _ _ s) = spanOf s
   spanOf (InlineAsmExpr _ _ s) = spanOf s
@@ -341,76 +328,88 @@ data FieldPat a
   = FieldPat
       { ident :: Maybe Ident -- ^ the field name 
       , pat :: Pat a         -- ^ the pattern the field is destructured to - must be 'IdentP'
-                             -- when the 'ident' field is 'Nothing'
+                             -- when the @ident@ field is 'Nothing'
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
 instance Located a => Located (FieldPat a) where spanOf (FieldPat _ _ s) = spanOf s
 
--- | Header (not the body) of a function declaration.
--- E.g. `fn foo(bar: baz)`
--- https://docs.serde.rs/syntex_syntax/ast/struct.FnDecl.html
+-- | Header (not the body) of a function declaration (@syntax::ast::FnDecl@).
+--
+-- Example: @(bar: i32) -> ()@ in @fn foo(bar: i32) -> ()@
 data FnDecl a
   = FnDecl
-      { inputs :: [Arg a]
-      -- | Inlined from [FunctionRetTy](https://docs.serde.rs/syntex_syntax/ast/enum.FunctionRetTy.html)
-      --    * Nothing -> Return type is not specified. Functions default to () and closures default to inference. Span points to where return type would be inserted.
-      --    * Right Ty -> Everything else
-      , output :: Maybe (Ty a)
-      , variadic :: Bool
+      { inputs :: [Arg a]      -- ^ argument list
+      , output :: Maybe (Ty a) -- ^ return type (inlined from @syntax::ast::FunctionRetTy@). When
+                               -- 'Nothing', functions default to @()@ and closures to inference.
+      , variadic :: Bool       -- ^ whether the argument list ends in @...@
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
 instance Located a => Located (FnDecl a) where spanOf (FnDecl _ _ _ s) = spanOf s
 
--- https://docs.serde.rs/syntex_syntax/ast/struct.ForeignItem.html
+-- | An item within an extern block (@syntax::ast::ForeignItem@).
+--
+-- Example: @static ext: u8@ in @extern "C" { static ext: u8 }@
 data ForeignItem a
   = ForeignItem
-      { ident :: Ident
-      , attrs :: [Attribute a]
-      , node :: ForeignItemKind a
-      , vis :: Visibility a
+      { ident :: Ident            -- ^ name of the item
+      , attrs :: [Attribute a]    -- ^ attributes attached to it
+      , node :: ForeignItemKind a -- ^ actual item
+      , vis :: Visibility a       -- ^ visibility
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
 instance Located a => Located (ForeignItem a) where spanOf (ForeignItem _ _ _ _ s) = spanOf s
 
--- | An item within an extern block
--- https://docs.serde.rs/syntex_syntax/ast/enum.ForeignItemKind.html
+-- | The kind of things that go in a 'ForeignItem' (@syntax::ast::ForeignItemKind@).
 data ForeignItemKind a
-  = ForeignFn (FnDecl a) (Generics a) -- ^ A foreign function
-  | ForeignStatic (Ty a) Bool         -- ^ A foreign static item (static ext: u8), with optional mutability (the boolean is true when mutable)
+  = ForeignFn (FnDecl a) (Generics a) -- ^ foreign function
+  | ForeignStatic (Ty a) Bool         -- ^ foreign static variable optionally mutable (as indicated by the 'Bool')
   deriving (Eq, Functor, Show)
 
--- | Represents lifetimes and type parameters attached to a declaration of a function, enum, trait, etc.
--- https://docs.serde.rs/syntex_syntax/ast/struct.Generics.html
+-- | Represents lifetimes and type parameters attached to a declaration of a functions, enums,
+-- traits, etc. (@syntax::ast::Generics@). Note that lifetime definitions are always required to be
+-- before the type parameters.
+--
+-- This one AST node is also a bit weird: it is the only node that whose source representation is
+-- not compact - the lifetimes and type parameters occur by themselves between @\<@ and @\>@ then a
+-- bit further the where clause occurs after a @where@.
+--
+-- Example: @\<\'a, \'b: \'c, T: \'a\>@ and @where Option\<T\>: Copy@
+-- in @fn nonsense\<\'a, \'b: \'c, T: \'a\>(x: i32) -\> i32 where Option\<T\>: Copy { 1 }@.
 data Generics a
   = Generics
-      { lifetimes :: [LifetimeDef a]
-      , tyParams :: [TyParam a]
-      , whereClause :: WhereClause a
+      { lifetimes :: [LifetimeDef a]  -- ^ lifetimes defined (possibly with bounds)
+      , tyParams :: [TyParam a]       -- ^ type parameters defined (possibly with bounds)
+      , whereClause :: WhereClause a  -- ^ constraints on the lifetimes and type parameters
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
 instance Located a => Located (Generics a) where spanOf (Generics _ _ _ s) = spanOf s
 
+-- | Most functions or paths have no generics at all, even if they /could/. To avoid having to write
+-- out an empty generics @'Generics' [] [] ('WhereClause' [] x) y@, this pattern lets you write
+-- the (slightly) abbreviated @'NoGenerics' x y@.
 pattern NoGenerics :: a -> a -> Generics a
 pattern NoGenerics x y = Generics [] [] (WhereClause [] x) y
 
--- https://docs.serde.rs/syntex_syntax/ast/struct.ImplItem.html
+-- | An item within an impl (@syntax::ast::ImplItem@).
+--
+-- Example: @const x: i32 = 1;@ in @impl MyTrait { const x: i32 = 1; }@
 data ImplItem a
   = ImplItem
-      { ident :: Ident
-      , vis :: Visibility a
-      , defaultness :: Defaultness
-      , attrs :: [Attribute a]
-      , node :: ImplItemKind a
+      { ident :: Ident             -- ^ name of the item
+      , vis :: Visibility a        -- ^ visibility
+      , defaultness :: Defaultness -- ^ whether it is marked @default@ or not
+      , attrs :: [Attribute a]     -- ^ attributes attached to it
+      , node :: ImplItemKind a     -- ^ actual item
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
 instance Located a => Located (ImplItem a) where spanOf (ImplItem _ _ _ _ _ s) = spanOf s
 
--- | Kinds of items that can go into impl\'s (@syntax::ast::ImplItemKind@).
+-- | The kind of things that go in an 'ImplItem' (@syntax::ast::ImplItemKind@).
 data ImplItemKind a
   = ConstI (Ty a) (Expr a)          -- ^ associated constants (example: @const ID: i32 = 1;@)
   | MethodI (MethodSig a) (Block a) -- ^ methods (example: @fn area(&self) -> f64 { 1f64 }@)
@@ -425,8 +424,9 @@ data ImplItemKind a
 -- Example: @!@ as in @impl !Trait for Foo { }@
 data ImplPolarity = Positive | Negative deriving (Eq, Enum, Bounded, Show)
 
--- Inline assembly. E.g. `asm!("NOP")`;
--- https://docs.serde.rs/syntex_syntax/ast/struct.InlineAsm.html
+-- | Expanded inline assembly macro (@syntax::ast::InlineAsm@).
+--
+-- Example: @asm!(\"NOP\")@
 data InlineAsm a
   = InlineAsm
       { asm :: String
@@ -440,9 +440,9 @@ data InlineAsm a
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
--- | Inline assembly.
--- E.g. "={eax}"(result) as in asm!("mov eax, 2" : "={eax}"(result) : : : "intel")`
--- https://docs.serde.rs/syntex_syntax/ast/struct.InlineAsmOutput.html
+-- | Outputs for inline assembly (@syntax::ast::InlineAsmOutput@)
+-- 
+-- Example: @"={eax}"(result)@ as in @asm!("mov eax, 2" : "={eax}"(result) : : : "intel")@
 data InlineAsmOutput a
   = InlineAsmOutput
       { constraint :: String
@@ -453,93 +453,99 @@ data InlineAsmOutput a
 
 instance Located a => Located (InlineAsm a) where spanOf (InlineAsm _ _ _ _ _ _ _ _ s) = spanOf s
 
--- | An item
--- The name might be a dummy name in case of anonymous items
--- https://docs.serde.rs/syntex_syntax/ast/struct.Item.html
+
+-- | A top-level item, possibly in a 'Mod' or a 'ItemStmt' (@syntax::ast::Item@). Note that the name
+-- may be a dummy name.
 data Item a
   = Item
-      { ident :: Ident
-      , attrs :: [Attribute a]
-      , node :: ItemKind a
-      , vis :: Visibility a
+      { ident :: Ident         -- ^ name of the item
+      , attrs :: [Attribute a] -- ^ attributes attached to it
+      , node :: ItemKind a     -- ^ actual item
+      , vis :: Visibility a    -- ^ visibility
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
 instance Located a => Located (Item a) where spanOf (Item _ _ _ _ s) = spanOf s
 
+-- | Kinds of things that can go into items (@syntax::ast::ItemKind@).
 data ItemKind a
-  -- | An extern crate item, with optional original crate name.
-  -- E.g. extern crate foo or extern crate foo_bar as foo
+  -- | extern crate item, with optional original crate name.
+  -- Examples: @extern crate foo@ or @extern crate foo_bar as foo@
   = ExternCrate (Maybe Ident)
-  -- | A use declaration (use or pub use) item.
-  -- E.g. use foo;, use foo::bar; or use foo::bar as FooBar;
+  -- | use declaration (@use@ or @pub use@) item.
+  -- Examples: @use foo;@, @use foo::bar;@, or @use foo::bar as FooBar;@
   | Use (ViewPath a)
-  -- | A static item (static or pub static).
-  -- E.g. static FOO: i32 = 42; or static FOO: &'static str = "bar";
+  -- | static item (@static@ or @pub static@).
+  -- Examples: @static FOO: i32 = 42;@ or @static FOO: &'static str = "bar";@
   | Static (Ty a) Mutability (Expr a)
-  -- | A constant item (const or pub const).
-  -- E.g. const FOO: i32 = 42;
+  -- | constant item (@const@ or @pub const@).
+  -- Example: @const FOO: i32 = 42;@
   | ConstItem (Ty a) (Expr a)
-  -- | A function declaration (fn or pub fn).
-  -- E.g. fn foo(bar: usize) -> usize { .. }
+  -- | function declaration (@fn@ or @pub fn@).
+  -- Example: @fn foo(bar: usize) -\> usize { .. }@
   | Fn (FnDecl a) Unsafety Constness Abi (Generics a) (Block a)
-  -- | A module declaration (mod or pub mod).
-  -- E.g. mod foo; or mod foo { .. }
-  -- Inlined [Mod](https://docs.serde.rs/syntex_syntax/ast/struct.Mod.html)
+  -- | module declaration (@mod@ or @pub mod@) (@syntax::ast::Mod@).
+  -- Example: @mod foo;@ or @mod foo { .. }@
   | Mod { items :: [Item a] }
-  -- | An external module (extern or pub extern).
-  -- E.g. extern { .. } or extern C { .. }
-  -- Inlined [ForeignMod](https://docs.serde.rs/syntex_syntax/ast/struct.ForeignMod.html)
+  -- | external module (@extern@ or @pub extern@) (@syntax::ast::ForeignMod@).
+  -- Example: @extern { .. }@ or @extern \"C\" { .. }@
   | ForeignMod { abi :: Abi, foreignItems :: [ForeignItem a] }
-  -- | A type alias (type or pub type).
-  -- E.g. type Foo = Bar<u8>;
+  -- | type alias (@type@ or @pub type@).
+  -- Example: @type Foo = Bar\<u8\>;@
   | TyAlias (Ty a) (Generics a)
-  -- | An enum definition (enum or pub enum).
-  -- E.g. enum Foo<A, B> { C<A>, D<B> }
-  -- Inlined [EnumDef](https://docs.serde.rs/syntex_syntax/ast/struct.EnumDef.html)
+  -- | enum definition (@enum@ or @pub enum@) (@syntax::ast::EnumDef@).
+  -- Example: @enum Foo\<A, B\> { C\<A\>, D\<B\> }@
   | Enum [Variant a] (Generics a)
-  -- | A struct definition (struct or pub struct).
-  -- E.g. struct Foo<A> { x: A }
+  -- | struct definition (@struct@ or @pub struct@).
+  -- Example: @struct Foo\<A\> { x: A }@
   | StructItem (VariantData a) (Generics a)
-  -- | A union definition (union or pub union).
-  -- E.g. union Foo<A, B> { x: A, y: B }
+  -- | union definition (@union@ or @pub union@).
+  -- Example: @union Foo\<A, B\> { x: A, y: B }@
   | Union (VariantData a) (Generics a)
-  -- | A Trait declaration (trait or pub trait).
-  -- E.g. trait Foo { .. } or trait Foo<T> { .. }
+  -- | trait declaration (@trait@ or @pub trait@).
+  -- Example: @trait Foo { .. }@ or @trait Foo\<T\> { .. }@
   | Trait Unsafety (Generics a) [TyParamBound a] [TraitItem a]
-  -- | E.g. impl Trait for .. {} or impl<T> Trait<T> for .. {}
+  -- | default implementation
+  -- [(RFC for impl
+  -- specialization)](https://github.com/rust-lang/rfcs/blob/master/text/1210-impl-specialization.md)
+  -- Examples: @impl Trait for .. {}@ or @impl\<T\> Trait\<T\> for .. {}@
   | DefaultImpl Unsafety (TraitRef a)
-  -- | An implementation.
-  -- E.g. impl<A> Foo<A> { .. } or impl<A> Trait for Foo<A> { .. }
+  -- | implementation
+  -- Example: @impl\<A\> Foo\<A\> { .. }@ or @impl\<A\> Trait for Foo\<A\> { .. }@
   | Impl Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a]
-  -- | A macro invocation (which includes macro definition).
-  -- E.g. macro_rules! foo { .. } or foo!(..)
+  -- | generated from a call to a macro 
+  -- Example: @macro_rules! foo { .. }@ or @foo!(..)@
   | MacItem (Mac a)
   deriving (Eq, Functor, Show)
 
--- | A Kleene-style repetition operator for token sequences.
--- https://docs.serde.rs/syntex_syntax/tokenstream/enum.KleeneOp.html
+-- | A Kleene-style repetition operator for token sequences (@syntax::ast::KleeneOp@). This refers
+-- to the @*@ or @+@ suffix on a 'Sequence' token tree. 
+--
+-- Examples: @+@ as in @$($inits:expr),+@
 data KleeneOp = ZeroOrMore | OneOrMore deriving (Eq, Enum, Bounded, Show)
 
--- | A lifetime
--- https://docs.serde.rs/syntex_syntax/ast/struct.Lifetime.html
+-- | A lifetime is a name for a scope in a program (@syntax::ast::Lifetime@). One of the novel
+-- features of Rust is that code can be parametrized over lifetimes. Syntactically, they are like
+-- regular identifiers, but start with a tick @\'@ mark.
+--
+-- Examples: @\'a@ or @\'static@
 data Lifetime a
   = Lifetime
-      { name :: Name
+      { name :: Name   -- ^ string that is the actual name part (so omits the tick @\'@)
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
 instance Located a => Located (Lifetime a) where spanOf (Lifetime _ s) = spanOf s
 
--- pattern synonym (Static s) = Lifetime (Name "'static") s
-
--- | A lifetime definition, e.g. 'a: 'b+'c+'d
--- https://docs.serde.rs/syntex_syntax/ast/struct.LifetimeDef.html
+-- | A lifetime definition, introducing a lifetime and the other lifetimes that bound it
+-- (@syntax::ast::LifetimeDef@).
+--
+-- Example: @\'a: \'b+\'c+\'d@
 data LifetimeDef a
   = LifetimeDef
-      { attrs :: [Attribute a]
-      , lifetime :: Lifetime a
-      , bounds :: [Lifetime a]
+      { attrs :: [Attribute a]   -- ^ attributes attached to the lifetime definition
+      , lifetime :: Lifetime a   -- ^ lifetime being defined (@\'a@ in the example)
+      , bounds :: [Lifetime a]   -- ^ other lifetimes which bound it (@\'b+\'c+\'d@ in the example)
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
@@ -609,29 +615,22 @@ suffix (Float _ s _) = s
 suffix (Bool _ s _) = s 
 
 
--- | Represents a macro invocation. The Path indicates which macro is being invoked, and the vector of
--- token-trees contains the source of the macro invocation.
+-- | Represents a macro invocation (@syntax::ast::Mac@). The 'Path' indicates which macro is being
+-- invoked, and the 'TokenTree's contains the source of the macro invocation.
 --
--- NB: the additional ident for a macro_rules-style macro is actually stored in the enclosing item. Oog.
--- https://docs.serde.rs/syntex_syntax/ast/type.Mac.html
--- https://docs.serde.rs/syntex_syntax/ast/struct.Mac_.html
-data Mac a
-  = Mac
-      { path :: Path a
-      , tts :: [TokenTree]
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show)
+-- Quoted from the source "NB: the additional ident for a macro_rules-style macro is actually
+-- stored in the enclosing item. Oog."
+data Mac a = Mac (Path a) [TokenTree] a deriving (Eq, Functor, Show)
 
 instance Located a => Located (Mac a) where spanOf (Mac _ _ s) = spanOf s
 
--- https://docs.serde.rs/syntex_syntax/ast/enum.MacStmtStyle.html
+-- | Style of the macro statement (@syntax::ast::MacStmtStyle@).
 data MacStmtStyle
-  = SemicolonMac -- ^ The macro statement had a trailing semicolon, e.g. foo! { ... }; foo!(...);, foo![...];
-  | BracesMac    -- ^ The macro statement had braces; e.g. foo! { ... }
-  | NoBracesMac  -- ^ The macro statement had parentheses or brackets and no semicolon; e.g. foo!(...). All of these will end up being converted into macro expressions.
+  = SemicolonMac -- ^ trailing semicolon (example: @foo! { ... };@, @ foo!(...);@, and @foo![...];@)
+  | BracesMac    -- ^ braces (example: @foo! { ... }@)
   deriving (Eq, Enum, Bounded, Show)
 
--- | A macro definition, in this crate or imported from another.
+-- A macro definition, in this crate or imported from another.
 -- Not parsed directly, but created on macro import or macro_rules! expansion.
 -- https://docs.serde.rs/syntex_syntax/ast/struct.MacroDef.html
 data MacroDef a
@@ -648,15 +647,11 @@ data MacroDef a
 
 instance Located a => Located (MacroDef a) where spanOf (MacroDef _ _ _ _ _ _ _ s) = spanOf s
 
--- | A compile-time attribute item.
--- E.g. #[test], #[derive(..)] or #[feature = "foo"]
--- https://docs.serde.rs/syntex_syntax/ast/type.MetaItem.html
--- https://docs.serde.rs/syntex_syntax/ast/enum.MetaItemKind.html
--- https://docs.serde.rs/syntex_syntax/ast/enum.NestedMetaItemKind.html
+-- | Compile-time attribute item (@syntax::ast::MetaItem@)
 data MetaItem a
-  = Word Ident a                    -- ^ Word meta item.        E.g. test as in #[test]
-  | List Ident [NestedMetaItem a] a -- ^ List meta item.        E.g. derive(..) as in #[derive(..)]
-  | NameValue Ident (Lit a) a       -- ^ Name value meta item.  E.g. feature = "foo" as in #[feature = "foo"]
+  = Word Ident a                    -- ^ @test@ as in @#[test]@
+  | List Ident [NestedMetaItem a] a -- ^ @derive(..)@ as in @#[derive(..)]@
+  | NameValue Ident (Lit a) a       -- ^ @feature = "foo"@ as in @#[feature = "foo"]@
   deriving (Eq, Functor, Show)
 
 instance Located a => Located (MetaItem a) where
@@ -665,33 +660,23 @@ instance Located a => Located (MetaItem a) where
   spanOf (NameValue _ _ s) = spanOf s
 
 -- | Represents a method's signature in a trait declaration, or in an implementation.
--- https://docs.serde.rs/syntex_syntax/ast/struct.MethodSig.html
-data MethodSig a
-  = MethodSig
-      { unsafety :: Unsafety
-      , constness :: Constness
-      , abi :: Abi
-      , decl :: FnDecl a
-      , generics :: Generics a
-      } deriving (Eq, Functor, Show)
+data MethodSig a = MethodSig Unsafety Constness Abi (FnDecl a) (Generics a) deriving (Eq, Functor, Show)
 
 -- | Encodes whether something can be updated or changed (@syntax::ast::Mutability@).
 data Mutability = Mutable | Immutable deriving (Eq, Enum, Bounded, Show)
 
--- | Possible values inside of compile-time attribute lists.
--- E.g. the '..' in #[name(..)].
--- https://docs.serde.rs/syntex_syntax/ast/enum.NestedMetaItemKind.html
+-- | Possible values inside of 'MetaItem's. This needs to be seperate from 'MetaItem' in order to
+-- disallow literals in (top-level) 'MetaItem's. 
 data NestedMetaItem a
-  = MetaItem (MetaItem a) a -- ^ A full MetaItem, for recursive meta items.
-  | Literal (Lit a) a       -- ^ A literal. E.g. "foo", 64, true
+  = MetaItem (MetaItem a) a -- ^ full 'MetaItem', for recursive meta items.
+  | Literal (Lit a) a       -- ^ literal (example: @\"foo\"@, @64@, @true@)
   deriving (Eq, Functor, Show)
 
 instance Located a => Located (NestedMetaItem a) where
   spanOf (MetaItem _ s) = spanOf s
   spanOf (Literal _ s) = spanOf s
 
--- | For interpolation during macro expansion.
--- https://docs.serde.rs/syntex_syntax/parse/token/enum.Nonterminal.html
+-- | For interpolation during macro expansion (@syntax::ast::NonTerminal@).
 data Nonterminal a
   = NtItem (Item a)
   | NtBlock (Block a)
@@ -711,40 +696,36 @@ data Nonterminal a
   | NtArg (Arg a)
   deriving (Eq, Functor, Show)
 
--- https://docs.serde.rs/syntex_syntax/ast/struct.Pat.html
--- Inlined [PatKind][https://docs.serde.rs/syntex_syntax/ast/enum.PatKind.html]
+-- | Patterns (@syntax::ast::Pat@).
 data Pat a
-  -- | Represents a wildcard pattern (_)
+  -- | wildcard pattern: @_@
   = WildP a
-  -- | A PatKind::Ident may either be a new bound variable (ref mut binding @ OPT_SUBPATTERN), or a unit
-  -- struct/variant pattern, or a const pattern (in the last two cases the third field must be None). Disambiguation
-  -- cannot be done with parser alone, so it happens during name resolution.
+  -- | identifier pattern - either a new bound variable or a unit (tuple) struct pattern, or a
+  -- const pattern. Disambiguation cannot be done with parser alone, so it happens during name
+  -- resolution. (example: @mut x@)
   | IdentP BindingMode Ident (Maybe (Pat a)) a
-  -- | A struct or struct variant pattern, e.g. Variant {x, y, ..}. The bool is true in the presence of a ...
+  -- | struct pattern. The 'Bool' signals the presence of a @..@. (example: @Variant { x, y, .. }@)
   | StructP (Path a) [FieldPat a] Bool a
-  -- | A tuple struct/variant pattern Variant(x, y, .., z). If the .. pattern fragment is present, then
-  -- (Maybe usize) denotes its position. 0 <= position <= subpats.len()
+  -- | tuple struct pattern. If the @..@ pattern is present, the 'Maybe Int' denotes its position.
+  -- (example: @Variant(x, y, .., z)@)
   | TupleStructP (Path a) [Pat a] (Maybe Int) a
-  -- | A possibly qualified path pattern. Unqualified path patterns A::B::C can legally refer to variants, structs,
-  -- constants or associated constants. Qualified path patterns <A>::B::C/<A as Trait>::B::C can only legally refer to
-  -- associated constants.
+  -- | path pattern (example @A::B::C@)
   | PathP (Maybe (QSelf a)) (Path a) a
-  -- | A tuple pattern (a, b). If the .. pattern fragment is present, then (Maybe usize) denotes its position.
-  -- 0 <= position <= subpats.len()
+  -- | tuple pattern. If the @..@ pattern is present, the 'Maybe Int' denotes its position.
+  -- (example: @(a, b)@)
   | TupleP [Pat a] (Maybe Int) a
-  -- | A box pattern
+  -- | box pattern (example: @box _@)
   | BoxP (Pat a) a
-  -- | A reference pattern, e.g. &mut (a, b)
+  -- | reference pattern (example: @&mut (a, b)@)
   | RefP (Pat a) Mutability a
-  -- | A literal
-  | LitP (Expr a) a -- TODO: why not have (Lit a) directly instead of (Expr a)
-  -- | A range pattern, e.g. 1...2
+  -- | literal (example: @1@)
+  | LitP (Expr a) a
+  -- | range pattern (example: @1...2@)
   | RangeP (Expr a) (Expr a) a
-  -- | [a, b, ..i, y, z] is represented as: PatKind::Slice(box [a, b], Some(i), box [y, z])
-  -- [1,2,3] can be (SliceP [1,2,3] Nothing []) or (SliceP [1,2] Nothing [3]) or ...
-  -- [1,..,3] is (SliceP [1] (Just WildP) [3])
+  -- | slice pattern where, as per [this RFC](https://github.com/P1start/rfcs/blob/array-pattern-changes/text/0000-array-pattern-changes.md),
+  -- the pattern is split into the patterns before/after the @..@ and the pattern at the @..@. (example: @[a, b, ..i, y, z]@)
   | SliceP [Pat a] (Maybe (Pat a)) [Pat a] a
-  -- | A macro pattern; pre-expansion
+  -- | generated from a call to a macro (example: @LinkedList!(1,2,3)@)
   | MacP (Mac a) a
   deriving (Eq, Functor, Show)
 
@@ -791,70 +772,65 @@ data PathListItem a
 
 instance Located a => Located (PathListItem a) where spanOf (PathListItem _ _ s) = spanOf s
 
--- | Parameters of a path segment.
--- E.g. <A, B> as in Foo<A, B> or (A, B) as in Foo(A, B)
--- https://docs.serde.rs/syntex_syntax/ast/enum.PathParameters.html
+-- | Parameters on a path segment (@syntax::ast::PathParameters@).
 data PathParameters a
-  -- | The <'a, A,B,C> in foo::bar::baz::<'a, A,B,C> - A path like `Foo<'a, T>`
-  -- Inlined [AngleBracketedParameterData](https://docs.serde.rs/syntex_syntax/ast/struct.AngleBracketedParameterData.html)
-  -- Inlinde [TypeBinding](https://docs.serde.rs/syntex_syntax/ast/struct.TypeBinding.html)
+  -- | Parameters in a chevron comma-delimited list (@syntax::ast::AngleBracketedParameterData@).
+  -- Note that lifetimes must come before types, which must come before bindings. 
+  --
+  -- Example: @\<\'a,A,B,C=i32\>@ in a path segment like @foo::\<'a,A,B,C=i32\>@
   = AngleBracketed
-      { lifetimes :: [Lifetime a]   -- ^ The lifetime parameters for this path segment.
-      , types :: [Ty a]             -- ^ The type parameters for this path segment, if present.
-      , bindings :: [(Ident, Ty a)] -- ^ Bindings (equality constraints) on associated types, if present. E.g., `Foo<A=Bar>`.
+      { lifetimes :: [Lifetime a]   -- ^ lifetime parameters
+      , types :: [Ty a]             -- ^ type parameters
+      , bindings :: [(Ident, Ty a)] -- ^ bindings (equality constraints) on associated types (example: @Foo\<A=Bar\>@)
       , nodeInfo :: a
       }
-  -- | A path like `Foo(A,B) -> C`
-  -- Inlined [ParenthesizedParameterData](https://docs.serde.rs/syntex_syntax/ast/struct.ParenthesizedParameterData.html)
+  -- | Parameters in a parenthesized comma-delimited list, with an optional output type
+  -- (@syntax::ast::ParenthesizedParameterData@).
+  --
+  -- Example: @(A,B) -\> C@ in a path segment @Foo(A,B) -\> C@
   | Parenthesized
-      { inputs :: [Ty a]       -- ^ `(A,B)`
-      , output :: Maybe (Ty a) -- ^ `C`
+      { inputs :: [Ty a]            -- ^ input type parameters (@A@ and @B@ in the example)
+      , output :: Maybe (Ty a)      -- ^ output type parameter (@C@ in the example)
       , nodeInfo :: a
       }
+  -- | No parameters. Note that in @syntax::ast::PathParameters@, this variant does not exist - it
+  -- is considered a subcase of 'AngleBracketed'. However, I want to be able to distinguish between
+  -- @foo<>@ and @foo@ for faithful pretty-printing purposes.
+  | NoParameters a
   deriving (Eq, Functor, Show)
 
 instance Located a => Located (PathParameters a) where
   spanOf (AngleBracketed _ _ _ s) = spanOf s
   spanOf (Parenthesized _ _ s) = spanOf s
+  spanOf (NoParameters s) = spanOf s
 
-pattern NoParameters :: a -> PathParameters a
-pattern NoParameters x = AngleBracketed [] [] [] x
-
--- https://docs.serde.rs/syntex_syntax/ast/struct.PolyTraitRef.html
+-- | Trait ref parametrized over lifetimes introduced by a @for@ (@syntax::ast::PolyTraitRef@).
+--
+-- Example: @for\<\'a\> Foo\<&\'a Bar\>@ 
 data PolyTraitRef a
   = PolyTraitRef
-      { boundLifetimes :: [LifetimeDef a] -- ^ The `'a` in `<'a> Foo<&'a T>`
-      , traitRef :: TraitRef a            -- ^ The `Foo<&'a T>` in `<'a> Foo<&'a T>`
+      { boundLifetimes :: [LifetimeDef a] -- ^ lifetime introduced (@\'a'@ in the example)
+      , traitRef :: TraitRef a            -- ^ trait ref using those lifetimes (@Foo\<&\'a T\>@ in the example)
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
 instance Located a => Located (PolyTraitRef a) where spanOf (PolyTraitRef _ _ s) = spanOf s 
 
--- |The explicit Self type in a "qualified path". The actual path, including the trait and the associated item, is stored
--- separately. position represents the index of the associated item qualified with this Self type.
-
--- <Vec<T> as a::b::Trait>::AssociatedItem
---  ^~~~~     ~~~~~~~~~~~~~~^
---  ty        position = 3
-
--- <Vec<T>>::AssociatedItem
---  ^~~~~    ^
---  ty       position = 0 
--- https://docs.serde.rs/syntex_syntax/ast/struct.QSelf.html
+-- | The explicit @Self@ type in a "qualified path". The actual path, including the trait and the
+-- associated item, is stored separately.
 data QSelf a
   = QSelf
-      { ty :: Ty a
-      , position :: Int
+      { ty :: Ty a       -- ^ type given to @Self@
+      , position :: Int  -- ^ index of the associated qualified with this @Self@ type
       } deriving (Eq, Functor, Show)
 
--- | Limit types of a range (inclusive or exclusive)
--- https://docs.serde.rs/syntex_syntax/ast/enum.RangeLimits.html
+-- | Limit types of a 'Range'
 data RangeLimits
   = HalfOpen -- ^ Inclusive at the beginning, exclusive at the end
   | Closed   -- ^ Inclusive at the beginning and end
   deriving (Eq, Enum, Bounded, Show)
 
--- | A statement (@syntax::ast::Stmt@). Rust has relatively few types of statements by allowing both
+-- | A statement (@syntax::ast::Stmt@). Rust has relatively few types of statements by turning both
 -- expressions (sometimes with a required semicolon at the end) and items into statements.
 data Stmt a
   -- | A local @let@ binding (@syntax::ast::Local@) (example: @let x: i32 = 1;@)
@@ -884,18 +860,19 @@ instance Located a => Located (Stmt a) where
 
 -- | Style of a string literal (@syntax::ast::StrStyle@).
 data StrStyle
-  = Cooked     -- ^ regular strings (example: @"foo"@)
-  | Raw Int    -- ^ raw strings, with the number of @#@ delimiters (example: @r##"foo"##@)
+  = Cooked     -- ^ regular strings (example: @\"foo\"@)
+  | Raw Int    -- ^ raw strings, with the number of @#@ delimiters (example: @r##\"foo\"##@)
   deriving (Eq, Show)
 
--- | Field of a struct. E.g. bar: usize as in struct Foo { bar: usize }
--- https://docs.serde.rs/syntex_syntax/ast/struct.StructField.html
+-- | Field of a struct (@syntax::ast::StructField@) used in declarations
+--
+-- Example: @bar: usize@ as in @struct Foo { bar: usize }@
 data StructField a
   = StructField
-      { ident :: Maybe Ident
-      , vis :: Visibility a
-      , ty :: Ty a
-      , attrs :: [Attribute a]
+      { ident :: Maybe Ident    -- ^ name of field
+      , vis :: Visibility a     -- ^ visibility of the field
+      , ty :: Ty a              -- ^ type of the field
+      , attrs :: [Attribute a]  -- ^ attributes on the field
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
@@ -911,8 +888,6 @@ instance Located a => Located (StructField a) where spanOf (StructField _ _ _ _ 
 --
 -- The RHS of an MBE macro is the only place SubstNts are substituted. Nothing special happens to misnamed or
 -- misplaced SubstNts.
---
--- https://docs.serde.rs/syntex_syntax/tokenstream/enum.TokenTree.html
 data TokenTree
   -- | A single token
   = Token Span Token
@@ -940,19 +915,18 @@ instance Located TokenTree where
   spanOf (Delimited s _ _ _ _) = s
   spanOf (Sequence s _ _ _) = s
 
--- | A modifier on a bound, currently this is only used for ?Sized, where the modifier is Maybe. Negative
+-- | A modifier on a bound, currently this is only used for @?Sized@, where the modifier is @Maybe@. Negative
 -- bounds should also be handled here.
 data TraitBoundModifier = None | Maybe deriving (Eq, Enum, Bounded, Show)
 
--- | Represents an item declaration within a trait declaration, possibly including a default implementation.
--- A trait item is either required (meaning it doesn't have an implementation, just a signature) or provided
--- (meaning it has a default implementation).
--- https://docs.serde.rs/syntex_syntax/ast/struct.TraitItem.html
+-- | item declaration within a trait declaration (@syntax::ast::TraitItem@), possibly including a default
+-- implementation. A trait item is either required (meaning it doesn't have an implementation, just a
+-- signature) or provided (meaning it has a default implementation).
 data TraitItem a
   = TraitItem
-      { ident :: Ident
-      , attrs :: [Attribute a]
-      , node :: TraitItemKind a
+      { ident :: Ident             -- ^ name of the item
+      , attrs :: [Attribute a]     -- ^ attributes attached to it
+      , node :: TraitItemKind a    -- ^ actual item
       , nodeInfo :: a
       } deriving (Eq, Functor, Show)
 
@@ -979,42 +953,41 @@ data TraitRef a
 
 instance Located a => Located (TraitRef a) where spanOf (TraitRef _ s) = spanOf s
 
--- | The different kinds of types recognized by the compiler
--- Inlined [TyKind](https://docs.serde.rs/syntex_syntax/ast/enum.TyKind.html)
--- Inlined [MutTy](https://docs.serde.rs/syntex_syntax/ast/struct.MutTy.html)
--- https://docs.serde.rs/syntex_syntax/ast/struct.Ty.html
+-- | Types (@syntax::ast::Ty@).
 data Ty a
-  -- | A variable-length slice ([T])
+  -- | variable-length slice (example: @[T]@)
   = Slice (Ty a) a
-  -- | A fixed length array ([T; n])
+  -- | fixed length array (example: @[T; n]@)
   | Array (Ty a) (Expr a) a
-  -- | A raw pointer (*const T or *mut T)
+  -- | raw pointer (example: @*const T@ or @*mut T@)
   | Ptr Mutability (Ty a) a
-  -- | A reference (&'a T or &'a mut T)
+  -- | reference (example: @&\'a T@ or @&\'a mut T@)
   | Rptr (Maybe (Lifetime a)) Mutability (Ty a) a
-  -- | A bare function (e.g. fn(usize) -> bool)
-  -- Inlined [BareFnTy](-- https://docs.serde.rs/syntex_syntax/ast/struct.BareFnTy.html)
-  | BareFn { unsafety :: Unsafety, abi :: Abi, lifetimes :: [LifetimeDef a], decl :: FnDecl a, nodeInfo :: a }
-  -- | The never type (!)
+  -- | bare function (example: @fn(usize) -> bool@)
+  | BareFn Unsafety Abi [LifetimeDef a] (FnDecl a) a
+  -- | never type: @!@
   | Never a
-  -- | A tuple ((A, B, C, D,...))
+  -- | tuple (example: @(i32, i32)@)
   | TupTy [Ty a] a
-  -- | A path (module::module::...::Type), optionally "qualified", e.g. <Vec<T> as SomeTrait>::SomeType.
-  -- Type parameters are stored in the Path itself
+  -- | path type (examples: @std::math::pi@, @\<Vec\<T\> as SomeTrait\>::SomeType@).
   | PathTy (Maybe (QSelf a)) (Path a) a
-  -- | Something like A+B. Note that B must always be a path.
+  -- | object sum (example: @A+B@)
   | ObjectSum (Ty a) [TyParamBound a] a
-  -- | A type like for<'a> Foo<&'a Bar>
-  | PolyTraitRefTy (NonEmpty (TyParamBound a)) a
-  -- | An impl TraitA+TraitB type.
+  -- | trait object (example: @Bound1 + Bound2 + Bound3@)
+  | TraitObject (NonEmpty (TyParamBound a)) a
+  -- | impl trait type (see the
+  -- [RFC](https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md))
+  -- (example: @impl Bound1 + Bound2 + Bound3@).
   | ImplTrait (NonEmpty (TyParamBound a)) a
-  -- | No-op; kept solely so that we can pretty-print faithfully
+  -- | no-op; kept solely so that we can pretty-print faithfully
   | ParenTy (Ty a) a
-  -- | Unused for now
+  -- | typeof, currently unsupported in @rustc@ (example: @typeof(1)@)
   | Typeof (Expr a) a
-  -- | TyKind::Infer means the type should be inferred instead of it having been specified. This can appear anywhere in a type.
+  -- | inferred type: @_@
   | Infer a
+  -- | self type: @Self@
   | ImplicitSelf a
+  -- | generated from a call to a macro (example: @HList![i32,(),u8]@)
   | MacTy (Mac a) a
   deriving (Eq, Functor, Show)
 
@@ -1028,7 +1001,7 @@ instance Located a => Located (Ty a) where
   spanOf (TupTy _ s) = spanOf s
   spanOf (PathTy _ _ s) = spanOf s
   spanOf (ObjectSum _ _ s) = spanOf s
-  spanOf (PolyTraitRefTy _ s) = spanOf s
+  spanOf (TraitObject _ s) = spanOf s
   spanOf (ImplTrait _ s) = spanOf s
   spanOf (ParenTy _ s) = spanOf s
   spanOf (Typeof _ s) = spanOf s
@@ -1048,12 +1021,11 @@ data TyParam a
 
 instance Located a => Located (TyParam a) where spanOf (TyParam _ _ _ _ s) = spanOf s
 
--- | The AST represents all type param bounds as types. typeck::collect::compute_bounds matches these against the
--- "special" built-in traits (see middle::lang_items) and detects Copy, Send and Sync.
--- https://docs.serde.rs/syntex_syntax/ast/enum.TyParamBound.html
+-- | Bounds that can be placed on types (@syntax::ast::TyParamBound@). These can be either traits or
+-- lifetimes.
 data TyParamBound a
-  = TraitTyParamBound (PolyTraitRef a) TraitBoundModifier
-  | RegionTyParamBound (Lifetime a)
+  = TraitTyParamBound (PolyTraitRef a) TraitBoundModifier -- ^ trait bound
+  | RegionTyParamBound (Lifetime a)                       -- ^ lifetime bound
   deriving (Eq, Functor, Show)
 
 -- | Partion a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and 'RegionTyParamBound' variants.
@@ -1071,7 +1043,10 @@ data UnOp
   | Neg   -- ^ @-@ operator (negation)
   deriving (Eq, Enum, Bounded, Show)
 
--- | Qualifies whether something is using unsafe Rust or not (@syntax::ast::Unsafety@).
+-- | Qualifies whether something is using unsafe Rust or not (@syntax::ast::Unsafety@). Note that we
+-- also use this to describe whether a 'Block' is unsafe or not, while Rust has a seperate structure
+-- (@syntax::ast::BlockCheckMode@) for that. This is because they also need to keep track of whether
+-- an unsafe block is compiler generated.
 data Unsafety = Unsafe | Normal deriving (Eq, Enum, Bounded, Show)
 
 -- https://docs.serde.rs/syntex_syntax/ast/type.Variant.html
@@ -1109,7 +1084,7 @@ data ViewPath a
   = ViewPathSimple Bool [Ident] (PathListItem a) a
   -- | A regular mod path ending in a glob pattern
   --
-  -- Examples: @foo::bar::*@
+  -- Example: @foo::bar::*@
   | ViewPathGlob Bool (NonEmpty Ident) a
   -- | A regular mod path ending in a list of identifiers or renamed identifiers.
   --

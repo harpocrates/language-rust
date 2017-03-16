@@ -15,7 +15,7 @@ ghci> import Language.Rust.Syntax.AST
 ghci> import Language.Rust.Pretty
 ghci> decl = FnDecl [SelfRegion Nothing Immutable ()] (Just (Never ())) False ()
 decl :: FnDecl ()
-ghci> fn = Fn decl Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [] DefaultBlock ()) ()
+ghci> fn = Fn decl Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [] Normal ()) ()
 fn :: ItemKind ()
 ghci> pretty (Item "foo" [] fn PublicV ())
 pub fn foo(&self) -> ! { }

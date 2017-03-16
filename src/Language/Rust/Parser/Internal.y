@@ -66,7 +66,7 @@ import qualified Data.List.NonEmpty as N
 --  * field accesses are prefixes of method calls (all 3 types of exprs, so x3)
 --  * deciding between expression paths and struct expressions
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 37
+%expect 41
 
 %token
 
@@ -237,7 +237,6 @@ import qualified Data.List.NonEmpty as N
 -- "& mut pat" has higher precedence than "binding_mode1 ident [@ pat]"
 %nonassoc mut
 %nonassoc IDENT
-
 
 %right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%=' '..' '...' 
 %right '<-'
@@ -473,7 +472,7 @@ path_parameter1 :: { PathParameters Span }
   | '(' sep_by1(ty_sum,',') ',' ')'           {% withSpan $1 (Parenthesized (toList $2) Nothing) }
   | '(' sep_by(ty_sum,',') ')' '->' ty        {% withSpan $1 (Parenthesized $2 (Just $>)) }
   | '(' sep_by1(ty_sum,',') ',' ')' '->' ty   {% withSpan $1 (Parenthesized (toList $2) (Just $>)) }
-  | {- empty -}                               { AngleBracketed [] [] [] mempty }
+  | {- empty -}                               { NoParameters mempty }
 
 
 -- Expression related:
@@ -507,7 +506,7 @@ path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
   | path_segments_with_colons '::' path_parameter2 {%
      case (N.last (unspan $1), $3) of
        ((i, NoParameters{}), Left (lts, tys, bds)) -> withSpan $1 (Spanned (N.init (unspan $1) |: (i, AngleBracketed lts tys bds mempty)))
-       (_, Right i) -> withSpan $1 (Spanned (unspan $1 |> (i, AngleBracketed [] [] [] mempty)))
+       (_, Right i) -> withSpan $1 (Spanned (unspan $1 |> (i, NoParameters mempty)))
        _ -> error "invalid path segment in expression path"
     }
   
@@ -531,7 +530,7 @@ mod_path :: { Path Span  }
 path_segment_without_types :: { Spanned (Ident, PathParameters Span) }
   : ident 
      {% if isPathSegmentIdent $1
-          then withSpan $1 (Spanned (unspan $1, AngleBracketed [] [] [] mempty))
+          then withSpan $1 (Spanned (unspan $1, NoParameters mempty))
           else fail "invalid path segment in mod path"
      }
 
@@ -596,7 +595,7 @@ for_ty :: { Ty Span }
   | for_lts fn fn_decl                   {% withSpan $1 (BareFn Normal Rust (unspan $1) $>) }
   | for_lts trait_ref                {% 
       do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
-         withSpan $1 (PolyTraitRefTy (TraitTyParamBound poly None :| []))
+         withSpan $1 (TraitObject (TraitTyParamBound poly None :| []))
     }
 {-
   -- The following is still at RFC stage:
@@ -886,7 +885,7 @@ block_like_expr :: { Expr Span }
   | match nostruct_expr '{' '}'                               {% withSpan $1 (Match [] $2 []) }
   | match nostruct_expr '{' arms '}'                          {% withSpan $1 (Match [] $2 $4) }
   | expr_path '!' '{' many(token_tree) '}'                    {% withSpan $1 (MacExpr [] (Mac $1 $4 mempty)) }
-  | unsafe block                                              {% withSpan $1 (BlockExpr [] $2{ rules = UnsafeBlock False }) }
+  | unsafe block                                              {% withSpan $1 (BlockExpr [] $2{ rules = Unsafe }) }
 
 -- As per https://github.com/rust-lang/rust/issues/15701 (as of March 10 2017), the only way to have
 -- attributes on expressions should be with inner attributes on a paren expression.
@@ -913,12 +912,12 @@ gen_postfix_expr(lhs) :: { Expr Span }
   | lhs '(' ')'                                                                 {% withSpan $1 (Call [] $1 []) }
   | lhs '(' sep_by1(expr,',') ')'                                               {% withSpan $1 (Call [] $1 (toList $3)) }
   | lhs '(' sep_by1(expr,',') ',' ')'                                           {% withSpan $1 (Call [] $1 (toList $3)) }
-  | lhs '.' ident '(' ')'                                                       {% withSpan $1 (MethodCall [] (unspan $3) [] ($1 :| [])) }
-  | lhs '.' ident '(' sep_by1(expr,',') ')'                                     {% withSpan $1 (MethodCall [] (unspan $3) [] ($1 <| $5)) }
-  | lhs '.' ident '(' sep_by1(expr,',') ',' ')'                                 {% withSpan $1 (MethodCall [] (unspan $3) [] ($1 <| $5)) }
-  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' ')'                       {% withSpan $1 (MethodCall [] (unspan $3) $6 ($1 :| [])) }
-  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ')'     {% withSpan $1 (MethodCall [] (unspan $3) $6 ($1 <| $9)) }
-  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ',' ')' {% withSpan $1 (MethodCall [] (unspan $3) $6 ($1 <| $9)) }
+  | lhs '.' ident '(' ')'                                                       {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing []) }
+  | lhs '.' ident '(' sep_by1(expr,',') ')'                                     {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing (toList $5)) }
+  | lhs '.' ident '(' sep_by1(expr,',') ',' ')'                                 {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing (toList $5)) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' ')'                       {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) []) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ')'     {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) (toList $9)) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ',' ')' {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) (toList $9)) }
   | lhs '.' ident                                                               {% withSpan $1 (FieldAccess [] $1 (unspan $3)) }
   | lhs '.' int                                                                 {%
       case lit $3 of
@@ -985,8 +984,10 @@ gen_expr :: { Expr Span }
   | '...' expr                             {% withSpan $1 (Range [] Nothing (Just $2) HalfOpen) }
   | continue                               {% withSpan $1 (Continue [] Nothing) }
   | continue lifetime                      {% withSpan $1 (Continue [] (Just $2)) }
-  | break                                  {% withSpan $1 (Break [] Nothing) }
-  | break lifetime                         {% withSpan $1 (Break [] (Just $2)) }
+  | break                                  {% withSpan $1 (Break [] Nothing Nothing) }
+  | break          expr                    {% withSpan $1 (Break [] Nothing (Just $2)) }
+  | break lifetime                         {% withSpan $1 (Break [] (Just $2) Nothing) }
+  | break lifetime expr                    {% withSpan $1 (Break [] (Just $2) (Just $3)) }
 
 
 
@@ -1104,13 +1105,13 @@ initializer :: { Maybe (Expr Span) }
 
 block :: { Block Span }
   : ntBlock                        { $1 }
-  | '{' '}'                        {% withSpan $1 (Block [] DefaultBlock) }
-  | '{' stmts_possibly_no_semi '}' {% withSpan $1 (Block $2 DefaultBlock) }
+  | '{' '}'                        {% withSpan $1 (Block [] Normal) }
+  | '{' stmts_possibly_no_semi '}' {% withSpan $1 (Block $2 Normal) }
 
 inner_attrs_block :: { ([Attribute Span], Block Span) }
   : block                                        { ([], $1) }
-  | '{' inner_attrs '}'                          { (toList $2, Block [] DefaultBlock mempty) }
-  | '{' inner_attrs stmts_possibly_no_semi '}'   { (toList $2, Block $3 DefaultBlock mempty) }
+  | '{' inner_attrs '}'                          { (toList $2, Block [] Normal mempty) }
+  | '{' inner_attrs stmts_possibly_no_semi '}'   { (toList $2, Block $3 Normal mempty) }
 
 -----------
 -- Items --
@@ -1575,7 +1576,7 @@ addAttrs as (Box as' e s)            = Box (as ++ as') e s
 addAttrs as (InPlace as' e1 e2 s)    = InPlace (as ++ as') e1 e2 s
 addAttrs as (Vec as' e s)            = Vec (as ++ as') e s
 addAttrs as (Call as' f es s)        = Call (as ++ as') f es s
-addAttrs as (MethodCall as' i tys es s) = MethodCall (as ++ as') i tys es s
+addAttrs as (MethodCall as' i s tys es s') = MethodCall (as ++ as') i s tys es s'
 addAttrs as (TupExpr as' e s)        = TupExpr (as ++ as') e s
 addAttrs as (Binary as' b e1 e2 s)   = Binary (as ++ as') b e1 e2 s
 addAttrs as (Unary as' u e s)        = Unary (as ++ as') u e s
@@ -1599,7 +1600,7 @@ addAttrs as (Index as' e1 e2 s)      = Index (as ++ as') e1 e2 s
 addAttrs as (Range as' e1 e2 r s)    = Range (as ++ as') e1 e2 r s
 addAttrs as (PathExpr as' q p s)     = PathExpr (as ++ as') q p s
 addAttrs as (AddrOf as' m e s)       = AddrOf (as ++ as') m e s
-addAttrs as (Break as' l s)          = Break (as ++ as') l s
+addAttrs as (Break as' l e s)          = Break (as ++ as') l e s
 addAttrs as (Continue as' l s)       = Continue (as ++ as') l s
 addAttrs as (Ret as' e s)            = Ret (as ++ as') e s
 addAttrs as (InlineAsmExpr as' a s)  = InlineAsmExpr (as ++ as') a s

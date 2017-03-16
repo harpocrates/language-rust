@@ -14,7 +14,6 @@ import Data.ByteString (unpack)
 import Data.Char (intToDigit, ord, chr)
 import Data.Either (lefts, rights)
 import Data.Foldable (toList)
-import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
 import Data.Maybe (listToMaybe)
 import Data.Word (Word8)
@@ -128,7 +127,7 @@ printType (TupTy elts x)        = annotate x ("(" <> align (fillSep (punctuate "
 printType (PathTy Nothing p x)  = annotate x (printPath p False)
 printType (PathTy (Just q) p x) = annotate x (printQPath p q False)
 printType (ObjectSum ty bs x)   = annotate x (printType ty <+> printBounds "+" bs)
-printType (PolyTraitRefTy bs x) = annotate x (printBounds mempty (toList bs))
+printType (TraitObject bs x) = annotate x (printBounds mempty (toList bs))
 printType (ImplTrait bs x)      = annotate x (printBounds "impl" (toList bs))
 printType (ParenTy ty x)        = annotate x ("(" <> printType ty <> ")")
 printType (Typeof e x)          = annotate x ("typeof(" <> printExpr e <> ")")
@@ -278,7 +277,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     InPlace _ place e x         -> annotate x (hsep [ printExprMaybeParen place, "<-", printExprMaybeParen e ])
     Vec as exprs x              -> annotate x (brackets (printInnerAttrs as <+> commas exprs printExpr))
     Call _ func args x          -> annotate x (printExprMaybeParen func <> "(" <> commas args printExpr <> ")")
-    MethodCall _ i ts (s:|as) x -> let tys' = unless (null ts) ("::<" <> commas ts printType <> ">")
+    MethodCall _ s i ts' as x   -> let tys' = perhaps (\ts -> "::<" <> commas ts printType <> ">") ts'
                                    in annotate x (hcat [ printExpr s, ".", printIdent i, tys', "(", commas as printExpr, ")" ])
     TupExpr as es x             -> annotate x ("(" <> printInnerAttrs as <+> commas es printExpr <> when (length es == 1) "," <> ")")
     Binary _ op lhs rhs x       -> annotate x (hsep [ checkExprBinNeedsParen lhs op, printBinOp op, checkExprBinNeedsParen rhs op ])
@@ -308,7 +307,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     PathExpr _ Nothing path x   -> annotate x (printPath path True)
     PathExpr _ (Just qs) path x -> annotate x (printQPath path qs True)
     AddrOf _ mut e x            -> annotate x ("&" <> printMutability mut <+> printExprMaybeParen e)
-    Break _ brk x               -> annotate x ("break" <+> perhaps printLifetime brk)
+    Break _ brk e x             -> annotate x ("break" <+> perhaps printLifetime brk <+> perhaps printExpr e)
     Continue _ cont x           -> annotate x ("continue" <+> perhaps printLifetime cont)
     Ret _ result x              -> annotate x ("return" <+> perhaps printExpr result)
     InlineAsmExpr _ inlineAsm x -> annotate x (printInlineAsm inlineAsm)
@@ -348,7 +347,7 @@ expressionAttrs (Box as _ _) = as
 expressionAttrs (InPlace as _  _ _) = as
 expressionAttrs (Vec as _ _) = as
 expressionAttrs (Call as _  _ _) = as
-expressionAttrs (MethodCall as _  _ _ _) = as
+expressionAttrs (MethodCall as _ _  _ _ _) = as
 expressionAttrs (TupExpr as _ _) = as
 expressionAttrs (Binary as _ _ _ _) = as
 expressionAttrs (Unary as _ _ _) = as
@@ -372,7 +371,7 @@ expressionAttrs (Index as _ _ _) = as
 expressionAttrs (Range as _ _ _ _) = as
 expressionAttrs (PathExpr as _ _ _) = as
 expressionAttrs (AddrOf as _ _ _) = as
-expressionAttrs (Break as _ _) = as
+expressionAttrs (Break as _ _ _) = as
 expressionAttrs (Continue as _ _) = as
 expressionAttrs (Ret as _ _) = as
 expressionAttrs (InlineAsmExpr as _ _) = as
@@ -402,7 +401,7 @@ printArm end (Arm as pats guard body x) = annotate x (printOuterAttrs as
   <+> perhaps (\e -> "if" <+> printExpr e) guard
   <+> "=>"
   <+> case body of 
-         BlockExpr _ blk _ -> printBlockUnclosed blk <> when (rules blk == UnsafeBlock False && end) ","
+         BlockExpr _ blk _ -> printBlockUnclosed blk <> when (rules blk == Unsafe && end) ","
          _ -> printExpr body <> when end ",")
 
 printBlock :: Block a -> Doc a
@@ -428,8 +427,8 @@ printBlockWithAttrs (Block stmts rules x) as = annotate x (safety <+> blockAttrs
                                     stmt -> printStmt stmt)
 
   safety = case rules of
-             DefaultBlock -> mempty
-             UnsafeBlock _ -> "unsafe"
+             Normal -> mempty
+             Unsafe -> "unsafe"
 
 -- print_else
 printElse :: Maybe (Expr a) -> Doc a
@@ -896,7 +895,7 @@ printTraitRef (TraitRef path x) = annotate x (printPath path False)
 
 -- aka print_path_parameters
 printPathParameters :: PathParameters a -> Bool -> Doc a
-printPathParameters (AngleBracketed [] [] [] _) _ = mempty
+printPathParameters (NoParameters x) _ = annotate x mempty
 printPathParameters (Parenthesized ins out x) colons = annotate x $
   when colons "::" <> parens (commas ins printType) <+> perhaps (\t -> "->" <+> printType t) out
 printPathParameters (AngleBracketed lts tys bds x) colons = annotate x (when colons "::" <> "<" <> hsep (punctuate "," (lts' ++ tys' ++ bds')) <> ">")

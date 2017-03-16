@@ -27,16 +27,16 @@ prettySuite = testGroup "pretty suite"
 
 -- | Common types to make tests more straightforward
 i32, f64, usize :: Ty ()
-i32 = PathTy Nothing (Path False [("i32", AngleBracketed [] [] [] ())] ()) ()
-f64 = PathTy Nothing (Path False [("f64", AngleBracketed [] [] [] ())] ()) ()
-usize = PathTy Nothing (Path False [("usize", AngleBracketed [] [] [] ())] ()) ()
+i32 = PathTy Nothing (Path False [("i32", NoParameters ())] ()) ()
+f64 = PathTy Nothing (Path False [("f64", NoParameters ())] ()) ()
+usize = PathTy Nothing (Path False [("usize", NoParameters ())] ()) ()
 
 -- | Common path segments to make tests more straightforward
-std = ("std", AngleBracketed [] [] [] ())
-vec = ("vec", AngleBracketed [] [] [] ())
+std = ("std", NoParameters ())
+vec = ("vec", NoParameters ())
 veci32 = ("Vec", AngleBracketed [] [i32] [] ())
-debug = ("Debug", AngleBracketed [] [] [] ())
-println = ("println", AngleBracketed [] [] [] ())
+debug = ("Debug", NoParameters ())
+println = ("println", NoParameters ())
 
 -- | Type parameter bounds to make tests more straightforward
 debug' = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [debug] ()) ()) ()) None
@@ -47,8 +47,8 @@ iterator = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Iterator"
 _1, _2, foo, bar :: Expr ()
 _1 = Lit [] (Int 1 Unsuffixed ()) ()
 _2 = Lit [cfgO] (Int 2 Unsuffixed ()) ()
-foo = PathExpr [] Nothing (Path False [("foo", AngleBracketed [] [] [] ())] ()) ()
-bar = PathExpr [] Nothing (Path False [("bar", AngleBracketed [] [] [] ())] ()) ()
+foo = PathExpr [] Nothing (Path False [("foo", NoParameters ())] ()) ()
+bar = PathExpr [] Nothing (Path False [("bar", NoParameters ())] ()) ()
 
 -- | Attributes to make tests more straightforward
 cfgI, cfgO :: Attribute ()
@@ -56,8 +56,8 @@ cfgI = Attribute Inner (Word (mkIdent "cfgi") ()) False ()
 cfgO = Attribute Outer (Word (mkIdent "cfgo") ()) False ()
 
 -- | Blocks to make tests more straightforward
-assBlk = Block [ NoSemi (Assign [] foo _1 ()) () ] DefaultBlock ()
-retBlk = Block [ Semi (Ret [] (Just _1) ()) () ] DefaultBlock ()
+assBlk = Block [ NoSemi (Assign [] foo _1 ()) () ] Normal ()
+retBlk = Block [ Semi (Ret [] (Just _1) ()) () ] Normal ()
 
 -- | Short patterns to make tests more straightforward
 x :: Pat ()
@@ -101,33 +101,33 @@ prettyPatterns = testGroup "printing patterns"
   , testFlatten "ref x" (printPat (IdentP (ByRef Immutable) (mkIdent "x") Nothing ()))
   , testFlatten "mut x" (printPat (IdentP (ByValue Mutable) (mkIdent "x") Nothing ()))
   , testFlatten "ref mut x" (printPat (IdentP (ByRef Mutable) (mkIdent "x") Nothing ()))
-  , testFlatten "Point { .. }" (printPat (StructP (Path False [("Point", AngleBracketed [] [] [] ())] ()) [] True ()))
-  , testFlatten "Point { x, y: y1 }" (printPat (StructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
+  , testFlatten "Point { .. }" (printPat (StructP (Path False [("Point", NoParameters ())] ()) [] True ()))
+  , testFlatten "Point { x, y: y1 }" (printPat (StructP (Path False [("Point", NoParameters ())] ())
                                                [ FieldPat Nothing x ()
                                                , FieldPat (Just "y") (IdentP (ByValue Immutable) "y1" Nothing ()) () ]
                                                False ()))
-  , testFlatten "Point { x, .. }" (printPat (StructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
+  , testFlatten "Point { x, .. }" (printPat (StructP (Path False [("Point", NoParameters ())] ())
                                                [ FieldPat Nothing x () ]
                                                True ())) 
-  , testFlatten "Point(x)" (printPat (TupleStructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
+  , testFlatten "Point(x)" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
                                               [ x ] Nothing ()))
-  , testFlatten "Point()" (printPat (TupleStructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
+  , testFlatten "Point()" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
                                               [] Nothing ()))
-  , testFlatten "Point(..)" (printPat (TupleStructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
+  , testFlatten "Point(..)" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
                                               [] (Just 0) ()))
-  , testFlatten "Point(x, ..)" (printPat (TupleStructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
+  , testFlatten "Point(x, ..)" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
                                               [ x ] (Just 1) ()))
-  , testFlatten "Point(.., x)" (printPat (TupleStructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
+  , testFlatten "Point(.., x)" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
                                               [ x ] (Just 0) ()))
-  , testFlatten "Point(x, _, .., _, x)" (printPat (TupleStructP (Path False [("Point", AngleBracketed [] [] [] ())] ())
+  , testFlatten "Point(x, _, .., _, x)" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
                                               [ x, WildP (), WildP (), x ] (Just 2) ()))
-  , testFlatten "math::PI" (printPat (PathP Nothing (Path False [ ("math", AngleBracketed [] [] [] ())
-                                                                , ("PI", AngleBracketed [] [] [] ()) ] ()) ()))
+  , testFlatten "math::PI" (printPat (PathP Nothing (Path False [ ("math", NoParameters ())
+                                                                , ("PI", NoParameters ()) ] ()) ()))
   -- I don't understand qpaths. The test below fails, and I have no idea whether it should.
   , testFlatten "<i32 as a(i32, i32)>::b::<'lt>::AssociatedItem"
                 (printPat (PathP (Just (QSelf i32 1)) (Path False [ ("a", Parenthesized [i32, i32] Nothing ())
                                                                   , ("b", AngleBracketed [Lifetime  "lt" ()] [] [] ())
-                                                                  , ("AssociatedItem", AngleBracketed [] [] [] ())
+                                                                  , ("AssociatedItem", NoParameters ())
                                                                   ] ()) ()))
   , testFlatten "(x, ref mut y, box z)" (printPat (TupleP [ x
                                                           , IdentP (ByRef Mutable) "y" Nothing ()
@@ -158,7 +158,7 @@ prettyPatterns = testGroup "printing patterns"
   , testFlatten "[1, ..]" (printPat (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ] (Just (WildP ())) [] ()))
   , testFlatten "[1, x..]" (printPat (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ] (Just x) [] ()))
 
-  , testFlatten "vecPat!(foo)" (printPat (MacP (Mac (Path False [("vecPat", AngleBracketed [] [] [] ())] ())
+  , testFlatten "vecPat!(foo)" (printPat (MacP (Mac (Path False [("vecPat", NoParameters ())] ())
                                                    [ Token mempty (IdentTok (mkIdent "foo")) ] ()) ()))
   ]
 
@@ -183,13 +183,13 @@ prettyTypes = testGroup "printing types"
   , testFlatten "std::vec::Vec<i32>" (printType (PathTy Nothing (Path False [ std, vec, veci32 ] ()) ()))
   , testFlatten "<i32 as std::vec>::Vec<i32>" (printType (PathTy (Just (QSelf i32 2)) (Path False [ std, vec, veci32 ] ()) ()))
   , testFlatten "i32 + Debug + 'lt" (printType (ObjectSum i32 [ debug', lt ] ()))
-  , testFlatten "Debug + 'lt" (printType (PolyTraitRefTy [ debug', lt ] ()))
+  , testFlatten "Debug + 'lt" (printType (TraitObject [ debug', lt ] ()))
   , testFlatten "impl Iterator<Item = i32> + 'lt" (printType (ImplTrait [ iterator, lt ] ()))
   , testFlatten "(i32)" (printType (ParenTy i32 ()))
   , testFlatten "typeof(1i32)" (printType (Typeof (Lit [] (Int 1 I32 ()) ()) ()))
   , testFlatten "_" (printType (Infer ()))
   , testFlatten "HList![&str , bool , Vec<i32>]"
-                (printType (MacTy (Mac (Path False [("HList", AngleBracketed [] [] [] ())] ())
+                (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ())
                                        [ Delimited mempty NoDelim mempty [ Token mempty Ampersand, Token mempty (IdentTok (mkIdent "str")) ] mempty 
                                        , Token mempty Comma
                                        , Token mempty (IdentTok (mkIdent "bool"))
@@ -235,8 +235,9 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "[1, 1, 1]" (printExpr (Vec [] [_1,_1,_1] ()))
   , testFlatten "#[cfgo] [#![cfgi] #[cfgo] 2, 1, #[cfgo] 2]" (printExpr (Vec [cfgO,cfgI] [_2,_1,_2] ()))
   , testFlatten "foo(1, bar)" (printExpr (Call [] foo [_1,bar] ()))
-  , testFlatten "foo.method::<i32, f64>(1, bar)" (printExpr (MethodCall [] (mkIdent "method") [i32,f64] [foo,_1,bar] ()))
-  , testFlatten "foo.method(1, bar)" (printExpr (MethodCall [] (mkIdent "method") [] [foo,_1,bar] ()))
+  , testFlatten "foo.method::<i32, f64>(1, bar)" (printExpr (MethodCall [] foo (mkIdent "method") (Just [i32,f64]) [_1,bar] ()))
+  , testFlatten "foo.method::<>(1, bar)" (printExpr (MethodCall [] foo (mkIdent "method") (Just []) [_1,bar] ()))
+  , testFlatten "foo.method(1, bar)" (printExpr (MethodCall [] foo (mkIdent "method") Nothing [_1,bar] ()))
   , testFlatten "()" (printExpr (TupExpr [] [] ()))
   , testFlatten "#[cfgo] (#![cfgi])" (printExpr (TupExpr [cfgO,cfgI] [] ()))
   , testFlatten "(1,)" (printExpr (TupExpr [] [_1] ()))
@@ -299,8 +300,10 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "<i32 as std::vec>::Vec::<i32>" (printExpr (PathExpr [] (Just (QSelf i32 2)) (Path False [ std, vec, veci32 ] ()) ()))
   , testFlatten "&foo" (printExpr (AddrOf [] Immutable foo ()))
   , testFlatten "#[cfgo] &mut foo" (printExpr (AddrOf [cfgO] Mutable foo ()))
-  , testFlatten "break" (printExpr (Break [] Nothing ()))
-  , testFlatten "break 'foo" (printExpr (Break [] (Just (Lifetime "foo" ())) ()))
+  , testFlatten "break" (printExpr (Break [] Nothing Nothing ()))
+  , testFlatten "break 1" (printExpr (Break [] Nothing (Just (Lit [] (Int 1 Unsuffixed ()) ())) ()))
+  , testFlatten "break 'foo" (printExpr (Break [] (Just (Lifetime "foo" ())) Nothing ()))
+  , testFlatten "break 'foo 1" (printExpr (Break [] (Just (Lifetime "foo" ())) (Just (Lit [] (Int 1 Unsuffixed ()) ())) ()))
   , testFlatten "continue" (printExpr (Continue [] Nothing ()))
   , testFlatten "continue 'foo" (printExpr (Continue [] (Just (Lifetime "foo" ())) ()))
   , testFlatten "return" (printExpr (Ret [] Nothing ()))
@@ -311,14 +314,14 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "asm!(\"mov eax, 2\" : \"={eax}\"(foo) : : : \"intel\")"
                 (printExpr (InlineAsmExpr [] (InlineAsm "mov eax, 2" Cooked [InlineAsmOutput "={eax}" foo False False] []
                                                         [] False False Intel ()) ()))
-  , testFlatten "print!(foo)" (printExpr (MacExpr [] (Mac (Path False [("print", AngleBracketed [] [] [] ())] ())
+  , testFlatten "print!(foo)" (printExpr (MacExpr [] (Mac (Path False [("print", NoParameters ())] ())
                                        [ Token mempty (IdentTok (mkIdent "foo")) ] ()) ()))
-  , testFlatten "foo { }" (printExpr (Struct [] (Path False [("foo", AngleBracketed [] [] [] ())] ()) [] Nothing ()))
-  , testFlatten "foo { x: 1 }" (printExpr (Struct [] (Path False [("foo", AngleBracketed [] [] [] ())] ()) [Field (mkIdent "x") _1 ()] Nothing ()))
-  , testFlatten "#[cfgo] foo { #![cfgi] x: 1 }" (printExpr (Struct [cfgO,cfgI] (Path False [("foo", AngleBracketed [] [] [] ())] ()) [Field (mkIdent "x") _1 ()] Nothing ()))
-  , testFlatten "foo { x: 1, y: 1 }" (printExpr (Struct [] (Path False [("foo", AngleBracketed [] [] [] ())] ()) [Field (mkIdent "x") _1 (), Field (mkIdent "y") _1 ()] Nothing ()))
-  , testFlatten "foo { x: 1, y: 1, ..bar }" (printExpr (Struct [] (Path False [("foo", AngleBracketed [] [] [] ())] ()) [Field (mkIdent "x") _1 (), Field (mkIdent "y") _1 ()] (Just bar) ()))
-  , testFlatten "#[cfgo] foo { #![cfgi] x: 1, y: 1, ..bar }" (printExpr (Struct [cfgO,cfgI] (Path False [("foo", AngleBracketed [] [] [] ())] ()) [Field (mkIdent "x") _1 (), Field (mkIdent "y") _1 ()] (Just bar) ()))
+  , testFlatten "foo { }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [] Nothing ()))
+  , testFlatten "foo { x: 1 }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") _1 ()] Nothing ()))
+  , testFlatten "#[cfgo] foo { #![cfgi] x: 1 }" (printExpr (Struct [cfgO,cfgI] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") _1 ()] Nothing ()))
+  , testFlatten "foo { x: 1, y: 1 }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") _1 (), Field (mkIdent "y") _1 ()] Nothing ()))
+  , testFlatten "foo { x: 1, y: 1, ..bar }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") _1 (), Field (mkIdent "y") _1 ()] (Just bar) ()))
+  , testFlatten "#[cfgo] foo { #![cfgi] x: 1, y: 1, ..bar }" (printExpr (Struct [cfgO,cfgI] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") _1 (), Field (mkIdent "y") _1 ()] (Just bar) ()))
   , testFlatten "[foo; 1]" (printExpr (Repeat [] foo _1 ()))
   , testFlatten "#[cfgo] [#![cfgi] foo; 1]" (printExpr (Repeat [cfgI, cfgO] foo _1 ()))
   , testFlatten "(foo?)" (printExpr (ParenExpr [] (Try [] foo ()) ()))
@@ -367,11 +370,11 @@ prettyItems = testGroup "printing items"
                 (printItem (Item (mkIdent "") [] (Impl Normal Positive
                       (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())
                       Nothing
-                      (PathTy Nothing (Path False [("GenVal", AngleBracketed [] [PathTy Nothing (Path False [(mkIdent "T", AngleBracketed [] [] [] ())] ()) ()] [] ())] ()) ())
+                      (PathTy Nothing (Path False [("GenVal", AngleBracketed [] [PathTy Nothing (Path False [(mkIdent "T", NoParameters ())] ()) ()] [] ())] ()) ())
                       [ ImplItem (mkIdent "value") InheritedV Final []
                           (MethodI (MethodSig Normal NotConst Rust
                                       (FnDecl [SelfRegion Nothing Mutable ()]
-                                              (Just (Rptr Nothing Immutable (PathTy Nothing (Path False [(mkIdent "T", AngleBracketed [] [] [] ())] ()) ()) ())) 
+                                              (Just (Rptr Nothing Immutable (PathTy Nothing (Path False [(mkIdent "T", NoParameters ())] ()) ()) ())) 
                                               False ())
                                       (Generics [] [] (WhereClause [] ()) ())) 
                                       retBlk)
@@ -437,7 +440,6 @@ prettyStatements = testGroup "printing statements"
   , testFlatten "#[cfgo] println!(foo);" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) SemicolonMac [cfgO] ()))
   , testFlatten "println!(foo);" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) SemicolonMac [] ()))
   , testFlatten "println!{ foo }" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) BracesMac [] ()))
-  , testFlatten "println!(foo)" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) NoBracesMac [] ()))
   ]
   
 -- | Default pretty-printing
