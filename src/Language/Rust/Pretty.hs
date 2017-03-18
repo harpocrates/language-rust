@@ -24,7 +24,7 @@ it :: Doc a
 -}
 
 module Language.Rust.Pretty (
-  PrettyAnnotated(..), Pretty(..), Doc
+  PrettyAnnotated(..), Pretty(..), Doc, printAttr,
 ) where
 
 import Language.Rust.Syntax.AST
