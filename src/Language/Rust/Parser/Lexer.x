@@ -29,6 +29,7 @@ This sort of amguity where one tokens need to be broken up occurs for
    * @>=@ possibly in equality predicates like @F\<A\>=i32@ (not yet in Rust)
    * @>>=@ possibly in equality predicates?
 -}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 module Language.Rust.Parser.Lexer (
   -- * Lexing
@@ -1064,7 +1065,7 @@ $white+         { \s -> pure (Space Whitespace s)  }
 
 \?              { token Question }
 @ident          { \s -> pure (IdentTok (mkIdent s)) } 
-@lifetime       { \s -> (pure (LifetimeTok (mkIdent (tail s))) :: P Token) }
+@lifetime       { \s -> pure (LifetimeTok (mkIdent (tail s))) }
 
 
 @outer_doc_line   { \c -> pure (Doc (drop 3 c) OuterDoc) } 
@@ -1086,14 +1087,14 @@ $white+         { \s -> pure (Space Whitespace s)  }
 {
 
 -- | Make a token.
-token :: Token -> String -> P Token
+token :: Monad m => Token -> String -> ParserT m Token
 token t _ = pure t
 
 -- | Given the first part of a literal, try to parse also a suffix. Even if
 -- the allowed suffixes are very well defined and only valid on integer and
 -- float literals, we need to put in the same token whatever suffix follows.
 -- This is for backwards compatibility if Rust decides to ever add suffixes. 
-literal :: LitTok -> P Token 
+literal :: Monad m => LitTok -> ParserT m Token 
 literal lit = do
   pos <- getPosition
   inp <- getInput
@@ -1108,7 +1109,7 @@ literal lit = do
 -- | Parses a raw string, the closing quotation, and the appropriate number of
 -- '#' characters. Note that there can be more closing '#' characters than
 -- opening ones (this is as per Rust's standard).
-rawString :: Int -> P String
+rawString :: Monad m => Int -> ParserT m String
 rawString n = do
   c_m <- nextChar
   case c_m of
@@ -1126,10 +1127,10 @@ rawString n = do
     Just c -> ([c] ++) <$> rawString n 
 
 -- | Consume a full inline comment (which may be nested).
-nestedComment :: P String
+nestedComment :: Monad m => ParserT m String
 nestedComment = go 1 ""
   where
-    go :: Int -> String -> P String
+    go :: Monad m => Int -> String -> ParserT m String
     go 0 s = pure (reverse (drop 2 s))
     go n s = do
       c <- nextChar
@@ -1153,7 +1154,7 @@ nestedComment = go 1 ""
 -- Monadic functions
 
 -- | Retrieve the next character (if there is one), updating the parser state accordingly.
-nextChar :: P (Maybe Char)
+nextChar :: Monad m => ParserT m (Maybe Char)
 nextChar = do
   pos <- getPosition
   inp <- getInput
@@ -1165,7 +1166,7 @@ nextChar = do
 
 -- | Retrieve the next character (if there is one), without updating the
 -- parser state.
-peekChar :: P (Maybe Char)
+peekChar :: Monad m => ParserT m (Maybe Char)
 peekChar = do
   inp <- getInput
   if inputStreamEmpty inp 
@@ -1175,7 +1176,7 @@ peekChar = do
 
 -- | Greedily try to eat as many of a given character as possible (and return
 -- how many characters were eaten).
-greedyChar :: Char -> P Int
+greedyChar :: Monad m => Char -> ParserT m Int
 greedyChar c = do
   c_m <- peekChar
   case c_m of
@@ -1183,7 +1184,7 @@ greedyChar c = do
     _ -> pure 0
 
 -- | Signal a lexical error.
-lexicalError :: P a
+lexicalError :: Monad m => ParserT m a
 lexicalError = do
   c <- peekChar
   fail ("Lexical error: the character " ++ show c ++ " does not fit here")
@@ -1218,7 +1219,7 @@ alexMove pos '\r' = incOffset pos 1
 alexMove pos _    = incPos pos 1
 
 -- | Lexer for one 'Token'. The only token this cannot produce is 'Interpolated'. 
-lexToken :: P (Spanned Token)
+lexToken :: Monad m => ParserT m (Spanned Token)
 lexToken = do
   tok_maybe <- popToken
   case tok_maybe of
@@ -1234,11 +1235,12 @@ lexToken = do
           setPosition pos'
           setInput inp'
           tok <- action (takeChars len inp)
-          return (Spanned tok (Span pos pos'))
+          tok' <- swapToken tok
+          return (Spanned tok' (Span pos pos'))
 
 -- | Lexer for one non-whitespace 'Token'. The only tokens this cannot produce are 'Interpolated'
 -- and 'Space' (which includes comments that aren't doc comments).
-lexNonSpace :: P (Spanned Token)
+lexNonSpace :: Monad m => ParserT m (Spanned Token)
 lexNonSpace = do
   tok <- lexToken
   case tok of
@@ -1247,7 +1249,7 @@ lexNonSpace = do
 
 -- | Apply the given lexer repeatedly until (but not including) the 'Eof' token. Meant for debugging
 -- purposes - in general this defeats the point of a threaded lexer.
-lexTokens :: P (Spanned Token) -> P [Spanned Token]
+lexTokens :: Monad m => ParserT m (Spanned Token) -> ParserT m [Spanned Token]
 lexTokens lexer = do
   tok <- lexer
   case tok of

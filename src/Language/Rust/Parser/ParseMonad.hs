@@ -22,9 +22,9 @@ In our case, this shared information is held in 'PState'.
 
 module Language.Rust.Parser.ParseMonad (
   -- * Parsing monad
-  P, execParser, initPos, PState(..),
+  P, ParserT, execParser, execParserT, initPos, PState(..),
   -- * Monadic operations
-  getPState, setPState, getPosition, setPosition, getInput, setInput, popToken, pushToken,
+  getPState, setPState, getPosition, setPosition, getInput, setInput, popToken, pushToken, swapToken,
   -- * Error reporting
   parseError,
 ) where
@@ -50,11 +50,11 @@ newtype ParserT m a = P
 
 -- | State that the lexer and parser share
 data PState m = PState
-  { curPos       :: !Position        -- ^ position at current input location
-  , curInput     :: !InputStream     -- ^ the current input
-  , prevPos      ::  Position        -- ^ position at previous input location
-  , pushedTokens :: [Spanned Token]  -- ^ tokens manually pushed by the user
-  , swappingFunc :: Token -> m Token -- ^ monadically swap out a function
+  { curPos       :: !Position          -- ^ position at current input location
+  , curInput     :: !InputStream       -- ^ the current input
+  , prevPos      ::  Position          -- ^ position at previous input location
+  , pushedTokens :: [Spanned Token]    -- ^ tokens manually pushed by the user
+  , swappingFunc :: Token -> m Token   -- ^ monadically swap out a function
   }
 
 instance Monad m => Functor (ParserT m) where
@@ -116,6 +116,10 @@ setPState s = P $ \_ pOk _ -> pOk () s
 modifyPState :: Monad m => (PState m -> PState m) -> ParserT m ()
 modifyPState f = P $ \s pOk _ -> pOk () (f $! s) 
 
+-- | Swap the last token
+swapToken :: Monad m => Token -> ParserT m Token
+swapToken t = P $ \s@PState{ swappingFunc = f } pOk _ -> f t >>= \t' -> pOk t' s
+
 -- | Retrieve the current position of the parser.
 getPosition :: Monad m => ParserT m Position
 getPosition = curPos <$> getPState
@@ -144,7 +148,7 @@ popToken :: Monad m => ParserT m (Maybe (Spanned Token))
 popToken = P $ \s@PState{ pushedTokens = toks } pOk _ -> pOk (listToMaybe toks) s{ pushedTokens = drop 1 toks }
 
 -- | Signal a syntax error.
-parseError :: Show b => b -> P a
+parseError :: (Monad m, Show b) => b -> ParserT m a
 parseError b = fail ("Syntax error: the symbol `" ++ show b ++ "' does not fit here")
 
 

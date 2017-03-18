@@ -11,6 +11,7 @@ Portability : portable
 The parsers in this file are all re-exported to 'Language.Rust.Parser' via the 'Parse' class.
 -}
 {-# OPTIONS_HADDOCK hide, not-home #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 
 module Language.Rust.Parser.Internal (
@@ -53,7 +54,7 @@ import qualified Data.List.NonEmpty as N
 
 %tokentype { Spanned Token }
 
-%monad { P } { >>= } { return }
+%monad { Monad m => ParserT m } { >>= } { return }
 %error { parseError }
 %lexer { lexNonSpace >>= } { Spanned Eof _ }
 
@@ -404,7 +405,7 @@ unsuffixed :: { Lit Span }
 -----------
 
 -- parse_qualified_path(PathStyle::Type)
--- qual_path :: Spanned (NonEmpty (Ident, PathParameters Span)) -> P (Spanned (QSelf Span, Path Span))
+-- qual_path :: Monad m => Spanned (NonEmpty (Ident, PathParameters Span)) -> ParserT m (Spanned (QSelf Span, Path Span))
 qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
   : '<' qual_path_suf(segs)                                                        { $2 }
   | '<<' ty_qual_path_suf as ty_path '>' '::' segs                                 {%
@@ -1531,45 +1532,45 @@ token_not_plus_star :: { Spanned Token }
 
 {
 -- | Parser for literals.
-parseLit :: P (Lit Span)
+parseLit :: Monad m => ParserT m (Lit Span)
 
 -- | Parser for attributes.
-parseAttr :: P (Attribute Span)
+parseAttr :: Monad m => ParserT m (Attribute Span)
 
 -- | Parser for types.
-parseTy :: P (Ty Span)
+parseTy :: Monad m => ParserT m (Ty Span)
 
 -- | Parser for patterns.
-parsePat :: P (Pat Span)
+parsePat :: Monad m => ParserT m (Pat Span)
 
 -- | Parser for statements.
-parseStmt :: P (Stmt Span)
+parseStmt :: Monad m => ParserT m (Stmt Span)
 
 -- | Parser for expressions.
-parseExpr :: P (Expr Span)
+parseExpr :: Monad m => ParserT m (Expr Span)
 
 -- | Parser for items.
-parseItem :: P (Item Span)
+parseItem :: Monad m => ParserT m (Item Span)
 
 -- | Parser for crates.
-parseCrate :: P (Crate Span)
+parseCrate :: Monad m => ParserT m (Crate Span)
 
 -- | Parser for blocks.
-parseBlock :: P (Block Span)
+parseBlock :: Monad m => ParserT m (Block Span)
 
 -- | Parser for @impl@ items.
-parseImplItem :: P (ImplItem Span)
+parseImplItem :: Monad m => ParserT m (ImplItem Span)
 
 -- | Parser for @trait@ items.
-parseTraitItem :: P (TraitItem Span)
+parseTraitItem :: Monad m => ParserT m (TraitItem Span)
 
 -- | Parser for token trees.
-parseTt :: P TokenTree
+parseTt :: Monad m => ParserT m TokenTree
 
 
 -- | Try to convert an expression to a statement given information about whether there is a trailing
 -- semicolon
-toStmt :: Expr Span -> Bool -> P (Stmt Span)
+toStmt :: Monad m => Expr Span -> Bool -> ParserT m (Stmt Span)
 toStmt (MacExpr a m s) hasSemi = withSpan s (MacStmt m (if hasSemi then SemicolonMac else BracesMac) a)
 toStmt e hasSemi = withSpan e ((if hasSemi then Semi else NoSemi) e)
 
@@ -1662,7 +1663,7 @@ isTraitTyParamBound _ = False
 -- | The second argument is the thing you are trying to add a 'Span' to. The first argument is
 -- the first constituent of the thing we are annotating - it is passed in so that we can extract the
 -- start of the 'Span'. The end of the 'Span' is determined from the current parser position.
-withSpan :: Located node => node -> (Span -> a) -> P a
+withSpan :: (Monad m, Located node) => node -> (Span -> a) -> ParserT m a
 withSpan node mkNode = do
   let Span lo _ = spanOf node
   hi <- getPosition
@@ -1679,5 +1680,4 @@ withSpan node mkNode = do
 -- | Append an element to a nonempty list to get anothg nonempty list (flipped version of '(<|)')
 (|>) :: NonEmpty a -> a -> NonEmpty a
 (x:|xs) |> y = x :| (xs ++ [y])
-
 }
