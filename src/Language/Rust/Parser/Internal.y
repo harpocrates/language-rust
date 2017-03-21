@@ -11,6 +11,7 @@ Portability : portable
 The parsers in this file are all re-exported to 'Language.Rust.Parser' via the 'Parse' class.
 -}
 {-# OPTIONS_HADDOCK hide, not-home #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLists #-}
 
 
 module Language.Rust.Parser.Internal (
@@ -58,16 +59,11 @@ import qualified Data.List.NonEmpty as N
 %lexer { lexNonSpace >>= } { Spanned Eof _ }
 
 -- Conflicts caused in
---  * different expressions that all start with an 'expr_path'
---  * '..' and '...' both can have an expression after them (x2)
---  * something around empty returns
---  * complex_expr_path
---  * different types that all start with 'ty_path'
---  * sep_by1(segment,'::') parts of paths
---  * field accesses are prefixes of method calls (all 3 types of exprs, so x3)
---  * deciding between expression paths and struct expressions
+--  * (1) around inner attributes
+--  * (1) around the '::' in path_segments_without_colons
+--  * (7) blocks and block expressions in arms
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 42
+%expect 9
 
 %token
 
@@ -237,7 +233,10 @@ import qualified Data.List.NonEmpty as N
 -- 'mut' should be lower precedence than 'IDENT' so that in the pat rule,
 -- "& mut pat" has higher precedence than "binding_mode1 ident [@ pat]"
 %nonassoc mut
-%nonassoc IDENT
+%nonassoc IDENT ntIdent union default
+
+%nonassoc box
+%nonassoc return break continue IMPLTRAIT
 
 %right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%=' '..' '...' 
 %right '<-'
@@ -253,6 +252,10 @@ import qualified Data.List.NonEmpty as N
 %left ':' as
 %left UNARY
 
+%nonassoc POSTFIX VIS TYPATH EXPRPATH DOLLAR
+%nonassoc '{' ntBlock '[' '(' '!'
+
+%nonassoc WHERE
 
 %%
 
@@ -332,7 +335,7 @@ outer_attribute :: { Attribute Span }
   : '#' '[' meta_item ']'        {% withSpan $1 (Attribute Outer $3 False) }
   | outerDoc                     {% let Doc docStr OuterDoc = unspan $1 in
                                     do { str <- withSpan $1 (Str docStr Cooked Unsuffixed)
-                                       ; doc <- withSpan $1 (NameValue (mkIdent "doc") str)
+                                       ; doc <- withSpan $1 (NameValue "doc" str)
                                        ; withSpan $1 (Attribute Outer doc True)
                                        }
                                  }
@@ -346,9 +349,9 @@ inner_attribute :: { Attribute Span }
   | '#!'    '[' meta_item ']'    {% withSpan $1 (Attribute Inner $3 False) } 
   | innerDoc                     {% let Doc docStr InnerDoc = unspan $1 in
                                     do { str <- withSpan $1 (Str docStr Cooked Unsuffixed)
-                                       ; doc <- withSpan $1 (NameValue (mkIdent "doc") str)
+                                       ; doc <- withSpan $1 (NameValue "doc" str)
                                        ; withSpan $1 (Attribute Inner doc True)
-                                    }
+                                       }
                                  }
 
 inner_attrs :: { NonEmpty (Attribute Span) }
@@ -360,7 +363,7 @@ meta_item :: { MetaItem Span }
   : ntMeta                                          { $1 }
   | ident                                           {% withSpan $1 (Word (unspan $1)) }
   | ident '=' unsuffixed                            {% withSpan $1 (NameValue (unspan $1) $3) }
-  | ident '(' sep_by(meta_item_inner,',') ')'       {% withSpan $1 (List (unspan $1) $3) }
+  | ident '(' sep_by(meta_item_inner,',')      ')'  {% withSpan $1 (List (unspan $1) $3) }
   | ident '(' sep_by1(meta_item_inner,',') ',' ')'  {% withSpan $1 (List (unspan $1) (toList $3)) }
 
 -- parse_meta_item_inner()
@@ -389,7 +392,11 @@ string :: { Lit Span }
   | rawByteStr        { lit $1 }
 
 unsuffixed :: { Lit Span }
-  : lit {% case suffix $1 of { Unsuffixed -> pure $1; _ -> fail "expected unsuffixed literal" } }
+  : lit               {%
+      case suffix $1 of
+        Unsuffixed -> pure $1
+        _ -> fail "expected unsuffixed literal"
+    }
 
 
 -----------
@@ -399,13 +406,13 @@ unsuffixed :: { Lit Span }
 -- parse_qualified_path(PathStyle::Type)
 -- qual_path :: Spanned (NonEmpty (Ident, PathParameters Span)) -> P (Spanned (QSelf Span, Path Span))
 qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
-  : '<' qual_path_suf(segs)                                                        { $2 }
-  | '<<' ty_qual_path_suf as ty_path '>' '::' segs                                 {%
+  : '<' qual_path_suf(segs)                          { $2 }
+  | '<<' ty_qual_path_suf as ty_path '>' '::' segs   {%
       let segs = segments $4 <> unspan $7
       in withSpan $1 (Spanned (QSelf $2 (length (segments $4)), $4{ segments = segs }))
     }
 
--- Basically a qualified path, but ignoring the very first '>' token
+-- Basically a qualified path, but ignoring the very first '<' token
 qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
   : ty_sum '>' '::' segs                {% withSpan $1 (Spanned (QSelf $1 0, Path False (unspan $4) (spanOf $4))) }
   | ty_sum as ty_path '>' '::' segs     {%
@@ -462,11 +469,11 @@ path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
 
 path_parameter1 :: { PathParameters Span }
   : generic_values                            { let (lts, tys, bds) = $1 in (AngleBracketed lts tys bds mempty) }
-  | '(' sep_by(ty_sum,',') ')'                {% withSpan $1 (Parenthesized $2 Nothing) }
+  | '(' sep_by(ty_sum,',')      ')'           {% withSpan $1 (Parenthesized $2 Nothing) }
   | '(' sep_by1(ty_sum,',') ',' ')'           {% withSpan $1 (Parenthesized (toList $2) Nothing) }
-  | '(' sep_by(ty_sum,',') ')' '->' ty        {% withSpan $1 (Parenthesized $2 (Just $>)) }
+  | '(' sep_by(ty_sum,',')      ')' '->' ty   {% withSpan $1 (Parenthesized $2 (Just $>)) }
   | '(' sep_by1(ty_sum,',') ',' ')' '->' ty   {% withSpan $1 (Parenthesized (toList $2) (Just $>)) }
-  | {- empty -}                               { NoParameters mempty }
+  | {- empty -}                   %prec IDENT { NoParameters mempty }
 
 
 -- Expression related:
@@ -476,57 +483,32 @@ expr_path :: { Path Span }
   | path_segments_with_colons               {% withSpan $1 (Path False (unspan $1)) }
   | '::' path_segments_with_colons          {% withSpan $1 (Path True (unspan $2)) }
 
--- As expr_path, but disallowing one IDENT paths
--- TODO: this duplicates a bunch of stuff
--- TODO: abstract function to make path out into code block at bottom of file
-complex_expr_path :: { Path Span }
-  : ident '::' generic_values                                      
-      {% if isPathSegmentIdent $1
-           then let (lts, tys, bds) = $3
-                in withSpan $1 (Path False ((unspan $1, AngleBracketed lts tys bds mempty) :| []))
-           else fail "invalid path segment in expression path" }
-  | ident '::' path_segments_with_colons                              
-      {% withSpan $1 (Path False ((unspan $1, NoParameters mempty) <| unspan $3)) }
-  | ident '::' generic_values '::' path_segments_with_colons
-      {% let (lts, tys, bds) = $3 in withSpan $1 (Path False ((unspan $1, AngleBracketed lts tys bds mempty) <| unspan $5)) }
-  | '::' path_segments_with_colons                                          {% withSpan $1 (Path True (unspan $2)) }
-
 expr_qual_path :: { Spanned (QSelf Span, Path Span) }
   : qual_path(path_segments_with_colons)  { $1 }
 
 -- parse_path_segments_with_colons()
 path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
-  : ident                                          {% withSpan $1 (Spanned ((unspan $1, NoParameters mempty) :| [])) }
-  | path_segments_with_colons '::' path_parameter2 {%
-     case (N.last (unspan $1), $3) of
-       ((i, NoParameters{}), Left (lts, tys, bds)) -> withSpan $1 (Spanned (N.init (unspan $1) |: (i, AngleBracketed lts tys bds mempty)))
-       (_, Right i) -> withSpan $1 (Spanned (unspan $1 |> (i, NoParameters mempty)))
-       _ -> error "invalid path segment in expression path"
+  : ident
+     {% withSpan $1 (Spanned [(unspan $1, NoParameters mempty)]) }
+  | path_segments_with_colons '::' ident
+     {% withSpan $1 (Spanned (unspan $1 |> (unspan $3, NoParameters mempty))) }
+  | path_segments_with_colons '::' generic_values
+     {%
+       case (N.last (unspan $1), $3) of
+         ((i, NoParameters{}), (lts, tys, bds)) -> withSpan $1 (Spanned (N.init (unspan $1) |: (i, AngleBracketed lts tys bds mempty)))
+         _ -> error "invalid path segment in expression path"
     }
   
-path_parameter2 :: { Either ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) Ident }
-  : generic_values         { Left $1 }
-  | ident                  { Right (unspan $1) }
-
-
 -- Mod related:
 -- parse_path(PathStyle::Mod)
 mod_path :: { Path Span  }
-  : ntPath                                   { $1 }
-  | path_segment_without_types               {% withSpan $1 (Path False (unspan $1 :| [])) }
-  | self                                     {% withSpan $1 (Path False ((mkIdent "self", NoParameters mempty) :| [])) }
-  | super                                    {% withSpan $1 (Path False ((mkIdent "super", NoParameters mempty) :| [])) }
-  | '::' path_segment_without_types          {% withSpan $1 (Path True (unspan $2 :| [])) }
-  | '::' self                                {% withSpan $1 (Path False ((mkIdent "self", NoParameters mempty) :| [])) }
-  | '::' super                               {% withSpan $1 (Path False ((mkIdent "super", NoParameters mempty) :| [])) }
-  | mod_path '::' path_segment_without_types {% withSpan $1 (Path (global $1) (segments $1 |> unspan $3)) }
-
-path_segment_without_types :: { Spanned (Ident, PathParameters Span) }
-  : ident 
-     {% if isPathSegmentIdent $1
-          then withSpan $1 (Spanned (unspan $1, NoParameters mempty))
-          else fail "invalid path segment in mod path"
+  : ntPath               { $1 }
+  | self_or_ident        {% withSpan $1 (Path False [(unspan $1, NoParameters mempty)]) }
+  | '::' self_or_ident   {% withSpan $1 (Path True  [(unspan $2, NoParameters mempty)]) }
+  | mod_path '::' ident  {%
+       withSpan $1 (Path (global $1) (segments $1 |> (unspan $3, NoParameters mempty)))
      }
+
 
 -----------
 -- Types --
@@ -572,7 +554,7 @@ no_for_ty_prim :: { Ty Span }
   | '&&' mut ty                      {% withSpan $1 (Rptr Nothing Immutable (Rptr Nothing Mutable $3 mempty)) }
   | '&&' lifetime ty                 {% withSpan $1 (Rptr Nothing Immutable (Rptr (Just $2) Immutable $3 mempty)) }
   | '&&' lifetime mut ty             {% withSpan $1 (Rptr Nothing Immutable (Rptr (Just $2) Mutable $4 mempty)) }
-  | ty_path                          {% withSpan $1 (PathTy Nothing $1) }
+  | ty_path             %prec TYPATH {% withSpan $1 (PathTy Nothing $1) }
   | ty_mac                           {% withSpan $1 (MacTy $1) } 
   | unsafe extern abi fn fn_decl     {% withSpan $1 (BareFn Unsafe $3 [] $>) }
   | unsafe fn fn_decl                {% withSpan $1 (BareFn Unsafe Rust [] $>) }
@@ -660,14 +642,14 @@ abi :: { Abi }
 -- Note that impl traits are still at RFC stage - they may eventually become accepted in more places
 -- than just return types.
 ret_ty :: { Maybe (Ty Span) }
-  : '->' ty                                    { Just $2 }
-  | '->' impl sep_by1(ty_param_bound_mod,'+')  { Just (ImplTrait $3 mempty) }
-  | {- empty -}                                { Nothing }
+  : '->' ty                                                { Just $2 }
+  | '->' impl sep_by1(ty_param_bound,'+')  %prec IMPLTRAIT { Just (ImplTrait $3 mempty) }
+  | {- empty -}                                            { Nothing }
 
 -- parse_poly_trait_ref()
 poly_trait_ref :: { PolyTraitRef Span }
   : trait_ref                          {% withSpan $1 (PolyTraitRef [] $1) }
-  | for_lts trait_ref {% withSpan $1 (PolyTraitRef (unspan $1) $2) }
+  | for_lts trait_ref                  {% withSpan $1 (PolyTraitRef (unspan $1) $2) }
 
 -- parse_for_lts()
 -- Unlike the Rust libsyntax version, this _requires_ the for
@@ -688,6 +670,11 @@ lifetime_def :: { LifetimeDef Span }
 --------------
 
 -- TODO: Double-check that the error message in the one element tuple case makes sense. It should...
+--
+-- There is a funky trick going on here around 'IdentP'. When there is a binding mode (ie a 'mut' or
+-- 'ref') or an '@' pattern, everything is fine, but otherwise there is no difference between an
+-- expression variable path and a pattern. To deal with this, we intercept expression paths with
+-- only one segment, no path parameters, and not global and turn them into identifier patterns.
 pat :: { Pat Span }
   : ntPat                                       { $1 }
   | '_'                                         {% withSpan $1 WildP }
@@ -695,20 +682,22 @@ pat :: { Pat Span }
   | '&' pat                                     {% withSpan $1 (RefP $2 Immutable) }
   | '&&' mut pat                                {% withSpan $1 (RefP (RefP $3 Mutable mempty) Immutable) }
   | '&&' pat                                    {% withSpan $1 (RefP (RefP $2 Immutable mempty) Immutable) }
-  | binding_mode1 ident at_pat                  {% withSpan $1 (IdentP (unspan $1) (unspan $2) $3) }
-  | ident at_pat                                {% withSpan $1 (IdentP (ByValue Immutable) (unspan $1) $2) }
-  | lit_expr                                    {% withSpan $1 (LitP $1) }
+  |     lit_expr                                {% withSpan $1 (LitP $1) }
   | '-' lit_expr                                {% withSpan $1 (LitP (Unary [] Neg $2 mempty)) }
   | box pat                                     {% withSpan $1 (BoxP $2) }
-  | complex_expr_path                           {% withSpan $1 (PathP Nothing $1) }
+  | binding_mode1 ident '@' pat                 {% withSpan $1 (IdentP (unspan $1) (unspan $2) (Just $4)) }
+  | binding_mode1 ident                         {% withSpan $1 (IdentP (unspan $1) (unspan $2) Nothing) }
+  |               ident '@' pat                 {% withSpan $1 (IdentP (ByValue Immutable) (unspan $1) (Just $3)) }
+  | expr_path                                   {%
+       case $1 of
+         Path False ((i, NoParameters _) :| []) _ -> withSpan $1 (IdentP (ByValue Immutable) i Nothing)
+         _                                        -> withSpan $1 (PathP Nothing $1)
+    }
   | expr_qual_path                              {% withSpan $1 (PathP (Just (fst (unspan $1))) (snd (unspan $1))) }
   | lit_or_path '...' lit_or_path               {% withSpan $1 (RangeP $1 $3) }
-  | ident '{' '..' '}'                          {% withSpan $1 (StructP (Path False ((unspan $1, NoParameters mempty) :| []) mempty) [] True) }
-  | complex_expr_path '{' '..' '}'              {% withSpan $1 (StructP $1 [] True) }
-  | ident '{' pat_fields '}'                    {% let (fs,b) = $3 in withSpan $1 (StructP (Path False ((unspan $1, NoParameters mempty) :| []) mempty) fs b) }
-  | complex_expr_path '{' pat_fields '}'        {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
-  | ident '(' pat_tup ')'                       {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP (Path False ((unspan $1, NoParameters mempty) :| []) mempty) ps m) }
-  | complex_expr_path '(' pat_tup ')'           {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
+  | expr_path '{' '..' '}'                      {% withSpan $1 (StructP $1 [] True) }
+  | expr_path '{' pat_fields '}'                {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
+  | expr_path '(' pat_tup ')'                   {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
   | expr_mac                                    {% withSpan $1 (MacP $1) }
   | '[' pat_slice ']'                           {% let (b,s,a) = $2 in withSpan $1 (SliceP b s a) }
   | '(' pat_tup ')'                             {%
@@ -716,6 +705,7 @@ pat :: { Pat Span }
         ([p], Nothing, False) -> fail "Syntax error: the symbol `)' does not fit here"
         (ps,m,t) -> withSpan $1 (TupleP ps m)
     }
+
 
 -- The first element is the spans, the second the position of '..', and the third if there is a
 -- trailing comma
@@ -749,8 +739,7 @@ pat_slice :: { ([Pat Span], Maybe (Pat Span), [Pat Span]) }
 
 
 lit_or_path :: { Expr Span }
-  : ident             {% withSpan $1 (PathExpr [] Nothing (Path False ((unspan $1, NoParameters mempty) :| []) mempty)) } 
-  | complex_expr_path {% withSpan $1 (PathExpr [] Nothing $1) } 
+  : expr_path         {% withSpan $1 (PathExpr [] Nothing $1) }
   | expr_qual_path    {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
   | '-' lit_expr      {% withSpan $1 (Unary [] Neg $2) }
   | lit_expr          { $1 }
@@ -776,10 +765,6 @@ binding_mode1 :: { Spanned BindingMode }
 binding_mode :: { Spanned BindingMode }
   : binding_mode1         { $1 }
   | {- empty -}           { pure (ByValue Immutable) }
-
-at_pat :: { Maybe (Pat Span) }
-  : '@' pat     { Just $2 }
-  | {- empty -} { Nothing }
 
 
 -----------------
@@ -881,14 +866,14 @@ paren_expr :: { Expr Span }
 -- General postfix expression
 gen_postfix_expr(lhs) :: { Expr Span }
   : lit_expr                                                                    { $1 }
-  | self                                                                        {% withSpan $1 (PathExpr [] Nothing (Path False ((mkIdent "self", NoParameters mempty) :| []) mempty)) }
-  | expr_path                                                                   {% withSpan $1 (PathExpr [] Nothing $1) }
+  | self                                                                        {% withSpan $1 (PathExpr [] Nothing (Path False [("self", NoParameters mempty)] mempty)) }
+  | expr_path                                                    %prec EXPRPATH {% withSpan $1 (PathExpr [] Nothing $1) }
   | expr_qual_path                                                              {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
   | expr_mac                                                                    {% withSpan $1 (MacExpr [] $1) }
-  | '[' ']'                                {% withSpan $1 (Vec [] []) }
-  | '[' sep_by1(expr,',') ']'              {% withSpan $1 (Vec [] (toList $2)) }
-  | '[' sep_by1(expr,',') ',' ']'          {% withSpan $1 (Vec [] (toList $2)) }
-  | '[' expr ';' expr ']'                  {% withSpan $1 (Repeat [] $2 $4) }
+  | '[' ']'                                                                     {% withSpan $1 (Vec [] []) }
+  | '[' sep_by1(expr,',') ']'                                                   {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' sep_by1(expr,',') ',' ']'                                               {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' expr ';' expr ']'                                                       {% withSpan $1 (Repeat [] $2 $4) }
   | lhs '[' expr ']'                                                            {% withSpan $1 (Index [] $1 $3) }
   | lhs '?'                                                                     {% withSpan $1 (Try [] $1) }
   | lhs '(' ')'                                                                 {% withSpan $1 (Call [] $1 []) }
@@ -900,7 +885,7 @@ gen_postfix_expr(lhs) :: { Expr Span }
   | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' ')'                       {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) []) }
   | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ')'     {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) (toList $9)) }
   | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ',' ')' {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) (toList $9)) }
-  | lhs '.' ident                                                               {% withSpan $1 (FieldAccess [] $1 (unspan $3)) }
+  | lhs '.' ident                                                 %prec POSTFIX {% withSpan $1 (FieldAccess [] $1 (unspan $3)) }
   | lhs '.' int                                                                 {%
       case lit $3 of
         Int i Unsuffixed _ -> withSpan $1 (TupField [] $1 (fromIntegral i))
@@ -994,6 +979,7 @@ expr_arms :: { (Expr Span, [Arm Span]) }
 arithmetic_expr_arms :: { (Expr Span, [Arm Span]) }
   : gen_arithmetic(arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) comma_arms  { ($1, $2) }
   | postfix_expr_arms                                                 { $1 } 
+
 postfix_expr_arms :: { (Expr Span, [Arm Span]) }
   : gen_postfix_expr(postfix_expr) comma_arms                         { ($1, $2) }
   | paren_expr                     comma_arms                         { ($1, $2) }
@@ -1222,10 +1208,10 @@ enum_def :: { Variant Span }
 
 -- parse_where_clause
 where_clause :: { WhereClause Span }
-  : {- empty -}                            { WhereClause [] mempty }
-  | ntWhereClause                          { $1 } 
-  | where sep_by1(where_predicate,',')     {% withSpan $1 (WhereClause (toList $2)) }
-  | where sep_by1(where_predicate,',') ',' {% withSpan $1 (WhereClause (toList $2)) }
+  : {- empty -}                                        { WhereClause [] mempty }
+  | ntWhereClause                                      { $1 } 
+  | where sep_by1(where_predicate,',')     %prec WHERE {% withSpan $1 (WhereClause (toList $2)) }
+  | where sep_by1(where_predicate,',') ',' %prec WHERE {% withSpan $1 (WhereClause (toList $2)) }
 
 where_predicate :: { WherePredicate Span }
   : lifetime ':' sep_by(lifetime,'+')                      {% withSpan $1 (RegionPredicate $1 $3) }
@@ -1309,13 +1295,13 @@ ext_abi :: { Abi }
 
 vis :: { Spanned (Visibility Span) }
   : {- empty -}          { pure InheritedV }
-  | pub                  {% withSpan $1 (Spanned PublicV) }
+  | pub        %prec VIS {% withSpan $1 (Spanned PublicV) }
   | pub '(' crate ')'    {% withSpan $1 (Spanned CrateV) }
   | pub '(' mod_path ')' {% withSpan $1 (Spanned (RestrictedV $3)) }
 
 def :: { Defaultness }
-  : {- empty -}          { Final }
-  | default              { Default }
+  : {- empty -}      %prec mut { Final }
+  | default                    { Default }
 
 view_path :: { ViewPath Span }
   : '::' sep_by1(self_or_ident,'::')                                     {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) Nothing mempty)) }
@@ -1342,8 +1328,8 @@ view_path :: { ViewPath Span }
 
 self_or_ident :: { Spanned Ident }
   : ident                   { $1 }
-  | self                    {% withSpan $1 (Spanned (mkIdent "self")) }
-  | super                   {% withSpan $1 (Spanned (mkIdent "super")) }
+  | self                    {% withSpan $1 (Spanned "self") }
+  | super                   {% withSpan $1 (Spanned "super") }
 
 
 plist :: { PathListItem Span }
@@ -1428,7 +1414,7 @@ token_not_plus_star :: { Spanned Token }
   | '<-'       { $1 } 
   | '=>'       { $1 } 
   | '#'        { $1 } 
-  | '$'        { $1 } 
+  | '$' %prec DOLLAR  { $1 } 
   | '?'        { $1 } 
   -- Literals.
   | byte       { $1 } 
@@ -1632,7 +1618,8 @@ isTypePathSegmentIdent i = True
 -- | Check if a given string is one of the accepted ABIs
 isAbi :: String -> Bool
 isAbi s = s `elem` abis
-  where abis = [ "Cdecl", "Stdcall", "Fastcall", "Vectorcall", "Aapcs", "Win64", "SysV64"
+  where abis :: [String]
+        abis = [ "Cdecl", "Stdcall", "Fastcall", "Vectorcall", "Aapcs", "Win64", "SysV64"
                , "Rust", "C", "System", "RustIntrinsic", "RustCall", "PlatformIntrinsic"
                ]
 
