@@ -28,11 +28,11 @@ library
                        Language.Rust.Parser.Lexer
                        Language.Rust.Parser.Literals
                        Language.Rust.Pretty
+                       Language.Rust.Pretty.Internal
                        Language.Rust.Data.Position
                        Language.Rust.Data.InputStream
  
   other-modules:       Language.Rust.Parser.Internal
-                       Language.Rust.Pretty.Internal
 
   other-extensions:    OverloadedStrings
                      , OverloadedLists

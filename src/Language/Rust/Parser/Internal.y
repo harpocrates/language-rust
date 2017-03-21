@@ -67,7 +67,7 @@ import qualified Data.List.NonEmpty as N
 --  * field accesses are prefixes of method calls (all 3 types of exprs, so x3)
 --  * deciding between expression paths and struct expressions
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 41
+%expect 42
 
 %token
 
@@ -299,12 +299,6 @@ many(p) :: { [a] }
 
 
 -- | One or more occurences of p, seperated by sep
--- TODO: Use the commented out implementation (and understand why it currently makes more conlifcts)
-{-
-sep_by1(p,sep)  : sep_by1_r(p,sep)   { N.reverse $1 }
-sep_by1_r(p,s)  : sep_by1_r(p,s) s p { $3 <| $1 }
-                | p                  { $1 :| [] }
--}
 sep_by1(p,sep) :: { NonEmpty a }
   : sep_by1(p,sep) sep p  { $1 |> $3 }
   | p                     { $1 :| [] }
@@ -379,7 +373,6 @@ meta_item_inner :: { NestedMetaItem Span }
 -- Literals --
 --------------
 
--- TODO Interpolated (see parse_lit_token())
 lit :: { Lit Span }
   : byte              { lit $1 }
   | char              { lit $1 }
@@ -598,18 +591,6 @@ for_ty :: { Ty Span }
       do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
          withSpan $1 (TraitObject (TraitTyParamBound poly None :| []))
     }
-{-
-  -- The following is still at RFC stage:
-  -- https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md
-  -- https://github.com/rust-lang/rust/issues/34511
-  -- For now, this is only allowed in return type position. If that remains (there is some hope that
-  -- it will be more general), it would makes sense to move this as a special case of `ret_ty`
-  | impl sep_by1(ty_param_bound_mod,'+')         {%
-      if (any isTraitTyParamBound $2)
-        then withSpan $1 (ImplTrait $2)
-        else fail "at least one trait must be specified"
-    }
- -}
 
 -- parse_ty_sum()
 -- See https://github.com/rust-lang/rfcs/blob/master/text/0438-precedence-of-plus.md
@@ -676,9 +657,12 @@ abi :: { Abi }
   | {- empty -}     { C }
 
 -- parse_ret_ty
+-- Note that impl traits are still at RFC stage - they may eventually become accepted in more places
+-- than just return types.
 ret_ty :: { Maybe (Ty Span) }
-  : '->' ty         { Just $2 }
-  | {- empty -}     { Nothing }
+  : '->' ty                                    { Just $2 }
+  | '->' impl sep_by1(ty_param_bound_mod,'+')  { Just (ImplTrait $3 mempty) }
+  | {- empty -}                                { Nothing }
 
 -- parse_poly_trait_ref()
 poly_trait_ref :: { PolyTraitRef Span }
@@ -719,13 +703,10 @@ pat :: { Pat Span }
   | complex_expr_path                           {% withSpan $1 (PathP Nothing $1) }
   | expr_qual_path                              {% withSpan $1 (PathP (Just (fst (unspan $1))) (snd (unspan $1))) }
   | lit_or_path '...' lit_or_path               {% withSpan $1 (RangeP $1 $3) }
- -- | expr_path '{' '..' '}'                      {% withSpan $1 (StructP $1 [] True) }
   | ident '{' '..' '}'                          {% withSpan $1 (StructP (Path False ((unspan $1, NoParameters mempty) :| []) mempty) [] True) }
   | complex_expr_path '{' '..' '}'              {% withSpan $1 (StructP $1 [] True) }
- -- | expr_path '{' pat_fields '}'                {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
   | ident '{' pat_fields '}'                    {% let (fs,b) = $3 in withSpan $1 (StructP (Path False ((unspan $1, NoParameters mempty) :| []) mempty) fs b) }
   | complex_expr_path '{' pat_fields '}'        {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
- -- | expr_path '(' pat_tup ')'                   {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
   | ident '(' pat_tup ')'                       {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP (Path False ((unspan $1, NoParameters mempty) :| []) mempty) ps m) }
   | complex_expr_path '(' pat_tup ')'           {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
   | expr_mac                                    {% withSpan $1 (MacP $1) }
@@ -1336,7 +1317,6 @@ def :: { Defaultness }
   : {- empty -}          { Final }
   | default              { Default }
 
--- TODO: How to translate the commented out cases?
 view_path :: { ViewPath Span }
   : '::' sep_by1(self_or_ident,'::')                                     {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) Nothing mempty)) }
   | '::' sep_by1(self_or_ident,'::') as ident                            {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
