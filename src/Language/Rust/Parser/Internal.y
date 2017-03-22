@@ -59,11 +59,9 @@ import qualified Data.List.NonEmpty as N
 %lexer { lexNonSpace >>= } { Spanned Eof _ }
 
 -- Conflicts caused in
---  * (1) around inner attributes
 --  * (1) around the '::' in path_segments_without_colons
---  * (7) blocks and block expressions in arms
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 9
+%expect 1
 
 %token
 
@@ -290,10 +288,8 @@ gt :: { () }
 
 -- | One or more
 some(p) :: { NonEmpty a }
-  : some_r(p)          { N.reverse $1 }
-some_r(p) :: { NonEmpty a }
-  : some_r(p) p        { $2 <| $1 }
-  | p                  { $1 :| [] }
+  : some(p) p          { $1 |> $2 }
+  | p                  { [$1] }
 
 -- | Zero or more
 many(p) :: { [a] }
@@ -304,7 +300,7 @@ many(p) :: { [a] }
 -- | One or more occurences of p, seperated by sep
 sep_by1(p,sep) :: { NonEmpty a }
   : sep_by1(p,sep) sep p  { $1 |> $3 }
-  | p                     { $1 :| [] }
+  | p                     { [$1] }
 
 
 -- | Zero or more occurrences of p, separated by sep
@@ -354,8 +350,10 @@ inner_attribute :: { Attribute Span }
                                        }
                                  }
 
+-- TODO: for some precedence related reason, using 'some' here doesn't work
 inner_attrs :: { NonEmpty (Attribute Span) }
-  : some(inner_attribute)        { $1 }
+  : inner_attrs inner_attribute  { $1 |> $2 }
+  | inner_attribute              { [$1] }
 
 
 -- parse_meta_item()
@@ -973,23 +971,24 @@ comma_arms :: { [Arm Span] }
 
 -- An expression followed by match arms. If there is a comma needed, it is added 
 expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_expr comma_arms                                               { ($1, $2) }
-  | lambda_expr_nostruct comma_arms                                   { ($1, $2) }
-  | arithmetic_expr_arms                                              { $1 }
+  : gen_expr                          comma_arms              { ($1, $2) }
+  | lambda_expr_nostruct              comma_arms              { ($1, $2) }
+  | arithmetic_expr_arms                                      { $1 }
+
 arithmetic_expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_arithmetic(arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) comma_arms  { ($1, $2) }
-  | postfix_expr_arms                                                 { $1 } 
+  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) comma_arms  { ($1, $2) }
+  | postfix_expr_arms                                         { $1 } 
 
 postfix_expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_postfix_expr(postfix_expr) comma_arms                         { ($1, $2) }
-  | paren_expr                     comma_arms                         { ($1, $2) }
-  | struct_expr                    comma_arms                         { ($1, $2) }
-  | block_like_expr                comma_arms                         { ($1, $2) }
-  | block                          comma_arms                         { (BlockExpr [] $1 mempty, $2) }
-  | block                                arms                         { (BlockExpr [] $1 mempty, $2) }
+  : gen_postfix_expr(nb_postfix_expr) comma_arms              { ($1, $2) }
+  | paren_expr                        comma_arms              { ($1, $2) }
+  | struct_expr                       comma_arms              { ($1, $2) }
+  | block_like_expr                   comma_arms              { ($1, $2) }
+  | block                             comma_arms              { (BlockExpr [] $1 mempty, $2) }
+  | block                                   arms              { (BlockExpr [] $1 mempty, $2) }
   
 comma_nsb_arithmetic_expr(c) :: { Expr Span }
-  : nsb_arithmetic_expr c                                              { $1 }
+  : nsb_arithmetic_expr c                                     { $1 }
 
 arm_guard :: { Maybe (Expr Span) }
   : {- empty -}  { Nothing }
