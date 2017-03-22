@@ -525,10 +525,12 @@ ty :: { Ty Span }
   | no_for_ty                        { $1 }
   | for_ty                           { $1 }
 
+-- All (non-sum) types not starting with '(' or '<'
 ty_prim :: { Ty Span }
   : no_for_ty_prim                   { $1 }
   | for_ty                           { $1 }
 
+-- All (non-sum) types not starting with a 'for'
 no_for_ty :: { Ty Span }
   : no_for_ty_prim                   { $1 }
   | '(' ')'                          {% withSpan $1 (TupTy []) }
@@ -537,6 +539,7 @@ no_for_ty :: { Ty Span }
   | '(' ty_sum ',' sep_by1(ty_sum,',') ')' {% withSpan $1 (TupTy ($2 : toList $4)) }
   | ty_qual_path                     {% withSpan $1 (PathTy (Just (fst (unspan $1))) (snd (unspan $1))) }
 
+-- All (non-sum) types not starting with a 'for', '(', or '<'
 no_for_ty_prim :: { Ty Span }
   : '_'                              {% withSpan $1 Infer }
   | '!'                              {% withSpan $1 Never }
@@ -544,14 +547,8 @@ no_for_ty_prim :: { Ty Span }
   | '*' ty                           {% withSpan $1 (Ptr Immutable $2) }
   | '*' const ty                     {% withSpan $1 (Ptr Immutable $3) }
   | '*' mut ty                       {% withSpan $1 (Ptr Mutable $3) }
-  | '&' ty                           {% withSpan $1 (Rptr Nothing Immutable $2) }
-  | '&' mut ty                       {% withSpan $1 (Rptr Nothing Mutable $3) }
-  | '&' lifetime ty                  {% withSpan $1 (Rptr (Just $2) Immutable $3) }
-  | '&' lifetime mut ty              {% withSpan $1 (Rptr (Just $2) Mutable $4) }
-  | '&&' ty                          {% withSpan $1 (Rptr Nothing Immutable (Rptr Nothing Immutable $2 mempty)) }
-  | '&&' mut ty                      {% withSpan $1 (Rptr Nothing Immutable (Rptr Nothing Mutable $3 mempty)) }
-  | '&&' lifetime ty                 {% withSpan $1 (Rptr Nothing Immutable (Rptr (Just $2) Immutable $3 mempty)) }
-  | '&&' lifetime mut ty             {% withSpan $1 (Rptr Nothing Immutable (Rptr (Just $2) Mutable $4 mempty)) }
+  | '&' lifetime_mut ty              {% withSpan $1 (Rptr (fst $2) (snd $2) $3) }
+  | '&&' lifetime_mut ty             {% withSpan $1 (Rptr Nothing Immutable (Rptr (fst $2) (snd $2) $3 mempty)) }
   | ty_path             %prec TYPATH {% withSpan $1 (PathTy Nothing $1) }
   | ty_mac                           {% withSpan $1 (MacTy $1) } 
   | unsafe extern abi fn fn_decl     {% withSpan $1 (BareFn Unsafe $3 [] $>) }
@@ -562,22 +559,32 @@ no_for_ty_prim :: { Ty Span }
   | '[' ty ';' expr ']'              {% withSpan $1 (Array $2 $4) }
   | Self                             {% withSpan $1 ImplicitSelf }
 
+-- All (non-sum) types starting with a 'for'
 for_ty :: { Ty Span }
   : for_lts unsafe extern abi fn fn_decl {% withSpan $1 (BareFn Unsafe $4 (unspan $1) $>) }
   | for_lts unsafe fn fn_decl            {% withSpan $1 (BareFn Unsafe Rust (unspan $1) $>) }
   | for_lts extern abi fn fn_decl        {% withSpan $1 (BareFn Normal $3 (unspan $1) $>) }
   | for_lts fn fn_decl                   {% withSpan $1 (BareFn Normal Rust (unspan $1) $>) }
-  | for_lts trait_ref                {% 
+  | for_lts trait_ref                    {% 
       do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
          withSpan $1 (TraitObject (TraitTyParamBound poly None :| []))
     }
 
+-- An optional lifetime followed by an optional mutability
+lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
+  : lifetime mut  { (Just $1, Mutable) }
+  | lifetime      { (Just $1, Immutable) }
+  |          mut  { (Nothing, Mutable) }
+  | {- empty -}   { (Nothing, Immutable) }
+
 -- parse_ty_sum()
 -- See https://github.com/rust-lang/rfcs/blob/master/text/0438-precedence-of-plus.md
+-- All types, including sum types
 ty_sum :: { Ty Span }
   : ty                                        { $1 }
   | ty '+' sep_by1(ty_param_bound,'+')        {% withSpan $1 (ObjectSum $1 (toList $3)) }
 
+-- All types not starting with a '(' or '<'
 ty_prim_sum :: { Ty Span }
   : ty_prim                                   { $1 }
   | ty_prim '+' sep_by1(ty_param_bound,'+')   {% withSpan $1 (ObjectSum $1 (toList $3)) }
@@ -586,24 +593,24 @@ ty_prim_sum :: { Ty Span }
 -- The argument list and return type in a function
 fn_decl :: { FnDecl Span }
   : '(' sep_by1(arg_general,',') ',' '...' ')' ret_ty  {% withSpan $1 (FnDecl (toList $2) $> True) }
-  | '(' sep_by1(arg_general,',') ',' ')' ret_ty        {% withSpan $1 (FnDecl (toList $2) $> False) }
-  | '(' sep_by(arg_general,',') ')' ret_ty             {% withSpan $1 (FnDecl $2 $> False) }
+  | '(' sep_by1(arg_general,',') ','       ')' ret_ty  {% withSpan $1 (FnDecl (toList $2) $> False) }
+  | '(' sep_by(arg_general,',')            ')' ret_ty  {% withSpan $1 (FnDecl $2 $> False) }
 
-
+-- Like 'fn_decl', but also accepting a self argument
 fn_decl_with_self :: { FnDecl Span }
   : '(' arg_self ',' sep_by1(arg_general,',') ',' ')' ret_ty   {% withSpan $1 (FnDecl ($2 : toList $4) $> False) }
-  | '(' arg_self ',' sep_by1(arg_general,',') ')' ret_ty       {% withSpan $1 (FnDecl ($2 : toList $4) $> False) } 
-  | '(' arg_self ',' ')' ret_ty                                {% withSpan $1 (FnDecl [$2] $> False) }
-  | '(' arg_self ')' ret_ty                                    {% withSpan $1 (FnDecl [$2] $> False) }
+  | '(' arg_self ',' sep_by1(arg_general,',')     ')' ret_ty   {% withSpan $1 (FnDecl ($2 : toList $4) $> False) } 
+  | '(' arg_self ','                              ')' ret_ty   {% withSpan $1 (FnDecl [$2] $> False) }
+  | '(' arg_self                                  ')' ret_ty   {% withSpan $1 (FnDecl [$2] $> False) }
   | fn_decl                                                    { $1 }
 
--- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
--- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+') 
 
+-- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
 ty_param_bound :: { TyParamBound Span }
   : lifetime             { RegionTyParamBound $1 }
   | poly_trait_ref       { TraitTyParamBound $1 None }
 
+-- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+') 
 ty_param_bound_mod :: { TyParamBound Span }
   : ty_param_bound       { $1 }
   | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe }
@@ -612,19 +619,16 @@ ty_param_bound_mod :: { TyParamBound Span }
 -- parse_arg_general(false) -- does not require name
 -- NOT ALL PATTERNS ARE ACCEPTED: <https://github.com/rust-lang/rust/issues/35203>
 arg_general :: { Arg Span } 
-  : ty_sum                {% withSpan $1 (Arg Nothing $1) }
-  | ident ':' ty_sum      {% withSpan $1 (Arg (Just (IdentP (ByValue Immutable) (unspan $1) Nothing mempty)) $3) }
+  :               ty_sum  {% withSpan $1 (Arg Nothing $1) }
+  |     ident ':' ty_sum  {% withSpan $1 (Arg (Just (IdentP (ByValue Immutable) (unspan $1) Nothing mempty)) $3) }
   | mut ident ':' ty_sum  {% withSpan $1 (Arg (Just (IdentP (ByValue Mutable) (unspan $2) Nothing mempty)) $4) }
-  | '_'   ':' ty_sum      {% withSpan $1 (Arg (Just (WildP mempty)) $3) }
+  |     '_'   ':' ty_sum  {% withSpan $1 (Arg (Just (WildP mempty)) $3) }
 
 arg_self :: { Arg Span }
-  : self                  {% withSpan $1 (SelfValue Immutable) }
-  | mut self              {% withSpan $1 (SelfValue Mutable) }
-  | '&' self              {% withSpan $1 (SelfRegion Nothing Immutable) }
-  | '&' lifetime self     {% withSpan $1 (SelfRegion (Just $2) Immutable) }
-  | '&' mut self          {% withSpan $1 (SelfRegion Nothing Mutable) }
-  | '&' lifetime mut self {% withSpan $1 (SelfRegion (Just $2) Mutable) }
-  | self ':' ty_sum       {% withSpan $1 (SelfExplicit $3 Immutable) }
+  :                  self {% withSpan $1 (SelfValue Immutable) }
+  |              mut self {% withSpan $1 (SelfValue Mutable) }
+  | '&' lifetime_mut self {% withSpan $1 (SelfRegion (fst $2) (snd $2)) }
+  |     self ':' ty_sum   {% withSpan $1 (SelfExplicit $3 Immutable) }
   | mut self ':' ty_sum   {% withSpan $1 (SelfExplicit $4 Mutable) }
 
 
@@ -646,21 +650,26 @@ ret_ty :: { Maybe (Ty Span) }
 
 -- parse_poly_trait_ref()
 poly_trait_ref :: { PolyTraitRef Span }
-  : trait_ref                          {% withSpan $1 (PolyTraitRef [] $1) }
-  | for_lts trait_ref                  {% withSpan $1 (PolyTraitRef (unspan $1) $2) }
+  : trait_ref                                   {% withSpan $1 (PolyTraitRef [] $1) }
+  | for_lts trait_ref                           {% withSpan $1 (PolyTraitRef (unspan $1) $2) }
 
 -- parse_for_lts()
--- Unlike the Rust libsyntax version, this _requires_ the for
+-- Unlike the Rust libsyntax version, this _requires_ the 'for'
 for_lts :: { Spanned [LifetimeDef Span] }
   : for '<' sep_by1(lifetime_def,',') ',' '>'   {% withSpan $1 (Spanned (toList $3)) } 
-  | for '<' sep_by(lifetime_def,',') '>'        {% withSpan $1 (Spanned $3) } 
+  | for '<' sep_by(lifetime_def,',')      '>'   {% withSpan $1 (Spanned $3) } 
 
--- No corresponding parse function
+-- Definition of a lifetime: attributes can come before the lifetime, and a list of bounding
+-- lifetimes can come after the lifetime.
 lifetime_def :: { LifetimeDef Span }
-  : outer_attribute many(outer_attribute) lifetime ':' sep_by1(lifetime,'+') {% withSpan $1 (LifetimeDef ($1 : $2) $3 (toList $5)) }
-  | outer_attribute many(outer_attribute) lifetime                           {% withSpan $1 (LifetimeDef ($1 : $2) $3 []) }
-  | lifetime ':' sep_by1(lifetime,'+')                                       {% withSpan $1 (LifetimeDef [] $1 (toList $3)) }
-  | lifetime                                                                 {% withSpan $1 (LifetimeDef [] $1 []) }
+  : outer_attribute many(outer_attribute) lifetime ':' sep_by1(lifetime,'+')
+    {% withSpan $1 (LifetimeDef ($1 : $2) $3 (toList $5)) }
+  | outer_attribute many(outer_attribute) lifetime
+    {% withSpan $1 (LifetimeDef ($1 : $2) $3 []) }
+  |                                       lifetime ':' sep_by1(lifetime,'+')
+    {% withSpan $1 (LifetimeDef [] $1 (toList $3)) }
+  |                                       lifetime
+    {% withSpan $1 (LifetimeDef [] $1 []) }
 
 
 --------------
@@ -674,31 +683,31 @@ lifetime_def :: { LifetimeDef Span }
 -- expression variable path and a pattern. To deal with this, we intercept expression paths with
 -- only one segment, no path parameters, and not global and turn them into identifier patterns.
 pat :: { Pat Span }
-  : ntPat                                       { $1 }
-  | '_'                                         {% withSpan $1 WildP }
-  | '&' mut pat                                 {% withSpan $1 (RefP $3 Mutable) }
-  | '&' pat                                     {% withSpan $1 (RefP $2 Immutable) }
-  | '&&' mut pat                                {% withSpan $1 (RefP (RefP $3 Mutable mempty) Immutable) }
-  | '&&' pat                                    {% withSpan $1 (RefP (RefP $2 Immutable mempty) Immutable) }
-  |     lit_expr                                {% withSpan $1 (LitP $1) }
-  | '-' lit_expr                                {% withSpan $1 (LitP (Unary [] Neg $2 mempty)) }
-  | box pat                                     {% withSpan $1 (BoxP $2) }
-  | binding_mode1 ident '@' pat                 {% withSpan $1 (IdentP (unspan $1) (unspan $2) (Just $4)) }
-  | binding_mode1 ident                         {% withSpan $1 (IdentP (unspan $1) (unspan $2) Nothing) }
-  |               ident '@' pat                 {% withSpan $1 (IdentP (ByValue Immutable) (unspan $1) (Just $3)) }
-  | expr_path                                   {%
+  : ntPat                           { $1 }
+  | '_'                             {% withSpan $1 WildP }
+  | '&' mut pat                     {% withSpan $1 (RefP $3 Mutable) }
+  | '&' pat                         {% withSpan $1 (RefP $2 Immutable) }
+  | '&&' mut pat                    {% withSpan $1 (RefP (RefP $3 Mutable mempty) Immutable) }
+  | '&&' pat                        {% withSpan $1 (RefP (RefP $2 Immutable mempty) Immutable) }
+  |     lit_expr                    {% withSpan $1 (LitP $1) }
+  | '-' lit_expr                    {% withSpan $1 (LitP (Unary [] Neg $2 mempty)) }
+  | box pat                         {% withSpan $1 (BoxP $2) }
+  | binding_mode1 ident '@' pat     {% withSpan $1 (IdentP (unspan $1) (unspan $2) (Just $4)) }
+  | binding_mode1 ident             {% withSpan $1 (IdentP (unspan $1) (unspan $2) Nothing) }
+  |               ident '@' pat     {% withSpan $1 (IdentP (ByValue Immutable) (unspan $1) (Just $3)) }
+  | expr_path                       {%
        case $1 of
          Path False ((i, NoParameters _) :| []) _ -> withSpan $1 (IdentP (ByValue Immutable) i Nothing)
          _                                        -> withSpan $1 (PathP Nothing $1)
     }
-  | expr_qual_path                              {% withSpan $1 (PathP (Just (fst (unspan $1))) (snd (unspan $1))) }
-  | lit_or_path '...' lit_or_path               {% withSpan $1 (RangeP $1 $3) }
-  | expr_path '{' '..' '}'                      {% withSpan $1 (StructP $1 [] True) }
-  | expr_path '{' pat_fields '}'                {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
-  | expr_path '(' pat_tup ')'                   {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
-  | expr_mac                                    {% withSpan $1 (MacP $1) }
-  | '[' pat_slice ']'                           {% let (b,s,a) = $2 in withSpan $1 (SliceP b s a) }
-  | '(' pat_tup ')'                             {%
+  | expr_qual_path                  {% withSpan $1 (PathP (Just (fst (unspan $1))) (snd (unspan $1))) }
+  | lit_or_path '...' lit_or_path   {% withSpan $1 (RangeP $1 $3) }
+  | expr_path '{' '..' '}'          {% withSpan $1 (StructP $1 [] True) }
+  | expr_path '{' pat_fields '}'    {% let (fs,b) = $3 in withSpan $1 (StructP $1 fs b) }
+  | expr_path '(' pat_tup ')'       {% let (ps,m,_) = $3 in withSpan $1 (TupleStructP $1 ps m) }
+  | expr_mac                        {% withSpan $1 (MacP $1) }
+  | '[' pat_slice ']'               {% let (b,s,a) = $2 in withSpan $1 (SliceP b s a) }
+  | '(' pat_tup ')'                 {%
       case $2 of
         ([p], Nothing, False) -> fail "Syntax error: the symbol `)' does not fit here"
         (ps,m,t) -> withSpan $1 (TupleP ps m)
@@ -713,9 +722,9 @@ pat_tup :: { ([Pat Span], Maybe Int, Bool) }
   | sep_by1(pat,',') ',' '..'                          { (toList $1,         Just (length $1), False) }
   | sep_by1(pat,',')                                   { (toList $1,         Nothing,          False) }
   | sep_by1(pat,',') ','                               { (toList $1,         Nothing,          True) }
-  | '..' ',' sep_by1(pat,',')                          { (toList $3,         Just 0,           False) }
-  | '..' ',' sep_by1(pat,',') ','                      { (toList $3,         Just 0,           True) }
-  | '..'                                               { ([],                Just 0,           False) }
+  |                      '..' ',' sep_by1(pat,',')     { (toList $3,         Just 0,           False) }
+  |                      '..' ',' sep_by1(pat,',') ',' { (toList $3,         Just 0,           True) }
+  |                      '..'                          { ([],                Just 0,           False) }
   | {- empty -}                                        { ([],                Nothing,          False) }
 
 -- The first element is the patterns at the beginning of the slice, the second the optional binding
@@ -725,44 +734,50 @@ pat_slice :: { ([Pat Span], Maybe (Pat Span), [Pat Span]) }
   : sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',') ',' { (toList $1, Just (WildP mempty), toList $5) }
   | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { (toList $1, Just (WildP mempty), toList $5) }
   | sep_by1(pat,',') ',' '..'                          { (toList $1, Just (WildP mempty), []) }
-  | sep_by1(pat,',') '..' ',' sep_by1(pat,',')         { (N.init $1, Just (N.last $1),    toList $4) }
-  | sep_by1(pat,',') '..' ',' sep_by1(pat,',') ','     { (N.init $1, Just (N.last $1),    toList $4) }
-  | sep_by1(pat,',') '..'                              { (N.init $1, Just (N.last $1),    []) }
+  | sep_by1(pat,',')     '..' ',' sep_by1(pat,',')     { (N.init $1, Just (N.last $1),    toList $4) }
+  | sep_by1(pat,',')     '..' ',' sep_by1(pat,',') ',' { (N.init $1, Just (N.last $1),    toList $4) }
+  | sep_by1(pat,',')     '..'                          { (N.init $1, Just (N.last $1),    []) }
   | sep_by1(pat,',')                                   { (toList $1, Nothing,             []) }
   | sep_by1(pat,',') ','                               { (toList $1, Nothing,             []) }
-  | '..' ',' sep_by1(pat,',')                          { ([],        Just (WildP mempty), toList $3) }
-  | '..' ',' sep_by1(pat,',') ','                      { ([],        Just (WildP mempty), toList $3) }
-  | '..'                                               { ([],        Just (WildP mempty), []) }
+  |                      '..' ',' sep_by1(pat,',')     { ([],        Just (WildP mempty), toList $3) }
+  |                      '..' ',' sep_by1(pat,',') ',' { ([],        Just (WildP mempty), toList $3) }
+  |                      '..'                          { ([],        Just (WildP mempty), []) }
   | {- empty -}                                        { ([],        Nothing,             []) }
 
 
+-- Endpoints of range patterns
 lit_or_path :: { Expr Span }
   : expr_path         {% withSpan $1 (PathExpr [] Nothing $1) }
   | expr_qual_path    {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
   | '-' lit_expr      {% withSpan $1 (Unary [] Neg $2) }
-  | lit_expr          { $1 }
+  |     lit_expr      { $1 }
+
+-- Used in patterns for tuple and expression patterns
+pat_fields :: { ([FieldPat Span], Bool) }
+  : sep_by1(pat_field,',')           { (toList $1, False) }
+  | sep_by1(pat_field,',') ','       { (toList $1, False) }
+  | sep_by1(pat_field,',') ',' '..'  { (toList $1, True) }
+  | {- empty -}                      { ([], False) }
 
 pat_field :: { FieldPat Span }
-  :     binding_mode ident     {% withSpan $1 (FieldPat Nothing (IdentP (unspan $1) (unspan $2) Nothing mempty)) }
-  | box binding_mode ident     {% withSpan $1 (FieldPat Nothing (BoxP (IdentP (unspan $2) (unspan $3) Nothing mempty) mempty)) }
-  | binding_mode ident ':' pat {% withSpan $1 (FieldPat (Just (unspan $2)) $4) }
+  :     binding_mode ident
+    {% withSpan $1 (FieldPat Nothing (IdentP (unspan $1) (unspan $2) Nothing mempty)) }
+  | box binding_mode ident
+    {% withSpan $1 (FieldPat Nothing (BoxP (IdentP (unspan $2) (unspan $3) Nothing mempty) mempty)) }
+  |     binding_mode ident ':' pat
+    {% withSpan $1 (FieldPat (Just (unspan $2)) $4) }
 
-pat_fields :: { ([FieldPat Span], Bool) }
-  : pat_field ',' pat_fields   { let ~(fs,b) = $3 in ($1 : fs, b) }
-  | pat_field ','              { ([$1], False) }
-  | pat_field ',' '..'         { ([$1], True) }
-  | pat_field                  { ([$1], False) }
 
 -- Used prefixing IdentP patterns (not empty - that is a seperate pattern case)
 binding_mode1 :: { Spanned BindingMode }
-  : ref mut               {% withSpan $1 (Spanned (ByRef Mutable)) }
-  | ref                   {% withSpan $1 (Spanned (ByRef Immutable)) }
-  | mut                   {% withSpan $1 (Spanned (ByValue Mutable)) }
+  : ref mut                          {% withSpan $1 (Spanned (ByRef Mutable)) }
+  | ref                              {% withSpan $1 (Spanned (ByRef Immutable)) }
+  |     mut                          {% withSpan $1 (Spanned (ByValue Mutable)) }
 
 -- Used for patterns for fields (includes the empty case)
 binding_mode :: { Spanned BindingMode }
-  : binding_mode1         { $1 }
-  | {- empty -}           { pure (ByValue Immutable) }
+  : binding_mode1                    { $1 }
+  | {- empty -}                      { pure (ByValue Immutable) }
 
 
 -----------------
