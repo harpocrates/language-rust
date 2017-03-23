@@ -22,9 +22,9 @@ In our case, this shared information is held in 'PState'.
 
 module Language.Rust.Parser.ParseMonad (
   -- * Parsing monad
-  P, execParser, initPos, PState(..),
+  P, execParser, execParser', initPos, PState(..),
   -- * Monadic operations
-  getPState, setPState, getPosition, setPosition, getInput, setInput, popToken, pushToken,
+  getPState, setPState, getPosition, setPosition, getInput, setInput, popToken, pushToken, swapToken,
   -- * Error reporting
   parseError,
 ) where
@@ -51,6 +51,7 @@ data PState = PState
   , curInput     :: !InputStream     -- ^ the current input
   , prevPos      ::  Position        -- ^ position at previous input location
   , pushedTokens :: [Spanned Token]  -- ^ tokens manually pushed by the user
+  , swapFunction :: Token -> Token   -- ^ function to swap token
   }
 
 instance Functor P where
@@ -75,7 +76,11 @@ instance Monad P where
 -- | Execute the given parser on the supplied input stream at the given start position, returning
 -- either the position of an error and the error message, or the value parsed.
 execParser :: P a -> InputStream -> Position -> Either (Position,String) a
-execParser (P parser) input pos =
+execParser p input pos = execParser' p input pos id
+
+
+execParser' :: P a -> InputStream -> Position -> (Token -> Token) -> Either (Position,String) a
+execParser' (P parser) input pos swap =
   case parser initialState of
     Failed message errPos -> Left (errPos, message)
     Ok result _ -> Right result
@@ -84,7 +89,12 @@ execParser (P parser) input pos =
           , curInput = input
           , prevPos = error "ParseMonad.execParser: Touched undefined position!"
           , pushedTokens = []
+          , swapFunction = swap
           }
+
+-- | Swap a token using the swap function
+swapToken :: Token -> P Token
+swapToken t = P $ \s@PState{ swapFunction = f } -> Ok (f t) s
 
 -- | Extract the state stored in the parser.
 getPState :: P PState
