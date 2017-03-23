@@ -8,40 +8,41 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-The parsers in this file are all re-exported to 'Language.Rust.Parser' via the 'Parse' class.
+The parsers in this file are all re-exported to 'Language.Rust.Parser' via the 'Parse' class. The
+parsers are based off:
+
+  * the reference @rustc@ [implementation](https://github.com/rust-lang/rust/blob/master/src/libsyntax/parse/parser.rs)
+  * a slightly outdated [ANTLR grammar](https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y)
+  * some documentation on [rust-lang](https://doc.rust-lang.org/grammar.html)
+
+To log Happy's debug information (about transition states and such), run @happy --info=happyinfo.txt
+-o /dev/null src/Language/Rust/Parser/Internal.y@.
 -}
 {-# OPTIONS_HADDOCK hide, not-home #-}
 {-# LANGUAGE OverloadedStrings, OverloadedLists #-}
-
 
 module Language.Rust.Parser.Internal (
   parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseCrate,
   parseBlock, parseImplItem, parseTraitItem, parseTt,
 ) where
 
-import Language.Rust.Data.InputStream
 import Language.Rust.Syntax.Token
-import Language.Rust.Syntax.Ident
-import Language.Rust.Data.Position
-import Language.Rust.Parser.Lexer
-import Language.Rust.Parser.ParseMonad
 import Language.Rust.Syntax.AST
-import Language.Rust.Parser.Literals
+import Language.Rust.Syntax.Ident (mkIdent, Ident(..))
+import Language.Rust.Data.Position (Spanned(..), Span(..), Located(..))
+import Language.Rust.Parser.Lexer (lexNonSpace)
+import Language.Rust.Parser.ParseMonad (pushToken, getPosition, P, parseError)
+import Language.Rust.Parser.Literals (translateLit)
 
 import Data.Semigroup ((<>))
 import Data.List.NonEmpty (NonEmpty(..), (<|), toList)
 import qualified Data.List.NonEmpty as N
 }
 
--- <https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y>
--- <https://github.com/rust-lang/rust/blob/master/src/libsyntax/parse/parser.rs>
--- References to <https://doc.rust-lang.org/grammar.html>
--- To see conflicts: stack exec happy -- --info=happyinfo.txt -o /dev/null src/Language/Rust/Parser/Parser.y
-
 -- in order to document the parsers, we have to alias them
 %name parseLit lit
 %name parseAttr attribute
-%name parseTy ty_sum     -- the exported parser for types really is for type sums (with object sums)
+%name parseTy ty_sum       -- the exported parser for types really is for type sums (with object sums)
 %name parsePat pat
 %name parseStmt stmt
 %name parseExpr expr
@@ -228,14 +229,20 @@ import qualified Data.List.NonEmpty as N
   ntWhereClause  { Spanned (Interpolated (NtWhereClause $$)) _ }
   ntArg          { Spanned (Interpolated (NtArg $$)) _ }
 
--- 'mut' should be lower precedence than 'IDENT' so that in the pat rule,
--- "& mut pat" has higher precedence than "binding_mode1 ident [@ pat]"
+
+-- This needs to be lower precedence than 'IDENT' so that in 'pat', something like "&mut x"
+-- associates the "mut" to a refence pattern and not to the identifier pattern "x".
 %nonassoc mut
+
+-- These are all identifiers of sorts ('union' and 'default' are "weak" keywords)
 %nonassoc IDENT ntIdent union default
 
-%nonassoc box
-%nonassoc return break continue IMPLTRAIT
+-- These are all very low precedence unary operators
+%nonassoc box return break continue IMPLTRAIT
 
+-- These are the usual arithmetic precedences. 'UNARY' is introduced here for '*', '!', '-', '&'
+--
+-- TODO: revisit these precedences and write some tests for them
 %right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%=' '..' '...' 
 %right '<-'
 %left '||'
@@ -250,10 +257,19 @@ import qualified Data.List.NonEmpty as N
 %left ':' as
 %left UNARY
 
-%nonassoc POSTFIX VIS TYPATH EXPRPATH DOLLAR
-%nonassoc '{' ntBlock '[' '(' '!'
+-- These are all generated precedence tokens.
+--
+--  * 'POSTFIX' for postfix operators (which bind more tightly than pretty much anything but parens)
+--  * 'VIS' for adjusting the precedence of 'pub' compared to other visbility modifiers (see 'vis')
+--  * 'PATH' boosts the precedences of paths in types and expressions
+--  * 'DOLLAR' is for a single '$' token not in sequence expression
+--  * 'WHERE' is for non-empty where clauses
+--
+%nonassoc POSTFIX VIS PATH DOLLAR WHERE
 
-%nonassoc WHERE
+-- Delimiters have the highest precedence. 'ntBlock' counts as a delimiter since it always starts
+-- and ends with '{' and '}'
+%nonassoc '{' ntBlock '[' '(' '!'
 
 %%
 
@@ -286,24 +302,22 @@ gt :: { () }
 -- Utility --
 -------------
 
--- | One or more
+-- | One or more occurences of 'p'
 some(p) :: { NonEmpty a }
   : some(p) p          { $1 |> $2 }
   | p                  { [$1] }
 
--- | Zero or more
+-- | Zero or more occurences of 'p'
 many(p) :: { [a] }
   : some(p)            { toList $1 }
   | {- empty -}        { [] }
 
-
--- | One or more occurences of p, seperated by sep
+-- | One or more occurences of 'p', seperated by 'sep'
 sep_by1(p,sep) :: { NonEmpty a }
   : sep_by1(p,sep) sep p  { $1 |> $3 }
   | p                     { [$1] }
 
-
--- | Zero or more occurrences of p, separated by sep
+-- | Zero or more occurrences of 'p', separated by 'sep'
 sep_by(p,sep) :: { [a] }
   : sep_by1(p,sep)     { toList $1 }
   | {- empty -}        { [] }
@@ -549,7 +563,7 @@ no_for_ty_prim :: { Ty Span }
   | '*' mut ty                       {% withSpan $1 (Ptr Mutable $3) }
   | '&' lifetime_mut ty              {% withSpan $1 (Rptr (fst $2) (snd $2) $3) }
   | '&&' lifetime_mut ty             {% withSpan $1 (Rptr Nothing Immutable (Rptr (fst $2) (snd $2) $3 mempty)) }
-  | ty_path             %prec TYPATH {% withSpan $1 (PathTy Nothing $1) }
+  | ty_path               %prec PATH {% withSpan $1 (PathTy Nothing $1) }
   | ty_mac                           {% withSpan $1 (MacTy $1) } 
   | unsafe extern abi fn fn_decl     {% withSpan $1 (BareFn Unsafe $3 [] $>) }
   | unsafe fn fn_decl                {% withSpan $1 (BareFn Unsafe Rust [] $>) }
@@ -598,11 +612,10 @@ fn_decl :: { FnDecl Span }
 
 -- Like 'fn_decl', but also accepting a self argument
 fn_decl_with_self :: { FnDecl Span }
-  : '(' arg_self ',' sep_by1(arg_general,',') ',' ')' ret_ty   {% withSpan $1 (FnDecl ($2 : toList $4) $> False) }
-  | '(' arg_self ',' sep_by1(arg_general,',')     ')' ret_ty   {% withSpan $1 (FnDecl ($2 : toList $4) $> False) } 
-  | '(' arg_self ','                              ')' ret_ty   {% withSpan $1 (FnDecl [$2] $> False) }
-  | '(' arg_self                                  ')' ret_ty   {% withSpan $1 (FnDecl [$2] $> False) }
-  | fn_decl                                                    { $1 }
+  : '(' arg_self ',' sep_by1(arg_general,',') ',' ')' ret_ty  {% withSpan $1 (FnDecl ($2 : toList $4) $> False) }
+  | '(' arg_self ',' sep_by(arg_general,',')      ')' ret_ty  {% withSpan $1 (FnDecl ($2 : $4) $> False) } 
+  | '(' arg_self                                  ')' ret_ty  {% withSpan $1 (FnDecl [$2] $> False) }
+  | fn_decl                                                   { $1 }
 
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
@@ -754,10 +767,9 @@ lit_or_path :: { Expr Span }
 
 -- Used in patterns for tuple and expression patterns
 pat_fields :: { ([FieldPat Span], Bool) }
-  : sep_by1(pat_field,',')           { (toList $1, False) }
+  : sep_by(pat_field,',')            { ($1, False) }
   | sep_by1(pat_field,',') ','       { (toList $1, False) }
   | sep_by1(pat_field,',') ',' '..'  { (toList $1, True) }
-  | {- empty -}                      { ([], False) }
 
 pat_field :: { FieldPat Span }
   :     binding_mode ident
@@ -784,121 +796,33 @@ binding_mode :: { Spanned BindingMode }
 -- Expressions --
 -----------------
 
-lit_expr :: { Expr Span }
-  : lit       {% withSpan $1 (Lit [] $1) }
-
-
--- General expressions, not restrictions
-expr :: { Expr Span }
-  : gen_expr                                                           { $1 }
-  | arithmetic_expr                                                    { $1 }
-  | lambda_expr                                                        { $1 }
-arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) { $1 }
-  | postfix_expr                                                       { $1 } 
-postfix_expr  :: { Expr Span }
-  : gen_postfix_expr(postfix_expr)                                     { $1 } 
-  | paren_expr                                                         { $1 }
-  | struct_expr                                                        { $1 }
-  | block_expr                                                         { $1 }
-
-
--- General expressions, but no structs
-nostruct_expr :: { Expr Span }
-  : gen_expr                                                           { $1 }
-  | ns_arithmetic_expr                                                 { $1 }
-  | lambda_expr_nostruct                                               { $1 }
-ns_arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(ns_arithmetic_expr,ns_arithmetic_expr,nsb_arithmetic_expr) { $1 }
-  | ns_postfix_expr                                                    { $1 } 
-ns_postfix_expr  :: { Expr Span }
-  : gen_postfix_expr(ns_postfix_expr)                                  { $1 } 
-  | paren_expr                                                         { $1 }
-  | block_expr                                                         { $1 }
-
-
--- General expressions, but no structs and no blocks (block-like things like if expressions or loops
--- are fine)
-nostructblock_expr :: { Expr Span }
-  : gen_expr                                                           { $1 }
-  | nsb_arithmetic_expr                                                { $1 }
-  | lambda_expr_nostruct                                               { $1 }
-nsb_arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(nsb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) { $1 }
-  | nsb_postfix_expr                                                   { $1 } 
-nsb_postfix_expr  :: { Expr Span }
-  : gen_postfix_expr(nsb_postfix_expr)                                 { $1 } 
-  | paren_expr                                                         { $1 }
-  | block_like_expr                                                    { $1 }
-
-
--- General expressions, but no blocks on the left
-nonblock_expr :: { Expr Span }
-  : gen_expr                                                           { $1 }
-  | nb_arithmetic_expr                                                 { $1 }
-  | lambda_expr_nostruct                                               { $1 }
-nb_arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) { $1 }
-  | nb_postfix_expr                                                    { $1 } 
-nb_postfix_expr :: { Expr Span }
-  : gen_postfix_expr(nb_postfix_expr)                                  { $1 }
-  | paren_expr                                                         { $1 }
-  | struct_expr                                                        { $1 }
-
-
--- "There is a convenience rule that allows one to omit the separating ; after if, match, loop, for, while"
-block_expr :: { Expr Span }
-  : block_like_expr                                           { $1 } 
-  | block                                                     {% withSpan $1 (BlockExpr [] $1) }
-
--- Any block like expression except a block itself
-block_like_expr :: { Expr Span }
-  : if_expr                                                   { $1 }
-  |              loop                            block        {% withSpan $1 (Loop [] $2 Nothing) }
-  | lifetime ':' loop                            block        {% withSpan $1 (Loop [] $4 (Just $1)) }
-  |              for pat in nostruct_expr        block        {% withSpan $1 (ForLoop [] $2 $4 $5 Nothing) }
-  | lifetime ':' for pat in nostruct_expr        block        {% withSpan $1 (ForLoop [] $4 $6 $7 (Just $1)) }
-  |              while             nostruct_expr block        {% withSpan $1 (While [] $2 $3 Nothing) }
-  | lifetime ':' while             nostruct_expr block        {% withSpan $1 (While [] $4 $5 (Just $1)) }
-  |              while let pat '=' nostruct_expr block        {% withSpan $1 (WhileLet [] $3 $5 $6 Nothing) }
-  | lifetime ':' while let pat '=' nostruct_expr block        {% withSpan $1 (WhileLet [] $5 $7 $8 (Just $1)) }
-  | match nostruct_expr '{' '}'                               {% withSpan $1 (Match [] $2 []) }
-  | match nostruct_expr '{' arms '}'                          {% withSpan $1 (Match [] $2 $4) }
-  | expr_path '!' '{' many(token_tree) '}'                    {% withSpan $1 (MacExpr [] (Mac $1 $4 mempty)) }
-  | unsafe block                                              {% withSpan $1 (BlockExpr [] $2{ rules = Unsafe }) }
-
--- As per https://github.com/rust-lang/rust/issues/15701 (as of March 10 2017), the only way to have
--- attributes on expressions should be with inner attributes on a paren expression.
-paren_expr :: { Expr Span }
-  : '(' ')'                                {% withSpan $1 (TupExpr [] []) }
-  | '(' expr ')'                           {% withSpan $1 (ParenExpr [] $2) }
-  | '(' inner_attrs expr ')'               {% withSpan $1 (ParenExpr (toList $2) $3) }
-  | '(' expr ',' ')'                       {% withSpan $1 (TupExpr [] [$2]) }
-  | '(' expr ',' sep_by1(expr,',') ')'     {% withSpan $1 (TupExpr [] ($2 : toList $4)) }
+-- Expressions are a pain to parse. The Rust language places "restrictions" preventing certain
+-- specific expressions from being valid in a certain context. Elsewhere in the parser, it will turn
+-- on or off these restrictions. Unfortunately, that doesn't work well at all in a grammar, so we
+-- have to define production rules for every combination of restrications used. Parametrized
+-- productions make this a bit easier by letting us factor out the core expressions used everywhere.
 
 -- General postfix expression
 gen_postfix_expr(lhs) :: { Expr Span }
-  : lit_expr                                                                    { $1 }
-  | self                                                                        {% withSpan $1 (PathExpr [] Nothing (Path False [("self", NoParameters mempty)] mempty)) }
-  | expr_path                                                    %prec EXPRPATH {% withSpan $1 (PathExpr [] Nothing $1) }
-  | expr_qual_path                                                              {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
-  | expr_mac                                                                    {% withSpan $1 (MacExpr [] $1) }
-  | '[' ']'                                                                     {% withSpan $1 (Vec [] []) }
-  | '[' sep_by1(expr,',') ']'                                                   {% withSpan $1 (Vec [] (toList $2)) }
-  | '[' sep_by1(expr,',') ',' ']'                                               {% withSpan $1 (Vec [] (toList $2)) }
-  | '[' expr ';' expr ']'                                                       {% withSpan $1 (Repeat [] $2 $4) }
-  | lhs '[' expr ']'                                                            {% withSpan $1 (Index [] $1 $3) }
-  | lhs '?'                                                                     {% withSpan $1 (Try [] $1) }
-  | lhs '(' ')'                                                                 {% withSpan $1 (Call [] $1 []) }
-  | lhs '(' sep_by1(expr,',') ')'                                               {% withSpan $1 (Call [] $1 (toList $3)) }
-  | lhs '(' sep_by1(expr,',') ',' ')'                                           {% withSpan $1 (Call [] $1 (toList $3)) }
-  | lhs '.' ident '(' ')'                                                       {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing []) }
-  | lhs '.' ident '(' sep_by1(expr,',') ')'                                     {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing (toList $5)) }
-  | lhs '.' ident '(' sep_by1(expr,',') ',' ')'                                 {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing (toList $5)) }
-  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' ')'                       {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) []) }
-  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ')'     {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) (toList $9)) }
-  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ',' ')' {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) (toList $9)) }
-  | lhs '.' ident                                                 %prec POSTFIX {% withSpan $1 (FieldAccess [] $1 (unspan $3)) }
+  : lit_expr                                        { $1 }
+  | self                                            {% withSpan $1 (PathExpr [] Nothing (Path False [("self", NoParameters mempty)] mempty)) }
+  | expr_path                            %prec PATH {% withSpan $1 (PathExpr [] Nothing $1) }
+  | expr_qual_path                                  {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
+  | expr_mac                                        {% withSpan $1 (MacExpr [] $1) }
+  | '[' sep_by(expr,',')      ']'                   {% withSpan $1 (Vec [] $2) }
+  | '[' sep_by1(expr,',') ',' ']'                   {% withSpan $1 (Vec [] (toList $2)) }
+  | '[' expr ';' expr ']'                           {% withSpan $1 (Repeat [] $2 $4) }
+  | lhs '[' expr ']'                                {% withSpan $1 (Index [] $1 $3) }
+  | lhs '?'                                         {% withSpan $1 (Try [] $1) }
+  | lhs '(' sep_by(expr,',')      ')'               {% withSpan $1 (Call [] $1 $3) }
+  | lhs '(' sep_by1(expr,',') ',' ')'               {% withSpan $1 (Call [] $1 (toList $3)) }
+  | lhs '.' ident '(' sep_by(expr,',')      ')'     {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing $5) }
+  | lhs '.' ident '(' sep_by1(expr,',') ',' ')'     {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing (toList $5)) }
+  | lhs '.' ident                     %prec POSTFIX {% withSpan $1 (FieldAccess [] $1 (unspan $3)) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by(expr,',')      ')'
+     {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) $9) }
+  | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ',' ')'
+     {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) (toList $9)) }
   | lhs '.' int                                                                 {%
       case lit $3 of
         Int i Unsuffixed _ -> withSpan $1 (TupField [] $1 (fromIntegral i))
@@ -908,148 +832,252 @@ gen_postfix_expr(lhs) :: { Expr Span }
 -- Arithmetic (unary and binary) generalized expressions. Precedences are handled by Happy (right
 -- at the end of the token section)
 gen_arithmetic(lhs,rhs,rhs2) :: { Expr Span }
-  : '*' lhs                %prec UNARY     {% withSpan $1 (Unary [] Deref $2) }
-  | '!' lhs                %prec UNARY     {% withSpan $1 (Unary [] Not $2) }
-  | '-' lhs                %prec UNARY     {% withSpan $1 (Unary [] Neg $2) }
-  | '&' lhs                %prec UNARY     {% withSpan $1 (AddrOf [] Immutable $2) }
-  | '&' mut lhs            %prec UNARY     {% withSpan $1 (AddrOf [] Mutable $3) }
-  | '&&' lhs               %prec UNARY     {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Immutable $2 mempty)) }
-  | '&&' mut lhs           %prec UNARY     {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Mutable $3 mempty)) }
-  | box lhs                %prec UNARY     {% withSpan $1 (Box [] $2) }
-  | lhs ':' ty                             {% withSpan $1 (TypeAscription [] $1 $3) }
-  | lhs as ty                              {% withSpan $1 (Cast [] $1 $3) }
-  | lhs '*' rhs                            {% withSpan $1 (Binary [] MulOp $1 $3) }
-  | lhs '/' rhs                            {% withSpan $1 (Binary [] DivOp $1 $3) }
-  | lhs '%' rhs                            {% withSpan $1 (Binary [] RemOp $1 $3) }
-  | lhs '+' rhs                            {% withSpan $1 (Binary [] AddOp $1 $3) }
-  | lhs '-' rhs                            {% withSpan $1 (Binary [] SubOp $1 $3) }
-  | lhs '<<' rhs                           {% withSpan $1 (Binary [] ShlOp $1 $3) }
-  | lhs '>>' rhs                           {% withSpan $1 (Binary [] ShrOp $1 $3) }
-  | lhs '&' rhs                            {% withSpan $1 (Binary [] BitAndOp $1 $3) }
-  | lhs '^' rhs                            {% withSpan $1 (Binary [] BitXorOp $1 $3) }
-  | lhs '|' rhs                            {% withSpan $1 (Binary [] BitOrOp $1 $3) }
-  | lhs '==' rhs                           {% withSpan $1 (Binary [] EqOp $1 $3) }
-  | lhs '!=' rhs                           {% withSpan $1 (Binary [] NeOp $1 $3) }
-  | lhs '<'  rhs                           {% withSpan $1 (Binary [] LtOp $1 $3) }
-  | lhs '>'  rhs                           {% withSpan $1 (Binary [] GtOp $1 $3) }
-  | lhs '<=' rhs                           {% withSpan $1 (Binary [] LeOp $1 $3) }
-  | lhs '>=' rhs                           {% withSpan $1 (Binary [] GeOp $1 $3) }
-  | lhs '&&' rhs                           {% withSpan $1 (Binary [] AndOp $1 $3) }
-  | lhs '||' rhs                           {% withSpan $1 (Binary [] OrOp $1 $3) }
-  | lhs '<-' rhs                           {% withSpan $1 (InPlace [] $1 $3) }
-  | lhs '=' rhs                            {% withSpan $1 (Assign   [] $1 $3) }
-  | lhs '>>=' rhs                          {% withSpan $1 (AssignOp [] ShrOp $1 $3) }
-  | lhs '<<=' rhs                          {% withSpan $1 (AssignOp [] ShlOp $1 $3) }
-  | lhs '-=' rhs                           {% withSpan $1 (AssignOp [] SubOp $1 $3) }
-  | lhs '+=' rhs                           {% withSpan $1 (AssignOp [] AddOp $1 $3) }
-  | lhs '*=' rhs                           {% withSpan $1 (AssignOp [] MulOp $1 $3) }
-  | lhs '/=' rhs                           {% withSpan $1 (AssignOp [] DivOp $1 $3) }
-  | lhs '^=' rhs                           {% withSpan $1 (AssignOp [] BitXorOp $1 $3) }
-  | lhs '|=' rhs                           {% withSpan $1 (AssignOp [] BitOrOp $1 $3) }
-  | lhs '&=' rhs                           {% withSpan $1 (AssignOp [] BitAndOp $1 $3) }
-  | lhs '%=' rhs                           {% withSpan $1 (AssignOp [] RemOp $1 $3) }
-  | lhs '..'                               {% withSpan $1 (Range [] (Just $1) Nothing Closed) }
-  | lhs '...'                              {% withSpan $1 (Range [] (Just $1) Nothing Closed) }
-  | lhs '..' rhs2                          {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
-  | lhs '...' rhs2                         {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
+  : '*' lhs          %prec UNARY {% withSpan $1 (Unary [] Deref $2) }
+  | '!' lhs          %prec UNARY {% withSpan $1 (Unary [] Not $2) }
+  | '-' lhs          %prec UNARY {% withSpan $1 (Unary [] Neg $2) }
+  | '&'      lhs     %prec UNARY {% withSpan $1 (AddrOf [] Immutable $2) }
+  | '&'  mut lhs     %prec UNARY {% withSpan $1 (AddrOf [] Mutable $3) }
+  | '&&'     lhs     %prec UNARY {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Immutable $2 mempty)) }
+  | '&&' mut lhs     %prec UNARY {% withSpan $1 (AddrOf [] Immutable (AddrOf [] Mutable $3 mempty)) }
+  | box lhs          %prec UNARY {% withSpan $1 (Box [] $2) }
+  | lhs ':' ty                   {% withSpan $1 (TypeAscription [] $1 $3) }
+  | lhs as ty                    {% withSpan $1 (Cast [] $1 $3) }
+  | lhs '*' rhs                  {% withSpan $1 (Binary [] MulOp $1 $3) }
+  | lhs '/' rhs                  {% withSpan $1 (Binary [] DivOp $1 $3) }
+  | lhs '%' rhs                  {% withSpan $1 (Binary [] RemOp $1 $3) }
+  | lhs '+' rhs                  {% withSpan $1 (Binary [] AddOp $1 $3) }
+  | lhs '-' rhs                  {% withSpan $1 (Binary [] SubOp $1 $3) }
+  | lhs '<<' rhs                 {% withSpan $1 (Binary [] ShlOp $1 $3) }
+  | lhs '>>' rhs                 {% withSpan $1 (Binary [] ShrOp $1 $3) }
+  | lhs '&' rhs                  {% withSpan $1 (Binary [] BitAndOp $1 $3) }
+  | lhs '^' rhs                  {% withSpan $1 (Binary [] BitXorOp $1 $3) }
+  | lhs '|' rhs                  {% withSpan $1 (Binary [] BitOrOp $1 $3) }
+  | lhs '==' rhs                 {% withSpan $1 (Binary [] EqOp $1 $3) }
+  | lhs '!=' rhs                 {% withSpan $1 (Binary [] NeOp $1 $3) }
+  | lhs '<'  rhs                 {% withSpan $1 (Binary [] LtOp $1 $3) }
+  | lhs '>'  rhs                 {% withSpan $1 (Binary [] GtOp $1 $3) }
+  | lhs '<=' rhs                 {% withSpan $1 (Binary [] LeOp $1 $3) }
+  | lhs '>=' rhs                 {% withSpan $1 (Binary [] GeOp $1 $3) }
+  | lhs '&&' rhs                 {% withSpan $1 (Binary [] AndOp $1 $3) }
+  | lhs '||' rhs                 {% withSpan $1 (Binary [] OrOp $1 $3) }
+  | lhs '<-' rhs                 {% withSpan $1 (InPlace [] $1 $3) }
+  | lhs '=' rhs                  {% withSpan $1 (Assign   [] $1 $3) }
+  | lhs '>>=' rhs                {% withSpan $1 (AssignOp [] ShrOp $1 $3) }
+  | lhs '<<=' rhs                {% withSpan $1 (AssignOp [] ShlOp $1 $3) }
+  | lhs '-=' rhs                 {% withSpan $1 (AssignOp [] SubOp $1 $3) }
+  | lhs '+=' rhs                 {% withSpan $1 (AssignOp [] AddOp $1 $3) }
+  | lhs '*=' rhs                 {% withSpan $1 (AssignOp [] MulOp $1 $3) }
+  | lhs '/=' rhs                 {% withSpan $1 (AssignOp [] DivOp $1 $3) }
+  | lhs '^=' rhs                 {% withSpan $1 (AssignOp [] BitXorOp $1 $3) }
+  | lhs '|=' rhs                 {% withSpan $1 (AssignOp [] BitOrOp $1 $3) }
+  | lhs '&=' rhs                 {% withSpan $1 (AssignOp [] BitAndOp $1 $3) }
+  | lhs '%=' rhs                 {% withSpan $1 (AssignOp [] RemOp $1 $3) }
+  | lhs '..'                     {% withSpan $1 (Range [] (Just $1) Nothing Closed) }
+  | lhs '...'                    {% withSpan $1 (Range [] (Just $1) Nothing Closed) }
+  | lhs '..' rhs2                {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
+  | lhs '...' rhs2               {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
 
 -- Lowest precedence generalized expression
 gen_expr :: { Expr Span }
-  : ntExpr                                 { $1 }
-  | return                                 {% withSpan $1 (Ret [] Nothing) }
-  | return expr                            {% withSpan $1 (Ret [] (Just $2)) }
-  | '..'                                   {% withSpan $1 (Range [] Nothing Nothing Closed) }
-  | '...'                                  {% withSpan $1 (Range [] Nothing Nothing HalfOpen) }
-  | '..' expr                              {% withSpan $1 (Range [] Nothing (Just $2) Closed) }
-  | '...' expr                             {% withSpan $1 (Range [] Nothing (Just $2) HalfOpen) }
-  | continue                               {% withSpan $1 (Continue [] Nothing) }
-  | continue lifetime                      {% withSpan $1 (Continue [] (Just $2)) }
-  | break                                  {% withSpan $1 (Break [] Nothing Nothing) }
-  | break          expr                    {% withSpan $1 (Break [] Nothing (Just $2)) }
-  | break lifetime                         {% withSpan $1 (Break [] (Just $2) Nothing) }
-  | break lifetime expr                    {% withSpan $1 (Break [] (Just $2) (Just $3)) }
+  : ntExpr                       { $1 }
+  | return                       {% withSpan $1 (Ret [] Nothing) }
+  | return expr                  {% withSpan $1 (Ret [] (Just $2)) }
+  | '..'                         {% withSpan $1 (Range [] Nothing Nothing Closed) }
+  | '...'                        {% withSpan $1 (Range [] Nothing Nothing HalfOpen) }
+  | '..' expr                    {% withSpan $1 (Range [] Nothing (Just $2) Closed) }
+  | '...' expr                   {% withSpan $1 (Range [] Nothing (Just $2) HalfOpen) }
+  | continue                     {% withSpan $1 (Continue [] Nothing) }
+  | continue lifetime            {% withSpan $1 (Continue [] (Just $2)) }
+  | break                        {% withSpan $1 (Break [] Nothing Nothing) }
+  | break          expr          {% withSpan $1 (Break [] Nothing (Just $2)) }
+  | break lifetime               {% withSpan $1 (Break [] (Just $2) Nothing) }
+  | break lifetime expr          {% withSpan $1 (Break [] (Just $2) (Just $3)) }
 
 
+-- Then, we instantiate these general productions into the following families of rules:
+--
+--   ['expr']               Most general class of expressions, no restrictions
+--
+--   ['nostruct_expr']      Forbids struct literals
+--
+--   ['nostructblock_expr'] Forbids struct literals and block expressions (but not block-like things
+--                          like 'if' expressions or 'loop' expressions)
+--
+--   ['nonblock_expr']      Forbids expressions starting with blocks (things such as '{ 1 } + 2' are
+--                          not allowed, while struct expressions are - their "block" is at the end
+--                          of the expression)
+--
+-- There is also a later instantiation reolving around 'match' expressions, but it has some
+-- different types.
 
--- Match arms usually have to be seperated by commas (with an optional comma at the end). This
--- condition is loosened (so that there is no seperator needed) if the arm ends in a safe block.
-arms :: { [Arm Span] }
-  : ntArm                                                     { [$1] }
-  | ntArm arms                                                { $1 : $2 }
-  | outer_attrs sep_by1(pat,'|') arm_guard '=>' expr_arms     { let (e,as) = $> in (Arm (toList $1) $2 $3 e mempty : as) }
-  |             sep_by1(pat,'|') arm_guard '=>' expr_arms     { let (e,as) = $> in (Arm [] $1 $2 e mempty : as) }
+expr :: { Expr Span }
+  : gen_expr                                                                  { $1 }
+  | arithmetic_expr                                                           { $1 }
+  | lambda_expr                                                               { $1 }
+arithmetic_expr :: { Expr Span }
+  : gen_arithmetic(arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)       { $1 }
+  | postfix_expr                                                              { $1 } 
+postfix_expr  :: { Expr Span }
+  : gen_postfix_expr(postfix_expr)                                            { $1 } 
+  | paren_expr                                                                { $1 }
+  | struct_expr                                                               { $1 }
+  | block_expr                                                                { $1 }
 
-comma_arms :: { [Arm Span] }
-  : {- empty -}    { [] }
-  | ','            { [] }
-  | ',' arms       { $2 }
+nostruct_expr :: { Expr Span }
+  : gen_expr                                                                  { $1 }
+  | ns_arithmetic_expr                                                        { $1 }
+  | lambda_expr_nostruct                                                      { $1 }
+ns_arithmetic_expr :: { Expr Span }
+  : gen_arithmetic(ns_arithmetic_expr,ns_arithmetic_expr,nsb_arithmetic_expr) { $1 }
+  | ns_postfix_expr                                                           { $1 } 
+ns_postfix_expr  :: { Expr Span }
+  : gen_postfix_expr(ns_postfix_expr)                                         { $1 } 
+  | paren_expr                                                                { $1 }
+  | block_expr                                                                { $1 }
 
--- An expression followed by match arms. If there is a comma needed, it is added 
-expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_expr                          comma_arms              { ($1, $2) }
-  | lambda_expr_nostruct              comma_arms              { ($1, $2) }
-  | arithmetic_expr_arms                                      { $1 }
+nostructblock_expr :: { Expr Span }
+  : gen_expr                                                                  { $1 }
+  | nsb_arithmetic_expr                                                       { $1 }
+  | lambda_expr_nostruct                                                      { $1 }
+nsb_arithmetic_expr :: { Expr Span }
+  : gen_arithmetic(nsb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)   { $1 }
+  | nsb_postfix_expr                                                          { $1 } 
+nsb_postfix_expr  :: { Expr Span }
+  : gen_postfix_expr(nsb_postfix_expr)                                        { $1 } 
+  | paren_expr                                                                { $1 }
+  | block_like_expr                                                           { $1 }
 
-arithmetic_expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) comma_arms  { ($1, $2) }
-  | postfix_expr_arms                                         { $1 } 
+nonblock_expr :: { Expr Span }
+  : gen_expr                                                                  { $1 }
+  | nb_arithmetic_expr                                                        { $1 }
+  | lambda_expr_nostruct                                                      { $1 }
+nb_arithmetic_expr :: { Expr Span }
+  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)    { $1 }
+  | nb_postfix_expr                                                           { $1 } 
+nb_postfix_expr :: { Expr Span }
+  : gen_postfix_expr(nb_postfix_expr)                                         { $1 }
+  | paren_expr                                                                { $1 }
+  | struct_expr                                                               { $1 }
 
-postfix_expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_postfix_expr(nb_postfix_expr) comma_arms              { ($1, $2) }
-  | paren_expr                        comma_arms              { ($1, $2) }
-  | struct_expr                       comma_arms              { ($1, $2) }
-  | block_like_expr                   comma_arms              { ($1, $2) }
-  | block                             comma_arms              { (BlockExpr [] $1 mempty, $2) }
-  | block                                   arms              { (BlockExpr [] $1 mempty, $2) }
-  
-comma_nsb_arithmetic_expr(c) :: { Expr Span }
-  : nsb_arithmetic_expr c                                     { $1 }
 
-arm_guard :: { Maybe (Expr Span) }
-  : {- empty -}  { Nothing }
-  | if expr      { Just $2 }
+-- Finally, what remains is the more mundane definitions of particular types of expressions.
 
+-- Literal expressions (composed of just literals)
+lit_expr :: { Expr Span }
+  : lit       {% withSpan $1 (Lit [] $1) }
+
+
+-- An expression ending in a '{ ... }' block. Useful since "There is a convenience rule that allows
+-- one to omit the separating ';' after 'if', 'match', 'loop', 'for', 'while'"
+block_expr :: { Expr Span }
+  : block_like_expr                                     { $1 } 
+  | block                                               {% withSpan $1 (BlockExpr [] $1) }
+
+-- Any expression ending in a '{ ... }' block except a block itself.
+block_like_expr :: { Expr Span }
+  : if_expr                                             { $1 }
+  |              loop                            block  {% withSpan $1 (Loop [] $2 Nothing) }
+  | lifetime ':' loop                            block  {% withSpan $1 (Loop [] $4 (Just $1)) }
+  |              for pat in nostruct_expr        block  {% withSpan $1 (ForLoop [] $2 $4 $5 Nothing) }
+  | lifetime ':' for pat in nostruct_expr        block  {% withSpan $1 (ForLoop [] $4 $6 $7 (Just $1)) }
+  |              while             nostruct_expr block  {% withSpan $1 (While [] $2 $3 Nothing) }
+  | lifetime ':' while             nostruct_expr block  {% withSpan $1 (While [] $4 $5 (Just $1)) }
+  |              while let pat '=' nostruct_expr block  {% withSpan $1 (WhileLet [] $3 $5 $6 Nothing) }
+  | lifetime ':' while let pat '=' nostruct_expr block  {% withSpan $1 (WhileLet [] $5 $7 $8 (Just $1)) }
+  | match nostruct_expr '{' '}'                         {% withSpan $1 (Match [] $2 []) }
+  | match nostruct_expr '{' arms '}'                    {% withSpan $1 (Match [] $2 $4) }
+  | expr_path '!' '{' many(token_tree) '}'              {% withSpan $1 (MacExpr [] (Mac $1 $4 mempty)) }
+  | unsafe block                                        {% withSpan $1 (BlockExpr [] $2{ rules = Unsafe }) }
+
+-- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }
-  : if             nostruct_expr block else_expr {% withSpan $1 (If [] $2 $3 $4) }
-  | if let pat '=' nostruct_expr block else_expr {% withSpan $1 (IfLet [] $3 $5 $6 $7) }
+  : if             nostruct_expr block else_expr        {% withSpan $1 (If [] $2 $3 $4) }
+  | if let pat '=' nostruct_expr block else_expr        {% withSpan $1 (IfLet [] $3 $5 $6 $7) }
 
 else_expr :: { Maybe (Expr Span) }
   : else block      {% Just <\$> withSpan $1 (BlockExpr [] $2) }
   | else if_expr    { Just $2 }
   | {- empty -}     { Nothing }
 
+-- Match arms usually have to be seperated by commas (with an optional comma at the end). This
+-- condition is loosened (so that there is no seperator needed) if the arm ends in a safe block.
+arms :: { [Arm Span] }
+  : ntArm                                                  { [$1] }
+  | ntArm arms                                             { $1 : $2 }
+  | outer_attrs sep_by1(pat,'|') arm_guard '=>' expr_arms  { let (e,as) = $> in (Arm (toList $1) $2 $3 e mempty : as) }
+  |             sep_by1(pat,'|') arm_guard '=>' expr_arms  { let (e,as) = $> in (Arm [] $1 $2 e mempty : as) }
+
+arm_guard :: { Maybe (Expr Span) }
+  : {- empty -}  { Nothing }
+  | if expr      { Just $2 }
+
+-- Possibly more match arms, with a comma if present
+comma_arms :: { [Arm Span] }
+  : {- empty -}  { [] }
+  | ','          { [] }
+  | ',' arms     { $2 }
+
+-- An expression followed by match arms. If there is a comma needed, it is added 
+expr_arms :: { (Expr Span, [Arm Span]) }
+  : gen_expr                          comma_arms              { ($1, $2) }
+  | lambda_expr_nostruct              comma_arms              { ($1, $2) }
+  | arithmetic_expr_arms                                      { $1 }
+arithmetic_expr_arms :: { (Expr Span, [Arm Span]) }
+  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) comma_arms  { ($1, $2) }
+  | postfix_expr_arms                                         { $1 } 
+postfix_expr_arms :: { (Expr Span, [Arm Span]) }
+  : gen_postfix_expr(nb_postfix_expr) comma_arms              { ($1, $2) }
+  | paren_expr                        comma_arms              { ($1, $2) }
+  | struct_expr                       comma_arms              { ($1, $2) }
+  | block_like_expr                   comma_arms              { ($1, $2) }
+  | block                             comma_arms              { (BlockExpr [] $1 mempty, $2) }
+  | block                                   arms              { (BlockExpr [] $1 mempty, $2) } 
+
+
+-- As per https://github.com/rust-lang/rust/issues/15701 (as of March 10 2017), the only way to have
+-- attributes on expressions should be with inner attributes on a paren expression.
+paren_expr :: { Expr Span }
+  : '(' ')'                             {% withSpan $1 (TupExpr [] []) }
+  | '(' expr ')'                        {% withSpan $1 (ParenExpr [] $2) }
+  | '(' inner_attrs expr ')'            {% withSpan $1 (ParenExpr (toList $2) $3) }
+  | '(' expr ',' ')'                    {% withSpan $1 (TupExpr [] [$2]) }
+  | '(' expr ',' sep_by1(expr,',') ')'  {% withSpan $1 (TupExpr [] ($2 : toList $4)) }
+
+
+-- Closure
 lambda_expr :: { Expr Span }
-  : move args '->' ty block   {% withSpan $1 (Closure [] Value (FnDecl $2 (Just $4) False mempty) (BlockExpr [] $> mempty)) }
-  | move args         expr    {% withSpan $1 (Closure [] Value (FnDecl $2 Nothing   False mempty) $>) }
-  |      args '->' ty block   {% withSpan $1 (Closure [] Ref   (FnDecl $1 (Just $3) False mempty) (BlockExpr [] $> mempty)) }
-  |      args         expr    {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
+  : move args '->' ty block  {% withSpan $1 (Closure [] Value (FnDecl $2 (Just $4) False mempty) (BlockExpr [] $> mempty)) }
+  | move args         expr   {% withSpan $1 (Closure [] Value (FnDecl $2 Nothing   False mempty) $>) }
+  |      args '->' ty block  {% withSpan $1 (Closure [] Ref   (FnDecl $1 (Just $3) False mempty) (BlockExpr [] $> mempty)) }
+  |      args         expr   {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
 
+-- Closure expression in a "no struct context"
 lambda_expr_nostruct :: { Expr Span }
-  : move args nostruct_expr      {% withSpan $1 (Closure [] Value (FnDecl $2 Nothing   False mempty) $>) }
-  |      args nostruct_expr      {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
+  : move args nostruct_expr  {% withSpan $1 (Closure [] Value (FnDecl $2 Nothing   False mempty) $>) }
+  |      args nostruct_expr  {% withSpan $1 (Closure [] Ref   (FnDecl $1 Nothing   False mempty) $>) }
+
+-- Closure arguments
+args :: { [Arg Span] }
+  : '||'                          { [] }
+  | '|' sep_by(arg,',')      '|'  { $2 }
+  | '|' sep_by1(arg,',') ',' '|'  { toList $2 }
+
+arg :: { Arg Span }
+  : ntArg                         { $1 }
+  | pat ':' ty                    {% withSpan $1 (Arg (Just $1) $3) }
+  | pat                           {% withSpan $1 (Arg (Just $1) (Infer mempty)) }
 
 
+-- Struct expression literal
 struct_expr :: { Expr Span }
-  : expr_path '{'                                  '}'   {% withSpan $1 (Struct [] $1 [] Nothing) }
-  | expr_path '{'                        '..' expr '}'   {% withSpan $1 (Struct [] $1 [] (Just $4)) }
-  | expr_path '{' sep_by1(field,',') ',' '..' expr '}'   {% withSpan $1 (Struct [] $1 (toList $3) (Just $6)) }
-  | expr_path '{' sep_by1(field,',')               '}'   {% withSpan $1 (Struct [] $1 (toList $3) Nothing) }
-  | expr_path '{' sep_by1(field,',') ','           '}'   {% withSpan $1 (Struct [] $1 (toList $3) Nothing) }
+  : expr_path '{'                        '..' expr '}'  {% withSpan $1 (Struct [] $1 [] (Just $4)) }
+  | expr_path '{' sep_by1(field,',') ',' '..' expr '}'  {% withSpan $1 (Struct [] $1 (toList $3) (Just $6)) }
+  | expr_path '{' sep_by(field,',')                '}'  {% withSpan $1 (Struct [] $1 $3 Nothing) }
+  | expr_path '{' sep_by1(field,',') ','           '}'  {% withSpan $1 (Struct [] $1 (toList $3) Nothing) }
 
 field :: { Field Span }
   : ident ':' expr  {% withSpan $1 (Field (unspan $1) $3) }
-  | ident           {% withSpan $1 (Field (unspan $1) (PathExpr [] Nothing (Path False ((unspan $1, NoParameters mempty) :| [])  mempty) mempty)) }
-
-arg :: { Arg Span }
-  : ntArg       { $1 }
-  | pat ':' ty  {% withSpan $1 (Arg (Just $1) $3) }
-  | pat         {% withSpan $1 (Arg (Just $1) (Infer mempty)) }
-
-args :: { [Arg Span] }
-  : '|' '|'                       { [] }
-  | '||'                          { [] }
-  | '|' sep_by1(arg,',') '|'      { toList $2 }
-  | '|' sep_by1(arg,',') ',' '|'  { toList $2 }
+  | ident           {% withSpan $1 (Field (unspan $1) (PathExpr [] Nothing (Path False [(unspan $1, NoParameters mempty)]  mempty) mempty)) }
 
 
 ----------------
@@ -1100,14 +1128,14 @@ inner_attrs_block :: { ([Attribute Span], Block Span) }
 -----------
 
 item :: { Item Span }
-  : ntItem                                       { $1 }
-  | stmt_item                                    { $1 }
+  : ntItem                                             { $1 }
+  | stmt_item                                          { $1 }
   | expr_path '!' ident '[' many(token_tree) ']' ';'   {% withSpan $1 (Item (unspan $3) [] (MacItem (Mac $1 $5 mempty)) InheritedV) }
-  | expr_path '!'       '[' many(token_tree) ']' ';'   {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
+  | expr_path '!'       '[' many(token_tree) ']' ';'   {% withSpan $1 (Item "" [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
   | expr_path '!' ident '(' many(token_tree) ')' ';'   {% withSpan $1 (Item (unspan $3) [] (MacItem (Mac $1 $5 mempty)) InheritedV) }
-  | expr_path '!'       '(' many(token_tree) ')' ';'   {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
+  | expr_path '!'       '(' many(token_tree) ')' ';'   {% withSpan $1 (Item "" [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
   | expr_path '!' ident '{' many(token_tree) '}'       {% withSpan $1 (Item (unspan $3) [] (MacItem (Mac $1 $5 mempty)) InheritedV) }
-  | expr_path '!'       '{' many(token_tree) '}'       {% withSpan $1 (Item (mkIdent "") [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
+  | expr_path '!'       '{' many(token_tree) '}'       {% withSpan $1 (Item "" [] (MacItem (Mac $1 $4 mempty)) InheritedV) }
 
 mod_item :: { Item Span }
   : outer_attrs vis item                         {% let Item i a n _ _ = $3 in withSpan $2 (Item i (toList $1 ++ a) n (unspan $2)) }
@@ -1148,7 +1176,7 @@ stmt_item :: { Item Span }
   | static mut ident ':' ty '=' expr ';'                 {% withSpan $1 (Item (unspan $3) [] (Static $5 Mutable $7) InheritedV) }
   | const ident ':' ty '=' expr ';'                      {% withSpan $1 (Item (unspan $2) [] (ConstItem $4 $6) InheritedV) }
   | type ident generics where_clause '=' ty_sum ';'      {% withSpan $1 (Item (unspan $2) [] (TyAlias $6 $3{ whereClause = $4 }) InheritedV) }
-  | use view_path ';'                                    {% withSpan $1 (Item (mkIdent "") [] (Use $2) InheritedV) }
+  | use view_path ';'                                    {% withSpan $1 (Item "" [] (Use $2) InheritedV) }
   | extern crate ident ';'                               {% withSpan $1 (Item (unspan $3) [] (ExternCrate Nothing) InheritedV) } 
   | extern crate ident as ident ';'                      {% withSpan $1 (Item (unspan $3) [] (ExternCrate (Just (unspan $5))) InheritedV) } 
   | const safety   fn ident generics fn_decl where_clause inner_attrs_block
@@ -1162,8 +1190,8 @@ stmt_item :: { Item Span }
   | mod ident ';'                                        {% withSpan $1 (Item (unspan $2) [] (Mod []) InheritedV) }
   | mod ident '{'             many(mod_item) '}'         {% withSpan $1 (Item (unspan $2) [] (Mod $4) InheritedV) }
   | mod ident '{' inner_attrs many(mod_item) '}'         {% withSpan $1 (Item (unspan $2) (toList $4) (Mod $5) InheritedV) }
-  | extern abi '{'             many(foreign_item) '}'    {% withSpan $1 (Item (mkIdent "") [] (ForeignMod $2 $4) InheritedV) }
-  | extern abi '{' inner_attrs many(foreign_item) '}'    {% withSpan $1 (Item (mkIdent "") (toList $4) (ForeignMod $2 $5) InheritedV) }
+  | extern abi '{'             many(foreign_item) '}'    {% withSpan $1 (Item "" [] (ForeignMod $2 $4) InheritedV) }
+  | extern abi '{' inner_attrs many(foreign_item) '}'    {% withSpan $1 (Item "" (toList $4) (ForeignMod $2 $5) InheritedV) }
   | struct ident generics where_clause struct_decl_args  {% withSpan $1 (Item (unspan $2) [] (StructItem $5 $3{ whereClause = $4 }) InheritedV) }
   | union ident generics where_clause struct_decl_args   {% withSpan $1 (Item (unspan $2) [] (Union $5 $3{ whereClause = $4 }) InheritedV) }
   | enum ident generics where_clause enum_defs           {% withSpan $1 (Item (unspan $2) [] (Enum $5 $3{ whereClause = $4 }) InheritedV) }
@@ -1182,42 +1210,35 @@ item_trait :: { Item Span }
 
 struct_decl_args :: { VariantData Span }
   : ';'                                                {% withSpan $1 (StructD []) }
-  | '{' '}'                                            {% withSpan $1 (StructD []) }
-  | '{' sep_by1(struct_decl_field,',') '}'             {% withSpan $1 (StructD (toList $2)) }
+  | '{' sep_by(struct_decl_field,',')      '}'         {% withSpan $1 (StructD $2) }
   | '{' sep_by1(struct_decl_field,',') ',' '}'         {% withSpan $1 (StructD (toList $2)) }
-  | '(' ')' ';'                                        {% withSpan $1 (TupleD []) }
-  | '(' sep_by1(tuple_decl_field,',') ')' ';'          {% withSpan $1 (TupleD (toList $2)) }
-  | '(' sep_by1(tuple_decl_field,',') ',' ')' ';'      {% withSpan $1 (TupleD (toList $2)) }
+  | '(' sep_by(tuple_decl_field,',')       ')' ';'     {% withSpan $1 (TupleD $2) }
+  | '(' sep_by1(tuple_decl_field,',')  ',' ')' ';'     {% withSpan $1 (TupleD (toList $2)) }
 
 struct_decl_field :: { StructField Span }
   : outer_attrs vis ident ':' ty_sum                   {% withSpan $1 (StructField (Just (unspan $3)) (unspan $2) $5 (toList $1)) }
   |             vis ident ':' ty_sum                   {% withSpan $1 (StructField (Just (unspan $2)) (unspan $1) $4 []) }
 
 enum_defs :: { [Variant Span] }
-  : '{' '}'                                            { [] }
-  | '{' sep_by1(enum_def,',')     '}'                  { toList $2 }
+  : '{' sep_by(enum_def,',')      '}'                  { $2 }
   | '{' sep_by1(enum_def,',') ',' '}'                  { toList $2 }
 
 tuple_decl_field :: { StructField Span }
   : many(outer_attribute) vis ty_sum                   {% withSpan $1 (StructField Nothing (unspan $2) $3 $1) }
 
 enum_def :: { Variant Span }
-  : outer_attrs ident '{' '}'                                       {% withSpan $1 (Variant (unspan $2) (toList $1) (StructD [] mempty) Nothing) }
-  |             ident '{' '}'                                       {% withSpan $1 (Variant (unspan $1) [] (StructD [] mempty) Nothing) }
-  | outer_attrs ident '{' sep_by1(struct_decl_field,',') '}'        {% withSpan $1 (Variant (unspan $2) (toList $1) (StructD (toList $4) mempty) Nothing) }
-  |             ident '{' sep_by1(struct_decl_field,',') '}'        {% withSpan $1 (Variant (unspan $1) [] (StructD (toList $3) mempty) Nothing) }
-  | outer_attrs ident '{' sep_by1(struct_decl_field,',') ',' '}'    {% withSpan $1 (Variant (unspan $2) (toList $1) (StructD (toList $4) mempty) Nothing) }
-  |             ident '{' sep_by1(struct_decl_field,',') ',' '}'    {% withSpan $1 (Variant (unspan $1) [] (StructD (toList $3) mempty) Nothing) }
-  | outer_attrs ident '(' ')'                                       {% withSpan $1 (Variant (unspan $2) (toList $1) (TupleD [] mempty) Nothing) }
-  |             ident '(' ')'                                       {% withSpan $1 (Variant (unspan $1) [] (TupleD [] mempty) Nothing) }
-  | outer_attrs ident '(' sep_by1(tuple_decl_field,',') ')'         {% withSpan $1 (Variant (unspan $2) (toList $1) (TupleD (toList $4) mempty) Nothing) }
-  |             ident '(' sep_by1(tuple_decl_field,',') ')'         {% withSpan $1 (Variant (unspan $1) [] (TupleD (toList $3) mempty) Nothing) }
-  | outer_attrs ident '(' sep_by1(tuple_decl_field,',') ',' ')'     {% withSpan $1 (Variant (unspan $2) (toList $1) (TupleD (toList $4) mempty) Nothing) }
-  |             ident '(' sep_by1(tuple_decl_field,',') ',' ')'     {% withSpan $1 (Variant (unspan $1) [] (TupleD (toList $3) mempty) Nothing) }
-  | outer_attrs ident '=' expr                                      {% withSpan $1 (Variant (unspan $2) (toList $1) (UnitD mempty) (Just $4)) }
-  |             ident '=' expr                                      {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) (Just $3)) }
-  | outer_attrs ident                                               {% withSpan $1 (Variant (unspan $2) (toList $1) (UnitD mempty) Nothing) }
-  |             ident                                               {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) Nothing) }
+  : outer_attrs ident '{' sep_by(struct_decl_field,',')      '}'  {% withSpan $1 (Variant (unspan $2) (toList $1) (StructD $4 mempty) Nothing) }
+  |             ident '{' sep_by(struct_decl_field,',')      '}'  {% withSpan $1 (Variant (unspan $1) [] (StructD $3 mempty) Nothing) }
+  | outer_attrs ident '{' sep_by1(struct_decl_field,',') ',' '}'  {% withSpan $1 (Variant (unspan $2) (toList $1) (StructD (toList $4) mempty) Nothing) }
+  |             ident '{' sep_by1(struct_decl_field,',') ',' '}'  {% withSpan $1 (Variant (unspan $1) [] (StructD (toList $3) mempty) Nothing) }
+  | outer_attrs ident '(' sep_by(tuple_decl_field,',')       ')'  {% withSpan $1 (Variant (unspan $2) (toList $1) (TupleD $4 mempty) Nothing) }
+  |             ident '(' sep_by(tuple_decl_field,',')       ')'  {% withSpan $1 (Variant (unspan $1) [] (TupleD $3 mempty) Nothing) }
+  | outer_attrs ident '(' sep_by1(tuple_decl_field,',')  ',' ')'  {% withSpan $1 (Variant (unspan $2) (toList $1) (TupleD (toList $4) mempty) Nothing) }
+  |             ident '(' sep_by1(tuple_decl_field,',')  ',' ')'  {% withSpan $1 (Variant (unspan $1) [] (TupleD (toList $3) mempty) Nothing) }
+  | outer_attrs ident '=' expr                                    {% withSpan $1 (Variant (unspan $2) (toList $1) (UnitD mempty) (Just $4)) }
+  |             ident '=' expr                                    {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) (Just $3)) }
+  | outer_attrs ident                                             {% withSpan $1 (Variant (unspan $2) (toList $1) (UnitD mempty) Nothing) }
+  |             ident                                             {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) Nothing) }
 
 
 -- parse_where_clause
@@ -1322,21 +1343,17 @@ view_path :: { ViewPath Span }
   | '::' sep_by1(self_or_ident,'::') as ident                            {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
   | '::'                                  '*'                            {% withSpan $1 (ViewPathGlob True []) }
   | '::' sep_by1(self_or_ident,'::') '::' '*'                            {% withSpan $1 (ViewPathGlob True (fmap unspan (toList $2))) }
-  | '::' sep_by1(self_or_ident,'::') '::' '{'                        '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) []) }
-  | '::' sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) (toList $5)) }
+  | '::' sep_by1(self_or_ident,'::') '::' '{' sep_by(plist,',')      '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) $5) }
   | '::' sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) (toList $5)) }
-  | '::'                                  '{'                        '}' {% withSpan $1 (ViewPathList True [] []) }
-  | '::'                                  '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList True [] (toList $3)) }
+  | '::'                                  '{' sep_by(plist,',')      '}' {% withSpan $1 (ViewPathList True [] $3) }
   | '::'                                  '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList True [] (toList $3)) }
   |      sep_by1(self_or_ident,'::')                                     {% let n = fmap unspan $1 in withSpan $1 (ViewPathSimple False (N.init n) (PathListItem (N.last n) Nothing mempty)) }
   |      sep_by1(self_or_ident,'::') as ident                            {% let n = fmap unspan $1 in withSpan $1 (ViewPathSimple False (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
   |                                       '*'                            {% withSpan $1 (ViewPathGlob False []) }
   |      sep_by1(self_or_ident,'::') '::' '*'                            {% withSpan $1 (ViewPathGlob False (fmap unspan (toList $1))) }
-  |      sep_by1(self_or_ident,'::') '::' '{'                        '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) []) }
-  |      sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) (toList $4)) }
+  |      sep_by1(self_or_ident,'::') '::' '{' sep_by(plist,',')      '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) $4) }
   |      sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) (toList $4)) }
-  |                                       '{'                        '}' {% withSpan $1 (ViewPathList False [] []) }
-  |                                       '{' sep_by1(plist,',')     '}' {% withSpan $1 (ViewPathList False [] (toList $2)) }
+  |                                       '{' sep_by(plist,',')      '}' {% withSpan $1 (ViewPathList False [] $2) }
   |                                       '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList False [] (toList $2)) }
 
 
@@ -1355,13 +1372,13 @@ plist :: { PathListItem Span }
 -------------------
 
 expr_mac :: { Mac Span }
-  : expr_path '!' '[' many(token_tree) ']'      {% withSpan $1 (Mac $1 $4) }
-  | expr_path '!' '(' many(token_tree) ')'      {% withSpan $1 (Mac $1 $4) }
+  : expr_path '!' '[' many(token_tree) ']'     {% withSpan $1 (Mac $1 $4) }
+  | expr_path '!' '(' many(token_tree) ')'     {% withSpan $1 (Mac $1 $4) }
 
 ty_mac :: { Mac Span }
-  : ty_path '!' '[' many(token_tree) ']'        {% withSpan $1 (Mac $1 $4) }
-  | ty_path '!' '{' many(token_tree) '}'        {% withSpan $1 (Mac $1 $4) }
-  | ty_path '!' '(' many(token_tree) ')'        {% withSpan $1 (Mac $1 $4) }
+  : ty_path '!' '[' many(token_tree) ']'       {% withSpan $1 (Mac $1 $4) }
+  | ty_path '!' '{' many(token_tree) '}'       {% withSpan $1 (Mac $1 $4) }
+  | ty_path '!' '(' many(token_tree) ')'       {% withSpan $1 (Mac $1 $4) }
 
 mod_mac :: { Mac Span }
   : mod_path '!' '[' many(token_tree) ']' ';'  {% withSpan $1 (Mac $1 $4) }

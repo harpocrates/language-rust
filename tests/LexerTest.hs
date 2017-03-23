@@ -141,6 +141,7 @@ literals = testGroup "literals (numbers, characters, strings, etc.)"
   , testCode "123.f32" [ LiteralTok (FloatTok "123.") (Just "f32") ]
   , testCode "123.1f32" [ LiteralTok (FloatTok "123.1") (Just "f32") ]
   , testCode "123e-9f32" [ LiteralTok (FloatTok "123e-9") (Just "f32") ]
+  , testCode "0e+10" [ LiteralTok (FloatTok "0e+10") Nothing ]
   -- string's
   , testCode "\"hello \\n world!\"" [ LiteralTok (StrTok "hello \\n world!") Nothing ]
   , testCode "\"hello \\n world!\"suffix" [ LiteralTok (StrTok "hello \\n world!") (Just "suffix") ]
