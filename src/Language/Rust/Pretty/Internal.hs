@@ -271,6 +271,7 @@ printNonterminal (NtTraitItem item) = printTraitItem item
 printNonterminal (NtGenerics generics) = printGenerics generics
 printNonterminal (NtWhereClause clause) = printWhereClause clause
 printNonterminal (NtArg arg) = printArg arg True
+printNonterminal (NtLit lit) = printLit lit
 
 -- | Print a statement (@print_stmt@)
 printStmt :: Stmt a -> Doc a

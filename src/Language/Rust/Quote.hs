@@ -7,24 +7,25 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : GHC
 
-Quasiquoters for converting Rust code into the equivalent Haskell patterns and expressions. For
-now, this doesn't do anything fancy. In the future, we will try to do something similar to Rust
-macros to extract/inject ASTs out/into the quasiquotes.
+Quasiquoters for converting Rust code into the equivalent Haskell patterns and expressions. In the
+future, we will try to do something similar to Rust macros to extract or inject ASTs out or into
+the quasiquotes.
 
 Eventually, one should be able to just import this module for code generation. The following
 interaction is what should eventually work.
 
->>> import Language.Rust.Quote
->>> :set -XQuasiQuotes
->>> let one = [lit| 1i32 |]
->>> [expr| |x: i32| -> $ret:ty $body:expr |] = [expr| |x: i32| -> i32 { x + $one } |]
-ret :: Ty Span
-body :: Expr Span
+>>> import qualified Language.Rust.Quote as Q
+>>> :set -XQuasiQuotes +t
+>>> let one = [Q.expr| 1i32 |]
+one :: Expr Span
+>>> [Q.expr| |x: i32| -> $retTy:ty $body:block |] = [Q.expr| |x: i32| -> i32 { ($one) + x } |]
+retTy :: Ty Span
+body :: Block Span
 >>> import Language.Rust.Pretty
->>> pretty ret
+>>> pretty retTy
 i32
 >>> pretty body
-{ x + 1 }
+{ (1i32) + x }
 -}
 {-# LANGUAGE TemplateHaskellQuotes #-}
 
@@ -51,15 +52,77 @@ import Data.Traversable (for)
 import Control.Exception (evaluate, throw, catch, SomeException, Exception)
 import System.IO.Unsafe (unsafePerformIO)
 
--- | Do the unthinkable: check if a value is causes an error (when evaluated to WNHF) and return
--- either the error message or the value.
+-- You have wandered into the source code for quasiquotation of Rust AST. If you did this in hopes
+-- of understanding how this works, prepare to be disgusted by the hack this relies on.
+--
+-- # How it works!
+--
+-- ## Expressions:
+--
+--   1. Lex the quasiquote string to get a list of tokens. Extract the 'SubstNt' tokens and lookup
+--      in the 'Q' monad the types of the variables they refer to.
+--
+--   2. Using this mapping, make a function that when given a variable name from a 'SubstNt' returns
+--      a 'Nonterminal' with the right constructor (determined from the type of the variables looked
+--      up in step 1), but with the field of that constructor that is 'throw (Subst <variable name>)'.
+--
+--   3. Lex and parse again the quoted string, using the 'swapToken' function from step 2.
+--
+--   4. Take the AST Happy produces and scan it for the thrown 'Subst' errors. Theoretically, this
+--      shouldn't be possible, but practically, there are unsafe workarounds. Catch those errors and
+--      use the string error message to construct a 'VarE <variable name> :: Exp'.
+--
+-- ## Patterns:
+--
+--   1. Make a function that when given a 'MatchNt' returns a 'Nonterminal' with the right
+--      constructor (determined from the second part of the 'MatchNt'),i but with the field of that
+--      constructor that is 'throw (Subst <variable name>)'.
+--
+--   2. Lex and parse the quoted string, using the 'swapToken' function from step 1.
+--
+--   3. Take the AST Happy produces and scan it for the thrown 'Subst' errors. Catch those errors and
+--      use the string error message to construct a 'VarP <variable name> :: Pat'. Also, convert any
+--      'Span' components into wild patterns 'WildP :: Pat'.
+--
+-- # Why this?
+--
+-- This is a really, really, _really_ bad hack. So why do it? Because the main goal of
+-- 'language-rust' is to be fast and correct, quasiquotes are just a nice to have. In order to make
+-- this work cleanly, I would have to:
+--
+--   * Make the parsing monad polymorphic over another monad, which means turning on
+--     'NoMonomorphismRestriction' in the Alex and Happy generated files, which almost certainly
+--     kills a lot of optimizations.
+--
+--   * Parametrize the ASTs so that their fields are in 'm'. For example,
+--
+--         data Expr m a
+--           = Box [m (Attribute m a)] (m (Expr m a)) a
+--           | ...
+--
+--     The 'usual' AST is just 'Expr Identity a'.
+--
+-- Both of these things mean that code is a lot more polymorphic, which means inlining is tougher,
+-- and dictionary arguments may be passed around at runtime. On top of that, the 'Syntax' module,
+-- which is where most people will spend their time, will look overly complex.
+--
+-- Finally, since quasiquotes are "run" at compile-time, their brittleness only affects programs at
+-- compile time - the generated code is safe.
+--
+-- That said, if you can think of a better solution, please submit a PR or email me at
+-- <alec.theriault@gmail.com>.
+
+
+-- | Do the unthinkable: check if evaluating a value to WNHF causes an error and return either the
+-- error message or the value. (So much for parametricity...)
 fromError :: a -> Either String a
 fromError x = unsafePerformIO $ catch (Right x <$ evaluate x) getMessage
   where
     getMessage :: SomeException -> IO (Either String a)
     getMessage = pure . Left . show
 
--- | Given a parser and an input string, turn it into the corresponding Haskell expression
+-- | Given a parser and an input string, turn it into the corresponding Haskell expression. More
+-- details on how this works are given in the long comment (above) after the imports.
 expQuoter :: Data a => P a -> String -> Q Exp
 expQuoter p inp = do
   Loc{ loc_start = (r,c) } <- location
@@ -88,13 +151,14 @@ expQuoter p inp = do
   case execParser' p inp' (Position 0 r c) swap  of
     Left (_,msg) -> fail msg
     Right x -> dataToExpQ (\y -> case fromError y of
-                                   Right _ -> Nothing
-                                   Left m -> Just $ do
+                                   Left ('S':'u':'b':'s':'t':' ':m) -> Just $ do
                                      Just n <- lookupValueName m
-                                     varE n)
+                                     varE n
+                                   _ -> Nothing)
                           x
 
--- | Given a parser and an input string, turn it into the corresponding Haskell pattern
+-- | Given a parser and an input string, turn it into the corresponding Haskell pattern. More
+-- details on how this works are given in the long comment (above) after the imports.
 patQuoter :: Data a => P a -> String -> Q Pat
 patQuoter p inp = do
   Loc{ loc_start = (r,c) } <- location
@@ -110,21 +174,23 @@ patQuoter p inp = do
   case execParser' p (inputStreamFromString inp) (Position 0 r c) swap  of
     Left (_,msg) -> fail msg
     Right x -> dataToPatQ (\y -> case fromError y of
+                                   Left ('S':'u':'b':'s':'t':' ':m) -> Just $ varP (mkName m)
                                    Right _ -> pure WildP <$ (cast y :: Maybe Span)
-                                   Left m -> Just $ varP (mkName m))
+                                   _ -> Nothing)
                           x
 
 
 -- | Custom error type to throw and catch
 data Subst = Subst String
-instance Show Subst where show (Subst s) = s
+instance Show Subst where show (Subst s) = "Subst " ++ s
 instance Exception Subst
 
--- | Throw a 'Subst'
+-- | Throw a 'Subst' with a given error message
 throwSub :: String -> a
 throwSub msg = throw (Subst msg)
 
 -- | Substitution table for the mapping of 'Name' to 'AST.Nonterminal' constructor.
+{-# ANN substExpTable "HLint: ignore Avoid lambda" #-}
 substExpTable :: [(Name, String -> AST.Nonterminal a)]
 substExpTable = 
   [ (''AST.Item,        \m -> AST.NtItem (throwSub m))
@@ -143,9 +209,11 @@ substExpTable =
   , (''AST.Generics,    \m -> AST.NtGenerics (throwSub m))
   , (''AST.WhereClause, \m -> AST.NtWhereClause (throwSub m))
   , (''AST.Arg,         \m -> AST.NtArg (throwSub m))
+  , (''AST.Lit,         \m -> AST.NtLit (throwSub m))
   ]
 
 -- | Substitution table for the mapping of 'String' to 'AST.Nonterminal' constructor.
+{-# ANN substPatTable "HLint: ignore Avoid lambda" #-}
 substPatTable :: [(String, String -> AST.Nonterminal a)]
 substPatTable = 
   [ ("item",            \m -> AST.NtItem (throwSub m))
@@ -158,9 +226,11 @@ substPatTable =
   , ("meta",            \m -> AST.NtMeta (throwSub m))
   , ("path",            \m -> AST.NtPath (throwSub m))
   , ("tt",              \m -> AST.NtTT (throwSub m))
+  , ("lit",             \m -> AST.NtLit (throwSub m))
   ]
 
--- | Find the outer constructor
+
+-- | Find the outer constructor of a type
 outerCon :: Type -> Maybe Name
 outerCon (ConT name) = Just name
 outerCon (InfixT _ name _) = Just name
@@ -179,51 +249,52 @@ quoter p = QuasiQuoter
              , quoteType = error "this quasiquoter does not support types"
              }
 
--- | Quasiquoter for literals (see 'Lit')
+
+-- | Quasiquoter for literals (see 'AST.Lit')
 lit :: QuasiQuoter
 lit = quoter parseLit
 
--- | Quasiquoter for attributes (see 'Attribute')
+-- | Quasiquoter for attributes (see 'AST.Attribute')
 attr :: QuasiQuoter
 attr = quoter parseAttr
 
--- | Quasiquoter for types (see 'Ty')
+-- | Quasiquoter for types (see 'AST.Ty')
 ty :: QuasiQuoter
 ty = quoter parseTy
 
--- | Quasiquoter for pattersn (see 'Pat')
+-- | Quasiquoter for pattersn (see 'AST.Pat')
 pat :: QuasiQuoter
 pat = quoter parsePat
 
--- | Quasiquoter for statements (see 'Stmt')
+-- | Quasiquoter for statements (see 'AST.Stmt')
 stmt :: QuasiQuoter
 stmt = quoter parseStmt
 
--- | Quasiquoter for expressions (see 'Expr')
+-- | Quasiquoter for expressions (see 'AST.Expr')
 expr :: QuasiQuoter
 expr = quoter parseExpr
 
--- | Quasiquoter for items (see 'Item')
+-- | Quasiquoter for items (see 'AST.Item')
 item :: QuasiQuoter
 item = quoter parseItem
 
--- | Quasiquoter for crates (see 'Crate')
+-- | Quasiquoter for crates (see 'AST.Crate')
 crate :: QuasiQuoter
 crate = quoter parseCrate
 
--- | Quasiquoter for blocks (see 'Block')
+-- | Quasiquoter for blocks (see 'AST.Block')
 block :: QuasiQuoter
 block = quoter parseBlock
 
--- | Quasiquoter for impl items (see 'ImplItem')
+-- | Quasiquoter for impl items (see 'AST.ImplItem')
 implItem :: QuasiQuoter
 implItem = quoter parseImplItem
 
--- | Quasiquoter for trait item (see 'TraitItem')
+-- | Quasiquoter for trait item (see 'AST.TraitItem')
 traitItem :: QuasiQuoter
 traitItem = quoter parseTraitItem
 
--- | Quasiquoter for token trees (see 'TokenTree')
+-- | Quasiquoter for token trees (see 'AST.TokenTree')
 tokenTree :: QuasiQuoter
 tokenTree = quoter parseTt
 

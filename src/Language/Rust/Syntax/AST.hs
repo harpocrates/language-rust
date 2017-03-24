@@ -724,6 +724,7 @@ data Nonterminal a
   | NtGenerics (Generics a)
   | NtWhereClause (WhereClause a)
   | NtArg (Arg a)
+  | NtLit (Lit a)
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | Patterns (@syntax::ast::Pat@).

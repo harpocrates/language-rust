@@ -46,7 +46,7 @@ import qualified Data.List.NonEmpty as N
 %name parsePat pat
 %name parseStmt stmt
 %name parseExpr expr
-%name parseItem mod_item   -- the exported parser for items really is for mod items (with visibility)
+%name parseItem item
 %name parseCrate crate_
 %name parseBlock block
 %name parseImplItem impl_item
@@ -228,6 +228,7 @@ import qualified Data.List.NonEmpty as N
   ntGenerics     { Spanned (Interpolated (NtGenerics $$)) _ }
   ntWhereClause  { Spanned (Interpolated (NtWhereClause $$)) _ }
   ntArg          { Spanned (Interpolated (NtArg $$)) _ }
+  ntLit          { Spanned (Interpolated (NtLit $$)) _ }
 
 
 -- This needs to be lower precedence than 'IDENT' so that in 'pat', something like "&mut x"
@@ -389,7 +390,8 @@ meta_item_inner :: { NestedMetaItem Span }
 --------------
 
 lit :: { Lit Span }
-  : byte              { lit $1 }
+  : ntLit             { $1 }
+  | byte              { lit $1 }
   | char              { lit $1 }
   | int               { lit $1 }
   | float             { lit $1 }
