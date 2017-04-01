@@ -29,7 +29,7 @@ import qualified Data.ByteString as BS (pack)
 translateLit :: LitTok -> Suffix -> a -> Lit a
 translateLit (ByteTok s)         = let Just (w8,"") = unescapeByte s in Byte w8
 translateLit (CharTok s)         = let Just (c,"")  = unescapeChar s in Char c
-translateLit (IntegerTok s)      = Int (unescapeInteger s)  
+translateLit (IntegerTok s)      = uncurry Int (unescapeInteger s)  
 translateLit (FloatTok s)        = Float (unescapeFloat s) 
 translateLit (StrTok s)          = Str (unfoldr unescapeChar s) Cooked
 translateLit (StrRawTok s n)     = Str s (Raw n)
@@ -80,11 +80,11 @@ unescapeByte (c:cs) = Just (toEnum $ fromEnum c, cs)
 unescapeByte [] = fail "unescape byte: empty string"
 
 -- | Given a string Rust representation of an integer, parse it into a number
-unescapeInteger :: Num a => String -> a
-unescapeInteger ('0':'b':cs@(_:_)) | all (`elem` "_01") cs = numBase 2 (filter (/= '_') cs)
-unescapeInteger ('0':'o':cs@(_:_)) | all (`elem` "_01234567") cs = numBase 8 (filter (/= '_') cs)
-unescapeInteger ('0':'x':cs@(_:_)) | all (`elem` "_0123456789abcdefABCDEF") cs = numBase 16 (filter (/= '_') cs)
-unescapeInteger cs@(_:_)           | all (`elem` "_0123456789") cs = numBase 10 (filter (/= '_') cs)
+unescapeInteger :: Num a => String -> (IntRep,a)
+unescapeInteger ('0':'b':cs@(_:_)) | all (`elem` "_01") cs = (Bin, numBase 2 (filter (/= '_') cs))
+unescapeInteger ('0':'o':cs@(_:_)) | all (`elem` "_01234567") cs = (Oct, numBase 8 (filter (/= '_') cs))
+unescapeInteger ('0':'x':cs@(_:_)) | all (`elem` "_0123456789abcdefABCDEF") cs = (Hex, numBase 16 (filter (/= '_') cs))
+unescapeInteger cs@(_:_)           | all (`elem` "_0123456789") cs = (Dec, numBase 10 (filter (/= '_') cs))
 unescapeInteger _ = error "unescape integer: bad decimal literal"
 
 -- | Given a string Rust representation of a float, parse it into a float.

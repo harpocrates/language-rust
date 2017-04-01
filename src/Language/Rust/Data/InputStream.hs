@@ -7,11 +7,10 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-These are the only functions that need to be implemented in order to use the parser.
+These are the only functions that need to be implemented in order to use the parser. Whether this wraps 'ByteString' or 'String' depends on whether the @useByteStrings@ option is on or not (it is by default). Using 'ByteString' means better handling of weird characters ('takeByte' fails badly if you try to take a byte that doesn't fall on a character boundary), but it means incurring a dependency on the [utf8-string](https://hackage.haskell.org/package/utf8-string) package.
 -}
-
-
 {-# LANGUAGE CPP #-}
+
 module Language.Rust.Data.InputStream (
   -- * InputStream type
   InputStream, countLines, inputStreamEmpty,
@@ -81,16 +80,15 @@ countLines = length . BE.lines . coerce
 
 -- | Opaque input type.
 newtype InputStream = IS String
-takeByte bs
-  | Char.isLatin1 c = let b = fromIntegral (Char.ord c) in b `seq` (b, coerce (tail (coerce bs)))
+takeByte (IS ~(c:str))
+  | Char.isLatin1 c = let b = fromIntegral (Char.ord c) in b `seq` (b, IS str)
   | otherwise       = error "takeByte: not a latin-1 character"
-  where c = head (coerce bs)
-takeChar bs = (head (coerce bs), tail (coerce bs))
-inputStreamEmpty = null . coerce
-takeChars n str = take n str . coerce
-readInputStream f = coerce <$> readFile f
+takeChar (IS ~(c:str)) = (c, IS str)
+inputStreamEmpty (IS str) = null str
+takeChars n (IS str) = take n str
+readInputStream f = IS <$> readFile f
 inputStreamToString = coerce
 inputStreamFromString = IS
-countLines = length . lines . coerce
+countLines (IS str) = length . lines $ str
 
 #endif

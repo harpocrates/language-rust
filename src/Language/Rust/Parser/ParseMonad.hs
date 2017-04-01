@@ -18,8 +18,6 @@ instruction manual, the benefits of this are that:
 In our case, this shared information is held in 'PState'.
 -}
 
-{-# LANGUAGE InstanceSigs #-}
-
 module Language.Rust.Parser.ParseMonad (
   -- * Parsing monad
   P, execParser, execParser', initPos, PState(..),
@@ -58,19 +56,17 @@ instance Functor P where
   fmap  = liftM
 
 instance Applicative P where
-  pure = return
+  pure a = P (Ok a)
+
   (<*>) = ap
 
 instance Monad P where
-  return :: a -> P a
-  return a = P (Ok a)
+  return = pure
 
-  (>>=) :: P a -> (a -> P b) -> P b
   P m >>= k = P $ \s -> case m s of
                           Ok a s'        -> runParser (k a) s'
                           Failed err pos -> Failed err pos
 
-  fail :: String -> P a
   fail msg = do { pos <- getPosition; P (\_ -> Failed msg pos) }
 
 -- | Execute the given parser on the supplied input stream at the given start position, returning
@@ -78,7 +74,8 @@ instance Monad P where
 execParser :: P a -> InputStream -> Position -> Either (Position,String) a
 execParser p input pos = execParser' p input pos id
 
-
+-- | Generalized version of 'execParser' that expects an extra argument that lets you hot-swap a
+-- token that was just lexed before it gets passed to the parser.
 execParser' :: P a -> InputStream -> Position -> (Token -> Token) -> Either (Position,String) a
 execParser' (P parser) input pos swap =
   case parser initialState of

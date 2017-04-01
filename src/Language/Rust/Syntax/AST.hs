@@ -24,7 +24,7 @@ module Language.Rust.Syntax.AST (
   -- * Crates
   Crate(..), CrateConfig, 
   -- * Literals
-  Lit(..), Suffix(..), suffix, StrStyle(..),
+  Lit(..), Suffix(..), suffix, IntRep(..), StrStyle(..),
   -- * Expressions
   Expr(..), Abi(..), Arm(..), AsmDialect(..), UnOp(..), BinOp(..), CaptureBy(..), Field(..), InlineAsm(..), InlineAsmOutput(..), RangeLimits(..),
   -- * Types and lifetimes
@@ -620,7 +620,7 @@ data Lit a
   | ByteStr ByteString StrStyle Suffix a    -- ^ byte string (example: @b"foo"@)
   | Char Char Suffix a                      -- ^ character (example: @\'a\'@)
   | Byte Word8 Suffix a                     -- ^ byte (example: @b\'f\'@)
-  | Int Integer Suffix a                    -- ^ integer (example: @1i32@)
+  | Int IntRep Integer Suffix a             -- ^ integer (example: @1i32@)
   | Float Double Suffix a                   -- ^ float (example: @1.12e4@)
   | Bool Bool Suffix a                      -- ^ boolean (example: @true@)
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
@@ -630,7 +630,7 @@ instance Located a => Located (Lit a) where
   spanOf (ByteStr _ _ _ s) = spanOf s
   spanOf (Char _ _ s) = spanOf s
   spanOf (Byte _ _ s) = spanOf s
-  spanOf (Int _ _ s) = spanOf s
+  spanOf (Int _ _ _ s) = spanOf s
   spanOf (Float _ _ s) = spanOf s
   spanOf (Bool _ _ s) = spanOf s
 
@@ -640,10 +640,13 @@ suffix (Str _ _ s _) = s
 suffix (ByteStr _ _ s _) = s
 suffix (Char _ s _) = s 
 suffix (Byte _ s _) = s 
-suffix (Int _ s _) = s 
+suffix (Int _ _ s _) = s 
 suffix (Float _ s _) = s
 suffix (Bool _ s _) = s 
 
+-- | The base of the number in an @Int@ literal can be binary (like @0b1100@), octal (like @0o14@),
+-- decimal (like @12@), or hexadecimal (like @0xc@).
+data IntRep = Bin | Oct | Dec | Hex deriving (Eq, Show, Enum, Bounded, Typeable, Data, Generic)
 
 -- | Represents a macro invocation (@syntax::ast::Mac@). The 'Path' indicates which macro is being
 -- invoked, and the 'TokenTree's contains the source of the macro invocation.

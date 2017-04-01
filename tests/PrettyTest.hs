@@ -45,8 +45,8 @@ iterator = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Iterator"
 
 -- | Short expressions to make tests more straightforward
 _1, _2, foo, bar :: Expr ()
-_1 = Lit [] (Int 1 Unsuffixed ()) ()
-_2 = Lit [cfgO] (Int 2 Unsuffixed ()) ()
+_1 = Lit [] (Int Dec 1 Unsuffixed ()) ()
+_2 = Lit [cfgO] (Int Dec 2 Unsuffixed ()) ()
 foo = PathExpr [] Nothing (Path False [("foo", NoParameters ())] ()) ()
 bar = PathExpr [] Nothing (Path False [("bar", NoParameters ())] ()) ()
 
@@ -83,11 +83,11 @@ prettyLiterals = testGroup "printing literals"
   , testFlatten "b'\\x81'" (printLit (Byte 129 Unsuffixed ()))
   , testFlatten "123.45f32" (printLit (Float 123.45 F32 ()))
   , testFlatten "123.45f64" (printLit (Float 123.45 F64 ()))
-  , testFlatten "123" (printLit (Int 123 Unsuffixed ()))
-  , testFlatten "123isize" (printLit (Int 123 Is ()))
-  , testFlatten "-12i8" (printLit (Int (-12) I8 ()))
-  , testFlatten "123456u64" (printLit (Int 123456 U64 ()))
-  , testFlatten "123isize" (printLit (Int 123 Is ()))
+  , testFlatten "123" (printLit (Int Dec 123 Unsuffixed ()))
+  , testFlatten "123isize" (printLit (Int Dec 123 Is ()))
+  , testFlatten "-12i8" (printLit (Int Dec (-12) I8 ()))
+  , testFlatten "123456u64" (printLit (Int Dec 123456 U64 ()))
+  , testFlatten "123isize" (printLit (Int Dec 123 Is ()))
   , testFlatten "false" (printLit (Bool False Unsuffixed ()))
   , testFlatten "true" (printLit (Bool True Unsuffixed ()))
   ]
@@ -123,7 +123,6 @@ prettyPatterns = testGroup "printing patterns"
                                               [ x, WildP (), WildP (), x ] (Just 2) ()))
   , testFlatten "math::PI" (printPat (PathP Nothing (Path False [ ("math", NoParameters ())
                                                                 , ("PI", NoParameters ()) ] ()) ()))
-  -- I don't understand qpaths. The test below fails, and I have no idea whether it should.
   , testFlatten "<i32 as a(i32, i32)>::b::<'lt>::AssociatedItem"
                 (printPat (PathP (Just (QSelf i32 1)) (Path False [ ("a", Parenthesized [i32, i32] Nothing ())
                                                                   , ("b", AngleBracketed [Lifetime  "lt" ()] [] [] ())
@@ -135,28 +134,28 @@ prettyPatterns = testGroup "printing patterns"
                                                           ] 
                                                           Nothing ()))
   , testFlatten "ref mut y @ (x, x)" (printPat (IdentP (ByRef Mutable) "y" (Just (TupleP [ x, x ] Nothing ())) ()))
-  , testFlatten "(1, 2, .., 3)" (printPat (TupleP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) ()
-                                               , LitP (Lit [] (Int 2 Unsuffixed ()) ()) ()
-                                               , LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ]
+  , testFlatten "(1, 2, .., 3)" (printPat (TupleP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
+                                               , LitP (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()
+                                               , LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ]
                                                (Just 2) ()))
 
   , testFlatten "box x" (printPat (BoxP x ()))
-  , testFlatten "1 ... 2" (printPat (RangeP (Lit [] (Int 1 Unsuffixed ()) ()) (Lit [] (Int 2 Unsuffixed ()) ()) ()))
+  , testFlatten "1 ... 2" (printPat (RangeP (Lit [] (Int Dec 1 Unsuffixed ()) ()) (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()))
   , testFlatten "&x" (printPat (RefP x Immutable ()))
   , testFlatten "&mut x" (printPat (RefP x Mutable ()))
   , testFlatten "true" (printPat (LitP (Lit [] (Bool True Unsuffixed ()) ()) ()))
-  , testFlatten "-123" (printPat (LitP (Unary [] Neg (Lit [] (Int 123 Unsuffixed ()) ()) ()) ()))
-  , testFlatten "[1, 2]" (printPat (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) ()
-                                          , LitP (Lit [] (Int 2 Unsuffixed ()) ()) () ] 
+  , testFlatten "-123" (printPat (LitP (Unary [] Neg (Lit [] (Int Dec 123 Unsuffixed ()) ()) ()) ()))
+  , testFlatten "[1, 2]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
+                                          , LitP (Lit [] (Int Dec 2 Unsuffixed ()) ()) () ] 
                                           Nothing [] ()))
-  , testFlatten "[1, .., 3]" (printPat (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ]
+  , testFlatten "[1, .., 3]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ]
                                              (Just (WildP ()))
-                                             [ LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ] ()))
-  , testFlatten "[1, x.., 3]" (printPat (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ]
+                                             [ LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ] ()))
+  , testFlatten "[1, x.., 3]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ]
                                               (Just x)
-                                              [ LitP (Lit [] (Int 3 Unsuffixed ()) ()) () ] ()))
-  , testFlatten "[1, ..]" (printPat (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ] (Just (WildP ())) [] ()))
-  , testFlatten "[1, x..]" (printPat (SliceP [ LitP (Lit [] (Int 1 Unsuffixed ()) ()) () ] (Just x) [] ()))
+                                              [ LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ] ()))
+  , testFlatten "[1, ..]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ] (Just (WildP ())) [] ()))
+  , testFlatten "[1, x..]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ] (Just x) [] ()))
 
   , testFlatten "vecPat!(foo)" (printPat (MacP (Mac (Path False [("vecPat", NoParameters ())] ())
                                                    [ Token mempty (IdentTok (mkIdent "foo")) ] ()) ()))
@@ -169,7 +168,7 @@ prettyTypes = testGroup "printing types"
   , testFlatten "f64" (printType f64)
   , testFlatten "usize" (printType usize)
   , testFlatten "[i32]" (printType (Slice i32 ()))
-  , testFlatten "[i32; 16]" (printType (Array i32 (Lit [] (Int 16 Unsuffixed ()) ()) ()))
+  , testFlatten "[i32; 16]" (printType (Array i32 (Lit [] (Int Dec 16 Unsuffixed ()) ()) ()))
   , testFlatten "*const i32" (printType (Ptr Immutable i32 ()))
   , testFlatten "*mut i32" (printType (Ptr Mutable i32 ()))
   , testFlatten "&mut i32" (printType (Rptr Nothing Mutable i32 ()))
@@ -186,7 +185,7 @@ prettyTypes = testGroup "printing types"
   , testFlatten "Debug + 'lt" (printType (TraitObject [ debug', lt ] ()))
   , testFlatten "impl Iterator<Item = i32> + 'lt" (printType (ImplTrait [ iterator, lt ] ()))
   , testFlatten "(i32)" (printType (ParenTy i32 ()))
-  , testFlatten "typeof(1i32)" (printType (Typeof (Lit [] (Int 1 I32 ()) ()) ()))
+  , testFlatten "typeof(1i32)" (printType (Typeof (Lit [] (Int Dec 1 I32 ()) ()) ()))
   , testFlatten "_" (printType (Infer ()))
   , testFlatten "HList![&str , bool , Vec<i32>]"
                 (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ())
@@ -216,7 +215,7 @@ prettyAttributes = testGroup "printing attributes"
   , testFlatten "#[derive(Eq, Ord, 1)]" (printAttr (Attribute Outer (List (mkIdent "derive") 
                                                         [ MetaItem (Word (mkIdent "Eq") ()) ()
                                                         , MetaItem (Word (mkIdent "Ord") ()) () 
-                                                        , Literal (Int 1 Unsuffixed ()) ()
+                                                        , Literal (Int Dec 1 Unsuffixed ()) ()
                                                         ] ()) False ()) True)
   , testFlatten "#[feature = \"foo\"]" (printAttr (Attribute Outer (NameValue (mkIdent "feature") (Str "foo" Cooked Unsuffixed ()) ()) False ()) True)
   , testFlatten "/** some comment */" (printAttr (Attribute Outer (NameValue (mkIdent "") (Str "some comment" Cooked Unsuffixed ()) ()) True ()) True)
@@ -301,9 +300,9 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "&foo" (printExpr (AddrOf [] Immutable foo ()))
   , testFlatten "#[cfgo] &mut foo" (printExpr (AddrOf [cfgO] Mutable foo ()))
   , testFlatten "break" (printExpr (Break [] Nothing Nothing ()))
-  , testFlatten "break 1" (printExpr (Break [] Nothing (Just (Lit [] (Int 1 Unsuffixed ()) ())) ()))
+  , testFlatten "break 1" (printExpr (Break [] Nothing (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) ()))
   , testFlatten "break 'foo" (printExpr (Break [] (Just (Lifetime "foo" ())) Nothing ()))
-  , testFlatten "break 'foo 1" (printExpr (Break [] (Just (Lifetime "foo" ())) (Just (Lit [] (Int 1 Unsuffixed ()) ())) ()))
+  , testFlatten "break 'foo 1" (printExpr (Break [] (Just (Lifetime "foo" ())) (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) ()))
   , testFlatten "continue" (printExpr (Continue [] Nothing ()))
   , testFlatten "continue 'foo" (printExpr (Continue [] (Just (Lifetime "foo" ())) ()))
   , testFlatten "return" (printExpr (Ret [] Nothing ()))

@@ -825,9 +825,9 @@ gen_postfix_expr(lhs) :: { Expr Span }
      {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) $9) }
   | lhs '.' ident '::' '<' sep_by(ty_sum,',') '>' '(' sep_by1(expr,',') ',' ')'
      {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) (toList $9)) }
-  | lhs '.' int                                                                 {%
+  | lhs '.' int                                     {%
       case lit $3 of
-        Int i Unsuffixed _ -> withSpan $1 (TupField [] $1 (fromIntegral i))
+        Int Dec i Unsuffixed _ -> withSpan $1 (TupField [] $1 (fromIntegral i))
         _ -> fail "make better error message"
     }
 
@@ -909,7 +909,7 @@ gen_expr :: { Expr Span }
 --                          not allowed, while struct expressions are - their "block" is at the end
 --                          of the expression)
 --
--- There is also a later instantiation reolving around 'match' expressions, but it has some
+-- There is also a later instantiation revolving around 'match' expressions, but it has some
 -- different types.
 
 expr :: { Expr Span }

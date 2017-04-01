@@ -21,13 +21,14 @@ import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
-import Text.PrettyPrint.Annotated.WL (pretty, hcat, cat, indent, punctuate, group, angles, space, flatten, align, fillSep, text, vcat, char, annotate, noAnnotate, parens, brackets, (<>), (<//>), Doc)
+import Text.PrettyPrint.Annotated.WL (pretty, hcat, cat, indent, punctuate, group, angles, space, flatten, align, fillSep, text, vcat, char, annotate, noAnnotate, parens, brackets, (<>), Doc)
 import qualified Text.PrettyPrint.Annotated.WL as WL
 
 import Data.ByteString (unpack)
 import Data.Char (intToDigit, ord, chr)
 import Data.Either (lefts, rights)
 import Data.Foldable (toList)
+import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
 import Data.Maybe (listToMaybe)
 import Data.Word (Word8)
@@ -155,6 +156,7 @@ printIdent :: Ident -> Doc a
 printIdent (Ident s _) = text s
 
 -- | Print a type (@print_type@ with @print_ty_fn@ inlined)
+-- Types are expected to always be only one line
 printType :: Ty a -> Doc a
 printType (Slice ty x)          = annotate x ("[" <> printType ty <> "]")
 printType (Array ty v x)        = annotate x ("[" <> printType ty <> ";" <+> printExpr v <> "]")
@@ -162,7 +164,7 @@ printType (Ptr mut ty x)        = annotate x ("*" <> printFullMutability mut <+>
 printType (Rptr lt mut ty x)    = annotate x ("&" <> perhaps printLifetime lt <+> printMutability mut <+> printType ty)
 printType (Never x)             = annotate x "!"
 printType (TupTy [elt] x)       = annotate x ("(" <> printType elt <> ",)")
-printType (TupTy elts x)        = annotate x ("(" <> align (fillSep (punctuate "," (printType `map` elts))) <> ")")
+printType (TupTy elts x)        = annotate x ("(" <> hsep (punctuate "," (printType `map` elts)) <> ")")
 printType (PathTy Nothing p x)  = annotate x (printPath p False)
 printType (PathTy (Just q) p x) = annotate x (printQPath p q False)
 printType (ObjectSum ty bs x)   = annotate x (printType ty <+> printBounds "+" bs)
@@ -174,8 +176,8 @@ printType (Infer x)             = annotate x "_"
 printType (MacTy m x)           = annotate x (printMac m Bracket)
 printType (ImplicitSelf x)      = annotate x "Self"
 printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
-                                                </> printFnHeaderInfo u NotConst a InheritedV
-                                                <//> printFnArgsAndRet d)
+                                               <+> printFnHeaderInfo u NotConst a InheritedV
+                                               <> printFnArgsAndRet d)
 
 -- | Print a macro (@print_mac@)
 printMac :: Mac a -> Delim -> Doc a
@@ -536,7 +538,7 @@ printLit lit = case lit of
     (ByteStr str (Raw n) s x) -> annotate x (hcat [ "br", pad n, "\"", text (map byte2Char (unpack str)), "\"", pad n, suffix s ])
     (Char c s x)              -> annotate x (hcat [ "'",  escapeChar c, "'", suffix s ])
     (Byte b s x)              -> annotate x (hcat [ "b'", escapeByte b, "'", suffix s ])
-    (Int i s x)               -> annotate x (hcat [ pretty i, suffix s ])
+    (Int b i s x)             -> annotate x (hcat [ printIntLit i b, suffix s ])
     (Float d s x)             -> annotate x (hcat [ pretty d,  suffix s ])
     (Bool True s x)           -> annotate x (hcat [ "true",  suffix s ])
     (Bool False s x)          -> annotate x (hcat [ "false", suffix s ])
@@ -546,6 +548,32 @@ printLit lit = case lit of
 
   suffix :: Suffix -> Doc a
   suffix = text . show
+  
+-- | Print an integer literal
+printIntLit :: Integer -> IntRep -> Doc a
+printIntLit i r | i < 0     = "-" <> baseRep r <> toNBase (abs i) (baseVal r)
+                | i == 0    =        baseRep r <> "0"
+                | otherwise =        baseRep r <> toNBase (abs i) (baseVal r)
+  where
+  baseRep :: IntRep -> Doc a
+  baseRep Bin = "0b"
+  baseRep Oct = "0o"
+  baseRep Dec = mempty
+  baseRep Hex = "0x"
+
+  baseVal :: IntRep -> Integer
+  baseVal Bin = 2
+  baseVal Oct = 8
+  baseVal Dec = 10
+  baseVal Hex = 16
+
+  toDigit :: Integer -> Char
+  toDigit i = "0123456789ABCDEF" !! fromIntegral i
+
+  toNBase :: Integer -> Integer -> Doc a
+  i `toNBase` b | i < b = char (toDigit i)
+                | otherwise = let ~(d,r) = i `quotRem` b in toNBase d b <> char (toDigit r)
+
 
 -- | Extend a byte into a unicode character
 byte2Char :: Word8 -> Char
@@ -857,7 +885,7 @@ printPat (TupleStructP p es (Just d) x) = let (before,after) = splitAt d es
   in annotate x (printPath p True <> "(" <> commas before printPat <> when (d /= 0) ","
                     <+> ".." <> when (d /= length es) ("," <+> commas after printPat) <> ")")
 printPat (PathP Nothing path x)         = annotate x (printPath path True)
-printPat (PathP (Just qself) path x)    = annotate x (printQPath path qself False)
+printPat (PathP (Just qself) path x)    = annotate x (printQPath path qself True)
 printPat (TupleP elts Nothing x)        = annotate x ("(" <> commas elts printPat <> ")")
 printPat (TupleP elts (Just ddpos) _) = let (before,after) = splitAt ddpos elts
   in "(" <> commas before printPat <> unless (null elts) ","
@@ -961,16 +989,15 @@ printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (pu
 -- | Print a qualified path, specifiying explicitly whether to include colons (@::@) before
 -- generics or not (so expression style or type style generics) (@print_qpath@)
 printQPath :: Path a -> QSelf a -> Bool -> Doc a
-printQPath (Path global segments x) (QSelf ty position) colons = annotate x $ hcat
-  [ "<"
-  , printType ty <+> when (position > 0) aliased 
-  , ">", "::"
-  , printIdent ident
-  , printPathParameters params colons
-  ]
+printQPath (Path global segs x) (QSelf ty n) colons = hcat [ "<", printType ty <+> aliasedDoc, ">", "::", restDoc ]
   where
-  (ident, params) = N.last segments
-  aliased = "as" <+> printPath (Path global (N.fromList (N.take position segments)) x) False
+  (aliased, rest) = N.splitAt n segs
+  
+  aliasedDoc = case aliased of
+                 [] -> mempty
+                 (s:ss) -> "as" <+> printPath (Path global (s :| ss) x) False
+
+  restDoc = printPath (Path False (N.fromList rest) x) colons
 
 -- | Print a view path (@print_view_path@)
 printViewPath :: ViewPath a -> Doc a
