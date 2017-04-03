@@ -989,9 +989,7 @@ data Ty a
   | TupTy [Ty a] a
   -- | path type (examples: @std::math::pi@, @\<Vec\<T\> as SomeTrait\>::SomeType@).
   | PathTy (Maybe (QSelf a)) (Path a) a
-  -- | object sum (example: @A+B@)
-  | ObjectSum (Ty a) [TyParamBound a] a
-  -- | trait object (example: @Bound1 + Bound2 + Bound3@)
+  -- | trait object type (example: @Bound1 + Bound2 + Bound3@)
   | TraitObject (NonEmpty (TyParamBound a)) a
   -- | impl trait type (see the
   -- [RFC](https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md))
@@ -1003,8 +1001,6 @@ data Ty a
   | Typeof (Expr a) a
   -- | inferred type: @_@
   | Infer a
-  -- | self type: @Self@
-  | ImplicitSelf a
   -- | generated from a call to a macro (example: @HList![i32,(),u8]@)
   | MacTy (Mac a) a
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
@@ -1018,13 +1014,11 @@ instance Located a => Located (Ty a) where
   spanOf (Never s) = spanOf s
   spanOf (TupTy _ s) = spanOf s
   spanOf (PathTy _ _ s) = spanOf s
-  spanOf (ObjectSum _ _ s) = spanOf s
   spanOf (TraitObject _ s) = spanOf s
   spanOf (ImplTrait _ s) = spanOf s
   spanOf (ParenTy _ s) = spanOf s
   spanOf (Typeof _ s) = spanOf s
   spanOf (Infer s) = spanOf s
-  spanOf (ImplicitSelf s) = spanOf s
   spanOf (MacTy _ s) = spanOf s
 
 -- | type parameter definition used in 'Generics' (@syntax::ast::TyParam@).
@@ -1161,8 +1155,8 @@ data WherePredicate a
   -- | equality predicate (@syntax::ast::WhereEqPredicate@) (example: @T=int@). Note that this is
   -- not currently supported.
   | EqPredicate
-      { path :: Path a                          -- ^ LHS of the equality predicate (@T@ in the example)
-      , ty :: Ty a                              -- ^ RHS of the equality predicate (@int@ in the example)
+      { lhs :: Ty a                             -- ^ LHS of the equality predicate (@T@ in the example)
+      , rhs :: Ty a                             -- ^ RHS of the equality predicate (@int@ in the example)
       , nodeInfo :: a
       }
   deriving (Eq, Functor, Show, Typeable, Data, Generic)

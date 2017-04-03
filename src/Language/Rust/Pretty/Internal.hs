@@ -167,14 +167,12 @@ printType (TupTy [elt] x)       = annotate x ("(" <> printType elt <> ",)")
 printType (TupTy elts x)        = annotate x ("(" <> hsep (punctuate "," (printType `map` elts)) <> ")")
 printType (PathTy Nothing p x)  = annotate x (printPath p False)
 printType (PathTy (Just q) p x) = annotate x (printQPath p q False)
-printType (ObjectSum ty bs x)   = annotate x (printType ty <+> printBounds "+" bs)
-printType (TraitObject bs x) = annotate x (printBounds mempty (toList bs))
+printType (TraitObject bs x)    = annotate x (printBounds mempty (toList bs))
 printType (ImplTrait bs x)      = annotate x (printBounds "impl" (toList bs))
 printType (ParenTy ty x)        = annotate x ("(" <> printType ty <> ")")
 printType (Typeof e x)          = annotate x ("typeof(" <> printExpr e <> ")")
 printType (Infer x)             = annotate x "_"
 printType (MacTy m x)           = annotate x (printMac m Bracket)
-printType (ImplicitSelf x)      = annotate x "Self"
 printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
                                                <+> printFnHeaderInfo u NotConst a InheritedV
                                                <> printFnArgsAndRet d)
@@ -832,7 +830,7 @@ printWhereClause (WhereClause predicates x)
   printPredicate :: WherePredicate a -> Doc a
   printPredicate (BoundPredicate blt ty bds y) = annotate y (printFormalLifetimeList blt <+> printType ty <> printBounds ":" bds)
   printPredicate (RegionPredicate lt bds y) = annotate y (printLifetimeBounds lt bds)
-  printPredicate (EqPredicate path ty y) = annotate y (printPath path False <+> "=" <+> printType ty)
+  printPredicate (EqPredicate lhs rhs y) = annotate y (printType lhs <+> "=" <+> printType rhs)
 
 -- TODO: think carefully about multiline version of this
 -- | Print a function (@print_fn@)
