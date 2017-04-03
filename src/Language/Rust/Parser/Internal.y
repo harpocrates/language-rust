@@ -949,6 +949,7 @@ nostructblock_expr :: { Expr Span }
   : gen_expr                                                                  { $1 }
   | nsb_arithmetic_expr                                                       { $1 }
   | lambda_expr_nostruct                                                      { $1 }
+-- TODO: should the first case not be 'gen_arithmetic(nsb_arithmetic_expr,ns_arithmetic_expr,nsb_arithmetic_expr)'
 nsb_arithmetic_expr :: { Expr Span }
   : gen_arithmetic(nsb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)   { $1 }
   | nsb_postfix_expr                                                          { $1 } 

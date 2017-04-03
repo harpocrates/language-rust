@@ -40,6 +40,7 @@ library
                        Language.Rust.Parser.Literals
                        Language.Rust.Pretty
                        Language.Rust.Pretty.Internal
+                       Language.Rust.Pretty.Resolve
                        Language.Rust.Data.Position
                        Language.Rust.Data.InputStream
   if flag(enableQuasiquotes)
