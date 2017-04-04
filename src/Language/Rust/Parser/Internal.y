@@ -812,7 +812,8 @@ binding_mode :: { Spanned BindingMode }
 
 -- General postfix expression
 gen_postfix_expr(lhs) :: { Expr Span }
-  : lit_expr                                        { $1 }
+  : ntExpr                                          { $1 }
+  | lit_expr                                        { $1 }
   | expr_path                            %prec PATH {% withSpan $1 (PathExpr [] Nothing $1) }
   | expr_qual_path                                  {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
   | expr_mac                                        {% withSpan $1 (MacExpr [] $1) }
@@ -886,8 +887,7 @@ gen_arithmetic(lhs,rhs,rhs2) :: { Expr Span }
 
 -- Lowest precedence generalized expression
 gen_expr :: { Expr Span }
-  : ntExpr                       { $1 }
-  | return                       {% withSpan $1 (Ret [] Nothing) }
+  : return                       {% withSpan $1 (Ret [] Nothing) }
   | return expr                  {% withSpan $1 (Ret [] (Just $2)) }
   | '..'                         {% withSpan $1 (Range [] Nothing Nothing Closed) }
   | '...'                        {% withSpan $1 (Range [] Nothing Nothing HalfOpen) }

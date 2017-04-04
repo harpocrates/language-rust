@@ -309,16 +309,16 @@ printExprOuterAttrStyle :: Expr a -> Bool -> Doc a
 printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs expr) Outer isInline) $
   case expr of
     Box _ e x                   -> annotate x ("box" <+> printExpr e)
-    InPlace _ place e x         -> annotate x (hsep [ printExprMaybeParen place, "<-", printExprMaybeParen e ])
+    InPlace _ place e x         -> annotate x (hsep [ printExpr place, "<-", printExpr e ])
     Vec as exprs x              -> annotate x (brackets (printInnerAttrs as <+> commas exprs printExpr))
-    Call _ func args x          -> annotate x (printExprMaybeParen func <> "(" <> commas args printExpr <> ")")
+    Call _ func args x          -> annotate x (printExpr func <> "(" <> commas args printExpr <> ")")
     MethodCall _ s i ts' as x   -> let tys' = perhaps (\ts -> "::<" <> commas ts printType <> ">") ts'
                                    in annotate x (hcat [ printExpr s, ".", printIdent i, tys', "(", commas as printExpr, ")" ])
     TupExpr as es x             -> annotate x ("(" <> printInnerAttrs as <+> commas es printExpr <> when (length es == 1) "," <> ")")
-    Binary _ op lhs rhs x       -> annotate x (hsep [ checkExprBinNeedsParen lhs op, printBinOp op, checkExprBinNeedsParen rhs op ])
-    Unary _ op e x              -> annotate x (printUnOp op <> printExprMaybeParen e)
+    Binary _ op lhs rhs x       -> annotate x (hsep [ printExpr lhs, printBinOp op, printExpr rhs ])
+    Unary _ op e x              -> annotate x (printUnOp op <> printExpr e)
     Lit _ lit x                 -> annotate x (printLit lit)
-    Cast _ e ty x               -> let f = case e of { Cast{} -> printExpr; _ -> printExprMaybeParen }
+    Cast _ e ty x               -> let f = case e of { Cast{} -> printExpr; _ -> printExpr }
                                    in annotate x (hsep [ f e, "as", printType ty ])
     TypeAscription _ e ty x     -> annotate x (printExpr e <> ":" <+> printType ty)
     If _ test blk els x         -> annotate x (hsep [ "if", printExpr test, printBlock blk, printElse els ])
@@ -341,7 +341,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Range _ start end limits x  -> annotate x (hcat [ perhaps printExpr start, printRangeLimits limits, perhaps printExpr end ])
     PathExpr _ Nothing path x   -> annotate x (printPath path True)
     PathExpr _ (Just qs) path x -> annotate x (printQPath path qs True)
-    AddrOf _ mut e x            -> annotate x ("&" <> printMutability mut <+> printExprMaybeParen e)
+    AddrOf _ mut e x            -> annotate x ("&" <> printMutability mut <+> printExpr e)
     Break _ brk e x             -> annotate x ("break" <+> perhaps printLifetime brk <+> perhaps printExpr e)
     Continue _ cont x           -> annotate x ("continue" <+> perhaps printLifetime cont)
     Ret _ result x              -> annotate x ("return" <+> perhaps printExpr result)
@@ -605,27 +605,6 @@ padHex :: Integral a => Int -> a -> Doc b
 padHex n 0 = text (replicate n '0')
 padHex n m = let (m',r) = m `divMod` 0x10
              in padHex (n-1) m' <> char (intToDigit (fromIntegral r))
-
--- | Given an expression an an enclosing binary operation, add parens if needed (@check_expr_bin_needs_paren@)
-checkExprBinNeedsParen :: Expr a -> BinOp -> Doc a
-checkExprBinNeedsParen e@(Binary _ op' _ _ _) op | opPrecedence op' < opPrecedence op = "(" <> printExpr e <> ")"
-checkExprBinNeedsParen e _ = printExpr e
-
--- | Print an expression taking paresn into consideration (@print_expr_maybe_paren@)
-printExprMaybeParen :: Expr a -> Doc a
-printExprMaybeParen expr = let needs = needsParentheses expr
-                           in when needs "(" <> printExpr expr <> when needs ")"
-  where
-  -- @needs_parentheses@
-  needsParentheses :: Expr a -> Bool
-  needsParentheses Assign{} = True
-  needsParentheses Binary{} = True
-  needsParentheses Closure{} = True
-  needsParentheses AssignOp{} = True
-  needsParentheses Cast{} = True
-  needsParentheses InPlace{} = True
-  needsParentheses TypeAscription{} = True
-  needsParentheses _ = False
 
 -- | Print inner attributes (@print_inner_attributes@ or @print_inner_attributes_inline@
 -- or @print_inner_attributes_no_trailing_hardbreak@ - distinction has to be made at callsite

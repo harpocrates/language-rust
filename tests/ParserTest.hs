@@ -1,3 +1,8 @@
+{-
+The name of this module is very slightly misleading - on top of just asserting correct parses, it
+also checks that calling 'resolve' on the parsed output is a NOP. This doesn't fully check that
+'resolve' works - but it does provide some checks that it isn't grossly broken.
+-}
 {-# LANGUAGE OverloadedStrings, OverloadedLists, UnicodeSyntax, FlexibleContexts  #-}
 module ParserTest (parserSuite) where
 
@@ -6,6 +11,7 @@ import Test.Framework.Providers.HUnit
 import Test.HUnit hiding (Test)
 
 import Language.Rust.Parser
+import Language.Rust.Pretty (Resolve(..))
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
@@ -26,7 +32,10 @@ parserSuite = testGroup "parser suite"
                 ]
 
 -- | Create a test for a code fragment that should parse to a type.
-testP inp x = testCase inp $ Right x @=? parseNoSpans parser (inputStreamFromString inp)
+testP inp x = testCase inp $ parseTest *> resolveTest
+  where
+   parseTest = Right x @=? parseNoSpans parser (inputStreamFromString inp)
+   resolveTest = Right x @=? resolve x
 
 -- | Turn an InputStream into either an error or a parse.
 parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either (Position,String) (f ())

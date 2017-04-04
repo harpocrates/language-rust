@@ -10,6 +10,50 @@ An AST and its text form /should/ be completely isomorphic, with @parse@ and @pr
 functions allowing you to go back and forth between these forms. Unfortunately, this cannot really
 be the case. The AST form can express programs which cannot be literally pretty-printed and still
 make sense. Sometimes, extra parens or semicolons need to be added.
+
+== Simple example
+
+For example, consider the following interaction
+
+>>> import Language.Rust.Quote
+>>> import Language.Rust.Pretty
+>>> :set -XQuasiQuotes
+>>> x = [expr| 2 + 3 |]
+>>> y = [expr| 1 * $x |]
+>>> pretty y
+0 * 1 + 2
+
+The problem is that we haven't introduced the paren AST node (which we would have gotten had we
+parsed @1 * (2 + 3)@. This is where 'resolve' steps in.
+
+>>> Right y' = resolve y
+>>> pretty y'
+0 * (1 + 2)
+
+== More involved example
+
+From the above, it is tempting to say: your pretty-printer should be smarter! However, things are
+not always so simple. Consider the less obvious example:
+
+>>> fnBody = [expr| { let y = x; x += 1; y } + x |]
+>>> fn = [item| fn foo(mut x: i32) -> i32 { $fnBody } |]
+>>> pretty fn
+fn foo(mut x: i32) -> i32 {
+  { let y = x; x += 1; y } + x
+}
+
+This is clearly not the desired output - this won't compile with @rustc@ because of an invariant in
+blocks: if the block ends in an expression, that expression cannot start with a block. To fix this,
+we call 'resolve' on the AST before pretty-printing it.
+
+>>> Right fn' = resolve fn
+>>> pretty fn'
+fn foo(mut x: i32) -> i32 {
+  ({ let y = x; x += 1; y }) + x
+}
+
+And now we have generated valid code.
+
 -}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -19,31 +63,31 @@ module Language.Rust.Pretty.Resolve (
 
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
-
-import Language.Rust.Parser
 import Language.Rust.Syntax.Ident
-import Language.Rust.Data.Position
 
-import  Data.List.NonEmpty (NonEmpty(..))
+import Language.Rust.Parser.ParseMonad (execParser)
+import Language.Rust.Parser.Lexer (lexTokens, lexToken)
+import Language.Rust.Data.Position (initPos, Spanned(..))
+import Language.Rust.Data.InputStream (inputStreamFromString)
+
+import Data.Either (rights)
+import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
 import Data.Semigroup ((<>))
-import Data.Either (rights)
 
+-- | Types that can have underlying invariants which can be checked and possibly corrected. 
 class Resolve a where
-  -- | Convert some value to its /resolved/ form. Formally, we can say that a value that is an
-  -- instance of 'Parse' and 'Pretty' is resolved if @parse . pretty@ is an identity operation on it.
+  -- | Convert some value to its /resolved/ form. Informally, resolving a value involves checking
+  -- that its invariants hold and, if they don't, report an error message or dajust the value so
+  -- that the invariant holds.
   --
-  -- This function also has the role of validating its input. If the input cannot be resolved, an
-  -- error message is returned.
+  -- Formally, we can say that a value that is an instance of 'Parse' and 'Pretty' is resolved if
+  -- @parse . pretty@ is an identity operation on it.
   --
   -- prop> parse . pretty . resolve == id
-  resolve :: a -> Either String a
-
-  -- | Strips all of the non-essential tree information. In a sense, one can think of 'strip' as an
-  -- inverse of 'resolve': it removes elements that 'resolve' adds (such as parens)
   --
-  -- prop> strip . resolve == strip
-  strip :: a -> a
+  -- We further expect that 'resolve' be an identity operation on any output of @parse@.
+  resolve :: a -> Either String a
 
 
 -- | An identifier can be invalid if
@@ -75,9 +119,7 @@ resolveIdent' i@(Ident s _) = case toks of
   where
   toks = execParser (lexTokens lexToken) (inputStreamFromString s) initPos
 
-instance Resolve Ident where
-  resolve = resolveIdent
-  strip = id
+instance Resolve Ident where resolve = resolveIdent
 
 
 ----------------
@@ -89,10 +131,7 @@ data AttrType
   | InnerAttr  -- ^ only innner attribute
   | OuterAttr  -- ^ only outer attribute
 
--- | An attribute is invalid if
---
---   * the underlying meta item is invalid
---   * it claims to be a doc comment but lacks the accompanying structure
+-- | An attribute is invalid if it claims to be a doc comment but lacks the accompanying structure.
 resolveAttr :: AttrType -> Attribute a -> Either String (Attribute a)
 resolveAttr OuterAttr (Attribute Inner _ _ _) = Left "only outer attributes are allowed"
 resolveAttr InnerAttr (Attribute Outer _ _ _) = Left "only inner attributes are allowed"
@@ -100,14 +139,10 @@ resolveAttr _         (Attribute sty met False x) = Attribute sty <$> resolveMet
 resolveAttr _       a@(Attribute _ (NameValue (Ident "doc" _) (Str _ Cooked Unsuffixed _) _) True _) = pure a
 resolveAttr _          _ = Left "attribute cannot be doc comment"
 
-instance Resolve (Attribute a) where
-  resolve = resolveAttr EitherAttr
-  strip = id
+instance Resolve (Attribute a) where resolve = resolveAttr EitherAttr
 
--- | A meta-item is invalid if
---
---   * any of its constituents are (Note however that identifiers here can even be keywords here)
---   * a literal has a suffix
+-- | A meta-item is invalid if a literal has a suffix. Note that identifiers here can even be
+-- keywords.
 resolveMetaItem :: MetaItem a -> Either String (MetaItem a)
 resolveMetaItem (Word i x) = Word <$> resolveIdent' i <*> pure x
 resolveMetaItem (List i vals x) = List <$> resolveIdent' i <*> sequence (resolveNestedMetaItem <$> vals) <*> pure x 
@@ -115,23 +150,17 @@ resolveMetaItem (NameValue i lit x)
   | suffix lit /= Unsuffixed = Left "literal in meta-item that is not unsuffixed"
   | otherwise = NameValue <$> resolveIdent' i <*> resolveLit lit <*> pure x
 
-instance Resolve (MetaItem a) where
-  resolve = resolveMetaItem
-  strip = id
+instance Resolve (MetaItem a) where resolve = resolveMetaItem
 
--- | A nested-meta-item is invalid if
---
---   * any of its constituents are (Note however that identifiers here can even be keywords here)
---   * a literal has a suffix
+-- | A nested-meta-item is invalid if a literal has a suffix. Note that identifiers here can even
+-- be keywords.
 resolveNestedMetaItem :: NestedMetaItem a -> Either String (NestedMetaItem a)
 resolveNestedMetaItem (MetaItem met x) = MetaItem <$> resolveMetaItem met <*> pure x
 resolveNestedMetaItem (Literal lit x)
   | suffix lit /= Unsuffixed = Left "literal in nested-meta-item that is not unsuffixed"
   | otherwise = Literal <$> resolveLit lit <*> pure x
 
-instance Resolve (NestedMetaItem a) where
-  resolve = resolveNestedMetaItem
-  strip = id
+instance Resolve (NestedMetaItem a) where resolve = resolveNestedMetaItem
 
 
 --------------
@@ -142,9 +171,7 @@ instance Resolve (NestedMetaItem a) where
 resolveLit :: Lit a -> Either String (Lit a)
 resolveLit = pure
 
-instance Resolve (Lit a) where
-  resolve = resolveLit
-  strip = id
+instance Resolve (Lit a) where resolve = resolveLit
 
 
 -----------
@@ -168,7 +195,6 @@ instance Show PathType where
 --
 --   * it has path parameters of the wrong type
 --   * it has identifiers not meant for paths
---   * it has invalid components
 resolvePath :: Monoid a => PathType -> Path a -> Either String (Path a)
 resolvePath t (Path g segs x)
     | all (isParamsForPath t . snd) segs = Path g <$> sequence (resolveSeg t <$> segs) <*> pure x 
@@ -193,7 +219,6 @@ instance Monoid a => Resolve (Path a) where
   resolve x = case rights [ resolvePath t x | t <- [ ModPath, TypePath, ExprPath ] ] of
                 p : _ -> pure p
                 [] -> Left "path is not a valid mod/type/expression path"
-  strip = id
 
 -- | A path parameter can be invalid if any of its constituent components are invalid
 resolvePathParameters :: Monoid a => PathParameters a -> Either String (PathParameters a)
@@ -208,17 +233,13 @@ resolvePathParameters (Parenthesized tys tym x) = do
   tym' <- sequence (resolveTy NoSumType <$> tym)
   pure (Parenthesized tys' tym' x)
 
-instance Monoid a => Resolve (PathParameters a) where
-  resolve = resolvePathParameters
-  strip = id
+instance Monoid a => Resolve (PathParameters a) where resolve = resolvePathParameters
 
 -- | A QSelf by itself is only invalid when the underlying type is
 resolveQSelf :: Monoid a => QSelf a -> Either String (QSelf a)
 resolveQSelf (QSelf t p) = QSelf <$> resolveTy AnyType t <*> pure p
 
-instance Monoid a => Resolve (QSelf a) where
-  resolve = resolveQSelf
-  strip = id
+instance Monoid a => Resolve (QSelf a) where resolve = resolveQSelf
 
 
 -----------
@@ -228,19 +249,17 @@ instance Monoid a => Resolve (QSelf a) where
 -- | A lifetime can only be invalid if the underlying identifier is. Note that lifetimes cannot use
 -- keywords.
 resolveLifetime :: Lifetime a -> Either String (Lifetime a)
-resolveLifetime l@(Lifetime n _) = resolveIdent (mkIdent n) *> pure l
+resolveLifetime l@(Lifetime n _)
+  | n == "static" = pure l 
+  | otherwise = resolveIdent (mkIdent n) *> pure l
 
-instance Resolve (Lifetime a) where
-  resolve = resolveLifetime
-  strip = id
+instance Resolve (Lifetime a) where resolve = resolveLifetime
 
 -- | A trait ref is invalid if the underlying type path is.
 resolveTraitRef :: Monoid a => TraitRef a -> Either String (TraitRef a)
 resolveTraitRef (TraitRef p) = TraitRef <$> resolvePath TypePath p
 
-instance Monoid a => Resolve (TraitRef a) where
-  resolve = resolveTraitRef
-  strip = id
+instance Monoid a => Resolve (TraitRef a) where resolve = resolveTraitRef
 
 -- | There a a variety of constraints imposed on types, representing different invariants
 data TyType
@@ -296,9 +315,7 @@ resolveTy _ (MacTy (Mac p t x) x') = do
   p' <- resolvePath TypePath p
   MacTy <$> resolveMac TypePath (Mac p' t x) <*> pure x'
 
-instance Monoid a => Resolve (Ty a) where
-  resolve = resolveTy AnyType
-  strip = id
+instance Monoid a => Resolve (Ty a) where resolve = resolveTy AnyType
 
 -- In some cases, the first argument of a function declaration may be a self
 -- TODO add check around allowing variadic
@@ -320,9 +337,7 @@ isSelfArg :: Arg a -> Bool
 isSelfArg Arg{} = False
 isSelfArg _ = True
 
-instance Monoid a => Resolve (FnDecl a) where
-  resolve = resolveFnDecl AllowSelf
-  strip = id
+instance Monoid a => Resolve (FnDecl a) where resolve = resolveFnDecl AllowSelf
 
 -- | Only some type parameter bounds allow trait bounds to start with ?
 data TyParamBoundType
@@ -338,9 +353,7 @@ resolveTyParamBound _ (RegionTyParamBound lt) = RegionTyParamBound <$> resolveLi
 resolveTyParamBound NoneBound (TraitTyParamBound _ Maybe) = Left "? trait is not allowed in this type param bound"
 resolveTyParamBound _ (TraitTyParamBound p t) = TraitTyParamBound <$> resolvePolyTraitRef p <*> pure t 
 
-instance Monoid a => Resolve (TyParamBound a) where
-  resolve = resolveTyParamBound ModBound
-  strip = id
+instance Monoid a => Resolve (TyParamBound a) where resolve = resolveTyParamBound ModBound
 
 -- | The only types of patterns supported by arguments are wild or identifiers
 resolveArg :: Monoid a => Arg a -> Either String (Arg a)
@@ -354,17 +367,13 @@ resolveArg (Arg (Just p) t x)
       (IdentP ByValue{} _ Nothing _) -> Arg <$> (Just <$> resolvePat p) <*> resolveTy AnyType t <*> pure x
       _                              -> Left "not all patterns are accepted in arguments"
 
-instance Monoid a => Resolve (Arg a) where
-  resolve = resolveArg
-  strip = id
+instance Monoid a => Resolve (Arg a) where resolve = resolveArg
 
 -- | A Poly trait ref is valid whenever the underlying trait ref is.
 resolvePolyTraitRef :: Monoid a => PolyTraitRef a -> Either String (PolyTraitRef a)
 resolvePolyTraitRef (PolyTraitRef lts t x) = PolyTraitRef <$> sequence (resolveLifetimeDef <$> lts) <*> resolveTraitRef t <*> pure x
 
-instance Monoid a => Resolve (PolyTraitRef a) where
-  resolve = resolvePolyTraitRef
-  strip = id
+instance Monoid a => Resolve (PolyTraitRef a) where resolve = resolvePolyTraitRef
 
 -- | A lifetime def is invalid if it has non-outer attributes 
 resolveLifetimeDef :: LifetimeDef a -> Either String (LifetimeDef a)
@@ -374,9 +383,7 @@ resolveLifetimeDef (LifetimeDef as l bds x) = do
   bds' <- sequence (resolveLifetime <$> bds)
   pure (LifetimeDef as' l' bds' x)
 
-instance Resolve (LifetimeDef a) where
-  resolve = resolveLifetimeDef
-  strip = id
+instance Resolve (LifetimeDef a) where resolve = resolveLifetimeDef
 
 
 --------------
@@ -416,9 +423,7 @@ resolvePat (RefP p m x) = RefP <$> resolvePat p <*> pure m <*> pure x
 resolvePat (SliceP b m a x) = SliceP <$> sequence (resolvePat <$> b) <*> sequence (resolvePat <$> m) <*> sequence (resolvePat <$> a) <*> pure x
 resolvePat (MacP m x) = MacP <$> resolveMac ExprPath m <*> pure x
 
-instance Monoid a => Resolve (Pat a) where
-  resolve = resolvePat
-  strip = id
+instance Monoid a => Resolve (Pat a) where resolve = resolvePat
 
 -- | Field patterns are only invalid if the underlying pattern / identifier is
 resolveFieldPat :: Monoid a => FieldPat a -> Either String (FieldPat a)
@@ -428,9 +433,7 @@ resolveFieldPat (FieldPat Nothing p x)
               _                               -> Left "patterns for fields without an identifier must be (possibly box) identifiers"
 resolveFieldPat (FieldPat i p x) = FieldPat <$> sequence (resolveIdent <$> i) <*> resolvePat p <*> pure x
 
-instance Monoid a => Resolve (FieldPat a) where
-  resolve = resolveFieldPat
-  strip = id
+instance Monoid a => Resolve (FieldPat a) where resolve = resolveFieldPat
 
 
 -----------------
@@ -450,9 +453,12 @@ data ExprType
 resolveExpr :: Monoid a => ExprType -> Expr a -> Either String (Expr a)
 resolveExpr = resolveExprP 0
 
-instance Monoid a => Resolve (Expr a) where
-  resolve = resolveExpr AnyExpr
-  strip = id
+instance Monoid a => Resolve (Expr a) where resolve = resolveExpr AnyExpr
+
+parenthesize :: Monoid a => Expr a -> Either String (Expr a)
+parenthesize e = do
+  e' <- resolveExprP 0 AnyExpr e
+  pure (ParenExpr [] e' mempty)
 
 -- TODO Double check the last two cases
 rightC :: ExprType -> ExprType
@@ -492,6 +498,7 @@ resolveExprP p _ (Range as Nothing r l x) = parenE (p > 0) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   r' <- sequence (resolveExprP 0 AnyExpr <$> r)
   pure (Range as' Nothing r' l x)
+-- Closures
 resolveExprP _ _ (Closure _ _ (FnDecl _ _ True _) _ _) = Left "closures can never be variadic"
 resolveExprP p AnyExpr (Closure as cb fn@(FnDecl _ (Just _) _ _) e x) = parenE (p > 0) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
@@ -501,7 +508,7 @@ resolveExprP p AnyExpr (Closure as cb fn@(FnDecl _ (Just _) _ _) e x) = parenE (
              _ -> BlockExpr [] (Block [NoSemi e mempty] Normal mempty) mempty
   e'' <- resolveExprP 0 AnyExpr e'
   pure (Closure as' cb fn' e'' x)
-resolveExprP p c e@(Closure _ _ (FnDecl _ (Just _) _ _) _ _) = resolveExprP p c (ParenExpr [] e mempty)
+resolveExprP _ _ e@(Closure _ _ (FnDecl _ (Just _) _ _) _ _) = parenthesize e
 resolveExprP p c (Closure as cb fn@(FnDecl _ Nothing _ _) e x) = parenE (p > 0) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   fn' <- resolveFnDecl NoSelf fn
@@ -572,7 +579,7 @@ resolveExprP p c (TypeAscription as e t x) = parenE (p > 12) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   e' <- resolveExprP 12 c e
   t' <- resolveTy NoSumType t
-  pure (Cast as' e' t' x)
+  pure (TypeAscription as' e' t' x)
 -- Unary expressions pass on their restrictions to their wrapped expression
 resolveExprP p c (Unary as o e x) = parenE (p > 13) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
@@ -668,15 +675,15 @@ resolveExprP p _ (TupExpr as es x) = parenE (p > 14) $ do
   es' <- sequence (resolveExprP 0 AnyExpr <$> es)
   pure (TupExpr as' es' x)
 -- Block expressions
-resolveExprP p c@NoStructBlockExpr e@BlockExpr{} = resolveExprP p c (ParenExpr [] e mempty)
-resolveExprP p c@NonBlockExpr e@BlockExpr{} = resolveExprP p c (ParenExpr [] e mempty)
+resolveExprP _ NoStructBlockExpr e@BlockExpr{} = parenthesize e
+resolveExprP _ NonBlockExpr e@BlockExpr{} = parenthesize e
 resolveExprP p _ (BlockExpr as b x) = parenE (p > 14) $ do
   as' <- sequence (resolveAttr EitherAttr <$> as)
   b' <- resolveBlock b
   pure (BlockExpr as' b' x) 
 -- Struct expressions
-resolveExprP p c@NoStructExpr e@Struct{} = resolveExprP p c (ParenExpr [] e mempty)
-resolveExprP p c@NoStructBlockExpr e@Struct{} = resolveExprP p c (ParenExpr [] e mempty)
+resolveExprP _ NoStructExpr e@Struct{} = parenthesize e
+resolveExprP _ NoStructBlockExpr e@Struct{} = parenthesize e
 resolveExprP p _ (Struct as p' fs e x) = parenE (p > 14) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   p'' <- resolvePath ExprPath p'
@@ -684,7 +691,7 @@ resolveExprP p _ (Struct as p' fs e x) = parenE (p > 14) $ do
   e' <- sequence (resolveExprP 0 AnyExpr <$> e)
   pure (Struct as' p'' fs' e' x)
 -- Block-like expressions
-resolveExprP p c@NonBlockExpr e@If{} = resolveExprP p c (ParenExpr [] e mempty)
+resolveExprP _ NonBlockExpr e@If{} = parenthesize e
 resolveExprP p c (If as e b es x) = parenE (p > 14) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   e' <- resolveExprP 0 NoStructExpr e
@@ -693,9 +700,10 @@ resolveExprP p c (If as e b es x) = parenE (p > 14) $ do
            Nothing -> pure Nothing
            (Just If{}) -> sequence (resolveExprP p c <$> es)
            (Just IfLet{}) -> sequence (resolveExprP p c <$> es)
+           (Just BlockExpr{}) -> sequence (resolveExprP p c <$> es)
            (Just e'') -> Just <$> resolveExprP p c (BlockExpr [] (Block [NoSemi e'' mempty] Normal mempty) mempty)
   pure (If as' e' b' es' x)
-resolveExprP p c@NonBlockExpr e@IfLet{} = resolveExprP p c (ParenExpr [] e mempty)
+resolveExprP _ NonBlockExpr e@IfLet{} = parenthesize e
 resolveExprP p c (IfLet as p' e b es x) = parenE (p > 14) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   p'' <- resolvePat p'
@@ -705,16 +713,17 @@ resolveExprP p c (IfLet as p' e b es x) = parenE (p > 14) $ do
            Nothing -> pure Nothing
            (Just If{}) -> sequence (resolveExprP p c <$> es)
            (Just IfLet{}) -> sequence (resolveExprP p c <$> es)
+           (Just BlockExpr{}) -> sequence (resolveExprP p c <$> es)
            (Just e'') -> Just <$> resolveExprP p c (BlockExpr [] (Block [NoSemi e'' mempty] Normal mempty) mempty)
   pure (IfLet as' p'' e' b' es' x)
-resolveExprP p c@NonBlockExpr e@While{} = resolveExprP p c (ParenExpr [] e mempty)
+resolveExprP _ NonBlockExpr e@While{} = parenthesize e
 resolveExprP p _ (While as e b l x) = parenE (p > 14) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   l' <- sequence (resolveLifetime <$> l)
   pure (While as' e' b' l' x)
-resolveExprP p c@NonBlockExpr e@WhileLet{} = resolveExprP p c (ParenExpr [] e mempty)
+resolveExprP _ NonBlockExpr e@WhileLet{} = parenthesize e
 resolveExprP p _ (WhileLet as p' e b l x) = parenE (p > 14) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   p'' <- resolvePat p'
@@ -722,7 +731,7 @@ resolveExprP p _ (WhileLet as p' e b l x) = parenE (p > 14) $ do
   b' <- resolveBlock b
   l' <- sequence (resolveLifetime <$> l)
   pure (WhileLet as' p'' e' b' l' x)
-resolveExprP p c@NonBlockExpr e@ForLoop{} = resolveExprP p c (ParenExpr [] e mempty)
+resolveExprP _ NonBlockExpr e@ForLoop{} = parenthesize e
 resolveExprP p _ (ForLoop as p' e b l x) = parenE (p > 14) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   p'' <- resolvePat p'
@@ -730,13 +739,13 @@ resolveExprP p _ (ForLoop as p' e b l x) = parenE (p > 14) $ do
   b' <- resolveBlock b
   l' <- sequence (resolveLifetime <$> l)
   pure (ForLoop as' p'' e' b' l' x)
-resolveExprP p c@NonBlockExpr e@Loop{} = resolveExprP p c (ParenExpr [] e mempty)
+resolveExprP _ NonBlockExpr e@Loop{} = parenthesize e
 resolveExprP p _ (Loop as b l x) = parenE (p > 14) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   b' <- resolveBlock b
   l' <- sequence (resolveLifetime <$> l)
   pure (Loop as' b' l' x)
-resolveExprP p c@NonBlockExpr e@Match{} = resolveExprP p c (ParenExpr [] e mempty)
+resolveExprP _ NonBlockExpr e@Match{} = parenthesize e
 resolveExprP p _ (Match as e ar x) = parenE (p > 14) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   e' <- resolveExprP 0 NoStructExpr e
@@ -763,9 +772,7 @@ parenE False e = e
 resolveField :: Monoid a => Field a -> Either String (Field a)
 resolveField (Field i e x) = Field <$> resolveIdent i <*> resolveExpr AnyExpr e <*> pure x
 
-instance Monoid a => Resolve (Field a) where
-  resolve = resolveField
-  strip = id
+instance Monoid a => Resolve (Field a) where resolve = resolveField
 
 -- | Arms are invalid only if the underlying consitutents are
 resolveArm :: Monoid a => Arm a -> Either String (Arm a)
@@ -776,9 +783,7 @@ resolveArm (Arm as ps g b x) = do
   b' <- resolveExpr AnyExpr b
   pure (Arm as' ps' g' b' x)
 
-instance Monoid a => Resolve (Arm a) where
-  resolve = resolveArm
-  strip = id
+instance Monoid a => Resolve (Arm a) where resolve = resolveArm
 
 
 ----------------
@@ -800,18 +805,15 @@ resolveStmt _ (Local p t i as x) = do
   pure (Local p' t' i' as' x)
 resolveStmt _ (ItemStmt i x) = ItemStmt <$> resolveItem StmtItem i <*> pure x
 resolveStmt _ (Semi e x) = Semi <$> resolveExpr NonBlockExpr e <*> pure x
+resolveStmt _ (NoSemi e x) | isBlockLike e = NoSemi <$> resolveExpr AnyExpr e <*> pure x
 resolveStmt AnyStmt  (NoSemi e x) = NoSemi <$> resolveExpr NonBlockExpr e <*> pure x
-resolveStmt TermStmt (NoSemi e x)
-  | isBlockLike e = NoSemi <$> resolveExpr AnyExpr e <*> pure x
-  | otherwise = NoSemi <$> resolveExpr AnyExpr (BlockExpr [] (Block [NoSemi e mempty] Normal mempty) mempty) <*> pure x
+resolveStmt TermStmt (NoSemi e x) = NoSemi <$> resolveExpr AnyExpr (BlockExpr [] (Block [NoSemi e mempty] Normal mempty) mempty) <*> pure x
 resolveStmt _ (MacStmt m s as x) = do
   m' <- resolveMac ExprPath m
   as' <- sequence (resolveAttr OuterAttr <$> as)
   pure (MacStmt m' s as' x)
 
-instance Monoid a => Resolve (Stmt a) where
-  resolve = resolveStmt AnyStmt
-  strip = id
+instance Monoid a => Resolve (Stmt a) where resolve = resolveStmt AnyStmt
 
 -- | A block must a a series of terminated statements ended by one possibly unterminated one
 resolveBlock :: Monoid a => Block a -> Either String (Block a)
@@ -821,9 +823,7 @@ resolveBlock (Block (s:ss) r x) = do
   s' <- resolveStmt AnyStmt (N.last (s :| ss))
   pure (Block (ss' ++ [s']) r x)
 
-instance Monoid a => Resolve (Block a) where
-  resolve = resolveBlock
-  strip = id
+instance Monoid a => Resolve (Block a) where resolve = resolveBlock
 
 
 -----------
@@ -856,9 +856,7 @@ resolveItem t (Item i as n v x) = do
           _ -> resolveVisibility v
   pure (Item i' as' n' v' x)
 
-instance Monoid a => Resolve (Item a) where
-  resolve = resolveItem ModItem
-  strip = id
+instance Monoid a => Resolve (Item a) where resolve = resolveItem ModItem
 
 -- TODO: documentation, double-check 
 resolveItemKind :: Monoid a => ItemKind a -> Either String (ItemKind a)
@@ -883,9 +881,7 @@ resolveItemKind (Trait u g bds is) = Trait u <$> resolveGenerics g <*> sequence 
 resolveItemKind (MacItem m) = MacItem <$> resolveMac ExprPath m
 resolveItemKind (Use v) = Use <$> resolveViewPath v
 
-instance Monoid a => Resolve (ItemKind a) where
-  resolve = resolveItemKind
-  strip = id
+instance Monoid a => Resolve (ItemKind a) where resolve = resolveItemKind
 
 -- TODO: documentation 
 resolveForeignItem :: Monoid a => ForeignItem a -> Either String (ForeignItem a)
@@ -896,26 +892,20 @@ resolveForeignItem (ForeignItem i as n v x) = do
   v' <- resolveVisibility v
   pure (ForeignItem i' as' n' v' x)
 
-instance Monoid a => Resolve (ForeignItem a) where
-  resolve = resolveForeignItem
-  strip = id
+instance Monoid a => Resolve (ForeignItem a) where resolve = resolveForeignItem
 
 -- TODO: documentation 
 resolveForeignItemKind :: Monoid a => ForeignItemKind a -> Either String (ForeignItemKind a)
 resolveForeignItemKind (ForeignFn fn g) = ForeignFn <$> resolveFnDecl NoSelf fn <*> resolveGenerics g
 resolveForeignItemKind (ForeignStatic t b) = ForeignStatic <$> resolveTy AnyType t <*> pure b
 
-instance Monoid a => Resolve (ForeignItemKind a) where
-  resolve = resolveForeignItemKind
-  strip = id
+instance Monoid a => Resolve (ForeignItemKind a) where resolve = resolveForeignItemKind
 
 -- | A where clause is valid only if the underlying predicates are
 resolveWhereClause :: Monoid a => WhereClause a -> Either String (WhereClause a)
 resolveWhereClause (WhereClause p x) = WhereClause <$> sequence (resolveWherePredicate <$> p) <*> pure x
 
-instance Monoid a => Resolve (WhereClause a) where
-  resolve = resolveWhereClause
-  strip = id
+instance Monoid a => Resolve (WhereClause a) where resolve = resolveWhereClause
 
 -- | Generics are only invalid if the underlying lifetimes or type parameters are
 resolveGenerics :: Monoid a => Generics a -> Either String (Generics a)
@@ -925,9 +915,7 @@ resolveGenerics (Generics lts typ wc x) = do
   wc' <- resolveWhereClause wc
   pure (Generics lts' typ' wc' x)
 
-instance Monoid a => Resolve (Generics a) where
-  resolve = resolveGenerics
-  strip = id
+instance Monoid a => Resolve (Generics a) where resolve = resolveGenerics
 
 -- | A type parameter is invalid only when the underlying components are
 resolveTyParam :: Monoid a => TyParam a -> Either String (TyParam a)
@@ -938,9 +926,7 @@ resolveTyParam (TyParam as i bds t x) = do
   t' <- sequence (resolveTy AnyType <$> t)
   pure (TyParam as' i' bds' t' x)
 
-instance Monoid a => Resolve (TyParam a) where
-  resolve = resolveTyParam
-  strip = id
+instance Monoid a => Resolve (TyParam a) where resolve = resolveTyParam
 
 -- TODO: document
 data StructFieldType
@@ -956,9 +942,7 @@ resolveVariant (Variant i as n e x) = do
   e' <- sequence (resolveExpr AnyExpr <$> e)
   pure (Variant i' as' n' e' x)
 
-instance Monoid a => Resolve (Variant a) where
-  resolve = resolveVariant
-  strip = id
+instance Monoid a => Resolve (Variant a) where resolve = resolveVariant
 
 -- TODO: document
 resolveVariantData :: Monoid a => VariantData a -> Either String (VariantData a)
@@ -966,9 +950,7 @@ resolveVariantData (StructD fs x) = StructD <$> sequence (resolveStructField Ide
 resolveVariantData (TupleD fs x) = TupleD <$> sequence (resolveStructField BareStructField <$> fs) <*> pure x
 resolveVariantData (UnitD x) = pure (UnitD x)
 
-instance Monoid a => Resolve (VariantData a) where
-  resolve = resolveVariantData
-  strip = id
+instance Monoid a => Resolve (VariantData a) where resolve = resolveVariantData
 
 -- TODO: document
 resolveStructField :: Monoid a => StructFieldType -> StructField a -> Either String (StructField a)
@@ -986,9 +968,7 @@ resolveStructField BareStructField (StructField Nothing v t as x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   pure (StructField Nothing v' t' as' x)
 
-instance Monoid a => Resolve (StructField a) where
-  resolve = resolveStructField IdentStructField
-  strip = id
+instance Monoid a => Resolve (StructField a) where resolve = resolveStructField IdentStructField
 
 -- | A where predicate is invalid only if the underlying lifetimes are
 resolveWherePredicate :: Monoid a => WherePredicate a -> Either String (WherePredicate a)
@@ -1003,9 +983,7 @@ resolveWherePredicate (BoundPredicate lts t bds x) = do
   bds' <- sequence (resolveTyParamBound ModBound <$> bds)
   pure (BoundPredicate lts' t' bds' x)
 
-instance Monoid a => Resolve (WherePredicate a) where
-  resolve = resolveWherePredicate
-  strip = id
+instance Monoid a => Resolve (WherePredicate a) where resolve = resolveWherePredicate
 
 -- TODO: document
 resolveTraitItem :: Monoid a => TraitItem a -> Either String (TraitItem a)
@@ -1016,9 +994,7 @@ resolveTraitItem (TraitItem i as n x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   pure (TraitItem i' as' n' x)
 
-instance Monoid a => Resolve (TraitItem a) where
-  resolve = resolveTraitItem
-  strip = id
+instance Monoid a => Resolve (TraitItem a) where resolve = resolveTraitItem
 
 -- TODO: document
 resolveTraitItemKind :: Monoid a => TraitItemKind a -> Either String (TraitItemKind a)
@@ -1027,9 +1003,7 @@ resolveTraitItemKind (MethodT m b) = MethodT <$> resolveMethodSig m <*> sequence
 resolveTraitItemKind (TypeT bds t) = TypeT <$> sequence (resolveTyParamBound ModBound <$> bds) <*> sequence (resolveTy AnyType <$> t)
 resolveTraitItemKind (MacroT m) = MacroT <$> resolveMac ModPath m
 
-instance Monoid a => Resolve (TraitItemKind a) where
-  resolve = resolveTraitItemKind
-  strip = id
+instance Monoid a => Resolve (TraitItemKind a) where resolve = resolveTraitItemKind
 
 -- TODO: document
 resolveImplItem :: Monoid a => ImplItem a -> Either String (ImplItem a)
@@ -1041,9 +1015,7 @@ resolveImplItem (ImplItem i v d as n x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   pure (ImplItem i' v' d as' n' x)
 
-instance Monoid a => Resolve (ImplItem a) where
-  resolve = resolveImplItem
-  strip = id
+instance Monoid a => Resolve (ImplItem a) where resolve = resolveImplItem
 
 -- TODO: document
 resolveImplItemKind :: Monoid a => ImplItemKind a -> Either String (ImplItemKind a)
@@ -1052,9 +1024,7 @@ resolveImplItemKind (MethodI m b) = MethodI <$> resolveMethodSig m <*> resolveBl
 resolveImplItemKind (TypeI t) = TypeI <$> resolveTy AnyType t
 resolveImplItemKind (MacroI m) = MacroI <$> resolveMac ModPath m
 
-instance Monoid a => Resolve (ImplItemKind a) where
-  resolve = resolveImplItemKind
-  strip = id
+instance Monoid a => Resolve (ImplItemKind a) where resolve = resolveImplItemKind
 
 -- | The Monoid constraint is technically not necessary - restricted visibility paths are mod paths,
 -- so they should never have generics.
@@ -1064,17 +1034,13 @@ resolveVisibility InheritedV = pure InheritedV
 resolveVisibility CrateV = pure CrateV
 resolveVisibility (RestrictedV p) = RestrictedV <$> resolvePath ModPath p
 
-instance Monoid a => Resolve (Visibility a) where
-  resolve = resolveVisibility
-  strip = id
+instance Monoid a => Resolve (Visibility a) where resolve = resolveVisibility
 
 -- TODO: document
 resolveMethodSig :: Monoid a => MethodSig a -> Either String (MethodSig a)
 resolveMethodSig (MethodSig u c a f g) = MethodSig u c a <$> resolveFnDecl AllowSelf f <*> resolveGenerics g
 
-instance Monoid a => Resolve (MethodSig a) where
-  resolve = resolveMethodSig
-  strip = id
+instance Monoid a => Resolve (MethodSig a) where resolve = resolveMethodSig
 
 -- TODO: document
 resolveViewPath :: ViewPath a -> Either String (ViewPath a)
@@ -1090,9 +1056,7 @@ resolveViewPath (ViewPathList b is ps x) = do
   ps' <- sequence (resolvePathListItem <$> ps)
   pure (ViewPathList b is' ps' x)
 
-instance Resolve (ViewPath a) where
-  resolve = resolveViewPath
-  strip = id
+instance Resolve (ViewPath a) where resolve = resolveViewPath
 
 -- TODO: document
 resolvePathListItem :: PathListItem a -> Either String (PathListItem a)
@@ -1101,9 +1065,7 @@ resolvePathListItem (PathListItem n r x) = do
   r' <- sequence (resolveIdent <$> r)
   pure (PathListItem n' r' x)
 
-instance Resolve (PathListItem a) where
-  resolve = resolvePathListItem
-  strip = id
+instance Resolve (PathListItem a) where resolve = resolvePathListItem
 
 -- TODO: document
 resolveSelfSuperIdent :: Ident -> Either String Ident
@@ -1122,7 +1084,6 @@ resolveMac t (Mac p tt x) = Mac <$> resolvePath t p <*> sequence (resolveTt <$> 
 
 instance Monoid a => Resolve (Mac a) where
   resolve (Mac p tt x) = Mac <$> resolve p <*> sequence (resolveTt <$> tt) <*> pure x 
-  strip = id
 
 -- TODO: document
 -- TODO: In Delimited case, forbid a dollar token followed by an open paren (either as a token, or
@@ -1140,9 +1101,7 @@ resolveTt (Sequence s tt s' o) = do
           _ -> pure s'
   pure (Sequence s tt' s'' o)
 
-instance Resolve TokenTree where
-  resolve = resolveTt
-  strip = id
+instance Resolve TokenTree where resolve = resolveTt
 
 resolveInlineAsm :: InlineAsm a -> Either String (InlineAsm a)
 resolveInlineAsm = pure

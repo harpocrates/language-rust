@@ -226,7 +226,7 @@ substPatTable =
   , ("meta",            \m -> AST.NtMeta (throwSub m))
   , ("path",            \m -> AST.NtPath (throwSub m))
   , ("tt",              \m -> AST.NtTT (throwSub m))
-  , ("lit",             \m -> AST.NtLit (throwSub m))
+  , ("literal",         \m -> AST.NtLit (throwSub m))
   ]
 
 

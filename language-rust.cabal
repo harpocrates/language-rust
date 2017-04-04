@@ -40,13 +40,13 @@ library
                        Language.Rust.Parser.Literals
                        Language.Rust.Pretty
                        Language.Rust.Pretty.Internal
-                       Language.Rust.Pretty.Resolve
                        Language.Rust.Data.Position
                        Language.Rust.Data.InputStream
   if flag(enableQuasiquotes)
     exposed-modules:   Language.Rust.Quote
  
   other-modules:       Language.Rust.Parser.Internal
+                       Language.Rust.Pretty.Resolve
 
   other-extensions:    OverloadedStrings
                      , OverloadedLists

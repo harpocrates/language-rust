@@ -24,13 +24,14 @@ it :: Doc a
 -}
 
 module Language.Rust.Pretty (
-  PrettyAnnotated(..), Pretty(..), Doc
+  PrettyAnnotated(..), Pretty(..), Resolve(..), Doc
 ) where
 
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 import Language.Rust.Pretty.Internal
+import Language.Rust.Pretty.Resolve
 
 import Text.PrettyPrint.Annotated.WL (Doc, noAnnotate)
 
