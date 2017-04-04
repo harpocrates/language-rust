@@ -42,7 +42,7 @@ import qualified Data.List.NonEmpty as N
 -- in order to document the parsers, we have to alias them
 %name parseLit lit
 %name parseAttr attribute
-%name parseTy ty       -- the exported parser for types really is for type sums (with object sums)
+%name parseTy ty
 %name parsePat pat
 %name parseStmt stmt
 %name parseExpr expr
@@ -62,8 +62,9 @@ import qualified Data.List.NonEmpty as N
 -- Conflicts caused in
 --  * (1) around the '::' in path_segments_without_colons
 --  * (1) around the '=' in where_clause
+--  * (1) around where with nothing in it in where_clause
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 2
+%expect 3
 
 %token
 
@@ -540,13 +541,8 @@ trait_ref :: { TraitRef Span }
 -- See https://github.com/rust-lang/rfcs/blob/master/text/0438-precedence-of-plus.md
 -- All types, including trait types with plus
 ty :: { Ty Span }
-  : ty_no_plus                                        { $1 }
-  | trait_ref '+' sep_by1(ty_param_bound,'+')
-    {% withSpan $1 (TraitObject (TraitTyParamBound (PolyTraitRef [] $1 mempty) None <| $3)) }
-  | for_lts trait_ref '+' sep_by1(ty_param_bound,'+') {% 
-      do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
-         withSpan $1 (TraitObject (TraitTyParamBound poly None <| $4))
-    }
+  : ty_no_plus                                                    { $1 }
+  | poly_trait_ref_mod_bound '+' sep_by1(ty_param_bound_mod,'+')  {% withSpan $1 (TraitObject ($1 <| $3)) }
 
 -- parse_ty_no_plus()
 ty_no_plus :: { Ty Span }
@@ -586,6 +582,8 @@ no_for_ty_prim :: { Ty Span }
   | fn fn_decl                       {% withSpan $1 (BareFn Normal Rust [] $>) }
   | typeof '(' expr ')'              {% withSpan $1 (Typeof $3) }
   | '[' ty ';' expr ']'              {% withSpan $1 (Array $2 $4) }
+  | '?' trait_ref                    {% withSpan $1 (TraitObject (TraitTyParamBound (PolyTraitRef [] $2 mempty) Maybe :| [])) }
+  | '?' for_lts trait_ref            {% withSpan $1 (TraitObject (TraitTyParamBound (PolyTraitRef (unspan $2) $3 mempty) Maybe :| [])) }
 
 -- All (non-sum) types starting with a 'for'
 for_ty_no_plus :: { Ty Span }
@@ -597,7 +595,7 @@ for_ty_no_plus :: { Ty Span }
       do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
          withSpan $1 (TraitObject (TraitTyParamBound poly None :| []))
     }
-
+  
 -- An optional lifetime followed by an optional mutability
 lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
   : lifetime mut  { (Just $1, Mutable) }
@@ -607,13 +605,8 @@ lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
 
 -- All types not starting with a '(' or '<'
 ty_prim_sum :: { Ty Span }
-  : ty_prim                                   { $1 }
-  | trait_ref '+' sep_by1(ty_param_bound,'+')
-    {% withSpan $1 (TraitObject (TraitTyParamBound (PolyTraitRef [] $1 mempty) None <| $3)) }
-  | for_lts trait_ref '+' sep_by1(ty_param_bound,'+') {% 
-      do poly <- withSpan $1 (PolyTraitRef (unspan $1) $2)
-         withSpan $1 (TraitObject (TraitTyParamBound poly None <| $4))
-    }
+  : ty_prim                                                      { $1 }
+  | poly_trait_ref_mod_bound '+' sep_by1(ty_param_bound_mod,'+') {% withSpan $1 (TraitObject ($1 <| $3)) }
 
 -- The argument list and return type in a function
 fn_decl :: { FnDecl Span }
@@ -633,6 +626,10 @@ fn_decl_with_self :: { FnDecl Span }
 ty_param_bound :: { TyParamBound Span }
   : lifetime             { RegionTyParamBound $1 }
   | poly_trait_ref       { TraitTyParamBound $1 None }
+
+poly_trait_ref_mod_bound :: { TyParamBound Span }
+  : poly_trait_ref       { TraitTyParamBound $1 None }
+  | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe }
 
 -- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+') 
 ty_param_bound_mod :: { TyParamBound Span }
@@ -668,9 +665,9 @@ abi :: { Abi }
 -- Note that impl traits are still at RFC stage - they may eventually become accepted in more places
 -- than just return types.
 ret_ty :: { Maybe (Ty Span) }
-  : '->' ty_no_plus                                        { Just $2 }
-  | '->' impl sep_by1(ty_param_bound,'+')  %prec IMPLTRAIT { Just (ImplTrait $3 mempty) }
-  | {- empty -}                                            { Nothing }
+  : '->' ty_no_plus                                            { Just $2 }
+  | '->' impl sep_by1(ty_param_bound_mod,'+')  %prec IMPLTRAIT { Just (ImplTrait $3 mempty) }
+  | {- empty -}                                                { Nothing }
 
 -- parse_poly_trait_ref()
 poly_trait_ref :: { PolyTraitRef Span }
@@ -1260,7 +1257,7 @@ enum_def :: { Variant Span }
 where_clause :: { WhereClause Span }
   : {- empty -}                                        { WhereClause [] mempty }
   | ntWhereClause                                      { $1 } 
-  | where sep_by1(where_predicate,',')     %prec WHERE {% withSpan $1 (WhereClause (toList $2)) }
+  | where sep_by(where_predicate,',')      %prec WHERE {% withSpan $1 (WhereClause $2) }
   | where sep_by1(where_predicate,',') ',' %prec WHERE {% withSpan $1 (WhereClause (toList $2)) }
 
 where_predicate :: { WherePredicate Span }

@@ -22,6 +22,7 @@ import Language.Rust.Parser
 import Language.Rust.Syntax.Ident
 import Language.Rust.Data.Position
 
+import  Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
 import Data.Semigroup ((<>))
 import Data.Either (rights)
@@ -255,7 +256,9 @@ resolveTy NoSumType    o@TraitObject{} = resolveTy NoSumType (ParenTy o mempty)
 resolveTy NoForType    o@TraitObject{} = resolveTy NoForType (ParenTy o mempty)
 resolveTy ReturnType   o@TraitObject{} = resolveTy ReturnType (ParenTy o mempty)
 resolveTy NoSumPrimType  TraitObject{} = Left "object sum is not allowed here"
-resolveTy _             (TraitObject bds x) = TraitObject <$> sequence (resolveTyParamBound NoneBound <$> bds) <*> pure x
+resolveTy _             (TraitObject bds@(TraitTyParamBound{} :| _) x)
+  = TraitObject <$> sequence (resolveTyParamBound ModBound <$> bds) <*> pure x
+resolveTy _              TraitObject{} = Left "first bound in trait object should be a trait bound"
 -- ParenTy
 resolveTy PrimType       ParenTy{} = Left "paren type is not allowed in primitive type" 
 resolveTy NoSumPrimType  ParenTy{} = Left "paren type is not allowed in primitive type" 

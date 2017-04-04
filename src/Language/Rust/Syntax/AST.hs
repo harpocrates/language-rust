@@ -1040,6 +1040,10 @@ data TyParamBound a
   | RegionTyParamBound (Lifetime a)                       -- ^ lifetime bound
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
+instance Located a => Located (TyParamBound a) where
+  spanOf (TraitTyParamBound p _) = spanOf p
+  spanOf (RegionTyParamBound l) = spanOf l
+
 -- | Partion a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and 'RegionTyParamBound' variants.
 partitionTyParamBounds :: [TyParamBound a] -> ([TyParamBound a], [TyParamBound a])
 partitionTyParamBounds [] = ([],[])
