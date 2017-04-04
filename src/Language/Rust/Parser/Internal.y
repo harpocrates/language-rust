@@ -1135,6 +1135,7 @@ inner_attrs_block :: { ([Attribute Span], Block Span) }
   | '{' inner_attrs '}'                          { (toList $2, Block [] Normal mempty) }
   | '{' inner_attrs stmts_possibly_no_semi '}'   { (toList $2, Block $3 Normal mempty) }
 
+
 -----------
 -- Items --
 -----------
@@ -1177,6 +1178,7 @@ generics :: { Generics Span }
   | '<'                               sep_by1(ty_param,',') gt '>' {% withSpan $1 (Generics []          (toList $2) (WhereClause [] mempty)) }
   | '<'                                                     gt '>' {% withSpan $1 (Generics []          []          (WhereClause [] mempty)) }
 
+-- TODO: Attributes? The AST has them, so the parser should produce them
 ty_param :: { TyParam Span }
   : ident                                             {% withSpan $1 (TyParam [] (unspan $1) [] Nothing) }
   | ident ':' sep_by1(ty_param_bound_mod,'+')         {% withSpan $1 (TyParam [] (unspan $1) (toList $3) Nothing) }
@@ -1247,10 +1249,8 @@ enum_def :: { Variant Span }
   |             ident '(' sep_by(tuple_decl_field,',')       ')'  {% withSpan $1 (Variant (unspan $1) [] (TupleD $3 mempty) Nothing) }
   | outer_attrs ident '(' sep_by1(tuple_decl_field,',')  ',' ')'  {% withSpan $1 (Variant (unspan $2) (toList $1) (TupleD (toList $4) mempty) Nothing) }
   |             ident '(' sep_by1(tuple_decl_field,',')  ',' ')'  {% withSpan $1 (Variant (unspan $1) [] (TupleD (toList $3) mempty) Nothing) }
-  | outer_attrs ident '=' expr                                    {% withSpan $1 (Variant (unspan $2) (toList $1) (UnitD mempty) (Just $4)) }
-  |             ident '=' expr                                    {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) (Just $3)) }
-  | outer_attrs ident                                             {% withSpan $1 (Variant (unspan $2) (toList $1) (UnitD mempty) Nothing) }
-  |             ident                                             {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) Nothing) }
+  | outer_attrs ident initializer                                 {% withSpan $1 (Variant (unspan $2) (toList $1) (UnitD mempty) $3) }
+  |             ident initializer                                 {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) $2) }
 
 
 -- parse_where_clause
@@ -1314,14 +1314,12 @@ impl_item :: { ImplItem Span }
 
 trait_item :: { TraitItem Span }
   : ntTraitItem                                      { $1 }
-  | outer_attrs const ident ':' ty  '=' expr ';' {% withSpan $1 (TraitItem (unspan $3) (toList $1) (ConstT $5 (Just $7))) }
-  |             const ident ':' ty  '=' expr ';' {% withSpan $1 (TraitItem (unspan $2) [] (ConstT $4 (Just $6))) }
-  | outer_attrs const ident ':' ty           ';' {% withSpan $1 (TraitItem (unspan $3) (toList $1) (ConstT $5 Nothing)) }
-  |             const ident ':' ty           ';' {% withSpan $1 (TraitItem (unspan $2) [] (ConstT $4 Nothing)) }
-  | outer_attrs mod_mac                          {% withSpan $1 (TraitItem (mkIdent "") (toList $1) (MacroT $2)) }
-  |             mod_mac                          {% withSpan $1 (TraitItem (mkIdent "") [] (MacroT $1)) }
-  | outer_attrs type ty_param ';'                {% let TyParam _ i b d _ = $3 in withSpan $1 (TraitItem i (toList $1) (TypeT b d)) }
-  |             type ty_param ';'                {% let TyParam _ i b d _ = $2 in withSpan $1 (TraitItem i [] (TypeT b d)) }
+  | outer_attrs const ident ':' ty initializer ';' {% withSpan $1 (TraitItem (unspan $3) (toList $1) (ConstT $5 $6)) }
+  |             const ident ':' ty initializer ';' {% withSpan $1 (TraitItem (unspan $2) [] (ConstT $4 $5)) }
+  | outer_attrs mod_mac                            {% withSpan $1 (TraitItem (mkIdent "") (toList $1) (MacroT $2)) }
+  |             mod_mac                            {% withSpan $1 (TraitItem (mkIdent "") [] (MacroT $1)) }
+  | outer_attrs type ty_param ';'                  {% let TyParam _ i b d _ = $3 in withSpan $1 (TraitItem i (toList $1) (TypeT b d)) }
+  |             type ty_param ';'                  {% let TyParam _ i b d _ = $2 in withSpan $1 (TraitItem i [] (TypeT b d)) }
   | outer_attrs safety ext_abi fn ident generics fn_decl_with_self where_clause ';'
      { TraitItem (unspan $5) (toList $1) (MethodT (MethodSig $2 NotConst $3 $7 $6{ whereClause = $8 }) Nothing) mempty }
   |             safety ext_abi fn ident generics fn_decl_with_self where_clause ';'
@@ -1378,6 +1376,7 @@ self_or_ident :: { Spanned Ident }
 plist :: { PathListItem Span }
   : self_or_ident           {% withSpan $1 (PathListItem (unspan $1) Nothing) }
   | self_or_ident as ident  {% withSpan $1 (PathListItem (unspan $1) (Just (unspan $3))) }
+
 
 -------------------
 -- Macro related --
