@@ -300,7 +300,6 @@ gt :: { () }
         _                   -> pushToken (Spanned tok s)
     }
 
-
 -------------
 -- Utility --
 -------------
@@ -323,6 +322,17 @@ sep_by1(p,sep) :: { NonEmpty a }
 -- | Zero or more occurrences of 'p', separated by 'sep'
 sep_by(p,sep) :: { [a] }
   : sep_by1(p,sep)     { toList $1 }
+  | {- empty -}        { [] }
+
+-- | One or more occurrences of 'p', seperated by 'sep', optionally ending in 'sep'
+sep_by1T(p,sep) :: { NonEmpty a }
+  : sep_by1(p,sep) sep { $1 }
+  | sep_by1(p,sep)     { $1 }
+
+-- | Zero or more occurences of 'p', seperated by 'sep', optionally ending in 'sep' (only if there
+-- is at least one 'p')
+sep_byT(p,sep) :: { [a] }
+  : sep_by1T(p,sep)    { toList $1 }
   | {- empty -}        { [] }
 
 
@@ -376,16 +386,15 @@ inner_attrs :: { NonEmpty (Attribute Span) }
 -- parse_meta_item()
 -- TODO: ALL identifiers should be accepted in meta items, even those that are keywords
 meta_item :: { MetaItem Span }
-  : ntMeta                                          { $1 }
-  | ident                                           {% withSpan $1 (Word (unspan $1)) }
-  | ident '=' unsuffixed                            {% withSpan $1 (NameValue (unspan $1) $3) }
-  | ident '(' sep_by(meta_item_inner,',')      ')'  {% withSpan $1 (List (unspan $1) $3) }
-  | ident '(' sep_by1(meta_item_inner,',') ',' ')'  {% withSpan $1 (List (unspan $1) (toList $3)) }
+  : ntMeta                                      { $1 }
+  | ident                                       {% withSpan $1 (Word (unspan $1)) }
+  | ident '=' unsuffixed                        {% withSpan $1 (NameValue (unspan $1) $3) }
+  | ident '(' sep_byT(meta_item_inner,',') ')'  {% withSpan $1 (List (unspan $1) $3) }
 
 -- parse_meta_item_inner()
 meta_item_inner :: { NestedMetaItem Span }
-  : unsuffixed                                      {% withSpan $1 (Literal $1) }
-  | meta_item                                       {% withSpan $1 (MetaItem $1) } 
+  : unsuffixed                                  {% withSpan $1 (Literal $1) }
+  | meta_item                                   {% withSpan $1 (MetaItem $1) } 
 
 
 --------------
@@ -444,18 +453,18 @@ ty_qual_path_suf :: { Ty Span }
 
 -- parse_generic_args() but with the '<' '>'
 generic_values :: { ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
-  : '<' sep_by1(lifetime,',') ',' sep_by1(ty,',') ',' sep_by1(binding,',') gt '>' { (toList $2, toList $4, toList $6) }
-  | '<' sep_by1(lifetime,',') ',' sep_by1(ty,',')                          gt '>' { (toList $2, toList $4, []) }
-  | '<' sep_by1(lifetime,',') ','                     sep_by1(binding,',') gt '>' { (toList $2, [],        toList $4) }
-  | '<' sep_by1(lifetime,',')                                              gt '>' { (toList $2, [],        []) }
-  | '<'                           sep_by1(ty,',') ',' sep_by1(binding,',') gt '>' { ([],        toList $2, toList $4) }
-  | '<'                           sep_by1(ty,',')                          gt '>' { ([],        toList $2, []) }
-  | '<'                                               sep_by1(binding,',') gt '>' { ([],        [],        toList $2) }
-  | '<'                                                                    gt '>' { ([],        [],        []) }
-  | '<<' ty_qual_path_suf     ',' sep_by1(ty,',') ',' sep_by1(binding,',') gt '>' { ([],   $2 : toList $4, toList $6) }      
-  | '<<' ty_qual_path_suf     ',' sep_by1(ty,',')                          gt '>' { ([],   $2 : toList $4, []) }
-  | '<<' ty_qual_path_suf                         ',' sep_by1(binding,',') gt '>' { ([],        [$2],      toList $4) }
-  | '<<' ty_qual_path_suf                                                  gt '>' { ([],        [$2],      []) }
+  : '<' sep_by1(lifetime,',')  ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { (toList $2, toList $4, toList $6) }
+  | '<' sep_by1(lifetime,',')  ',' sep_by1T(ty,',')                          gt '>' { (toList $2, toList $4, []) }
+  | '<' sep_by1(lifetime,',')  ','                     sep_by1T(binding,',') gt '>' { (toList $2, [],        toList $4) }
+  | '<' sep_by1T(lifetime,',')                                               gt '>' { (toList $2, [],        []) }
+  | '<'                            sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { ([],        toList $2, toList $4) }
+  | '<'                            sep_by1T(ty,',')                          gt '>' { ([],        toList $2, []) }
+  | '<'                                                sep_by1T(binding,',') gt '>' { ([],        [],        toList $2) }
+  | '<'                                                                      gt '>' { ([],        [],        []) }
+  | '<<' ty_qual_path_suf      ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { ([],   $2 : toList $4, toList $6) }      
+  | '<<' ty_qual_path_suf      ',' sep_by1T(ty,',')                          gt '>' { ([],   $2 : toList $4, []) }
+  | '<<' ty_qual_path_suf                          ',' sep_by1T(binding,',') gt '>' { ([],        [$2],      toList $4) }
+  | '<<' ty_qual_path_suf                                                    gt '>' { ([],        [$2],      []) }
 
 binding : ident '=' ty                             { (unspan $1, $3) }
 
@@ -484,12 +493,10 @@ path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
      }
 
 path_parameter1 :: { PathParameters Span }
-  : generic_values                              { let (lts, tys, bds) = $1 in (AngleBracketed lts tys bds mempty) }
-  | '(' sep_by(ty,',')      ')'                 {% withSpan $1 (Parenthesized $2 Nothing) }
-  | '(' sep_by1(ty,',') ',' ')'                 {% withSpan $1 (Parenthesized (toList $2) Nothing) }
-  | '(' sep_by(ty,',')      ')' '->' ty_no_plus {% withSpan $1 (Parenthesized $2 (Just $>)) }
-  | '(' sep_by1(ty,',') ',' ')' '->' ty_no_plus {% withSpan $1 (Parenthesized (toList $2) (Just $>)) }
-  | {- empty -}                     %prec IDENT { NoParameters mempty }
+  : generic_values                          { let (lts, tys, bds) = $1 in (AngleBracketed lts tys bds mempty) }
+  | '(' sep_byT(ty,',') ')'                 {% withSpan $1 (Parenthesized $2 Nothing) }
+  | '(' sep_byT(ty,',') ')' '->' ty_no_plus {% withSpan $1 (Parenthesized $2 (Just $>)) }
+  | {- empty -}                 %prec IDENT { NoParameters mempty }
 
 
 -- Expression related:
@@ -542,7 +549,7 @@ trait_ref :: { TraitRef Span }
 -- All types, including trait types with plus
 ty :: { Ty Span }
   : ty_no_plus                                                    { $1 }
-  | poly_trait_ref_mod_bound '+' sep_by1(ty_param_bound_mod,'+')  {% withSpan $1 (TraitObject ($1 <| $3)) }
+  | poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+') {% withSpan $1 (TraitObject ($1 <| $3)) }
 
 -- parse_ty_no_plus()
 ty_no_plus :: { Ty Span }
@@ -550,10 +557,11 @@ ty_no_plus :: { Ty Span }
   | no_for_ty                        { $1 }
   | for_ty_no_plus                   { $1 }
 
--- All (non-sum) types not starting with '(' or '<'
+-- All types not starting with a '(' or '<'
 ty_prim :: { Ty Span }
   : no_for_ty_prim                   { $1 }
   | for_ty_no_plus                   { $1 }
+  | poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+') {% withSpan $1 (TraitObject ($1 <| $3)) }
 
 -- All (non-sum) types not starting with a 'for'
 no_for_ty :: { Ty Span }
@@ -603,23 +611,16 @@ lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
   |          mut  { (Nothing, Mutable) }
   | {- empty -}   { (Nothing, Immutable) }
 
--- All types not starting with a '(' or '<'
-ty_prim_sum :: { Ty Span }
-  : ty_prim                                                      { $1 }
-  | poly_trait_ref_mod_bound '+' sep_by1(ty_param_bound_mod,'+') {% withSpan $1 (TraitObject ($1 <| $3)) }
-
 -- The argument list and return type in a function
 fn_decl :: { FnDecl Span }
   : '(' sep_by1(arg_general,',') ',' '...' ')' ret_ty  {% withSpan $1 (FnDecl (toList $2) $> True) }
-  | '(' sep_by1(arg_general,',') ','       ')' ret_ty  {% withSpan $1 (FnDecl (toList $2) $> False) }
-  | '(' sep_by(arg_general,',')            ')' ret_ty  {% withSpan $1 (FnDecl $2 $> False) }
+  | '(' sep_byT(arg_general,',')           ')' ret_ty  {% withSpan $1 (FnDecl $2 $> False) }
 
 -- Like 'fn_decl', but also accepting a self argument
 fn_decl_with_self :: { FnDecl Span }
-  : '(' arg_self ',' sep_by1(arg_general,',') ',' ')' ret_ty  {% withSpan $1 (FnDecl ($2 : toList $4) $> False) }
-  | '(' arg_self ',' sep_by(arg_general,',')      ')' ret_ty  {% withSpan $1 (FnDecl ($2 : $4) $> False) } 
-  | '(' arg_self                                  ')' ret_ty  {% withSpan $1 (FnDecl [$2] $> False) }
-  | fn_decl                                                   { $1 }
+  : '(' arg_self ',' sep_byT(arg_general,',') ')' ret_ty  {% withSpan $1 (FnDecl ($2 : $4) $> False) } 
+  | '(' arg_self                              ')' ret_ty  {% withSpan $1 (FnDecl [$2] $> False) }
+  | fn_decl                                               { $1 }
 
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
@@ -671,26 +672,21 @@ ret_ty :: { Maybe (Ty Span) }
 
 -- parse_poly_trait_ref()
 poly_trait_ref :: { PolyTraitRef Span }
-  : trait_ref                                   {% withSpan $1 (PolyTraitRef [] $1) }
+  :         trait_ref                           {% withSpan $1 (PolyTraitRef [] $1) }
   | for_lts trait_ref                           {% withSpan $1 (PolyTraitRef (unspan $1) $2) }
 
 -- parse_for_lts()
 -- Unlike the Rust libsyntax version, this _requires_ the 'for'
 for_lts :: { Spanned [LifetimeDef Span] }
-  : for '<' sep_by1(lifetime_def,',') ',' '>'   {% withSpan $1 (Spanned (toList $3)) } 
-  | for '<' sep_by(lifetime_def,',')      '>'   {% withSpan $1 (Spanned $3) } 
+  : for '<' sep_byT(lifetime_def,',') '>'       {% withSpan $1 (Spanned $3) } 
 
 -- Definition of a lifetime: attributes can come before the lifetime, and a list of bounding
 -- lifetimes can come after the lifetime.
 lifetime_def :: { LifetimeDef Span }
-  : outer_attribute many(outer_attribute) lifetime ':' sep_by1(lifetime,'+')
-    {% withSpan $1 (LifetimeDef ($1 : $2) $3 (toList $5)) }
-  | outer_attribute many(outer_attribute) lifetime
-    {% withSpan $1 (LifetimeDef ($1 : $2) $3 []) }
-  |                                       lifetime ':' sep_by1(lifetime,'+')
-    {% withSpan $1 (LifetimeDef [] $1 (toList $3)) }
-  |                                       lifetime
-    {% withSpan $1 (LifetimeDef [] $1 []) }
+  : outer_attrs lifetime ':' sep_by1T(lifetime,'+')  {% withSpan $1 (LifetimeDef (toList $1) $2 (toList $4)) }
+  | outer_attrs lifetime                             {% withSpan $1 (LifetimeDef (toList $1) $2 []) }
+  |             lifetime ':' sep_by1T(lifetime,'+')  {% withSpan $1 (LifetimeDef [] $1 (toList $3)) }
+  |             lifetime                             {% withSpan $1 (LifetimeDef [] $1 []) }
 
 
 --------------
@@ -752,16 +748,12 @@ pat_tup :: { ([Pat Span], Maybe Int, Bool) }
 -- for the middle slice ('Nothing' if there is no '..' and 'Just (WildP mempty) is there is one, but
 -- unlabelled), and the third is the patterns at the end of the slice.
 pat_slice :: { ([Pat Span], Maybe (Pat Span), [Pat Span]) }
-  : sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',') ',' { (toList $1, Just (WildP mempty), toList $5) }
-  | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { (toList $1, Just (WildP mempty), toList $5) }
+  : sep_by1(pat,',') ',' '..' ',' sep_by1T(pat,',')    { (toList $1, Just (WildP mempty), toList $5) }
   | sep_by1(pat,',') ',' '..'                          { (toList $1, Just (WildP mempty), []) }
-  | sep_by1(pat,',')     '..' ',' sep_by1(pat,',')     { (N.init $1, Just (N.last $1),    toList $4) }
-  | sep_by1(pat,',')     '..' ',' sep_by1(pat,',') ',' { (N.init $1, Just (N.last $1),    toList $4) }
+  | sep_by1(pat,',')     '..' ',' sep_by1T(pat,',')    { (N.init $1, Just (N.last $1),    toList $4) }
   | sep_by1(pat,',')     '..'                          { (N.init $1, Just (N.last $1),    []) }
-  | sep_by1(pat,',')                                   { (toList $1, Nothing,             []) }
-  | sep_by1(pat,',') ','                               { (toList $1, Nothing,             []) }
-  |                      '..' ',' sep_by1(pat,',')     { ([],        Just (WildP mempty), toList $3) }
-  |                      '..' ',' sep_by1(pat,',') ',' { ([],        Just (WildP mempty), toList $3) }
+  |                               sep_by1T(pat,',')    { (toList $1, Nothing,             []) }
+  |                      '..' ',' sep_by1T(pat,',')    { ([],        Just (WildP mempty), toList $3) }
   |                      '..'                          { ([],        Just (WildP mempty), []) }
   | {- empty -}                                        { ([],        Nothing,             []) }
 
@@ -775,8 +767,7 @@ lit_or_path :: { Expr Span }
 
 -- Used in patterns for tuple and expression patterns
 pat_fields :: { ([FieldPat Span], Bool) }
-  : sep_by(pat_field,',')            { ($1, False) }
-  | sep_by1(pat_field,',') ','       { (toList $1, False) }
+  : sep_byT(pat_field,',')           { ($1, False) }
   | sep_by1(pat_field,',') ',' '..'  { (toList $1, True) }
 
 pat_field :: { FieldPat Span }
@@ -812,26 +803,21 @@ binding_mode :: { Spanned BindingMode }
 
 -- General postfix expression
 gen_postfix_expr(lhs) :: { Expr Span }
-  : ntExpr                                          { $1 }
-  | lit_expr                                        { $1 }
-  | expr_path                            %prec PATH {% withSpan $1 (PathExpr [] Nothing $1) }
-  | expr_qual_path                                  {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
-  | expr_mac                                        {% withSpan $1 (MacExpr [] $1) }
-  | '[' sep_by(expr,',')      ']'                   {% withSpan $1 (Vec [] $2) }
-  | '[' sep_by1(expr,',') ',' ']'                   {% withSpan $1 (Vec [] (toList $2)) }
-  | '[' expr ';' expr ']'                           {% withSpan $1 (Repeat [] $2 $4) }
-  | lhs '[' expr ']'                                {% withSpan $1 (Index [] $1 $3) }
-  | lhs '?'                                         {% withSpan $1 (Try [] $1) }
-  | lhs '(' sep_by(expr,',')      ')'               {% withSpan $1 (Call [] $1 $3) }
-  | lhs '(' sep_by1(expr,',') ',' ')'               {% withSpan $1 (Call [] $1 (toList $3)) }
-  | lhs '.' ident '(' sep_by(expr,',')      ')'     {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing $5) }
-  | lhs '.' ident '(' sep_by1(expr,',') ',' ')'     {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing (toList $5)) }
-  | lhs '.' ident                     %prec POSTFIX {% withSpan $1 (FieldAccess [] $1 (unspan $3)) }
-  | lhs '.' ident '::' '<' sep_by(ty,',') '>' '(' sep_by(expr,',')      ')'
+  : ntExpr                                   { $1 }
+  | lit_expr                                 { $1 }
+  | expr_path                     %prec PATH {% withSpan $1 (PathExpr [] Nothing $1) }
+  | expr_qual_path                           {% withSpan $1 (PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1))) }
+  | expr_mac                                 {% withSpan $1 (MacExpr [] $1) }
+  | '[' sep_byT(expr,',') ']'                {% withSpan $1 (Vec [] $2) }
+  | '[' expr ';' expr ']'                    {% withSpan $1 (Repeat [] $2 $4) }
+  | lhs '[' expr ']'                         {% withSpan $1 (Index [] $1 $3) }
+  | lhs '?'                                  {% withSpan $1 (Try [] $1) }
+  | lhs '(' sep_byT(expr,',') ')'            {% withSpan $1 (Call [] $1 $3) }
+  | lhs '.' ident '(' sep_byT(expr,',') ')'  {% withSpan $1 (MethodCall [] $1 (unspan $3) Nothing $5) }
+  | lhs '.' ident              %prec POSTFIX {% withSpan $1 (FieldAccess [] $1 (unspan $3)) }
+  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
      {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) $9) }
-  | lhs '.' ident '::' '<' sep_by(ty,',') '>' '(' sep_by1(expr,',') ',' ')'
-     {% withSpan $1 (MethodCall [] $1 (unspan $3) (Just $6) (toList $9)) }
-  | lhs '.' int                                     {%
+  | lhs '.' int                              {%
       case lit $3 of
         Int Dec i Unsuffixed _ -> withSpan $1 (TupField [] $1 (fromIntegral i))
         _ -> fail "make better error message"
@@ -1071,8 +1057,7 @@ lambda_expr_nostruct :: { Expr Span }
 -- Closure arguments
 args :: { [Arg Span] }
   : '||'                          { [] }
-  | '|' sep_by(arg,',')      '|'  { $2 }
-  | '|' sep_by1(arg,',') ',' '|'  { toList $2 }
+  | '|' sep_byT(arg,',') '|'      { $2 }
 
 arg :: { Arg Span }
   : ntArg                         { $1 }
@@ -1084,8 +1069,7 @@ arg :: { Arg Span }
 struct_expr :: { Expr Span }
   : expr_path '{'                        '..' expr '}'  {% withSpan $1 (Struct [] $1 [] (Just $4)) }
   | expr_path '{' sep_by1(field,',') ',' '..' expr '}'  {% withSpan $1 (Struct [] $1 (toList $3) (Just $6)) }
-  | expr_path '{' sep_by(field,',')                '}'  {% withSpan $1 (Struct [] $1 $3 Nothing) }
-  | expr_path '{' sep_by1(field,',') ','           '}'  {% withSpan $1 (Struct [] $1 (toList $3) Nothing) }
+  | expr_path '{' sep_byT(field,',')               '}'  {% withSpan $1 (Struct [] $1 $3 Nothing) }
 
 field :: { Field Span }
   : ident ':' expr  {% withSpan $1 (Field (unspan $1) $3) }
@@ -1096,6 +1080,7 @@ field :: { Field Span }
 -- Statements --
 ----------------
 
+-- TODO: do something with single semicolons
 stmt :: { Stmt Span }
   : ntStmt                                      { $1 }
   |             let pat ':' ty initializer ';'  {% withSpan $1 (Local $2 (Just $4) $5 []) }
@@ -1112,7 +1097,6 @@ stmt :: { Stmt Span }
   | outer_attrs     stmt_item                   {% withSpan $1 (ItemStmt (let Item i a n v s = $2 in Item i (toList $1 ++ a) n v s)) }
   |             pub stmt_item                   {% withSpan $1 (ItemStmt (let Item i a n _ s = $2 in Item i a n PublicV s)) }
   | outer_attrs pub stmt_item                   {% withSpan $1 (ItemStmt (let Item i a n _ s = $3 in Item i (toList $1 ++ a) n PublicV s)) }
---  | ';'                                          
 
 -- List of statements where the last statement might be a no-semicolon statement.
 stmts_possibly_no_semi :: { [Stmt Span] }
@@ -1173,17 +1157,17 @@ foreign_item :: { ForeignItem Span }
 generics :: { Generics Span }
   : {- empty -}                                                    { Generics [] [] (WhereClause [] mempty) mempty }
   | ntGenerics                                                     { $1 }
-  | '<' sep_by1(lifetime_def,',') ',' sep_by1(ty_param,',') gt '>' {% withSpan $1 (Generics (toList $2) (toList $4) (WhereClause [] mempty)) }
-  | '<' sep_by1(lifetime_def,',')                           gt '>' {% withSpan $1 (Generics (toList $2) []          (WhereClause [] mempty)) }
-  | '<'                               sep_by1(ty_param,',') gt '>' {% withSpan $1 (Generics []          (toList $2) (WhereClause [] mempty)) }
-  | '<'                                                     gt '>' {% withSpan $1 (Generics []          []          (WhereClause [] mempty)) }
+  | '<' sep_by1(lifetime_def,',') ',' sep_by1T(ty_param,',') gt '>' {% withSpan $1 (Generics (toList $2) (toList $4) (WhereClause [] mempty)) }
+  | '<' sep_by1T(lifetime_def,',')                           gt '>' {% withSpan $1 (Generics (toList $2) []          (WhereClause [] mempty)) }
+  | '<'                               sep_by1T(ty_param,',') gt '>' {% withSpan $1 (Generics []          (toList $2) (WhereClause [] mempty)) }
+  | '<'                                                      gt '>' {% withSpan $1 (Generics []          []          (WhereClause [] mempty)) }
 
 -- TODO: Attributes? The AST has them, so the parser should produce them
 ty_param :: { TyParam Span }
-  : ident                                             {% withSpan $1 (TyParam [] (unspan $1) [] Nothing) }
-  | ident ':' sep_by1(ty_param_bound_mod,'+')         {% withSpan $1 (TyParam [] (unspan $1) (toList $3) Nothing) }
-  | ident                                     '=' ty  {% withSpan $1 (TyParam [] (unspan $1) [] (Just $>)) }
-  | ident ':' sep_by1(ty_param_bound_mod,'+') '=' ty  {% withSpan $1 (TyParam [] (unspan $1) (toList $3) (Just $>)) }
+  : ident                                              {% withSpan $1 (TyParam [] (unspan $1) [] Nothing) }
+  | ident ':' sep_by1T(ty_param_bound_mod,'+')         {% withSpan $1 (TyParam [] (unspan $1) (toList $3) Nothing) }
+  | ident                                      '=' ty  {% withSpan $1 (TyParam [] (unspan $1) [] (Just $>)) }
+  | ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty  {% withSpan $1 (TyParam [] (unspan $1) (toList $3) (Just $>)) }
 
 stmt_item :: { Item Span }
   : static     ident ':' ty '=' expr ';'              {% withSpan $1 (Item (unspan $2) [] (Static $4 Immutable $6) InheritedV) }
@@ -1208,49 +1192,40 @@ stmt_item :: { Item Span }
   | extern abi '{' inner_attrs many(foreign_item) '}'    {% withSpan $1 (Item "" (toList $4) (ForeignMod $2 $5) InheritedV) }
   | struct ident generics where_clause struct_decl_args  {% withSpan $1 (Item (unspan $2) [] (StructItem $5 $3{ whereClause = $4 }) InheritedV) }
   | union ident generics where_clause struct_decl_args   {% withSpan $1 (Item (unspan $2) [] (Union $5 $3{ whereClause = $4 }) InheritedV) }
-  | enum ident generics where_clause enum_defs           {% withSpan $1 (Item (unspan $2) [] (Enum $5 $3{ whereClause = $4 }) InheritedV) }
+  | enum ident generics where_clause '{' sep_byT(enum_def,',') '}'
+    {% withSpan $1 (Item (unspan $2) [] (Enum $6 $3{ whereClause = $4 }) InheritedV) }
   | item_impl                                            { $1 }
   | item_trait                                           { $1 }
 
 item_trait :: { Item Span }
-  : unsafe trait ident generics ':' sep_by1(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
-     {% withSpan $1 (Item (unspan $3) [] (Trait Unsafe $4{ whereClause = $7 } (toList $6) $9) InheritedV) }
-  | unsafe trait ident generics where_clause '{' many(trait_item) '}'
-     {% withSpan $1 (Item (unspan $3) [] (Trait Unsafe $4{ whereClause = $5 } [] $7) InheritedV) }
-  |        trait ident generics ':' sep_by1(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
-     {% withSpan $1 (Item (unspan $2) [] (Trait Normal $3{ whereClause = $6 } (toList $5) $8) InheritedV) }
-  |        trait ident generics where_clause '{' many(trait_item) '}'
-     {% withSpan $1 (Item (unspan $2) [] (Trait Normal $3{ whereClause = $4 } [] $6) InheritedV) }
+  : safety_trait ident generics ':' sep_by1T(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
+     {% withSpan $1 (Item (unspan $2) [] (Trait (unspan $1) $3{ whereClause = $6 } (toList $5) $8) InheritedV) }
+  | safety_trait ident generics where_clause '{' many(trait_item) '}'
+     {% withSpan $1 (Item (unspan $2) [] (Trait (unspan $1) $3{ whereClause = $4 } [] $6) InheritedV) }
+
+safety_trait :: { Spanned Unsafety }
+  :        trait   {% withSpan $1 (Spanned Normal) }
+  | unsafe trait   {% withSpan $1 (Spanned Unsafe) }
 
 struct_decl_args :: { VariantData Span }
   : ';'                                                {% withSpan $1 (StructD []) }
-  | '{' sep_by(struct_decl_field,',')      '}'         {% withSpan $1 (StructD $2) }
-  | '{' sep_by1(struct_decl_field,',') ',' '}'         {% withSpan $1 (StructD (toList $2)) }
-  | '(' sep_by(tuple_decl_field,',')       ')' ';'     {% withSpan $1 (TupleD $2) }
-  | '(' sep_by1(tuple_decl_field,',')  ',' ')' ';'     {% withSpan $1 (TupleD (toList $2)) }
+  | '{' sep_byT(struct_decl_field,',') '}'             {% withSpan $1 (StructD $2) }
+  | '(' sep_byT(tuple_decl_field,',')  ')' ';'         {% withSpan $1 (TupleD $2) }
 
 struct_decl_field :: { StructField Span }
   : outer_attrs vis ident ':' ty                       {% withSpan $1 (StructField (Just (unspan $3)) (unspan $2) $5 (toList $1)) }
   |             vis ident ':' ty                       {% withSpan $1 (StructField (Just (unspan $2)) (unspan $1) $4 []) }
 
-enum_defs :: { [Variant Span] }
-  : '{' sep_by(enum_def,',')      '}'                  { $2 }
-  | '{' sep_by1(enum_def,',') ',' '}'                  { toList $2 }
-
 tuple_decl_field :: { StructField Span }
   : many(outer_attribute) vis ty                       {% withSpan $1 (StructField Nothing (unspan $2) $3 $1) }
 
 enum_def :: { Variant Span }
-  : outer_attrs ident '{' sep_by(struct_decl_field,',')      '}'  {% withSpan $1 (Variant (unspan $2) (toList $1) (StructD $4 mempty) Nothing) }
-  |             ident '{' sep_by(struct_decl_field,',')      '}'  {% withSpan $1 (Variant (unspan $1) [] (StructD $3 mempty) Nothing) }
-  | outer_attrs ident '{' sep_by1(struct_decl_field,',') ',' '}'  {% withSpan $1 (Variant (unspan $2) (toList $1) (StructD (toList $4) mempty) Nothing) }
-  |             ident '{' sep_by1(struct_decl_field,',') ',' '}'  {% withSpan $1 (Variant (unspan $1) [] (StructD (toList $3) mempty) Nothing) }
-  | outer_attrs ident '(' sep_by(tuple_decl_field,',')       ')'  {% withSpan $1 (Variant (unspan $2) (toList $1) (TupleD $4 mempty) Nothing) }
-  |             ident '(' sep_by(tuple_decl_field,',')       ')'  {% withSpan $1 (Variant (unspan $1) [] (TupleD $3 mempty) Nothing) }
-  | outer_attrs ident '(' sep_by1(tuple_decl_field,',')  ',' ')'  {% withSpan $1 (Variant (unspan $2) (toList $1) (TupleD (toList $4) mempty) Nothing) }
-  |             ident '(' sep_by1(tuple_decl_field,',')  ',' ')'  {% withSpan $1 (Variant (unspan $1) [] (TupleD (toList $3) mempty) Nothing) }
-  | outer_attrs ident initializer                                 {% withSpan $1 (Variant (unspan $2) (toList $1) (UnitD mempty) $3) }
-  |             ident initializer                                 {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) $2) }
+  : outer_attrs ident '{' sep_byT(struct_decl_field,',') '}'  {% withSpan $1 (Variant (unspan $2) (toList $1) (StructD $4 mempty) Nothing) }
+  |             ident '{' sep_byT(struct_decl_field,',') '}'  {% withSpan $1 (Variant (unspan $1) [] (StructD $3 mempty) Nothing) }
+  | outer_attrs ident '(' sep_byT(tuple_decl_field,',')  ')'  {% withSpan $1 (Variant (unspan $2) (toList $1) (TupleD $4 mempty) Nothing) }
+  |             ident '(' sep_byT(tuple_decl_field,',')  ')'  {% withSpan $1 (Variant (unspan $1) [] (TupleD $3 mempty) Nothing) }
+  | outer_attrs ident initializer                             {% withSpan $1 (Variant (unspan $2) (toList $1) (UnitD mempty) $3) }
+  |             ident initializer                             {% withSpan $1 (Variant (unspan $1) [] (UnitD mempty) $2) }
 
 
 -- parse_where_clause
@@ -1261,35 +1236,30 @@ where_clause :: { WhereClause Span }
   | where sep_by1(where_predicate,',') ',' %prec WHERE {% withSpan $1 (WhereClause (toList $2)) }
 
 where_predicate :: { WherePredicate Span }
-  : lifetime ':' sep_by(lifetime,'+')                      {% withSpan $1 (RegionPredicate $1 $3) }
+  : lifetime                                               {% withSpan $1 (RegionPredicate $1 []) }
+  | lifetime ':' sep_by1T(lifetime,'+')                    {% withSpan $1 (RegionPredicate $1 (toList $3)) }
   | no_for_ty                                              {% withSpan $1 (BoundPredicate [] $1 []) }
   | no_for_ty '=' ty                                       {% withSpan $1 (EqPredicate $1 $3) }
-  | no_for_ty ':' sep_by1(ty_param_bound_mod,'+')          {% withSpan $1 (BoundPredicate [] $1 (toList $3)) }
+  | no_for_ty ':' sep_by1T(ty_param_bound_mod,'+')         {% withSpan $1 (BoundPredicate [] $1 (toList $3)) }
   | for_lts no_for_ty                                      {% withSpan $1 (BoundPredicate (unspan $1) $2 []) }
-  | for_lts no_for_ty ':' sep_by1(ty_param_bound_mod,'+')  {% withSpan $1 (BoundPredicate (unspan $1) $2 (toList $4)) }
+  | for_lts no_for_ty ':' sep_by1T(ty_param_bound_mod,'+') {% withSpan $1 (BoundPredicate (unspan $1) $2 (toList $4)) }
 
 
 item_impl :: { Item Span }
-  : unsafe impl generics ty_prim_sum where_clause impl_items
-    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl Unsafe Positive $3{ whereClause = $5 } Nothing $4 (snd $>)) InheritedV) } 
-  |        impl generics ty_prim_sum where_clause impl_items
-    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl Normal Positive $2{ whereClause = $4 } Nothing $3 (snd $>)) InheritedV) } 
-  | unsafe impl generics '(' ty_no_plus ')'  where_clause impl_items 
-    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl Unsafe Positive $3{ whereClause = $7 } Nothing $5 (snd $>)) InheritedV) } 
-  |        impl generics '(' ty_no_plus ')'  where_clause impl_items
-    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl Normal Positive $2{ whereClause = $6 } Nothing $4 (snd $>)) InheritedV) } 
-  | unsafe impl generics '!' trait_ref for ty where_clause impl_items
-    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl Unsafe Negative $3{ whereClause = $8 } (Just $5) $7 (snd $>)) InheritedV) }
-  | unsafe impl generics     trait_ref for ty where_clause impl_items
-    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl Unsafe Positive $3{ whereClause = $7 } (Just $4) $6 (snd $>)) InheritedV) }
-  |        impl generics '!' trait_ref for ty where_clause impl_items
-    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl Normal Negative $2{ whereClause = $7 } (Just $4) $6 (snd $>)) InheritedV) }
-  |        impl generics     trait_ref for ty where_clause impl_items
-    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl Normal Positive $2{ whereClause = $6 } (Just $3) $5 (snd $>)) InheritedV) }
-  | unsafe impl generics     trait_ref for '..' '{' '}'
-    {% withSpan $1 (Item (mkIdent "") [] (case $3 of { Generics [] [] _ _ -> (DefaultImpl Unsafe $4); _ -> error "todo" }) InheritedV) }
-  |        impl generics     trait_ref for '..' '{' '}'
-    {% withSpan $1 (Item (mkIdent "") [] (case $2 of { Generics [] [] _ _ -> (DefaultImpl Normal $3); _ -> error "todo" }) InheritedV) }
+  : safety_impl generics ty_prim              where_clause impl_items
+    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $4 } Nothing $3 (snd $>)) InheritedV) } 
+  | safety_impl generics '(' ty_no_plus ')'   where_clause impl_items
+    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $6 } Nothing $4 (snd $>)) InheritedV) } 
+  | safety_impl generics '!' trait_ref for ty where_clause impl_items
+    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl (unspan $1) Negative $2{ whereClause = $7 } (Just $4) $6 (snd $>)) InheritedV) }
+  | safety_impl generics     trait_ref for ty where_clause impl_items
+    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $6 } (Just $3) $5 (snd $>)) InheritedV) }
+  | safety_impl generics     trait_ref for '..' '{' '}'
+    {% withSpan $1 (Item (mkIdent "") [] (case $2 of { Generics [] [] _ _ -> (DefaultImpl (unspan $1) $3); _ -> error "todo" }) InheritedV) }
+
+safety_impl :: { Spanned Unsafety }
+  :        impl   {% withSpan $1 (Spanned Normal) }
+  | unsafe impl   {% withSpan $1 (Spanned Unsafe) }
 
 impl_items :: { ([Attribute Span], [ImplItem Span]) }
   : '{'             many(impl_item) '}'  { ([], $2) }
@@ -1349,22 +1319,18 @@ def :: { Defaultness }
   | default                    { Default }
 
 view_path :: { ViewPath Span }
-  : '::' sep_by1(self_or_ident,'::')                                     {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) Nothing mempty)) }
-  | '::' sep_by1(self_or_ident,'::') as ident                            {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
-  | '::'                                  '*'                            {% withSpan $1 (ViewPathGlob True []) }
-  | '::' sep_by1(self_or_ident,'::') '::' '*'                            {% withSpan $1 (ViewPathGlob True (fmap unspan (toList $2))) }
-  | '::' sep_by1(self_or_ident,'::') '::' '{' sep_by(plist,',')      '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) $5) }
-  | '::' sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) (toList $5)) }
-  | '::'                                  '{' sep_by(plist,',')      '}' {% withSpan $1 (ViewPathList True [] $3) }
-  | '::'                                  '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList True [] (toList $3)) }
-  |      sep_by1(self_or_ident,'::')                                     {% let n = fmap unspan $1 in withSpan $1 (ViewPathSimple False (N.init n) (PathListItem (N.last n) Nothing mempty)) }
-  |      sep_by1(self_or_ident,'::') as ident                            {% let n = fmap unspan $1 in withSpan $1 (ViewPathSimple False (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
-  |                                       '*'                            {% withSpan $1 (ViewPathGlob False []) }
-  |      sep_by1(self_or_ident,'::') '::' '*'                            {% withSpan $1 (ViewPathGlob False (fmap unspan (toList $1))) }
-  |      sep_by1(self_or_ident,'::') '::' '{' sep_by(plist,',')      '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) $4) }
-  |      sep_by1(self_or_ident,'::') '::' '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) (toList $4)) }
-  |                                       '{' sep_by(plist,',')      '}' {% withSpan $1 (ViewPathList False [] $2) }
-  |                                       '{' sep_by1(plist,',') ',' '}' {% withSpan $1 (ViewPathList False [] (toList $2)) }
+  : '::' sep_by1(self_or_ident,'::')                                 {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) Nothing mempty)) }
+  | '::' sep_by1(self_or_ident,'::') as ident                        {% let n = fmap unspan $2 in withSpan $1 (ViewPathSimple True (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
+  | '::'                                  '*'                        {% withSpan $1 (ViewPathGlob True []) }
+  | '::' sep_by1(self_or_ident,'::') '::' '*'                        {% withSpan $1 (ViewPathGlob True (fmap unspan (toList $2))) }
+  | '::' sep_by1(self_or_ident,'::') '::' '{' sep_byT(plist,',') '}' {% withSpan $1 (ViewPathList True (map unspan (toList $2)) $5) }
+  | '::'                                  '{' sep_byT(plist,',') '}' {% withSpan $1 (ViewPathList True [] $3) }
+  |      sep_by1(self_or_ident,'::')                                 {% let n = fmap unspan $1 in withSpan $1 (ViewPathSimple False (N.init n) (PathListItem (N.last n) Nothing mempty)) }
+  |      sep_by1(self_or_ident,'::') as ident                        {% let n = fmap unspan $1 in withSpan $1 (ViewPathSimple False (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty)) }
+  |                                       '*'                        {% withSpan $1 (ViewPathGlob False []) }
+  |      sep_by1(self_or_ident,'::') '::' '*'                        {% withSpan $1 (ViewPathGlob False (fmap unspan (toList $1))) }
+  |      sep_by1(self_or_ident,'::') '::' '{' sep_byT(plist,',') '}' {% withSpan $1 (ViewPathList False (map unspan (toList $1)) $4) }
+  |                                       '{' sep_byT(plist,',') '}' {% withSpan $1 (ViewPathList False [] $2) }
 
 
 self_or_ident :: { Spanned Ident }

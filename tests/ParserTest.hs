@@ -242,7 +242,7 @@ parserTypes = testGroup "parsing types"
              (PathTy Nothing (Path False [("PResult", AngleBracketed [ Lifetime "a" () ]
                                                                      [ PathTy Nothing (Path False [("P", AngleBracketed [] [ i32 ] [] ())] ()) () ]
                                                                      [] ())] ()) ())
-  , testP "for<'l1: 'l2 + 'l3, 'l4: 'l5> fn(_: Trait + 'l1) -> i32"
+  , testP "for<'l1: 'l2 + 'l3, 'l4: 'l5 +,> fn(_: Trait + 'l1 +) -> i32"
              (BareFn Normal Rust
                             [ LifetimeDef [] (Lifetime "l1" ()) [Lifetime "l2" (), Lifetime "l3" ()] ()
                             , LifetimeDef [] (Lifetime "l4" ()) [Lifetime "l5" ()] () ]
@@ -466,7 +466,7 @@ parserExpressions = testGroup "parsing expressions"
   , testP "x.foo(1,)" (MethodCall [] (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) "foo" Nothing [Lit [] (Int Dec 1 Unsuffixed ()) ()] ())
   , testP "x.foo::<>(1,)" (MethodCall [] (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) "foo" (Just []) [Lit [] (Int Dec 1 Unsuffixed ()) ()] ())
   , testP "x.foo::<i32>()" (MethodCall [] (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) "foo" (Just [i32]) [] ())
-  , testP "x.foo::<i32>(1)" (MethodCall [] (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) "foo" (Just [i32]) [Lit [] (Int Dec 1 Unsuffixed ()) ()] ())
+  , testP "x.foo::<i32,>(1)" (MethodCall [] (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) "foo" (Just [i32]) [Lit [] (Int Dec 1 Unsuffixed ()) ()] ())
   , testP "x.foo::<i32>(1,)" (MethodCall [] (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) "foo" (Just [i32]) [Lit [] (Int Dec 1 Unsuffixed ()) ()] ())
   , testP "self" (PathExpr [] Nothing (Path False [("self", NoParameters ())] ()) ())
   , testP "x[1]" (Index [] (PathExpr [] Nothing (Path False [("x", NoParameters ())] ()) ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())
@@ -590,7 +590,7 @@ parserItems = testGroup "parsing items"
     (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()))
     InheritedV ())
 
-  , testP "fn inverse<T>(x: i32) -> T where i32: ConvertTo<T>, { return x + 1 }" (Item "inverse" [] (Fn (FnDecl [ Arg (Just (IdentP (ByValue Immutable) "x" Nothing ())) (PathTy Nothing (Path False [("i32", NoParameters ())] ()) ()) ()
+  , testP "fn inverse<T,>(x: i32) -> T where i32: ConvertTo<T>, { return x + 1 }" (Item "inverse" [] (Fn (FnDecl [ Arg (Just (IdentP (ByValue Immutable) "x" Nothing ())) (PathTy Nothing (Path False [("i32", NoParameters ())] ()) ()) ()
                      ]
             (Just (PathTy Nothing (Path False [("T", NoParameters ())] ()) ())) 
             False

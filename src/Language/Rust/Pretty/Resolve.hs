@@ -266,7 +266,6 @@ data TyType
   = AnyType        -- ^ No restrictions
   | NoSumType      -- ^ Any type except for 'TraitObject'
   | PrimType       -- ^ Types not starting with '(' or '<'
-  | NoSumPrimType  -- ^ Non-sum types not starting with '(' or '<'
   | NoForType      -- ^ Non-sum types not starting with a 'for'
   | ReturnType     -- ^ Type in a return type position
 
@@ -276,16 +275,13 @@ resolveTy :: Monoid a => TyType -> Ty a -> Either String (Ty a)
 resolveTy NoSumType    o@TraitObject{} = resolveTy NoSumType (ParenTy o mempty)
 resolveTy NoForType    o@TraitObject{} = resolveTy NoForType (ParenTy o mempty)
 resolveTy ReturnType   o@TraitObject{} = resolveTy ReturnType (ParenTy o mempty)
-resolveTy NoSumPrimType  TraitObject{} = Left "object sum is not allowed here"
 resolveTy _             (TraitObject bds@(TraitTyParamBound{} :| _) x)
   = TraitObject <$> sequence (resolveTyParamBound ModBound <$> bds) <*> pure x
 resolveTy _              TraitObject{} = Left "first bound in trait object should be a trait bound"
 -- ParenTy
 resolveTy PrimType       ParenTy{} = Left "paren type is not allowed in primitive type" 
-resolveTy NoSumPrimType  ParenTy{} = Left "paren type is not allowed in primitive type" 
 resolveTy _             (ParenTy ty' x) = ParenTy <$> resolveTy AnyType ty' <*> pure x
 -- TupTy
-resolveTy NoSumPrimType  TupTy{} = Left "paren type is not allowed in primitive type"
 resolveTy PrimType       TupTy{} = Left "paren type is not allowed in primitive type"
 resolveTy _             (TupTy tys x) = TupTy <$> sequence (resolveTy AnyType <$> tys) <*> pure x
 -- ImplTrait
@@ -293,7 +289,6 @@ resolveTy ReturnType    (ImplTrait bds x) = ImplTrait <$> sequence (resolveTyPar
 resolveTy _              ImplTrait{} = Left "impl trait type is only allowed as return type"
 -- PathTy
 resolveTy PrimType      (PathTy (Just _) _ _) = Left "qualified path is no allowed in primitive type"
-resolveTy NoSumPrimType (PathTy (Just _) _ _) = Left "qualified path is no allowed in primitive type"
 resolveTy _             (PathTy q p@(Path _ s _) x)
   = case q of
       Just (QSelf _ i)
