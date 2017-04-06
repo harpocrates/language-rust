@@ -153,9 +153,9 @@ literals = testGroup "literals (numbers, characters, strings, etc.)"
   , testCode "b\"hello \\n world!\"" [ LiteralTok (ByteStrTok "hello \\n world!") Nothing ]
   , testCode "b\"hello \\n world!\"suffix" [ LiteralTok (ByteStrTok "hello \\n world!") (Just "suffix") ]
   -- raw bytestring's
-  , testCode "rb\"hello \n world!\"" [ LiteralTok (ByteStrRawTok "hello \n world!" 0) Nothing ]
-  , testCode "rb\"hello \n world!\"suffix" [ LiteralTok (ByteStrRawTok "hello \n world!" 0) (Just "suffix") ]
-  , testCode "rb##\"hello \"#\n world!\"###suffix" [ LiteralTok (ByteStrRawTok "hello \"#\n world!" 2) (Just "suffix") ]
+  , testCode "br\"hello \n world!\"" [ LiteralTok (ByteStrRawTok "hello \n world!" 0) Nothing ]
+  , testCode "br\"hello \n world!\"suffix" [ LiteralTok (ByteStrRawTok "hello \n world!" 0) (Just "suffix") ]
+  , testCode "br##\"hello \"#\n world!\"###suffix" [ LiteralTok (ByteStrRawTok "hello \"#\n world!" 2) (Just "suffix") ]
   ]
 
 -- | Create a test for a code fragment that should tokenize.

@@ -67,9 +67,9 @@ x = IdentP (ByValue Immutable) "x" Nothing ()
 -- | White-box testing of literals, especially character encoding/escapes.
 prettyLiterals :: Test
 prettyLiterals = testGroup "printing literals"
-  [ testFlatten "b\"hello world\"" (printLit (ByteStr "hello world" Cooked Unsuffixed ()))
-  , testFlatten "br###\"hello #\"# world\"###" (printLit (ByteStr "hello #\"# world" (Raw 3) Unsuffixed ()))
-  , testFlatten "b\"hello \\n w\\x90rld\"" (printLit (ByteStr "hello \n w\x90rld" Cooked Unsuffixed ()))
+  [ testFlatten "b\"hello world\"" (printLit (byteStr "hello world" Cooked Unsuffixed ()))
+  , testFlatten "br###\"hello #\"# world\"###" (printLit (byteStr "hello #\"# world" (Raw 3) Unsuffixed ()))
+  , testFlatten "b\"hello \\n w\\x90rld\"" (printLit (byteStr "hello \n w\x90rld" Cooked Unsuffixed ()))
   , testFlatten "\"hello world\"" (printLit (Str "hello world" Cooked Unsuffixed ()))
   , testFlatten "r###\"hello #\"# world\"###" (printLit (Str "hello #\"# world" (Raw 3) Unsuffixed ()))
   , testFlatten "\"hello \\n w\\x90\\U00012345rld\"" (printLit (Str "hello \n w\x90\74565rld" Cooked Unsuffixed ()))

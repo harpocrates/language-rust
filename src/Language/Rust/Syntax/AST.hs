@@ -24,7 +24,7 @@ module Language.Rust.Syntax.AST (
   -- * Attributes
   Attribute(..), AttrStyle(..), MetaItem(..), NestedMetaItem(..),
   -- * Literals
-  Lit(..), Suffix(..), suffix, IntRep(..), StrStyle(..),
+  Lit(..), byteStr, Suffix(..), suffix, IntRep(..), StrStyle(..),
   -- * Expressions
   Expr(..), Abi(..), Arm(..), AsmDialect(..), UnOp(..), BinOp(..), CaptureBy(..), Field(..), InlineAsm(..), InlineAsmOutput(..), RangeLimits(..),
   -- * Types and lifetimes
@@ -49,13 +49,17 @@ import GHC.Generics (Generic)
 import Data.Data (Data)
 import Data.Typeable (Typeable)
 
-import Data.ByteString (ByteString)
 import Data.Word (Word8)
+import Data.Char (ord)
 import Data.List.NonEmpty (NonEmpty(..))
 
+import Text.Read (Read(..))
+import Text.ParserCombinators.ReadPrec (lift)
+import Text.ParserCombinators.ReadP (choice, string)
+
 -- | ABIs support by Rust's foreign function interface (@syntax::abi::Abi@). Note that of these,
--- only 'Rust', 'C', 'System', 'RustIntrinsic', 'RustCall', and 'PlatformIntrinsic' are
--- cross-platform - all the rest are platform-specific.
+-- only 'Rust', 'C', 'System', 'RustIntrinsic', 'RustCall', and 'PlatformIntrinsic' and 'Unadjusted'
+-- are cross-platform - all the rest are platform-specific.
 --
 -- Example: @\"C\"@ as in @extern \"C\" fn foo(x: i32);@
 data Abi
@@ -67,6 +71,9 @@ data Abi
   | Aapcs
   | Win64
   | SysV64
+  | PtxKernel
+  | Msp430Interrupt
+  | X86Interrupt
   -- Cross-platform ABIs
   | Rust
   | C
@@ -74,7 +81,48 @@ data Abi
   | RustIntrinsic
   | RustCall
   | PlatformIntrinsic
-  deriving (Eq, Enum, Bounded, Show, Read, Typeable, Data, Generic)
+  | Unadjusted
+  deriving (Eq, Enum, Bounded, Typeable, Data, Generic)
+
+instance Show Abi where
+  show Cdecl = "cdecl"
+  show Stdcall = "stdcall"
+  show Fastcall = "fastcall"
+  show Vectorcall = "vectorcall"
+  show Aapcs = "aapcs"
+  show Win64 = "win64"
+  show SysV64 = "sysv64"
+  show PtxKernel = "ptx-kernel"
+  show Msp430Interrupt = "msp430-interrupt"
+  show X86Interrupt = "x86-interrupt"
+  show Rust = "Rust"
+  show C = "C"
+  show System = "system"
+  show RustIntrinsic = "rust-intrinsic"
+  show RustCall = "rust-call"
+  show PlatformIntrinsic = "platform-intrinsic"
+  show Unadjusted = "unadjusted"
+
+instance Read Abi where
+  readPrec = lift $ choice
+    [ string "cdecl" *> pure Cdecl
+    , string "stdcall" *> pure Stdcall
+    , string "fastcall" *> pure Fastcall
+    , string "vectorcall" *> pure Vectorcall
+    , string "aapcs" *> pure Aapcs
+    , string "win64" *> pure Win64
+    , string "sysv64" *> pure SysV64
+    , string "ptx-kernel" *> pure PtxKernel
+    , string "msp430-interrupt" *> pure Msp430Interrupt
+    , string "x86-interrupt" *> pure X86Interrupt
+    , string "Rust" *> pure Rust
+    , string "C" *> pure C
+    , string "system" *> pure System
+    , string "rust-intrinsic" *> pure RustIntrinsic
+    , string "rust-call" *> pure RustCall
+    , string "platform-intrinsic" *> pure PlatformIntrinsic
+    , string "unadjusted" *> pure Unadjusted
+    ]
 
 -- | An argument in a function header (@syntax::ast::Arg@, except with @SelfKind@ and @ExplicitSelf@
 -- inlined).
@@ -618,7 +666,7 @@ instance Show Suffix where
 -- suffixes for all literals, even if they are currently only valid on 'Int' and 'Float' literals.
 data Lit a
   = Str String StrStyle Suffix a            -- ^ string (example: @"foo"@)
-  | ByteStr ByteString StrStyle Suffix a    -- ^ byte string (example: @b"foo"@)
+  | ByteStr [Word8] StrStyle Suffix a       -- ^ byte string (example: @b"foo"@)
   | Char Char Suffix a                      -- ^ character (example: @\'a\'@)
   | Byte Word8 Suffix a                     -- ^ byte (example: @b\'f\'@)
   | Int IntRep Integer Suffix a             -- ^ integer (example: @1i32@)
@@ -634,6 +682,10 @@ instance Located a => Located (Lit a) where
   spanOf (Int _ _ _ s) = spanOf s
   spanOf (Float _ _ s) = spanOf s
   spanOf (Bool _ _ s) = spanOf s
+
+-- | Smart constructor for 'ByteStr'
+byteStr :: String -> StrStyle -> Suffix -> a -> Lit a
+byteStr s = ByteStr (map (fromIntegral . ord) s)
 
 -- | Extract the suffix from a 'Lit'
 suffix :: Lit a -> Suffix

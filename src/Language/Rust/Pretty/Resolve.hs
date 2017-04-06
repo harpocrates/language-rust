@@ -278,7 +278,7 @@ instance Monoid a => Resolve (TraitRef a) where resolve = resolveTraitRef
 data TyType
   = AnyType        -- ^ No restrictions
   | NoSumType      -- ^ Any type except for 'TraitObject'
-  | PrimType       -- ^ Types not starting with '(' or '<'
+  | PrimParenType  -- ^ Types not starting with '<' or '(', or paren types with no sum types inside
   | NoForType      -- ^ Non-sum types not starting with a 'for'
   | ReturnType     -- ^ Type in a return type position
 
@@ -292,16 +292,16 @@ resolveTy _             (TraitObject bds@(TraitTyParamBound{} :| _) x)
   = TraitObject <$> sequence (resolveTyParamBound ModBound <$> bds) <*> pure x
 resolveTy _              TraitObject{} = Left "first bound in trait object should be a trait bound"
 -- ParenTy
-resolveTy PrimType       ParenTy{} = Left "paren type is not allowed in primitive type" 
+resolveTy PrimParenType (ParenTy ty' x) = ParenTy <$> resolveTy NoSumType ty' <*> pure x
 resolveTy _             (ParenTy ty' x) = ParenTy <$> resolveTy AnyType ty' <*> pure x
 -- TupTy
-resolveTy PrimType       TupTy{} = Left "paren type is not allowed in primitive type"
+resolveTy PrimParenType t@TupTy{} = resolveTy PrimParenType (ParenTy t mempty)
 resolveTy _             (TupTy tys x) = TupTy <$> sequence (resolveTy AnyType <$> tys) <*> pure x
 -- ImplTrait
 resolveTy ReturnType    (ImplTrait bds x) = ImplTrait <$> sequence (resolveTyParamBound ModBound <$> bds) <*> pure x 
 resolveTy _              ImplTrait{} = Left "impl trait type is only allowed as return type"
 -- PathTy
-resolveTy PrimType      (PathTy (Just _) _ _) = Left "qualified path is no allowed in primitive type"
+resolveTy PrimParenType p@(PathTy (Just _) _ _) = resolveTy PrimParenType (ParenTy p mempty)
 resolveTy _             (PathTy q p@(Path _ s _) x)
   = case q of
       Just (QSelf _ i)
@@ -881,7 +881,7 @@ resolveItemKind (Enum vs g) = Enum <$> sequence (resolveVariant <$> vs) <*> reso
 resolveItemKind (Impl u p g mt t is) = do
   g' <- resolveGenerics g
   mt' <- sequence (resolveTraitRef <$> mt)
-  t' <- resolveTy AnyType t
+  t' <- resolveTy PrimParenType t
   is' <- sequence (resolveImplItem <$> is)
   pure (Impl u p g' mt' t' is')
 resolveItemKind (DefaultImpl u t) = DefaultImpl u <$> resolveTraitRef t

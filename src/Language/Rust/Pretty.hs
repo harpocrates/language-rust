@@ -54,6 +54,7 @@ instance Pretty Token where pretty = printToken
 instance Pretty TokenTree where pretty = printTt
 instance Pretty UnOp where pretty = printUnOp
 instance Pretty Unsafety where pretty = printUnsafety
+instance Pretty (Attribute a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Block a) where pretty = noAnnotate . prettyAnn
 instance Pretty (SourceFile a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Expr a) where pretty = noAnnotate . prettyAnn
@@ -92,6 +93,8 @@ class PrettyAnnotated p where
   -- | Pretty-print the given value, adding annotations in the 'Doc' whenever possible.
   prettyAnn :: p a -> Doc a
 
+-- | This instance prints attributes inline
+instance PrettyAnnotated Attribute where prettyAnn = flip printAttr True
 instance PrettyAnnotated Block where prettyAnn = printBlock
 instance PrettyAnnotated SourceFile where prettyAnn = printSourceFile
 instance PrettyAnnotated Expr where prettyAnn = printExpr

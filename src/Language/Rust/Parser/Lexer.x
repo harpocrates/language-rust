@@ -957,7 +957,7 @@ $hexit             = [0-9a-fA-F]
 @lit_byte_str      = b @lit_str
 
 @lit_raw_str       = r \#* \"
-@lit_raw_bstr      = rb \#* \"
+@lit_raw_bstr      = br \#* \"
 
 
 -- Comments

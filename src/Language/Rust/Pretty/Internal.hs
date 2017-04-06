@@ -24,7 +24,6 @@ import Language.Rust.Syntax.Ident
 import Text.PrettyPrint.Annotated.WL (pretty, hcat, cat, indent, punctuate, group, angles, space, flatten, align, fillSep, text, vcat, char, annotate, noAnnotate, parens, brackets, (<>), Doc)
 import qualified Text.PrettyPrint.Annotated.WL as WL
 
-import Data.ByteString (unpack)
 import Data.Char (intToDigit, ord, chr)
 import Data.Either (lefts, rights)
 import Data.Foldable (toList)
@@ -535,8 +534,8 @@ printLit :: Lit a -> Doc a
 printLit lit = case lit of
     (Str     str Cooked  s x) -> annotate x (hcat [ "\"", foldMap escapeChar str, "\"", suffix s ])
     (Str     str (Raw n) s x) -> annotate x (hcat [ "r", pad n, "\"", text str, "\"", pad n, suffix s ])
-    (ByteStr str Cooked  s x) -> annotate x (hcat [ "b\"", foldMap escapeByte (unpack str), "\"", suffix s ])
-    (ByteStr str (Raw n) s x) -> annotate x (hcat [ "br", pad n, "\"", text (map byte2Char (unpack str)), "\"", pad n, suffix s ])
+    (ByteStr str Cooked  s x) -> annotate x (hcat [ "b\"", foldMap escapeByte str, "\"", suffix s ])
+    (ByteStr str (Raw n) s x) -> annotate x (hcat [ "br", pad n, "\"", text (map byte2Char str), "\"", pad n, suffix s ])
     (Char c s x)              -> annotate x (hcat [ "'",  escapeChar c, "'", suffix s ])
     (Byte b s x)              -> annotate x (hcat [ "b'", escapeByte b, "'", suffix s ])
     (Int b i s x)             -> annotate x (hcat [ printIntLit i b, suffix s ])
@@ -723,10 +722,10 @@ printFormalLifetimeList defs = "for" <> angles (align (fillSep (punctuate "," (p
 -- | Print an impl item (@print_impl_item@)
 printImplItem :: ImplItem a -> Doc a
 printImplItem (ImplItem ident vis defaultness attrs node x) = annotate x $ printOuterAttrs attrs <#> hsep
-  [ when (defaultness == Default) "default"
+  [ printVis vis, when (defaultness == Default) "default"
   , case node of
-      ConstI ty expr -> printAssociatedConst ident ty (Just expr) vis
-      MethodI sig body -> printMethodSig ident sig vis <+> printBlockWithAttrs body attrs
+      ConstI ty expr -> printAssociatedConst ident ty (Just expr) InheritedV
+      MethodI sig body -> printMethodSig ident sig InheritedV <+> printBlockWithAttrs body attrs
       TypeI ty -> printAssociatedType ident Nothing (Just ty) 
       MacroI m -> printMac m Paren <> ";" 
   ]
@@ -866,10 +865,11 @@ printPat (TupleStructP p es (Just d) x) = let (before,after) = splitAt d es
                     <+> ".." <> when (d /= length es) ("," <+> commas after printPat) <> ")")
 printPat (PathP Nothing path x)         = annotate x (printPath path True)
 printPat (PathP (Just qself) path x)    = annotate x (printQPath path qself True)
+printPat (TupleP [elt] Nothing x)        = annotate x ("(" <> printPat elt <> ",)")
 printPat (TupleP elts Nothing x)        = annotate x ("(" <> commas elts printPat <> ")")
 printPat (TupleP elts (Just ddpos) _) = let (before,after) = splitAt ddpos elts
-  in "(" <> commas before printPat <> unless (null elts) ","
-      <+> ".." <> when (ddpos /= length elts) ("," <+> commas after printPat) <> ")"
+  in "(" <> commas before printPat <> unless (null before) ","
+      <+> ".." <> unless (null after) ("," <+> commas after printPat) <> ")"
 printPat (BoxP inner x)                 = annotate x ("box" <+> printPat inner)
 printPat (RefP inner mutbl x)           = annotate x ("&" <> printMutability mutbl <+> printPat inner)
 printPat (LitP expr x)                  = annotate x (printExpr expr)
@@ -903,23 +903,8 @@ printFnHeaderInfo u c a v = hsep [ printVis v, case c of { Const -> "const"; _ -
 -- | Print the ABI
 printAbi :: Abi -> Doc a
 printAbi Rust = mempty
-printAbi abi = "extern" <+> raw abi
-  where
-  raw Cdecl = "\"cdecl\""
-  raw Stdcall = "\"stdcall\""
-  raw Fastcall = "\"fastcall\""
-  raw Vectorcall = "\"\""
-  raw Aapcs = "\"aapcs\""
-  raw Win64 = "\"win64\""
-  raw SysV64 = "\"sysv64\""
-  raw Rust = "\"Rust\""
-  raw C = "\"C\""
-  raw System = "\"system\""
-  raw RustIntrinsic = "\"rust-intrinsic\""
-  raw RustCall = "\"rust-call\""
-  raw PlatformIntrinsic = "\"platform-intrinsic\""
-
-
+printAbi abi = "extern" <+> "\"" <> text (show abi) <> "\""
+ 
 -- | Print the interior of a module given the list of items and attributes in it (@print_mod@)
 printMod :: [Item a] -> [Attribute a] -> Doc a
 printMod items attrs = vsep (printInnerAttrs attrs : (printItem `map` items))

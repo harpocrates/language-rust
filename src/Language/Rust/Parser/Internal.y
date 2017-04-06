@@ -34,9 +34,10 @@ import Language.Rust.Parser.Lexer (lexNonSpace, lexShebangLine)
 import Language.Rust.Parser.ParseMonad (pushToken, getPosition, P, parseError)
 import Language.Rust.Parser.Literals (translateLit)
 
-import Data.Semigroup ((<>))
 import Data.List.NonEmpty (NonEmpty(..), (<|), toList)
 import qualified Data.List.NonEmpty as N
+import Data.Semigroup ((<>))
+import Text.Read (readMaybe)
 }
 
 -- in order to document the parsers, we have to alias them
@@ -657,7 +658,7 @@ arg_self :: { Arg Span }
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Abi }
   : str             {% case unspan $1 of
-                         (LiteralTok (StrTok s) Nothing) | isAbi s -> pure (read s)
+                         (LiteralTok (StrTok s) Nothing) -> maybe (fail "invalid ABI") pure (readMaybe s)
                          _ -> fail "invalid ABI"
                     }
   | {- empty -}     { C }
@@ -866,19 +867,19 @@ gen_arithmetic(lhs,rhs,rhs2) :: { Expr Span }
   | lhs '|=' rhs                 {% withSpan $1 (AssignOp [] BitOrOp $1 $3) }
   | lhs '&=' rhs                 {% withSpan $1 (AssignOp [] BitAndOp $1 $3) }
   | lhs '%=' rhs                 {% withSpan $1 (AssignOp [] RemOp $1 $3) }
-  | lhs '..'                     {% withSpan $1 (Range [] (Just $1) Nothing Closed) }
+  | lhs '..'                     {% withSpan $1 (Range [] (Just $1) Nothing HalfOpen) }
   | lhs '...'                    {% withSpan $1 (Range [] (Just $1) Nothing Closed) }
-  | lhs '..' rhs2                {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
-  | lhs '...' rhs2               {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
+  | lhs '..' rhs2                {% withSpan $1 (Range [] (Just $1) (Just $3) HalfOpen) }
+  | lhs '...' rhs2               {% withSpan $1 (Range [] (Just $1) (Just $3) Closed) }
 
 -- Lowest precedence generalized expression
 gen_expr :: { Expr Span }
   : return                       {% withSpan $1 (Ret [] Nothing) }
   | return expr                  {% withSpan $1 (Ret [] (Just $2)) }
-  | '..'                         {% withSpan $1 (Range [] Nothing Nothing Closed) }
-  | '...'                        {% withSpan $1 (Range [] Nothing Nothing HalfOpen) }
-  | '..' expr                    {% withSpan $1 (Range [] Nothing (Just $2) Closed) }
-  | '...' expr                   {% withSpan $1 (Range [] Nothing (Just $2) HalfOpen) }
+  | '..'                         {% withSpan $1 (Range [] Nothing Nothing HalfOpen) }
+  | '...'                        {% withSpan $1 (Range [] Nothing Nothing Closed) }
+  | '..' expr                    {% withSpan $1 (Range [] Nothing (Just $2) HalfOpen) }
+  | '...' expr                   {% withSpan $1 (Range [] Nothing (Just $2) Closed) }
   | continue                     {% withSpan $1 (Continue [] Nothing) }
   | continue lifetime            {% withSpan $1 (Continue [] (Just $2)) }
   | break                        {% withSpan $1 (Break [] Nothing Nothing) }
@@ -1035,7 +1036,7 @@ paren_expr :: { Expr Span }
   | '(' expr ')'                        {% withSpan $1 (ParenExpr [] $2) }
   | '(' inner_attrs expr ')'            {% withSpan $1 (ParenExpr (toList $2) $3) }
   | '(' expr ',' ')'                    {% withSpan $1 (TupExpr [] [$2]) }
-  | '(' expr ',' sep_by1(expr,',') ')'  {% withSpan $1 (TupExpr [] ($2 : toList $4)) }
+  | '(' expr ',' sep_by1T(expr,',') ')' {% withSpan $1 (TupExpr [] ($2 : toList $4)) }
 
 
 -- Closure
@@ -1176,7 +1177,7 @@ stmt_item :: { Item Span }
   | type ident generics where_clause '=' ty ';'       {% withSpan $1 (Item (unspan $2) [] (TyAlias $6 $3{ whereClause = $4 }) InheritedV) }
   | use view_path ';'                                 {% withSpan $1 (Item "" [] (Use $2) InheritedV) }
   | extern crate ident ';'                            {% withSpan $1 (Item (unspan $3) [] (ExternCrate Nothing) InheritedV) } 
-  | extern crate ident as ident ';'                   {% withSpan $1 (Item (unspan $3) [] (ExternCrate (Just (unspan $5))) InheritedV) } 
+  | extern crate ident as ident ';'                   {% withSpan $1 (Item (unspan $5) [] (ExternCrate (Just (unspan $3))) InheritedV) } 
   | const safety   fn ident generics fn_decl where_clause inner_attrs_block
     {% withSpan $1 (Item (unspan $4) (fst $>) (Fn $6 $2 Const Rust $5{ whereClause = $7 } (snd $>)) InheritedV) }
   | unsafe ext_abi fn ident generics fn_decl where_clause inner_attrs_block
@@ -1249,7 +1250,7 @@ item_impl :: { Item Span }
   : safety_impl generics ty_prim              where_clause impl_items
     {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $4 } Nothing $3 (snd $>)) InheritedV) } 
   | safety_impl generics '(' ty_no_plus ')'   where_clause impl_items
-    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $6 } Nothing $4 (snd $>)) InheritedV) } 
+    {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $6 } Nothing (ParenTy $4 mempty) (snd $>)) InheritedV) } 
   | safety_impl generics '!' trait_ref for ty where_clause impl_items
     {% withSpan $1 (Item (mkIdent "") (fst $>) (Impl (unspan $1) Negative $2{ whereClause = $7 } (Just $4) $6 (snd $>)) InheritedV) }
   | safety_impl generics     trait_ref for ty where_clause impl_items
@@ -1619,14 +1620,6 @@ isPathSegmentIdent i = True
 
 isTypePathSegmentIdent :: Spanned Ident -> Bool
 isTypePathSegmentIdent i = True
-
--- | Check if a given string is one of the accepted ABIs
-isAbi :: String -> Bool
-isAbi s = s `elem` abis
-  where abis :: [String]
-        abis = [ "Cdecl", "Stdcall", "Fastcall", "Vectorcall", "Aapcs", "Win64", "SysV64"
-               , "Rust", "C", "System", "RustIntrinsic", "RustCall", "PlatformIntrinsic"
-               ]
 
 isTraitTyParamBound TraitTyParamBound{} = True
 isTraitTyParamBound _ = False

@@ -18,12 +18,9 @@ module Language.Rust.Parser.Literals (
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.AST
 
-import Data.Char (chr, isHexDigit, digitToInt)
-import Data.Word (Word8)
+import Data.Char (chr, ord, isHexDigit, digitToInt)
 import Data.List (unfoldr)
-
-import qualified Data.ByteString.Char8 as BSW (pack)
-import qualified Data.ByteString as BS (pack)
+import Data.Word (Word8)
 
 -- | Parse a valid 'LitTok' into a 'Lit'.
 translateLit :: LitTok -> Suffix -> a -> Lit a
@@ -33,8 +30,8 @@ translateLit (IntegerTok s)      = uncurry Int (unescapeInteger s)
 translateLit (FloatTok s)        = Float (unescapeFloat s) 
 translateLit (StrTok s)          = Str (unfoldr unescapeChar s) Cooked
 translateLit (StrRawTok s n)     = Str s (Raw n)
-translateLit (ByteStrTok s)      = ByteStr (BS.pack (unfoldr unescapeByte s)) Cooked
-translateLit (ByteStrRawTok s n) = ByteStr (BSW.pack s) (Raw n) 
+translateLit (ByteStrTok s)      = ByteStr (unfoldr unescapeByte s) Cooked
+translateLit (ByteStrRawTok s n) = ByteStr (map (fromIntegral . ord) s) (Raw n) 
   
 -- | Given a string of characters read from a Rust source, extract the next underlying char taking
 -- into account escapes and unicode.
