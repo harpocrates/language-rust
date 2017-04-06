@@ -30,7 +30,7 @@ import Data.Either (lefts, rights)
 import Data.Foldable (toList)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, maybeToList)
 import Data.Word (Word8)
 
 -- Rust style guide to explore:
@@ -142,10 +142,13 @@ delimiter NoDelim = id
 -- As much as possible, these functions should say which function in the @rustc@ printer they are
 -- emulating.
 
--- | Print a crate
-printCrate :: Crate a -> Doc a
-printCrate (Crate items as macs x) = annotate x (vcat ls)
-  where ls = [ printAttr a False | a <- as ] ++ [""] ++ [ printItem item | item <- items ]
+-- | Print a source file
+printSourceFile :: SourceFile a -> Doc a
+printSourceFile (SourceFile shebang as items) = foldr1 (\x y -> x <#> "" <#> y) ls
+  where ls = concat [ maybeToList ((\s -> "#!" <> text s) <$> shebang)
+                    , [ vcat [ printAttr a False | a <- as ] ]
+                    , printItem <$> items
+                    ]
 
 -- | Print a name
 printName :: Name -> Doc a

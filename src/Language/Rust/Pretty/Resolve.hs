@@ -90,6 +90,19 @@ class Resolve a where
   resolve :: a -> Either String a
 
 
+-- | The shebang can be anything
+resolveSourceFile :: Monoid a => SourceFile a -> Either String (SourceFile a)
+resolveSourceFile (SourceFile sh as is) = do
+  sh' <- case sh of
+           Just ('[':_) -> Left "shebang cannot start with `['"
+           Just s | '\n' `elem` s -> Left "shebang cannot contain newlines"
+           _ -> pure sh
+  as' <- sequence (resolveAttr InnerAttr <$> as)
+  is' <- sequence (resolveItem ModItem <$> is)
+  pure (SourceFile sh' as' is')
+
+instance Monoid a => Resolve (SourceFile a) where resolve = resolveSourceFile
+
 -- | An identifier can be invalid if
 -- 
 --   * it is empty

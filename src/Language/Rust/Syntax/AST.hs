@@ -15,14 +15,14 @@ are [here](https://manishearth.github.io/rust-internals-docs/syntax/ast/index.ht
 {-# LANGUAGE DuplicateRecordFields, DeriveFunctor, DeriveDataTypeable, DeriveGeneric, PatternSynonyms #-}
 
 module Language.Rust.Syntax.AST (
+  -- * Top level
+  SourceFile(..),
   -- * General
   Mutability(..), Unsafety(..), Arg(..), FnDecl(..),
   -- * Paths
   Path(..), PathListItem(..), PathParameters(..), QSelf(..),
   -- * Attributes
   Attribute(..), AttrStyle(..), MetaItem(..), NestedMetaItem(..),
-  -- * Crates
-  Crate(..), CrateConfig, 
   -- * Literals
   Lit(..), Suffix(..), suffix, IntRep(..), StrStyle(..),
   -- * Expressions
@@ -38,7 +38,7 @@ module Language.Rust.Syntax.AST (
   -- * Blocks
   Block(..),
   -- * Token trees
-  TokenTree(..), Nonterminal(..), KleeneOp(..), Mac(..), MacStmtStyle(..), MacroDef(..),
+  TokenTree(..), Nonterminal(..), KleeneOp(..), Mac(..), MacStmtStyle(..),
 ) where
 
 import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)
@@ -197,21 +197,6 @@ data CaptureBy
 --
 -- Example: @const@ in @const fn inc(x: i32) -> i32 { x + 1 }@
 data Constness = Const | NotConst deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
-
--- https://docs.serde.rs/syntex_syntax/ast/struct.Crate.html
-data Crate a
-  = Crate
-      { module_ :: [Item a]
-      , attrs :: [Attribute a]
-      , exportedMacros :: [MacroDef a]
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
-
-instance Located a => Located (Crate a) where spanOf (Crate _ _ _ s) = spanOf s
-
--- The set of MetaItems that define the compilation environment of the crate, used to drive conditional compilation
--- https://docs.serde.rs/syntex_syntax/ast/type.CrateConfig.html
-type CrateConfig a = [MetaItem a]
 
 -- | 'ImplItem's can be marked @default@ (@syntax::ast::Defaultness@).  
 data Defaultness = Default | Final deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
@@ -581,6 +566,22 @@ data LifetimeDef a
 
 instance Located a => Located (LifetimeDef a) where spanOf (LifetimeDef _ _ _ s) = spanOf s
 
+-- | This is the fundamental unit of parsing - it represents the contents of one source file. It is
+-- composed of an optional shebang line, inner attributes that follow, and then the mod items.
+--
+-- Example:
+--
+-- @
+-- #!\/usr\/bin/env rust
+--
+-- #![allow(dead_code)]
+--
+-- fn main() {
+--   println!("Hello world")
+-- }
+-- @
+data SourceFile a = SourceFile (Maybe Name) [Attribute a] [Item a] deriving (Eq, Functor, Show, Typeable, Data, Generic)
+
 -- | The suffix on a literal (unifies @syntax::ast::LitIntType@, @syntax::ast::IntTy@,
 -- @syntax::ast::UintTy@, and @syntax::ast::FloatTy@). As of today, only numeric types can have
 -- suffixes, but the possibility of adding more (possibly arbitrary) suffixes to literals in general
@@ -662,23 +663,6 @@ data MacStmtStyle
   = SemicolonMac -- ^ trailing semicolon (example: @foo! { ... };@, @ foo!(...);@, and @foo![...];@)
   | BracesMac    -- ^ braces (example: @foo! { ... }@)
   deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
-
--- A macro definition, in this crate or imported from another.
--- Not parsed directly, but created on macro import or macro_rules! expansion.
--- https://docs.serde.rs/syntex_syntax/ast/struct.MacroDef.html
-data MacroDef a
-  = MacroDef
-      { ident :: Ident
-      , attrs :: [Attribute a]
-      , importedFrom :: Maybe Ident
-      , export :: Bool
-      , useLocally :: Bool
-      , allowInternalUnstable :: Bool
-      , body :: [TokenTree]
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
-
-instance Located a => Located (MacroDef a) where spanOf (MacroDef _ _ _ _ _ _ _ s) = spanOf s
 
 -- | Compile-time attribute item (@syntax::ast::MetaItem@)
 data MetaItem a

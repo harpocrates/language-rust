@@ -55,7 +55,7 @@ instance Pretty TokenTree where pretty = printTt
 instance Pretty UnOp where pretty = printUnOp
 instance Pretty Unsafety where pretty = printUnsafety
 instance Pretty (Block a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Crate a) where pretty = noAnnotate . prettyAnn
+instance Pretty (SourceFile a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Expr a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Field a) where pretty = noAnnotate . prettyAnn
 instance Pretty (FieldPat a) where pretty = noAnnotate . prettyAnn
@@ -93,7 +93,7 @@ class PrettyAnnotated p where
   prettyAnn :: p a -> Doc a
 
 instance PrettyAnnotated Block where prettyAnn = printBlock
-instance PrettyAnnotated Crate where prettyAnn = printCrate
+instance PrettyAnnotated SourceFile where prettyAnn = printSourceFile
 instance PrettyAnnotated Expr where prettyAnn = printExpr
 instance PrettyAnnotated Field where prettyAnn = printField
 instance PrettyAnnotated FieldPat where prettyAnn = printFieldPat

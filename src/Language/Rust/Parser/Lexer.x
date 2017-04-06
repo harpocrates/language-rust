@@ -32,7 +32,7 @@ This sort of amguity where one tokens need to be broken up occurs for
 
 module Language.Rust.Parser.Lexer (
   -- * Lexing
-  lexToken, lexNonSpace, lexTokens,
+  lexToken, lexNonSpace, lexTokens, lexShebangLine,
   -- * Tokens
   Token(..),
   -- * Error reporting
@@ -1255,4 +1255,31 @@ lexTokens lexer = do
     Spanned Eof _ -> pure []
     _ -> (tok :) <$> lexTokens lexer
 
+-- | Lex the first line, if it immediately starts with @#!@ (but not @#![@ - that should be an
+-- inner attribute). If this fails to find a shebang line, it consumes no input (in reality it does
+-- consume one token, but it pushed it back).
+lexShebangLine :: P (Maybe String)
+lexShebangLine = do
+  tok <- lexNonSpace
+  case unspan tok of
+    Shebang -> do
+      c <- peekChar
+      case c of
+        Just '[' -> pushToken tok *> pure Nothing
+        _ -> Just <$> toNewline
+    _ -> pushToken tok *> pure Nothing 
+
+  where
+  -- Lexes a string until a newline
+  toNewline :: P String
+  toNewline = do
+    c <- peekChar
+    case c of
+      Nothing -> pure ""
+      Just '\n' -> pure ""
+      Just c' -> do
+        _ <- nextChar
+        (c' :) <$> toNewline
+
+    
 }

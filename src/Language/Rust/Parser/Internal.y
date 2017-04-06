@@ -22,7 +22,7 @@ To log Happy's debug information (about transition states and such), run @happy 
 {-# LANGUAGE OverloadedStrings, OverloadedLists #-}
 
 module Language.Rust.Parser.Internal (
-  parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseCrate,
+  parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseSourceFile,
   parseBlock, parseImplItem, parseTraitItem, parseTt,
 ) where
 
@@ -30,7 +30,7 @@ import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Ident (mkIdent, Ident(..))
 import Language.Rust.Data.Position (Spanned(..), Span(..), Located(..))
-import Language.Rust.Parser.Lexer (lexNonSpace)
+import Language.Rust.Parser.Lexer (lexNonSpace, lexShebangLine)
 import Language.Rust.Parser.ParseMonad (pushToken, getPosition, P, parseError)
 import Language.Rust.Parser.Literals (translateLit)
 
@@ -47,7 +47,7 @@ import qualified Data.List.NonEmpty as N
 %name parseStmt stmt
 %name parseExpr expr
 %name parseItem item
-%name parseCrate crate_
+%name parseSourceFileContents source_file
 %name parseBlock block
 %name parseImplItem impl_item
 %name parseTraitItem trait_item
@@ -341,9 +341,9 @@ sep_byT(p,sep) :: { [a] }
 --------------------------
 
 -- shebang is dealt with at the top level, outside Happy/Alex
-crate_ :: { Crate Span }
-  : inner_attrs many(mod_item)   {% withSpan $1 (Crate $2 (toList $1) []) }
-  |             many(mod_item)   {% withSpan $1 (Crate $1 [] []) }
+source_file :: { ([Attribute a],[Item a]) }
+  : inner_attrs many(mod_item)   { (toList $1, $2) }
+  |             many(mod_item)   { ([],        $1) }
 
 
 --------------------------
@@ -1525,9 +1525,6 @@ parseExpr :: P (Expr Span)
 -- | Parser for items.
 parseItem :: P (Item Span)
 
--- | Parser for crates.
-parseCrate :: P (Crate Span)
-
 -- | Parser for blocks.
 parseBlock :: P (Block Span)
 
@@ -1643,6 +1640,14 @@ withSpan node mkNode = do
   hi <- getPosition
   pure (mkNode (Span lo hi))
 
+
+-- | Parse a source file
+parseSourceFile :: P (SourceFile Span)
+parseSourceFile = do
+  sh <- lexShebangLine
+  (as,items) <- parseSourceFileContents
+  pure (SourceFile sh as items)
+  
 
 -- Functions related to `NonEmpty` that really should already exist...
 
