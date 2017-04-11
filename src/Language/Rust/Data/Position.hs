@@ -15,7 +15,7 @@ module Language.Rust.Data.Position (
   -- * Positions in files
   Position(..), maxPos, minPos, initPos, incPos, retPos, incOffset,
   -- * Spans in files
-  Span(..), subsetOf, Spanned(..), Located(..),
+  Span(..), subsetOf, (#), Spanned(..), Located(..),
 ) where
 
 import GHC.Generics (Generic)
@@ -101,6 +101,10 @@ data Span = Span
 subsetOf :: Span -> Span -> Bool
 Span l1 h1 `subsetOf` Span l2 h2 = minPos l1 l2 == l1 && maxPos h1 h2 == h2
 
+-- | Convenience function lifting '<>' to work on all 'Located' things
+(#) :: (Located a, Located b) => a -> b -> Span
+left # right = spanOf left <> spanOf right
+
 -- | smallest covering 'Span'
 instance Semigroup Span where
   Span l1 h1 <> Span l2 h2 = Span (minPos l1 l2) (maxPos h1 h2)
@@ -143,6 +147,9 @@ instance Located Span where
 
 instance Located (Spanned a) where
   spanOf (Spanned _ s) = s
+
+instance Located a => Located (Maybe a) where
+  spanOf = foldMap spanOf
 
 instance Located a => Located [a] where
   spanOf = foldMap spanOf
