@@ -95,6 +95,7 @@ parserAttributes = testGroup "parsing attributes"
   , testP "#[inline(always,)]" (Attribute Outer (List (mkIdent "inline") [MetaItem (Word (mkIdent "always") ()) ()] ()) False ())
   , testP "#[inline()]" (Attribute Outer (List (mkIdent "inline") [] ()) False ())
   , testP "#[inline(always, sometimes)]" (Attribute Outer (List (mkIdent "inline") [MetaItem (Word (mkIdent "always") ()) (),MetaItem (Word (mkIdent "sometimes") ()) ()] ()) False ())
+  , testP "#[self(if, default)]" (Attribute Outer (List (mkIdent "self") [MetaItem (Word (mkIdent "if") ()) (),MetaItem (Word (mkIdent "default") ()) ()] ()) False ())
   , testP "#[cfg(target_os = \"macos\")]" (Attribute Outer (List (mkIdent "cfg") [MetaItem (NameValue (mkIdent "target_os") (Str "macos" Cooked Unsuffixed ()) ()) ()] ()) False ())
   , testP "#[cfg(0, tar = \"mac\")]" (Attribute Outer (List (mkIdent "cfg") [Literal (Int Dec 0 Unsuffixed ()) (), MetaItem (NameValue (mkIdent "tar") (Str "mac" Cooked Unsuffixed ()) ()) ()] ()) False ())
   ]
@@ -391,6 +392,7 @@ parserExpressions = testGroup "parsing expressions"
   , testP "{ 1; 2 }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), NoSemi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ()) ())
   , testP "unsafe { 1; 2 }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), NoSemi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Unsafe ()) ())
   , testP "{ 1; 2; }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ()) ())
+  , testP "{ }" (BlockExpr [] (Block [] Normal ()) ())
   , testP "unsafe { 1; 2; }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Unsafe ()) ())
   , testP "return" (Ret [] Nothing ())
   , testP "return 1" (Ret [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) ())
@@ -662,6 +664,8 @@ toFix = testGroup "should pass, but don't block tests for now"
   , testP "impl Debug for i32 { foo!{x} }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
   , testP "foo!(x)"                 (MacP (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 5 6 1) (Position 6 7 1)) (IdentTok "x")]  ()) ())
   , testP "foo![x]"                 (MacTy (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 5 6 1) (Position 6 7 1)) (IdentTok "x")]  ()) ())
+  , testP "{ ;;; }" (BlockExpr [] (Block [] Normal ()) ())
+  , testP "{ 1;; 2;; }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ()) ())
   ]
 
 

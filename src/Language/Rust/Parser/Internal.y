@@ -69,7 +69,7 @@ import Text.Read (readMaybe)
 
 %token
 
-  -- Expression-operator symbols. 
+  -- Expression-operator symbols.
   '='            { Spanned Equal _ }
   '<'            { Spanned Less _ }
   '>'            { Spanned Greater _ }
@@ -138,52 +138,52 @@ import Text.Read (readMaybe)
   byteStr        { Spanned (LiteralTok ByteStrTok{} _) _ }
   rawStr         { Spanned (LiteralTok StrRawTok{} _) _ }
   rawByteStr     { Spanned (LiteralTok ByteStrRawTok{} _) _ }
-  
+
   -- Strict keywords used in the language
   as             { Spanned (IdentTok (Ident "as" _)) _ }
-  box            { Spanned (IdentTok (Ident "box" _)) _ } 
-  break          { Spanned (IdentTok (Ident "break" _)) _ } 
-  const          { Spanned (IdentTok (Ident "const" _)) _ } 
+  box            { Spanned (IdentTok (Ident "box" _)) _ }
+  break          { Spanned (IdentTok (Ident "break" _)) _ }
+  const          { Spanned (IdentTok (Ident "const" _)) _ }
   continue       { Spanned (IdentTok (Ident "continue" _)) _ }
-  crate          { Spanned (IdentTok (Ident "crate" _)) _ } 
+  crate          { Spanned (IdentTok (Ident "crate" _)) _ }
   else           { Spanned (IdentTok (Ident "else" _)) _ }
   enum           { Spanned (IdentTok (Ident "enum" _)) _ }
   extern         { Spanned (IdentTok (Ident "extern" _)) _ }
-  false          { Spanned (IdentTok (Ident "false" _)) _ } 
+  false          { Spanned (IdentTok (Ident "false" _)) _ }
   fn             { Spanned (IdentTok (Ident "fn" _)) _ }
-  for            { Spanned (IdentTok (Ident "for" _)) _ } 
+  for            { Spanned (IdentTok (Ident "for" _)) _ }
   if             { Spanned (IdentTok (Ident "if" _)) _ }
   impl           { Spanned (IdentTok (Ident "impl" _)) _ }
   in             { Spanned (IdentTok (Ident "in" _)) _ }
-  let            { Spanned (IdentTok (Ident "let" _)) _ } 
+  let            { Spanned (IdentTok (Ident "let" _)) _ }
   loop           { Spanned (IdentTok (Ident "loop" _)) _ }
-  match          { Spanned (IdentTok (Ident "match" _)) _ } 
-  mod            { Spanned (IdentTok (Ident "mod" _)) _ } 
+  match          { Spanned (IdentTok (Ident "match" _)) _ }
+  mod            { Spanned (IdentTok (Ident "mod" _)) _ }
   move           { Spanned (IdentTok (Ident "move" _)) _ }
-  mut            { Spanned (IdentTok (Ident "mut" _)) _ } 
-  pub            { Spanned (IdentTok (Ident "pub" _)) _ } 
-  ref            { Spanned (IdentTok (Ident "ref" _)) _ } 
+  mut            { Spanned (IdentTok (Ident "mut" _)) _ }
+  pub            { Spanned (IdentTok (Ident "pub" _)) _ }
+  ref            { Spanned (IdentTok (Ident "ref" _)) _ }
   return         { Spanned (IdentTok (Ident "return" _)) _ }
   Self           { Spanned (IdentTok (Ident "Self" _)) _ }
-  self           { Spanned (IdentTok (Ident "self" _)) _ } 
+  self           { Spanned (IdentTok (Ident "self" _)) _ }
   static         { Spanned (IdentTok (Ident "static" _)) _ }
   struct         { Spanned (IdentTok (Ident "struct" _)) _ }
-  super          { Spanned (IdentTok (Ident "super" _)) _ } 
-  trait          { Spanned (IdentTok (Ident "trait" _)) _ } 
+  super          { Spanned (IdentTok (Ident "super" _)) _ }
+  trait          { Spanned (IdentTok (Ident "trait" _)) _ }
   true           { Spanned (IdentTok (Ident "true" _)) _ }
   type           { Spanned (IdentTok (Ident "type" _)) _ }
   unsafe         { Spanned (IdentTok (Ident "unsafe" _)) _ }
-  use            { Spanned (IdentTok (Ident "use" _)) _ } 
-  where          { Spanned (IdentTok (Ident "where" _)) _ } 
-  while          { Spanned (IdentTok (Ident "while" _)) _ } 
-  
+  use            { Spanned (IdentTok (Ident "use" _)) _ }
+  where          { Spanned (IdentTok (Ident "where" _)) _ }
+  while          { Spanned (IdentTok (Ident "while" _)) _ }
+
   -- Keywords reserved for future use
   abstract       { Spanned (IdentTok (Ident "abstract" _)) _ }
-  alignof        { Spanned (IdentTok (Ident "alignof" _)) _ } 
+  alignof        { Spanned (IdentTok (Ident "alignof" _)) _ }
   become         { Spanned (IdentTok (Ident "become" _)) _ }
   do             { Spanned (IdentTok (Ident "do" _)) _ }
-  final          { Spanned (IdentTok (Ident "final" _)) _ } 
-  macro          { Spanned (IdentTok (Ident "macro" _)) _ } 
+  final          { Spanned (IdentTok (Ident "final" _)) _ }
+  macro          { Spanned (IdentTok (Ident "macro" _)) _ }
   offsetof       { Spanned (IdentTok (Ident "offsetof" _)) _ }
   override       { Spanned (IdentTok (Ident "override" _)) _ }
   priv           { Spanned (IdentTok (Ident "priv" _)) _ }
@@ -191,13 +191,13 @@ import Text.Read (readMaybe)
   pure           { Spanned (IdentTok (Ident "pure" _)) _ }
   sizeof         { Spanned (IdentTok (Ident "sizeof" _)) _ }
   typeof         { Spanned (IdentTok (Ident "typeof" _)) _ }
-  unsized        { Spanned (IdentTok (Ident "unsized" _)) _ } 
-  virtual        { Spanned (IdentTok (Ident "virtual" _)) _ } 
-  yield          { Spanned (IdentTok (Ident "yield" _)) _ } 
+  unsized        { Spanned (IdentTok (Ident "unsized" _)) _ }
+  virtual        { Spanned (IdentTok (Ident "virtual" _)) _ }
+  yield          { Spanned (IdentTok (Ident "yield" _)) _ }
 
   -- Weak keywords, have special meaning only in specific contexts.
-  default        { Spanned (IdentTok (Ident "default" _)) _ } 
-  union          { Spanned (IdentTok (Ident "union" _)) _ } 
+  default        { Spanned (IdentTok (Ident "default" _)) _ }
+  union          { Spanned (IdentTok (Ident "union" _)) _ }
 
   -- Comments
   outerDoc       { Spanned (Doc _ OuterDoc) _ }
@@ -247,7 +247,7 @@ import Text.Read (readMaybe)
 -- These are the usual arithmetic precedences. 'UNARY' is introduced here for '*', '!', '-', '&'
 --
 -- TODO: revisit these precedences and write some tests for them
-%right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%=' '..' '...' 
+%right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%=' '..' '...'
 %right '<-'
 %left '||'
 %left '&&'
@@ -284,9 +284,9 @@ import Text.Read (readMaybe)
 -- Union's RFC: https://github.com/rust-lang/rfcs/blob/master/text/1444-union.md
 ident :: { Spanned Ident }
   : ntIdent                       { fmap (\(Interpolated (NtIdent i)) -> i) $1 }
-  | union                         { let Spanned (IdentTok i) s = $1 in Spanned i s }
-  | default                       { let Spanned (IdentTok i) s = $1 in Spanned i s }
-  | IDENT                         { let Spanned (IdentTok i) s = $1 in Spanned i s }
+  | union                         { toIdent $1 }
+  | default                       { toIdent $1 }
+  | IDENT                         { toIdent $1 }
 
 -- This should precede any '>' token which could be absorbed in a '>>', '>=', or '>>=' token. Its
 -- purpose is to check if the lookahead token starts with '>' but contains more that. If that is
@@ -360,8 +360,8 @@ outer_attribute :: { Attribute Span }
   | outerDoc                     { mkDocAttribute $1 }
 
 inner_attribute :: { Attribute Span }
-  : '#' '!' '[' meta_item ']'    { Attribute Inner $4 False ($1 # $>) } 
-  | '#!'    '[' meta_item ']'    { Attribute Inner $3 False ($1 # $>) } 
+  : '#' '!' '[' meta_item ']'    { Attribute Inner $4 False ($1 # $>) }
+  | '#!'    '[' meta_item ']'    { Attribute Inner $3 False ($1 # $>) }
   | innerDoc                     { mkDocAttribute $1 }
 
 -- TODO: for some precedence related reason, using 'some' here doesn't work
@@ -371,17 +371,70 @@ inner_attrs :: { NonEmpty (Attribute Span) }
 
 
 -- parse_meta_item()
--- TODO: ALL identifiers should be accepted in meta items, even those that are keywords
 meta_item :: { MetaItem Span }
-  : ntMeta                                      { $1 }
-  | ident                                       { Word (unspan $1) (spanOf $1) }
-  | ident '=' unsuffixed                        { NameValue (unspan $1) $3 ($1 # $>) }
-  | ident '(' sep_byT(meta_item_inner,',') ')'  { List (unspan $1) $3 ($1 # $>) }
+  : ntMeta                                         { $1 }
+  | any_ident                                      { Word (unspan $1) (spanOf $1) }
+  | any_ident '=' unsuffixed                       { NameValue (unspan $1) $3 ($1 # $>) }
+  | any_ident '(' sep_byT(meta_item_inner,',') ')' { List (unspan $1) $3 ($1 # $>) }
 
 -- parse_meta_item_inner()
 meta_item_inner :: { NestedMetaItem Span }
-  : unsuffixed                                  { Literal $1 (spanOf $1) }
-  | meta_item                                   { MetaItem $1 (spanOf $1) } 
+  : unsuffixed                                     { Literal $1 (spanOf $1) }
+  | meta_item                                      { MetaItem $1 (spanOf $1) }
+
+-- All identifiers should be accepted in meta items, even those that are keywords
+any_ident :: { Spanned Ident }
+  : ident                  { $1 }
+  | as         %prec IDENT { toIdent $1 } 
+  | box        %prec IDENT { toIdent $1 }
+  | break      %prec IDENT { toIdent $1 }
+  | const      %prec IDENT { toIdent $1 }
+  | continue   %prec IDENT { toIdent $1 }
+  | crate      %prec IDENT { toIdent $1 }
+  | else       %prec IDENT { toIdent $1 }
+  | enum       %prec IDENT { toIdent $1 }
+  | extern     %prec IDENT { toIdent $1 }
+  | fn         %prec IDENT { toIdent $1 }
+  | for        %prec IDENT { toIdent $1 }
+  | if         %prec IDENT { toIdent $1 }
+  | impl       %prec IDENT { toIdent $1 }
+  | in         %prec IDENT { toIdent $1 }
+  | let        %prec IDENT { toIdent $1 }
+  | loop       %prec IDENT { toIdent $1 }
+  | match      %prec IDENT { toIdent $1 }
+  | mod        %prec IDENT { toIdent $1 }
+  | move       %prec IDENT { toIdent $1 }
+  | mut        %prec IDENT { toIdent $1 }
+  | pub        %prec IDENT { toIdent $1 }
+  | ref        %prec IDENT { toIdent $1 }
+  | return     %prec IDENT { toIdent $1 }
+  | Self       %prec IDENT { toIdent $1 }
+  | self       %prec IDENT { toIdent $1 }
+  | static     %prec IDENT { toIdent $1 }
+  | struct     %prec IDENT { toIdent $1 }
+  | super      %prec IDENT { toIdent $1 }
+  | trait      %prec IDENT { toIdent $1 }
+  | type       %prec IDENT { toIdent $1 }
+  | unsafe     %prec IDENT { toIdent $1 }
+  | use        %prec IDENT { toIdent $1 }
+  | where      %prec IDENT { toIdent $1 }
+  | while      %prec IDENT { toIdent $1 }
+  | abstract   %prec IDENT { toIdent $1 }
+  | alignof    %prec IDENT { toIdent $1 }
+  | become     %prec IDENT { toIdent $1 }
+  | do         %prec IDENT { toIdent $1 }
+  | final      %prec IDENT { toIdent $1 }
+  | macro      %prec IDENT { toIdent $1 }
+  | offsetof   %prec IDENT { toIdent $1 }
+  | override   %prec IDENT { toIdent $1 }
+  | priv       %prec IDENT { toIdent $1 }
+  | proc       %prec IDENT { toIdent $1 }
+  | pure       %prec IDENT { toIdent $1 }
+  | sizeof     %prec IDENT { toIdent $1 }
+  | typeof     %prec IDENT { toIdent $1 }
+  | unsized    %prec IDENT { toIdent $1 }
+  | virtual    %prec IDENT { toIdent $1 }
+  | yield      %prec IDENT { toIdent $1 }
 
 
 --------------
@@ -396,7 +449,7 @@ lit :: { Lit Span }
   | float             { lit $1 }
   | true              { lit $1 }
   | false             { lit $1 }
-  | string            { $1 } 
+  | string            { $1 }
 
 string :: { Lit Span }
   : str               { lit $1 }
@@ -436,22 +489,22 @@ qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
 -- Usually qual_path_suf is for... type paths! (Since it deals with annoying '<<', like generic_values below!
 ty_qual_path_suf :: { Ty Span }
   : qual_path_suf(path_segments_without_colons)
-     { let (qself,path) = unspan $1 in PathTy (Just qself) path (spanOf $1) }
+     { let (qself,path) = unspan $1; s = spanOf $1 in PathTy (Just qself) path s{ lo = incPos (lo s) (-1) } }
 
 -- parse_generic_args() but with the '<' '>'
-generic_values :: { ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
-  : '<' sep_by1(lifetime,',')  ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { (toList $2, toList $4, toList $6) }
-  | '<' sep_by1(lifetime,',')  ',' sep_by1T(ty,',')                          gt '>' { (toList $2, toList $4, []) }
-  | '<' sep_by1(lifetime,',')  ','                     sep_by1T(binding,',') gt '>' { (toList $2, [],        toList $4) }
-  | '<' sep_by1T(lifetime,',')                                               gt '>' { (toList $2, [],        []) }
-  | '<'                            sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { ([],        toList $2, toList $4) }
-  | '<'                            sep_by1T(ty,',')                          gt '>' { ([],        toList $2, []) }
-  | '<'                                                sep_by1T(binding,',') gt '>' { ([],        [],        toList $2) }
-  | '<'                                                                      gt '>' { ([],        [],        []) }
-  | '<<' ty_qual_path_suf      ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { ([],   $2 : toList $4, toList $6) }      
-  | '<<' ty_qual_path_suf      ',' sep_by1T(ty,',')                          gt '>' { ([],   $2 : toList $4, []) }
-  | '<<' ty_qual_path_suf                          ',' sep_by1T(binding,',') gt '>' { ([],        [$2],      toList $4) }
-  | '<<' ty_qual_path_suf                                                    gt '>' { ([],        [$2],      []) }
+generic_values :: { Spanned ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
+  : '<' sep_by1(lifetime,',')  ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned (toList $2, toList $4, toList $6) ($1 # $>) }
+  | '<' sep_by1(lifetime,',')  ',' sep_by1T(ty,',')                          gt '>' { Spanned (toList $2, toList $4, []       ) ($1 # $>) }
+  | '<' sep_by1(lifetime,',')  ','                     sep_by1T(binding,',') gt '>' { Spanned (toList $2, [],        toList $4) ($1 # $>) }
+  | '<' sep_by1T(lifetime,',')                                               gt '>' { Spanned (toList $2, [],        []       ) ($1 # $>) }
+  | '<'                            sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned ([],        toList $2, toList $4) ($1 # $>) }
+  | '<'                            sep_by1T(ty,',')                          gt '>' { Spanned ([],        toList $2, []       ) ($1 # $>) }
+  | '<'                                                sep_by1T(binding,',') gt '>' { Spanned ([],        [],        toList $2) ($1 # $>) }
+  | '<'                                                                      gt '>' { Spanned ([],        [],        []       ) ($1 # $>) }
+  | '<<' ty_qual_path_suf      ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned ([],   $2 : toList $4, toList $6) ($1 # $>) }
+  | '<<' ty_qual_path_suf      ',' sep_by1T(ty,',')                          gt '>' { Spanned ([],   $2 : toList $4, []       ) ($1 # $>) }
+  | '<<' ty_qual_path_suf                          ',' sep_by1T(binding,',') gt '>' { Spanned ([],        [$2],      toList $4) ($1 # $>) }
+  | '<<' ty_qual_path_suf                                                    gt '>' { Spanned ([],        [$2],      []       ) ($1 # $>) }
 
 binding : ident '=' ty                             { (unspan $1, $3) }
 
@@ -476,7 +529,7 @@ path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
   | ident path_parameter1                    { Spanned (unspan $1, $2) ($1 # $>) }
 
 path_parameter1 :: { PathParameters Span }
-  : generic_values                           { let (lts, tys, bds) = $1 in (AngleBracketed lts tys bds mempty) }
+  : generic_values                           { let (lts, tys, bds) = unspan $1 in AngleBracketed lts tys bds (spanOf $1) }
   | '(' sep_byT(ty,',') ')'                  { Parenthesized $2 Nothing ($1 # $>) }
   | '(' sep_byT(ty,',') ')' '->' ty_no_plus  { Parenthesized $2 (Just $>) ($1 # $>) }
   | {- empty -}                  %prec IDENT { NoParameters mempty }
@@ -500,11 +553,12 @@ path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
      { Spanned (unspan $1 |> (unspan $3, NoParameters mempty)) ($1 # $>) }
   | path_segments_with_colons '::' generic_values
      {%
-       case (N.last (unspan $1), $3) of
-         ((i, NoParameters{}), (lts, tys, bds)) -> pure $ Spanned (N.init (unspan $1) |: (i, AngleBracketed lts tys bds mempty)) mempty
+       case (N.last (unspan $1), unspan $3) of
+         ((i, NoParameters{}), (lts, tys, bds)) -> let seg = (i, AngleBracketed lts tys bds (spanOf $3))
+                                                   in pure $ Spanned (N.init (unspan $1) |: seg) ($1 # $3)
          _ -> error "invalid path segment in expression path"
     }
-  
+
 -- Mod related:
 -- parse_path(PathStyle::Mod)
 mod_path :: { Path Span  }
@@ -566,7 +620,7 @@ no_for_ty_prim :: { Ty Span }
   | '&'  lifetime_mut ty_no_plus     { Rptr (fst $2) (snd $2) $3 ($1 # $>) }
   | '&&' lifetime_mut ty_no_plus     { Rptr Nothing Immutable (Rptr (fst $2) (snd $2) $3 ($1 # $>)) ($1 # $>) }
   | ty_path               %prec PATH { PathTy Nothing $1 ($1 # $>) }
-  | ty_mac                           { MacTy $1 ($1 # $>) } 
+  | ty_mac                           { MacTy $1 ($1 # $>) }
   | unsafe extern abi fn fn_decl     { BareFn Unsafe $3 [] $> ($1 # $>) }
   | unsafe fn fn_decl                { BareFn Unsafe Rust [] $> ($1 # $>) }
   | extern abi fn fn_decl            { BareFn Normal $2 [] $> ($1 # $>) }
@@ -586,7 +640,7 @@ for_ty_no_plus :: { Ty Span }
       let poly = PolyTraitRef (unspan $1) $2 ($1 # $2)
       in TraitObject [TraitTyParamBound poly None] ($1 # $2)
     }
-  
+
 -- An optional lifetime followed by an optional mutability
 lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
   : lifetime mut  { (Just $1, Mutable) }
@@ -601,7 +655,7 @@ fn_decl :: { FnDecl Span }
 
 -- Like 'fn_decl', but also accepting a self argument
 fn_decl_with_self :: { FnDecl Span }
-  : '(' arg_self ',' sep_byT(arg_general,',') ')' ret_ty  { FnDecl ($2 : $4) $> False ($1 # $5 # $6) } 
+  : '(' arg_self ',' sep_byT(arg_general,',') ')' ret_ty  { FnDecl ($2 : $4) $> False ($1 # $5 # $6) }
   | '(' arg_self                              ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
   | fn_decl                                               { $1 }
 
@@ -615,7 +669,7 @@ poly_trait_ref_mod_bound :: { TyParamBound Span }
   : poly_trait_ref       { TraitTyParamBound $1 None }
   | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe }
 
--- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+') 
+-- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+')
 ty_param_bound_mod :: { TyParamBound Span }
   : ty_param_bound       { $1 }
   | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe }
@@ -623,7 +677,7 @@ ty_param_bound_mod :: { TyParamBound Span }
 
 -- parse_arg_general(false) -- does not require name
 -- NOT ALL PATTERNS ARE ACCEPTED: <https://github.com/rust-lang/rust/issues/35203>
-arg_general :: { Arg Span } 
+arg_general :: { Arg Span }
   :               ty  { Arg Nothing $1 (spanOf $1) }
   |     ident ':' ty  { Arg (Just (IdentP (ByValue Immutable) (unspan $1) Nothing (spanOf $1))) $3 ($1 # $3) }
   | mut ident ':' ty  { Arg (Just (IdentP (ByValue Mutable) (unspan $2) Nothing ($1 # $2))) $4 ($1 # $4) }
@@ -661,7 +715,7 @@ poly_trait_ref :: { PolyTraitRef Span }
 -- parse_for_lts()
 -- Unlike the Rust libsyntax version, this _requires_ the 'for'
 for_lts :: { Spanned [LifetimeDef Span] }
-  : for '<' sep_byT(lifetime_def,',') '>'            { Spanned $3 ($1 # $>) } 
+  : for '<' sep_byT(lifetime_def,',') '>'            { Spanned $3 ($1 # $>) }
 
 -- Definition of a lifetime: attributes can come before the lifetime, and a list of bounding
 -- lifetimes can come after the lifetime.
@@ -686,8 +740,8 @@ pat :: { Pat Span }
   | '_'                             { WildP (spanOf $1) }
   | '&' mut pat                     { RefP $3 Mutable ($1 # $3) }
   | '&' pat                         { RefP $2 Immutable ($1 # $2) }
-  | '&&' mut pat                    { RefP (RefP $3 Mutable ($1 # $3)) Immutable ($1 # $3) }
-  | '&&' pat                        { RefP (RefP $2 Immutable mempty) Immutable ($1 # $2) }
+  | '&&' mut pat                    { let s = $1 # $3 in RefP (RefP $3 Mutable s{ lo = incPos (lo s) 1 }) Immutable s }
+  | '&&' pat                        { let s = $1 # $2 in RefP (RefP $2 Immutable s{ lo = incPos (lo s) 1 }) Immutable s }
   |     lit_expr                    { LitP $1 (spanOf $1) }
   | '-' lit_expr                    { LitP (Unary [] Neg $2 (spanOf $2)) ($1 # $2) }
   | box pat                         { BoxP $2 ($1 # $2) }
@@ -891,9 +945,9 @@ expr :: { Expr Span }
   | lambda_expr                                                               { $1 }
 arithmetic_expr :: { Expr Span }
   : gen_arithmetic(arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)       { $1 }
-  | postfix_expr                                                              { $1 } 
+  | postfix_expr                                                              { $1 }
 postfix_expr  :: { Expr Span }
-  : gen_postfix_expr(postfix_expr)                                            { $1 } 
+  : gen_postfix_expr(postfix_expr)                                            { $1 }
   | paren_expr                                                                { $1 }
   | struct_expr                                                               { $1 }
   | block_expr                                                                { $1 }
@@ -904,9 +958,9 @@ nostruct_expr :: { Expr Span }
   | lambda_expr_nostruct                                                      { $1 }
 ns_arithmetic_expr :: { Expr Span }
   : gen_arithmetic(ns_arithmetic_expr,ns_arithmetic_expr,nsb_arithmetic_expr) { $1 }
-  | ns_postfix_expr                                                           { $1 } 
+  | ns_postfix_expr                                                           { $1 }
 ns_postfix_expr  :: { Expr Span }
-  : gen_postfix_expr(ns_postfix_expr)                                         { $1 } 
+  : gen_postfix_expr(ns_postfix_expr)                                         { $1 }
   | paren_expr                                                                { $1 }
   | block_expr                                                                { $1 }
 
@@ -917,9 +971,9 @@ nostructblock_expr :: { Expr Span }
 -- TODO: should the first case not be 'gen_arithmetic(nsb_arithmetic_expr,ns_arithmetic_expr,nsb_arithmetic_expr)'
 nsb_arithmetic_expr :: { Expr Span }
   : gen_arithmetic(nsb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)   { $1 }
-  | nsb_postfix_expr                                                          { $1 } 
+  | nsb_postfix_expr                                                          { $1 }
 nsb_postfix_expr  :: { Expr Span }
-  : gen_postfix_expr(nsb_postfix_expr)                                        { $1 } 
+  : gen_postfix_expr(nsb_postfix_expr)                                        { $1 }
   | paren_expr                                                                { $1 }
   | block_like_expr                                                           { $1 }
 
@@ -929,7 +983,7 @@ nonblock_expr :: { Expr Span }
   | lambda_expr_nostruct                                                      { $1 }
 nb_arithmetic_expr :: { Expr Span }
   : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)    { $1 }
-  | nb_postfix_expr                                                           { $1 } 
+  | nb_postfix_expr                                                           { $1 }
 nb_postfix_expr :: { Expr Span }
   : gen_postfix_expr(nb_postfix_expr)                                         { $1 }
   | paren_expr                                                                { $1 }
@@ -946,7 +1000,7 @@ lit_expr :: { Expr Span }
 -- An expression ending in a '{ ... }' block. Useful since "There is a convenience rule that allows
 -- one to omit the separating ';' after 'if', 'match', 'loop', 'for', 'while'"
 block_expr :: { Expr Span }
-  : block_like_expr                                     { $1 } 
+  : block_like_expr                                     { $1 }
   | block                                               { BlockExpr [] $1 (spanOf $1) }
 
 -- Any expression ending in a '{ ... }' block except a block itself.
@@ -962,7 +1016,7 @@ block_like_expr :: { Expr Span }
   | lifetime ':' while let pat '=' nostruct_expr block  { WhileLet [] $5 $7 $8 (Just $1) ($1 # $>) }
   | match nostruct_expr '{' '}'                         { Match [] $2 [] ($1 # $>) }
   | match nostruct_expr '{' arms '}'                    { Match [] $2 $4 ($1 # $>) }
-  | expr_path '!' '{' many(token_tree) '}'              { MacExpr [] (Mac $1 $4 mempty) ($1 # $>) }
+  | expr_path '!' '{' many(token_tree) '}'              { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
   | unsafe block                                        { BlockExpr [] $2{ rules = Unsafe } ($1 # $>) }
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
@@ -992,21 +1046,21 @@ comma_arms :: { [Arm Span] }
   | ','          { [] }
   | ',' arms     { $2 }
 
--- An expression followed by match arms. If there is a comma needed, it is added 
+-- An expression followed by match arms. If there is a comma needed, it is added
 expr_arms :: { (Expr Span, [Arm Span]) }
   : gen_expr                          comma_arms              { ($1, $2) }
   | lambda_expr_nostruct              comma_arms              { ($1, $2) }
   | arithmetic_expr_arms                                      { $1 }
 arithmetic_expr_arms :: { (Expr Span, [Arm Span]) }
   : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) comma_arms  { ($1, $2) }
-  | postfix_expr_arms                                         { $1 } 
+  | postfix_expr_arms                                         { $1 }
 postfix_expr_arms :: { (Expr Span, [Arm Span]) }
   : gen_postfix_expr(nb_postfix_expr) comma_arms              { ($1, $2) }
   | paren_expr                        comma_arms              { ($1, $2) }
   | struct_expr                       comma_arms              { ($1, $2) }
   | block_like_expr                   comma_arms              { ($1, $2) }
-  | block                             comma_arms              { (BlockExpr [] $1 mempty, $2) }
-  | block                                   arms              { (BlockExpr [] $1 mempty, $2) } 
+  | block                             comma_arms              { (BlockExpr [] $1 (spanOf $1), $2) }
+  | block                                   arms              { (BlockExpr [] $1 (spanOf $1), $2) }
 
 
 -- As per https://github.com/rust-lang/rust/issues/15701 (as of March 10 2017), the only way to have
@@ -1022,11 +1076,11 @@ paren_expr :: { Expr Span }
 -- Closure
 lambda_expr :: { Expr Span }
   : move args '->' ty_no_plus block
-    { Closure [] Value (FnDecl $2 (Just $4) False (spanOf $2)) (BlockExpr [] $> mempty) ($1 # $>) }
+    { Closure [] Value (FnDecl $2 (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
   | move args         expr
     { Closure [] Value (FnDecl $2 Nothing   False (spanOf $2)) $> ($1 # $>) }
   |      args '->' ty_no_plus block
-    { Closure [] Ref   (FnDecl $1 (Just $3) False (spanOf $1)) (BlockExpr [] $> mempty) ($1 # $>) }
+    { Closure [] Ref   (FnDecl $1 (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
   |      args         expr
     { Closure [] Ref   (FnDecl $1 Nothing   False (spanOf $1)) $> ($1 # $>) }
 
@@ -1068,7 +1122,7 @@ field :: { Field Span }
 stmt :: { Stmt Span }
   : ntStmt                                       { $1 }
   | many(outer_attribute) let pat ':' ty initializer ';'   { Local $3 (Just $5) $6 $1 ($1 # $2 # $>) }
-  | many(outer_attribute) let pat        initializer ';'   { Local $3 Nothing $4 $1 ($1 # $2 # $>) } 
+  | many(outer_attribute) let pat        initializer ';'   { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
   | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True ($1 # $2 # $3) }
   | many(outer_attribute) block_expr                       { toStmt ($1 `addAttrs` $2) False ($1 # $2) }
   | many(outer_attribute) block_expr ';'                   { toStmt ($1 `addAttrs` $2) True ($1 # $2 # $3) }
@@ -1093,8 +1147,8 @@ block :: { Block Span }
 
 inner_attrs_block :: { ([Attribute Span], Block Span) }
   : block                                        { ([], $1) }
-  | '{' inner_attrs '}'                          { (toList $2, Block [] Normal mempty) }
-  | '{' inner_attrs stmts_possibly_no_semi '}'   { (toList $2, Block $3 Normal mempty) }
+  | '{' inner_attrs '}'                          { (toList $2, Block [] Normal ($1 # $>)) }
+  | '{' inner_attrs stmts_possibly_no_semi '}'   { (toList $2, Block $3 Normal ($1 # $>)) }
 
 
 -----------
@@ -1104,12 +1158,12 @@ inner_attrs_block :: { ([Attribute Span], Block Span) }
 item :: { Item Span }
   : ntItem                                             { $1 }
   | stmt_item                                          { $1 }
-  | expr_path '!' ident '[' many(token_tree) ']' ';'   { Item (unspan $3) [] (MacItem (Mac $1 $5 mempty)) InheritedV ($1 # $>) }
-  | expr_path '!'       '[' many(token_tree) ']' ';'   { Item "" [] (MacItem (Mac $1 $4 mempty)) InheritedV ($1 # $>) }
-  | expr_path '!' ident '(' many(token_tree) ')' ';'   { Item (unspan $3) [] (MacItem (Mac $1 $5 mempty)) InheritedV ($1 # $>) }
-  | expr_path '!'       '(' many(token_tree) ')' ';'   { Item "" [] (MacItem (Mac $1 $4 mempty)) InheritedV ($1 # $>) }
-  | expr_path '!' ident '{' many(token_tree) '}'       { Item (unspan $3) [] (MacItem (Mac $1 $5 mempty)) InheritedV ($1 # $>) }
-  | expr_path '!'       '{' many(token_tree) '}'       { Item "" [] (MacItem (Mac $1 $4 mempty)) InheritedV ($1 # $>) }
+  | expr_path '!' ident '[' many(token_tree) ']' ';'   { Item (unspan $3) [] (MacItem (Mac $1 $5 ($1 # $>))) InheritedV ($1 # $>) }
+  | expr_path '!'       '[' many(token_tree) ']' ';'   { Item "" [] (MacItem (Mac $1 $4 ($1 # $>))) InheritedV ($1 # $>) }
+  | expr_path '!' ident '(' many(token_tree) ')' ';'   { Item (unspan $3) [] (MacItem (Mac $1 $5 ($1 # $>))) InheritedV ($1 # $>) }
+  | expr_path '!'       '(' many(token_tree) ')' ';'   { Item "" [] (MacItem (Mac $1 $4 ($1 # $>))) InheritedV ($1 # $>) }
+  | expr_path '!' ident '{' many(token_tree) '}'       { Item (unspan $3) [] (MacItem (Mac $1 $5 ($1 # $>))) InheritedV ($1 # $>) }
+  | expr_path '!'       '{' many(token_tree) '}'       { Item "" [] (MacItem (Mac $1 $4 ($1 # $>))) InheritedV ($1 # $>) }
 
 mod_item :: { Item Span }
   : many(outer_attribute) vis item                     { let Item i a n _ _ = $3 in Item i ($1 ++ a) n (unspan $2) ($1 # $2 # $3) }
@@ -1145,8 +1199,8 @@ stmt_item :: { Item Span }
   | const ident ':' ty '=' expr ';'                    { Item (unspan $2) [] (ConstItem $4 $6) InheritedV ($1 # $>) }
   | type ident generics where_clause '=' ty ';'        { Item (unspan $2) [] (TyAlias $6 $3{ whereClause = $4 }) InheritedV ($1 # $>) }
   | use view_path ';'                                  { Item "" [] (Use $2) InheritedV ($1 # $>) }
-  | extern crate ident ';'                             { Item (unspan $3) [] (ExternCrate Nothing) InheritedV ($1 # $>) } 
-  | extern crate ident as ident ';'                    { Item (unspan $5) [] (ExternCrate (Just (unspan $3))) InheritedV ($1 # $>) } 
+  | extern crate ident ';'                             { Item (unspan $3) [] (ExternCrate Nothing) InheritedV ($1 # $>) }
+  | extern crate ident as ident ';'                    { Item (unspan $5) [] (ExternCrate (Just (unspan $3))) InheritedV ($1 # $>) }
   | const safety   fn ident generics fn_decl where_clause inner_attrs_block
     { Item (unspan $4) (fst $>) (Fn $6 $2 Const Rust $5{ whereClause = $7 } (snd $>)) InheritedV ($1 # snd $>) }
   | unsafe ext_abi fn ident generics fn_decl where_clause inner_attrs_block
@@ -1197,7 +1251,7 @@ enum_def :: { Variant Span }
 -- parse_where_clause
 where_clause :: { WhereClause Span }
   : {- empty -}                                        { WhereClause [] mempty }
-  | ntWhereClause                                      { $1 } 
+  | ntWhereClause                                      { $1 }
   | where sep_by(where_predicate,',')      %prec WHERE { WhereClause $2 ($1 # $2) }
   | where sep_by1(where_predicate,',') ',' %prec WHERE { WhereClause (toList $2) ($1 # $3) }
 
@@ -1213,9 +1267,9 @@ where_predicate :: { WherePredicate Span }
 
 item_impl :: { Item Span }
   : safety_impl generics ty_prim              where_clause impl_items
-    { Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $4 } Nothing $3 (snd $>)) InheritedV ($1 # snd $>) } 
+    { Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $4 } Nothing $3 (snd $>)) InheritedV ($1 # snd $>) }
   | safety_impl generics '(' ty_no_plus ')'   where_clause impl_items
-    { Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $6 } Nothing (ParenTy $4 mempty) (snd $>)) InheritedV ($1 # snd $>) } 
+    { Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $6 } Nothing (ParenTy $4 ($3 # $5)) (snd $>)) InheritedV ($1 # snd $>) }
   | safety_impl generics '!' trait_ref for ty where_clause impl_items
     { Item (mkIdent "") (fst $>) (Impl (unspan $1) Negative $2{ whereClause = $7 } (Just $4) $6 (snd $>)) InheritedV ($1 # snd $>) }
   | safety_impl generics     trait_ref for ty where_clause impl_items
@@ -1322,12 +1376,12 @@ token_tree :: { TokenTree }
   | '{' many(token_tree) '}'                              { Delimited mempty Brace mempty $2 mempty }
   | '[' many(token_tree) ']'                              { Delimited mempty Bracket mempty $2 mempty }
   -- # Sequence
-  | '$' '(' many(token_tree) ')' token_not_plus_star '+'  { Sequence mempty $3 (Just (unspan $5)) OneOrMore } 
+  | '$' '(' many(token_tree) ')' token_not_plus_star '+'  { Sequence mempty $3 (Just (unspan $5)) OneOrMore }
   | '$' '(' many(token_tree) ')' token_not_plus_star '*'  { Sequence mempty $3 (Just (unspan $5)) ZeroOrMore }
   | '$' '(' many(token_tree) ')' '+'                      { Sequence mempty $3 Nothing OneOrMore }
   | '$' '(' many(token_tree) ')' '*'                      { Sequence mempty $3 Nothing ZeroOrMore }
   -- # Token
-  -- Expression-operator symbols. 
+  -- Expression-operator symbols.
   | token_not_plus_star                                   { mkTokenTree $1 }
   | '+'                                                   { mkTokenTree $1 }
   | '*'                                                   { mkTokenTree $1 }
@@ -1363,29 +1417,29 @@ token_not_plus_star :: { Spanned Token }
   | '<<'       { $1 }
   | '>>'       { $1 }
   -- Structural symbols.
-  | '@'        { $1 } 
-  | '...'      { $1 } 
-  | '..'       { $1 } 
-  | '.'        { $1 } 
-  | ','        { $1 } 
-  | ';'        { $1 } 
-  | '::'       { $1 } 
-  | ':'        { $1 } 
-  | '->'       { $1 } 
-  | '<-'       { $1 } 
-  | '=>'       { $1 } 
-  | '#'        { $1 } 
-  | '$' %prec DOLLAR  { $1 } 
-  | '?'        { $1 } 
+  | '@'        { $1 }
+  | '...'      { $1 }
+  | '..'       { $1 }
+  | '.'        { $1 }
+  | ','        { $1 }
+  | ';'        { $1 }
+  | '::'       { $1 }
+  | ':'        { $1 }
+  | '->'       { $1 }
+  | '<-'       { $1 }
+  | '=>'       { $1 }
+  | '#'        { $1 }
+  | '$' %prec DOLLAR  { $1 }
+  | '?'        { $1 }
   -- Literals.
-  | byte       { $1 } 
-  | char       { $1 } 
-  | int        { $1 } 
-  | float      { $1 } 
-  | str        { $1 } 
-  | byteStr    { $1 } 
-  | rawStr     { $1 } 
-  | rawByteStr { $1 } 
+  | byte       { $1 }
+  | char       { $1 }
+  | int        { $1 }
+  | float      { $1 }
+  | str        { $1 }
+  | byteStr    { $1 }
+  | rawStr     { $1 }
+  | rawByteStr { $1 }
   -- Strict keywords used in the language
   | as         { $1 }
   | box        { $1 }
@@ -1425,7 +1479,7 @@ token_not_plus_star :: { Spanned Token }
   | while      { $1 }
   -- Keywords reserved for future use
   | abstract   { $1 }
-  | alignof    { $1 } 
+  | alignof    { $1 }
   | become     { $1 }
   | do         { $1 }
   | final      { $1 }
@@ -1437,8 +1491,8 @@ token_not_plus_star :: { Spanned Token }
   | pure       { $1 }
   | sizeof     { $1 }
   | typeof     { $1 }
-  | unsized    { $1 } 
-  | virtual    { $1 } 
+  | unsized    { $1 }
+  | virtual    { $1 }
   | yield      { $1 }
   -- Weak keywords, have special meaning only in specific contexts.
   | default    { $1 }
@@ -1490,6 +1544,10 @@ parseTraitItem :: P (TraitItem Span)
 -- | Parser for token trees.
 parseTt :: P TokenTree
 
+
+-- | Convert an 'IdentTok' into an 'Ident'
+toIdent :: Spanned Token -> Spanned Ident
+toIdent (Spanned (IdentTok i) s) = Spanned i s
 
 -- | Try to convert an expression to a statement given information about whether there is a trailing
 -- semicolon
@@ -1586,7 +1644,7 @@ parseSourceFile = do
   sh <- lexShebangLine
   (as,items) <- parseSourceFileContents
   pure (SourceFile sh as items)
-  
+
 
 -- Functions related to `NonEmpty` that really should already exist...
 

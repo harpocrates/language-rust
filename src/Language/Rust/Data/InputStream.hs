@@ -22,6 +22,7 @@ module Language.Rust.Data.InputStream (
 
 import Data.Word (Word8)
 import Data.Coerce (coerce)
+import Data.String (IsString(..))
 
 #ifndef NO_BYTESTRING
 import qualified Data.ByteString as BS
@@ -41,6 +42,8 @@ inputStreamToString :: InputStream -> String
 
 -- | Convert a 'String' to an 'InputStream'
 inputStreamFromString :: String -> InputStream
+
+instance IsString InputStream where fromString = inputStreamFromString
 
 -- | Read the first byte from an 'InputStream' and return that byte with what remains of the
 -- 'InputStream'. Should only be called when 'inputStreamEmpty' returns 'False'.

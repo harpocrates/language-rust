@@ -10,12 +10,13 @@ Portability : portable
 Selecting the right parser may require adding an annotation to avoid an 'Ambiguous type variable'
 error.
 
+>>> :set -XTypeApplications
 >>> import Language.Rust.Syntax.AST
->>> import Language.Data.Position (Span)
+>>> import Language.Rust.Data.Position (Span)
 >>> import Language.Rust.Parser
 >>> inp <- readInputStream "hello_world.rs"
 inp :: InputStream
->>> Right sourceFile = parse inp :: P (SourceFile Span)
+>>> Right sourceFile = parse @(SourceFile Span) inp
 sourceFile :: SourceFile Span
 
 -}
