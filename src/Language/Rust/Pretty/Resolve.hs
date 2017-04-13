@@ -357,9 +357,9 @@ data TyParamBoundType
 --   * an underlying lifetime or traitref is
 --   * it is 'NoneBound' but is a trait bound with a '?' (as in 'ObjectTrait')
 resolveTyParamBound :: Monoid a => TyParamBoundType -> TyParamBound a -> Either String (TyParamBound a)
-resolveTyParamBound _ (RegionTyParamBound lt) = RegionTyParamBound <$> resolveLifetime lt
-resolveTyParamBound NoneBound (TraitTyParamBound _ Maybe) = Left "? trait is not allowed in this type param bound"
-resolveTyParamBound _ (TraitTyParamBound p t) = TraitTyParamBound <$> resolvePolyTraitRef p <*> pure t 
+resolveTyParamBound _ (RegionTyParamBound lt x) = RegionTyParamBound <$> resolveLifetime lt <*> pure x
+resolveTyParamBound NoneBound (TraitTyParamBound _ Maybe _) = Left "? trait is not allowed in this type param bound"
+resolveTyParamBound _ (TraitTyParamBound p t x) = TraitTyParamBound <$> resolvePolyTraitRef p <*> pure t <*> pure x 
 
 instance Monoid a => Resolve (TyParamBound a) where resolve = resolveTyParamBound ModBound
 

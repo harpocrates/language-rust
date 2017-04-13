@@ -4,10 +4,10 @@ also checks that calling 'resolve' on the parsed output is a NOP and that re-par
 output is the same. This doesn't fully check that 'resolve' works - but it does provide some checks
 that it isn't grossly broken. Plus it adds some more pretty-printing checks!
 -}
-{-# LANGUAGE OverloadedStrings, OverloadedLists, UnicodeSyntax, FlexibleContexts  #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLists, UnicodeSyntax, FlexibleContexts, ScopedTypeVariables, TypeApplications #-}
 module ParserTest (parserSuite) where
 
-import Test.Framework (testGroup, Test)
+import Test.Framework (testGroup, Test, TestName)
 import Test.Framework.Providers.HUnit
 import Test.HUnit hiding (Test)
 
@@ -21,6 +21,10 @@ import Language.Rust.Data.InputStream
 
 import qualified Text.PrettyPrint.Annotated.WL as WL
 import Control.Monad
+import Data.Maybe (catMaybes)
+
+import Data.Typeable
+import Data.Data
 
 parserSuite :: Test
 parserSuite = testGroup "parser suite"
@@ -34,14 +38,66 @@ parserSuite = testGroup "parser suite"
                 ]
 
 -- | Create a test for a code fragment that should parse to a type.
+testP :: forall f. 
+         (Parse (f Span), Pretty (f ()), Resolve (f ()), Functor f, Show (f ()), Eq (f ()), Data (f Span)) =>
+         TestName -> f () -> Test
 testP inp x = testCase inp $ do
-  Right x @=? parseNoSpans parser (inputStreamFromString inp)       -- parse test
-  Right x @=? resolve x                                             -- resolve test
-  Right x @=? case resolve x of                                     -- re-parse the result of printing resolve
-                Left msg -> Left (NoPosition, msg)
-                Right x' -> do
-                  let inp' = show (pretty x')
-                  parseNoSpans parser (inputStreamFromString inp')
+    -- parse test
+    Right x @=? parseNoSpans parser inps
+  
+    -- resolve test
+    Right x @=? resolve x
+  
+    -- re-parse the result of printing resolve
+    Right x @=? case resolve x of
+                  Left msg -> Left (NoPosition, msg)
+                  Right x' -> do
+                    let inp' = show (pretty x')
+                    parseNoSpans parser (inputStreamFromString inp')
+  
+    -- check that the sub-spans re-parse correctly
+    let Right x = parse @(f Span) inps
+    checkSubterms inps x
+  where
+  inps = inputStreamFromString inp
+
+
+-- | Given the initial input stream and a value, check if that value is one of the ones we test for.
+-- If that is the case /and/ the value is locatable, try extracting the appropriate slice from the
+-- input stream and check that it parses to the same thing.
+--
+-- TODO: statements are a problem since the last statement in a block can be an expression which, by
+-- itself, is not a statement.
+checkTerm :: Typeable a => InputStream -> a -> IO ()
+checkTerm inp x = sequence_ $ catMaybes tests
+  where
+  tests = [ checkTerm' @Lit inp <$> cast x
+          , checkTerm' @Attribute inp <$> cast x
+          , checkTerm' @Ty inp <$> cast x
+          , checkTerm' @Pat inp <$> cast x
+          , checkTerm' @Expr inp <$> cast x
+       -- , checkTerm' @Stmt inp <$> cast x  
+          , checkTerm' @Item inp <$> cast x
+          ]
+
+  -- | Check that a given term slice re-parses properly
+  checkTerm' :: ( Functor f
+                , Show (f ()), Eq (f ())
+                , Pretty (f Span), Parse (f Span), Located (f Span)
+                ) => InputStream -> f Span -> IO ()
+  checkTerm' inp x = case slice (spanOf x) (inputStreamToString inp) of
+                      Nothing -> pure ()
+                      Just inp' -> Right (void x) @=? parseNoSpans parser (inputStreamFromString inp')
+
+  -- | Take a sub-slice of an input string
+  slice :: Span -> String -> Maybe String
+  slice (Span (Position s _ _) (Position e _ _)) str = Just . take (e - s) . drop s $ str
+  slice _ _ = Nothing
+
+ 
+checkSubterms :: Data a => InputStream -> a -> IO ()
+checkSubterms inp x = checkTerm inp x *> gmapQl (*>) (pure ()) (checkSubterms inp) x
+ 
 
 -- | Turn an InputStream into either an error or a parse.
 parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either (Position,String) (f ())
@@ -108,19 +164,19 @@ parserTypes = testGroup "parsing types"
   , testP "!" (Never ())
   , testP "i32" i32
   , testP "Self" (PathTy Nothing (Path False [("Self",NoParameters ())] ()) ())
-  , testP "?Debug" (TraitObject [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) Maybe] ())
-  , testP "Debug + ?Send + 'a" (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None
-                                            , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) Maybe
-                                            , RegionTyParamBound (Lifetime "a" ())
+  , testP "?Debug" (TraitObject [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) Maybe ()] ())
+  , testP "Debug + ?Send + 'a" (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()
+                                            , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) Maybe ()
+                                            , RegionTyParamBound (Lifetime "a" ()) ()
                                             ] ())
-  , testP "?for<'a> Debug" (TraitObject [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) Maybe] ())
-  , testP "?for<'a> Debug + 'a" (TraitObject [ TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) Maybe
-                                             , RegionTyParamBound (Lifetime "a" ()) 
+  , testP "?for<'a> Debug" (TraitObject [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) Maybe ()] ())
+  , testP "?for<'a> Debug + 'a" (TraitObject [ TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) Maybe ()
+                                             , RegionTyParamBound (Lifetime "a" ()) ()
                                              ] ())
   , testP "Send + ?for<'a> Debug + 'a" (TraitObject
-                                             [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None
-                                             , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) Maybe
-                                             , RegionTyParamBound (Lifetime "a" ()) 
+                                             [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None ()
+                                             , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) Maybe ()
+                                             , RegionTyParamBound (Lifetime "a" ()) ()
                                              ] ())
   , testP "(i32,)" (TupTy [i32] ())
   , testP "(i32,())" (TupTy [i32, TupTy [] ()] ())
@@ -198,8 +254,8 @@ parserTypes = testGroup "parsing types"
                      ())
   , testP "< <Debug + 'static as a::b::Trait>::AssociatedItem as x>::Another"
              (PathTy (Just (QSelf (PathTy (Just (QSelf
-                         (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None
-                                      , RegionTyParamBound (Lifetime "static" ())
+                         (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()
+                                      , RegionTyParamBound (Lifetime "static" ()) ()
                                       ] ()) 3)) 
                                                 (Path False [ ("a", NoParameters ())
                                                       , ("b", NoParameters ())
@@ -212,8 +268,8 @@ parserTypes = testGroup "parsing types"
                      ())
   , testP "<<Debug + 'static as a::b::Trait>::AssociatedItem as x>::Another"
              (PathTy (Just (QSelf (PathTy (Just (QSelf
-                         (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None
-                                      , RegionTyParamBound (Lifetime "static" ())
+                         (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()
+                                      , RegionTyParamBound (Lifetime "static" ()) ()
                                       ] ()) 3)) 
                                                 (Path False [ ("a", NoParameters ())
                                                       , ("b", NoParameters ())
@@ -242,8 +298,8 @@ parserTypes = testGroup "parsing types"
              (BareFn Unsafe C [] (FnDecl [Arg (Just (WildP ())) i32 ()] Nothing False ()) ())
   , testP "fn(i32) -> impl Debug + Clone"
              (BareFn Normal Rust [] (FnDecl [Arg Nothing i32 ()] (Just (ImplTrait
-                 [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None
-                 , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Clone",NoParameters ())] ())) ()) None
+                 [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()
+                 , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Clone",NoParameters ())] ())) ()) None ()
                  ] ())) False ()) ())
   , testP "PResult<'a, P<i32>>"
              (PathTy Nothing (Path False [("PResult", AngleBracketed [ Lifetime "a" () ]
@@ -253,7 +309,7 @@ parserTypes = testGroup "parsing types"
              (BareFn Normal Rust
                             [ LifetimeDef [] (Lifetime "l1" ()) [Lifetime "l2" (), Lifetime "l3" ()] ()
                             , LifetimeDef [] (Lifetime "l4" ()) [Lifetime "l5" ()] () ]
-                            (FnDecl [Arg (Just (WildP ())) (TraitObject [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Trait",NoParameters ())] ())) ()) None, RegionTyParamBound (Lifetime "l1" ())] ()) ()] 
+                            (FnDecl [Arg (Just (WildP ())) (TraitObject [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Trait",NoParameters ())] ())) ()) None (), RegionTyParamBound (Lifetime "l1" ()) ()] ()) ()] 
                                     (Just i32) False ()) ())
   , testP "for <'a> Foo<&'a T>"
              (TraitObject
@@ -263,30 +319,30 @@ parserTypes = testGroup "parsing types"
                                                                                         Immutable
                                                                                         (PathTy Nothing (Path False [("T", NoParameters ())] ()) ())
                                                                                         ()]
-                                                                                  [] ())] ())) ()) None] ())
+                                                                                  [] ())] ())) ()) None ()] ())
   , testP "for <'a,> Debug + for <'b> Send + for <'c> Sync"
              (TraitObject
                [ TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()]
-                                                (TraitRef (Path False [("Debug", NoParameters ())] ())) ()) None
+                                                (TraitRef (Path False [("Debug", NoParameters ())] ())) ()) None ()
                , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "b" ()) [] ()]
-                                                (TraitRef (Path False [("Send", NoParameters ())] ())) ()) None
+                                                (TraitRef (Path False [("Send", NoParameters ())] ())) ()) None ()
                , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "c" ()) [] ()]
-                                                (TraitRef (Path False [("Sync", NoParameters ())] ())) ()) None
+                                                (TraitRef (Path False [("Sync", NoParameters ())] ())) ()) None ()
                ] ())
   , testP "&(Debug + Send)"
            (Rptr Nothing Immutable (ParenTy
-              (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None
-                           , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None
+              (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()
+                           , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None ()
                            ] ()) ()) ())
  , testP "&(for<'a> Tr<'a> + Send)"
            (Rptr Nothing Immutable (ParenTy
-              (TraitObject [ TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime  "a" ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime "a" ()] [] [] ())] ())) ()) None
-                           , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None
+              (TraitObject [ TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime  "a" ()) [] ()] (TraitRef (Path False [("Tr",AngleBracketed [Lifetime "a" ()] [] [] ())] ())) ()) None ()
+                           , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None ()
                            ] ())
               ()) ())
   , testP "Fn() -> &(Object+Send)"
-           (PathTy Nothing (Path False [("Fn", Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Object",NoParameters ())] ())) ()) None
-             , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None] ()) ()) ())) ())] ()) ())
+           (PathTy Nothing (Path False [("Fn", Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Object",NoParameters ())] ())) ()) None ()
+             , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None ()] ()) ()) ())) ())] ()) ())
   ]
 
 
@@ -592,8 +648,8 @@ parserItems = testGroup "parsing items"
             ())
     Normal NotConst Rust
     (Generics [] [TyParam [] "T" [] Nothing (), TyParam [] "K" [] Nothing ()]
-              (WhereClause [ BoundPredicate [] (PathTy Nothing (Path False [("T", NoParameters ())] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Clone", NoParameters ())] ())) ()) None] ()
-                           , BoundPredicate [] (PathTy Nothing (Path False [("K", NoParameters ())] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Clone", NoParameters ())] ())) ()) None, TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug", NoParameters ())] ())) ()) None] ()
+              (WhereClause [ BoundPredicate [] (PathTy Nothing (Path False [("T", NoParameters ())] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Clone", NoParameters ())] ())) ()) None ()] ()
+                           , BoundPredicate [] (PathTy Nothing (Path False [("K", NoParameters ())] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Clone", NoParameters ())] ())) ()) None (), TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug", NoParameters ())] ())) ()) None ()] ()
                            ] ()) ())
     (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()))
     InheritedV ())
@@ -605,7 +661,7 @@ parserItems = testGroup "parsing items"
             ())
     Normal NotConst Rust
     (Generics [] [TyParam [] "T" [] Nothing ()]
-              (WhereClause [ BoundPredicate [] (PathTy Nothing (Path False [("i32", NoParameters ())] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("ConvertTo", AngleBracketed [] [PathTy Nothing (Path False [("T", NoParameters ())] ()) ()] [] ())] ())) ()) None] ()
+              (WhereClause [ BoundPredicate [] (PathTy Nothing (Path False [("i32", NoParameters ())] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("ConvertTo", AngleBracketed [] [PathTy Nothing (Path False [("T", NoParameters ())] ()) ()] [] ())] ())) ()) None ()] ()
                            ] ()) ())
     (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()))
     InheritedV ())
@@ -653,8 +709,8 @@ parserItems = testGroup "parsing items"
                                 (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing (Path False [(mkIdent "x", NoParameters ())] ()) ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ())) ()]) InheritedV ()) 
   , testP "trait Trace { }" (Item "Trace" [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) [] []) InheritedV ()) 
   , testP "unsafe trait Trace { }" (Item "Trace" [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [] []) InheritedV ()) 
-  , testP "trait Trace: Debug { }" (Item "Trace" [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None] []) InheritedV ()) 
-  , testP "unsafe trait Trace: Debug { }" (Item "Trace" [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None] []) InheritedV ()) 
+  , testP "trait Trace: Debug { }" (Item "Trace" [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()] []) InheritedV ()) 
+  , testP "unsafe trait Trace: Debug { }" (Item "Trace" [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()] []) InheritedV ()) 
   ] 
 
 

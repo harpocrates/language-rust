@@ -12,7 +12,6 @@ error.
 
 >>> :set -XTypeApplications
 >>> import Language.Rust.Syntax.AST
->>> import Language.Rust.Data.Position (Span)
 >>> import Language.Rust.Parser
 >>> inp <- readInputStream "hello_world.rs"
 inp :: InputStream
@@ -24,7 +23,7 @@ sourceFile :: SourceFile Span
 
 module Language.Rust.Parser (
   -- * Parsing
-  parse, Parse(..), P,execParser, initPos,
+  parse, Parse(..), P,execParser, initPos, Span,
   -- * Lexing
   lexToken, lexNonSpace, lexTokens, translateLit,
   -- * Input stream

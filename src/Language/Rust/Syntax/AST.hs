@@ -1072,13 +1072,13 @@ instance Located a => Located (TyParam a) where spanOf (TyParam _ _ _ _ s) = spa
 -- | Bounds that can be placed on types (@syntax::ast::TyParamBound@). These can be either traits or
 -- lifetimes.
 data TyParamBound a
-  = TraitTyParamBound (PolyTraitRef a) TraitBoundModifier -- ^ trait bound
-  | RegionTyParamBound (Lifetime a)                       -- ^ lifetime bound
+  = TraitTyParamBound (PolyTraitRef a) TraitBoundModifier a -- ^ trait bound
+  | RegionTyParamBound (Lifetime a) a                       -- ^ lifetime bound
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (TyParamBound a) where
-  spanOf (TraitTyParamBound p _) = spanOf p
-  spanOf (RegionTyParamBound l) = spanOf l
+  spanOf (TraitTyParamBound _ _ s) = spanOf s
+  spanOf (RegionTyParamBound _ s) = spanOf s
 
 -- | Partion a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and 'RegionTyParamBound' variants.
 partitionTyParamBounds :: [TyParamBound a] -> ([TyParamBound a], [TyParamBound a])

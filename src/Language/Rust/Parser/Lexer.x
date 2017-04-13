@@ -1235,7 +1235,8 @@ lexToken = do
           setInput inp'
           tok <- action (takeChars len inp)
           tok' <- swapToken tok
-          return (Spanned tok' (Span pos pos'))
+          pos'' <- getPosition
+          return (Spanned tok' (Span pos pos''))
 
 -- | Lexer for one non-whitespace 'Token'. The only tokens this cannot produce are 'Interpolated'
 -- and 'Space' (which includes comments that aren't doc comments).

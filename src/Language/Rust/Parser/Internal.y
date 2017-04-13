@@ -43,11 +43,11 @@ import Text.Read (readMaybe)
 -- in order to document the parsers, we have to alias them
 %name parseLit lit
 %name parseAttr attribute
-%name parseTy ty
+%name parseTy ty_general
 %name parsePat pat
 %name parseStmt stmt
 %name parseExpr expr
-%name parseItem item
+%name parseItem mod_item
 %name parseSourceFileContents source_file
 %name parseBlock block
 %name parseImplItem impl_item
@@ -294,11 +294,12 @@ ident :: { Spanned Ident }
 -- lexers to discard what would have been the troublesome '>>', '>=', or '>>=' token.
 gt :: { () }
   : {- empty -}   {%% \(Spanned tok s) ->
-      case tok of
-        GreaterGreater      -> pushToken (Spanned Greater s)      *> pushToken (Spanned Greater s)
-        GreaterEqual        -> pushToken (Spanned Equal s)        *> pushToken (Spanned Greater s)
-        GreaterGreaterEqual -> pushToken (Spanned GreaterEqual s) *> pushToken (Spanned Greater s)
-        _                   -> pushToken (Spanned tok s)
+      let s' = nudge 1 0 s; s'' = nudge 0 (-1) s
+      in case tok of
+           GreaterGreater      -> pushToken (Spanned Greater s')      *> pushToken (Spanned Greater s'')
+           GreaterEqual        -> pushToken (Spanned Equal s')        *> pushToken (Spanned Greater s'')
+           GreaterGreaterEqual -> pushToken (Spanned GreaterEqual s') *> pushToken (Spanned Greater s'')
+           _                   -> pushToken (Spanned tok s)
     }
 
 -------------
@@ -472,10 +473,10 @@ unsuffixed :: { Lit Span }
 -- parse_qualified_path(PathStyle::Type)
 -- qual_path :: Spanned (NonEmpty (Ident, PathParameters Span)) -> P (Spanned (QSelf Span, Path Span))
 qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
-  : '<' qual_path_suf(segs)                          { $2 }
-  | '<<' ty_qual_path_suf as ty_path '>' '::' segs   {
-      let segs = segments $4 <> unspan $7
-      in Spanned (QSelf $2 (length (segments $4)), $4{ segments = segs }) ($1 # $>)
+  : '<' qual_path_suf(segs)                     { let Spanned x _ = $2 in Spanned x ($1 # $2) }
+  | lt_ty_qual_path as ty_path '>' '::' segs   {
+      let segs = segments $3 <> unspan $6
+      in Spanned (QSelf (unspan $1) (length (segments $3)), $3{ segments = segs }) ($1 # $>)
     }
 
 -- Basically a qualified path, but ignoring the very first '<' token
@@ -483,28 +484,30 @@ qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
   : ty '>' '::' segs                { Spanned (QSelf $1 0, Path False (unspan $4) (spanOf $4)) ($1 # $>) }
   | ty as ty_path '>' '::' segs     {
       let segs = segments $3 <> unspan $6
-      in Spanned (QSelf $1 (length (segments $3)), $3{ segments = segs }) ($1 # $>)
+      in Spanned (QSelf $1 (length (segments $3)), $3{ segments = segs }) ($1 # $>) 
     }
 
--- Usually qual_path_suf is for... type paths! (Since it deals with annoying '<<', like generic_values below!
-ty_qual_path_suf :: { Ty Span }
-  : qual_path_suf(path_segments_without_colons)
-     { let (qself,path) = unspan $1; s = spanOf $1 in PathTy (Just qself) path s{ lo = incPos (lo s) (-1) } }
+-- Usually qual_path_suf is for... type paths! This consumes these but with a starting '<<' token.
+-- The underlying type has the right 'Span' (it doesn't include the very first '<', while the
+-- 'Spanned' wrapper does) 
+lt_ty_qual_path :: { Spanned (Ty Span) }
+  : '<<' qual_path_suf(path_segments_without_colons)
+     { let (qself,path) = unspan $2 in Spanned (PathTy (Just qself) path (nudge 1 0 ($1 # $2))) ($1 # $2) }
 
 -- parse_generic_args() but with the '<' '>'
 generic_values :: { Spanned ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
-  : '<' sep_by1(lifetime,',')  ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned (toList $2, toList $4, toList $6) ($1 # $>) }
-  | '<' sep_by1(lifetime,',')  ',' sep_by1T(ty,',')                          gt '>' { Spanned (toList $2, toList $4, []       ) ($1 # $>) }
-  | '<' sep_by1(lifetime,',')  ','                     sep_by1T(binding,',') gt '>' { Spanned (toList $2, [],        toList $4) ($1 # $>) }
-  | '<' sep_by1T(lifetime,',')                                               gt '>' { Spanned (toList $2, [],        []       ) ($1 # $>) }
-  | '<'                            sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned ([],        toList $2, toList $4) ($1 # $>) }
-  | '<'                            sep_by1T(ty,',')                          gt '>' { Spanned ([],        toList $2, []       ) ($1 # $>) }
-  | '<'                                                sep_by1T(binding,',') gt '>' { Spanned ([],        [],        toList $2) ($1 # $>) }
-  | '<'                                                                      gt '>' { Spanned ([],        [],        []       ) ($1 # $>) }
-  | '<<' ty_qual_path_suf      ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned ([],   $2 : toList $4, toList $6) ($1 # $>) }
-  | '<<' ty_qual_path_suf      ',' sep_by1T(ty,',')                          gt '>' { Spanned ([],   $2 : toList $4, []       ) ($1 # $>) }
-  | '<<' ty_qual_path_suf                          ',' sep_by1T(binding,',') gt '>' { Spanned ([],        [$2],      toList $4) ($1 # $>) }
-  | '<<' ty_qual_path_suf                                                    gt '>' { Spanned ([],        [$2],      []       ) ($1 # $>) }
+  : '<' sep_by1(lifetime,',')  ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned (toList $2,      toList $4, toList $6) ($1 # $>) }
+  | '<' sep_by1(lifetime,',')  ',' sep_by1T(ty,',')                          gt '>' { Spanned (toList $2,      toList $4, []       ) ($1 # $>) }
+  | '<' sep_by1(lifetime,',')  ','                     sep_by1T(binding,',') gt '>' { Spanned (toList $2,      [],        toList $4) ($1 # $>) }
+  | '<' sep_by1T(lifetime,',')                                               gt '>' { Spanned (toList $2,      [],        []       ) ($1 # $>) }
+  | '<'                            sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned ([],             toList $2, toList $4) ($1 # $>) }
+  | '<'                            sep_by1T(ty,',')                          gt '>' { Spanned ([],             toList $2, []       ) ($1 # $>) }
+  | '<'                                                sep_by1T(binding,',') gt '>' { Spanned ([],             [],        toList $2) ($1 # $>) }
+  | '<'                                                                      gt '>' { Spanned ([],             [],        []       ) ($1 # $>) }
+  | lt_ty_qual_path            ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned ([], unspan $1 : toList $3, toList $5) ($1 # $>) }
+  | lt_ty_qual_path            ',' sep_by1T(ty,',')                          gt '>' { Spanned ([], unspan $1 : toList $3, []       ) ($1 # $>) }
+  | lt_ty_qual_path                                ',' sep_by1T(binding,',') gt '>' { Spanned ([],            [unspan $1],toList $3) ($1 # $>) }
+  | lt_ty_qual_path                                                          gt '>' { Spanned ([],            [unspan $1],[]       ) ($1 # $>) }
 
 binding : ident '=' ty                             { (unspan $1, $3) }
 
@@ -581,6 +584,11 @@ lifetime :: { Lifetime Span }
 trait_ref :: { TraitRef Span }
   : ty_path                          { TraitRef $1 }
 
+-- All types, including trait types with plus and impl trait types
+ty_general :: { Ty Span }
+  : ty                               { $1 }
+  | impl_ty                          { $1 }
+
 -- parse_ty()
 -- See https://github.com/rust-lang/rfcs/blob/master/text/0438-precedence-of-plus.md
 -- All types, including trait types with plus
@@ -627,8 +635,8 @@ no_for_ty_prim :: { Ty Span }
   | fn fn_decl                       { BareFn Normal Rust [] $> ($1 # $>) }
   | typeof '(' expr ')'              { Typeof $3 ($1 # $>) }
   | '[' ty ';' expr ']'              { Array $2 $4 ($1 # $>) }
-  | '?' trait_ref                    { TraitObject [TraitTyParamBound (PolyTraitRef [] $2 (spanOf $2)) Maybe] ($1 # $2) }
-  | '?' for_lts trait_ref            { TraitObject [TraitTyParamBound (PolyTraitRef (unspan $2) $3 ($2 # $3)) Maybe] ($1 # $3) }
+  | '?' trait_ref                    { TraitObject [TraitTyParamBound (PolyTraitRef [] $2 (spanOf $2)) Maybe ($1 # $2)] ($1 # $2) }
+  | '?' for_lts trait_ref            { TraitObject [TraitTyParamBound (PolyTraitRef (unspan $2) $3 ($2 # $3)) Maybe ($1 # $3)] ($1 # $3) }
 
 -- All (non-sum) types starting with a 'for'
 for_ty_no_plus :: { Ty Span }
@@ -638,8 +646,11 @@ for_ty_no_plus :: { Ty Span }
   | for_lts fn fn_decl                   { BareFn Normal Rust (unspan $1) $> ($1 # $>) }
   | for_lts trait_ref                    {
       let poly = PolyTraitRef (unspan $1) $2 ($1 # $2)
-      in TraitObject [TraitTyParamBound poly None] ($1 # $2)
+      in TraitObject [TraitTyParamBound poly None ($1 # $2)] ($1 # $2)
     }
+
+impl_ty :: { Ty Span }
+  : impl sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait $2 ($1 # $2) }
 
 -- An optional lifetime followed by an optional mutability
 lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
@@ -662,17 +673,17 @@ fn_decl_with_self :: { FnDecl Span }
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
 ty_param_bound :: { TyParamBound Span }
-  : lifetime             { RegionTyParamBound $1 }
-  | poly_trait_ref       { TraitTyParamBound $1 None }
+  : lifetime             { RegionTyParamBound $1 (spanOf $1) }
+  | poly_trait_ref       { TraitTyParamBound $1 None (spanOf $1) }
 
 poly_trait_ref_mod_bound :: { TyParamBound Span }
-  : poly_trait_ref       { TraitTyParamBound $1 None }
-  | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe }
+  : poly_trait_ref       { TraitTyParamBound $1 None (spanOf $1) }
+  | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe ($1 # $2) }
 
 -- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+')
 ty_param_bound_mod :: { TyParamBound Span }
   : ty_param_bound       { $1 }
-  | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe }
+  | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe ($1 # $2) }
 
 
 -- parse_arg_general(false) -- does not require name
@@ -703,9 +714,9 @@ abi :: { Abi }
 -- Note that impl traits are still at RFC stage - they may eventually become accepted in more places
 -- than just return types.
 ret_ty :: { Maybe (Ty Span) }
-  : '->' ty_no_plus                                           { Just $2 }
-  | '->' impl sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { Just (ImplTrait $3 ($2 # $>)) }
-  | {- empty -}                                               { Nothing }
+  : '->' ty_no_plus                                  { Just $2 }
+  | '->' impl_ty                                     { Just $2 }
+  | {- empty -}                                      { Nothing }
 
 -- parse_poly_trait_ref()
 poly_trait_ref :: { PolyTraitRef Span }
@@ -729,7 +740,6 @@ lifetime_def :: { LifetimeDef Span }
 --------------
 
 -- TODO: Double-check that the error message in the one element tuple case makes sense. It should...
--- TODO: Figure out a way to deal with spans that don't fall on token boundaries (like '&& pat')
 --
 -- There is a funky trick going on here around 'IdentP'. When there is a binding mode (ie a 'mut' or
 -- 'ref') or an '@' pattern, everything is fine, but otherwise there is no difference between an
@@ -740,10 +750,10 @@ pat :: { Pat Span }
   | '_'                             { WildP (spanOf $1) }
   | '&' mut pat                     { RefP $3 Mutable ($1 # $3) }
   | '&' pat                         { RefP $2 Immutable ($1 # $2) }
-  | '&&' mut pat                    { let s = $1 # $3 in RefP (RefP $3 Mutable s{ lo = incPos (lo s) 1 }) Immutable s }
-  | '&&' pat                        { let s = $1 # $2 in RefP (RefP $2 Immutable s{ lo = incPos (lo s) 1 }) Immutable s }
+  | '&&' mut pat                    { RefP (RefP $3 Mutable (nudge 1 0 ($1 # $3))) Immutable ($1 # $3) }
+  | '&&' pat                        { RefP (RefP $2 Immutable (nudge 1 0 ($1 # $2))) Immutable ($1 # $2) }
   |     lit_expr                    { LitP $1 (spanOf $1) }
-  | '-' lit_expr                    { LitP (Unary [] Neg $2 (spanOf $2)) ($1 # $2) }
+  | '-' lit_expr                    { LitP (Unary [] Neg $2 ($1 # $2)) ($1 # $2) }
   | box pat                         { BoxP $2 ($1 # $2) }
   | binding_mode1 ident '@' pat     { IdentP (unspan $1) (unspan $2) (Just $4) ($1 # $>) }
   | binding_mode1 ident             { IdentP (unspan $1) (unspan $2) Nothing ($1 # $>) }
@@ -867,8 +877,8 @@ gen_arithmetic(lhs,rhs,rhs2) :: { Expr Span }
   | '-' lhs          %prec UNARY { Unary [] Neg $2 ($1 # $>) }
   | '&'      lhs     %prec UNARY { AddrOf [] Immutable $2 ($1 # $>) }
   | '&'  mut lhs     %prec UNARY { AddrOf [] Mutable $3 ($1 # $>) }
-  | '&&'     lhs     %prec UNARY { AddrOf [] Immutable (AddrOf [] Immutable $2 ($1 # $>)) ($1 # $>) }
-  | '&&' mut lhs     %prec UNARY { AddrOf [] Immutable (AddrOf [] Mutable $3 ($1 # $>)) ($1 # $>) }
+  | '&&'     lhs     %prec UNARY { AddrOf [] Immutable (AddrOf [] Immutable $2 (nudge 1 0 ($1 # $2))) ($1 # $2) }
+  | '&&' mut lhs     %prec UNARY { AddrOf [] Immutable (AddrOf [] Mutable $3 (nudge 1 0 ($1 # $3))) ($1 # $3) }
   | box lhs          %prec UNARY { Box [] $2 ($1 # $>) }
   | lhs ':' ty_no_plus           { TypeAscription [] $1 $3 ($1 # $>) }
   | lhs as ty_no_plus            { Cast [] $1 $3 ($1 # $>) }
@@ -1021,8 +1031,8 @@ block_like_expr :: { Expr Span }
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }
-  : if             nostruct_expr block else_expr        { If [] $2 $3 $4 ($1 # $>) }
-  | if let pat '=' nostruct_expr block else_expr        { IfLet [] $3 $5 $6 $7 ($1 # $>) }
+  : if             nostruct_expr block else_expr        { If [] $2 $3 $4 ($1 # $3 # $>) }
+  | if let pat '=' nostruct_expr block else_expr        { IfLet [] $3 $5 $6 $7 ($1 # $6 # $>) }
 
 else_expr :: { Maybe (Expr Span) }
   : else block      { Just (BlockExpr [] $2 (spanOf $2)) }
@@ -1076,23 +1086,23 @@ paren_expr :: { Expr Span }
 -- Closure
 lambda_expr :: { Expr Span }
   : move args '->' ty_no_plus block
-    { Closure [] Value (FnDecl $2 (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+    { Closure [] Value (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
   | move args         expr
-    { Closure [] Value (FnDecl $2 Nothing   False (spanOf $2)) $> ($1 # $>) }
+    { Closure [] Value (FnDecl (unspan $2) Nothing   False (spanOf $2)) $> ($1 # $>) }
   |      args '->' ty_no_plus block
-    { Closure [] Ref   (FnDecl $1 (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+    { Closure [] Ref   (FnDecl (unspan $1) (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
   |      args         expr
-    { Closure [] Ref   (FnDecl $1 Nothing   False (spanOf $1)) $> ($1 # $>) }
+    { Closure [] Ref   (FnDecl (unspan $1) Nothing   False (spanOf $1)) $> ($1 # $>) }
 
 -- Closure expression in a "no struct context"
 lambda_expr_nostruct :: { Expr Span }
-  : move args nostruct_expr  { Closure [] Value (FnDecl $2 Nothing False (spanOf $2)) $> ($1 # $3) }
-  |      args nostruct_expr  { Closure [] Ref   (FnDecl $1 Nothing False (spanOf $1)) $> ($1 # $2) }
+  : move args nostruct_expr  { Closure [] Value (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $3) }
+  |      args nostruct_expr  { Closure [] Ref   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $2) }
 
 -- Closure arguments
-args :: { [Arg Span] }
-  : '||'                          { [] }
-  | '|' sep_byT(arg,',') '|'      { $2 }
+args :: { Spanned [Arg Span] }
+  : '||'                          { Spanned [] (spanOf $1) }
+  | '|' sep_byT(arg,',') '|'      { Spanned $2 ($1 # $3) }
 
 arg :: { Arg Span }
   : ntArg                         { $1 }
@@ -1266,15 +1276,15 @@ where_predicate :: { WherePredicate Span }
 
 
 item_impl :: { Item Span }
-  : safety_impl generics ty_prim              where_clause impl_items
-    { Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $4 } Nothing $3 (snd $>)) InheritedV ($1 # snd $>) }
-  | safety_impl generics '(' ty_no_plus ')'   where_clause impl_items
-    { Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $6 } Nothing (ParenTy $4 ($3 # $5)) (snd $>)) InheritedV ($1 # snd $>) }
-  | safety_impl generics '!' trait_ref for ty where_clause impl_items
-    { Item (mkIdent "") (fst $>) (Impl (unspan $1) Negative $2{ whereClause = $7 } (Just $4) $6 (snd $>)) InheritedV ($1 # snd $>) }
-  | safety_impl generics     trait_ref for ty where_clause impl_items
-    { Item (mkIdent "") (fst $>) (Impl (unspan $1) Positive $2{ whereClause = $6 } (Just $3) $5 (snd $>)) InheritedV ($1 # snd $>) }
-  | safety_impl generics     trait_ref for '..' '{' '}'
+  : safety_impl generics ty_prim              where_clause '{' impl_items '}'
+    { Item (mkIdent "") (fst $6) (Impl (unspan $1) Positive $2{ whereClause = $4 } Nothing $3 (snd $6)) InheritedV ($1 # $>) }
+  | safety_impl generics '(' ty_no_plus ')'   where_clause '{' impl_items '}'
+    { Item (mkIdent "") (fst $8) (Impl (unspan $1) Positive $2{ whereClause = $6 } Nothing (ParenTy $4 ($3 # $5)) (snd $8)) InheritedV ($1 # $>) }
+  | safety_impl generics '!' trait_ref for ty where_clause '{' impl_items '}'
+    { Item (mkIdent "") (fst $9) (Impl (unspan $1) Negative $2{ whereClause = $7 } (Just $4) $6 (snd $9)) InheritedV ($1 # $>) }
+  | safety_impl generics     trait_ref for ty where_clause '{' impl_items '}'
+    { Item (mkIdent "") (fst $8) (Impl (unspan $1) Positive $2{ whereClause = $6 } (Just $3) $5 (snd $8)) InheritedV ($1 # $>) }
+  | safety_impl generics     trait_ref for '..'            '{'            '}'
     { Item (mkIdent "") [] (case $2 of { Generics [] [] _ _ -> (DefaultImpl (unspan $1) $3); _ -> error "todo" }) InheritedV ($1 # $>) }
 
 safety_impl :: { Spanned Unsafety }
@@ -1282,8 +1292,8 @@ safety_impl :: { Spanned Unsafety }
   | unsafe impl   { Spanned Unsafe ($1 # $2) }
 
 impl_items :: { ([Attribute Span], [ImplItem Span]) }
-  : '{'             many(impl_item) '}'  { ([], $2) }
-  | '{' inner_attrs many(impl_item) '}'  { (toList $2, $3) }
+  :             many(impl_item)  { ([], $1) }
+  | inner_attrs many(impl_item)  { (toList $1, $2) }
 
 impl_item :: { ImplItem Span }
   : ntImplItem                                          { $1 }
@@ -1644,6 +1654,12 @@ parseSourceFile = do
   sh <- lexShebangLine
   (as,items) <- parseSourceFileContents
   pure (SourceFile sh as items)
+
+-- | Nudge the span endpoints of a 'Span' value
+nudge :: Int -> Int -> Span -> Span
+nudge leftSide rightSide (Span l r) = Span l' r'
+  where l' = incPos l leftSide
+        r' = incPos r rightSide
 
 
 -- Functions related to `NonEmpty` that really should already exist...

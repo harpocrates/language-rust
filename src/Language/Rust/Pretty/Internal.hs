@@ -684,7 +684,7 @@ printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs a
                                , block (vsep (printInnerAttrs attrs : (printImplItem `map` i)))
                                ]
   Trait u g tys i   -> let tys' = map (\t -> case t of
-                                               TraitTyParamBound ptr Maybe -> Left ("for ?" <+> printTraitRef (traitRef ptr))
+                                               TraitTyParamBound ptr Maybe x -> Left ("for" <+> annotate x ("?" <> printTraitRef (traitRef ptr)))
                                                _ -> Right t)
                                       tys
                        in hsep [ printVis vis, printUnsafety u, "trait", printIdent ident <> printGenerics g
@@ -710,8 +710,8 @@ printBounds prefix (b:bs) = align (fillSep ((prefix <+> printBound b) : [ "+" <+
 
 -- | Print a type parameter bound
 printBound :: TyParamBound a -> Doc a
-printBound (RegionTyParamBound lt) = printLifetime lt
-printBound (TraitTyParamBound tref modi) = when (modi == Maybe) "?" <> printPolyTraitRef tref
+printBound (RegionTyParamBound lt x) = annotate x $ printLifetime lt
+printBound (TraitTyParamBound tref modi x) = annotate x $ when (modi == Maybe) "?" <> printPolyTraitRef tref
 
 -- | Print the formal lifetime list (@print_formal_lifetime_list@)
 printFormalLifetimeList :: [LifetimeDef a] -> Doc a
