@@ -29,8 +29,7 @@ indicates
   * a bug in `rustc`
   * that there is a newer version of `rustc` which made a breaking change to this syntax
 
-For the pretty-printer, bugs are a bit tougher to list exhaustively. As a function of the parser, we can
-say that `parse . pretty == id`. Anything violating that is a bug. Suggestions for better layout
+For the pretty-printer, bugs are a bit tougher to list exhaustively. Suggestions for better layout
 algorithms are most welcome!
 
 [0]: https://www.rust-lang.org/en-US/

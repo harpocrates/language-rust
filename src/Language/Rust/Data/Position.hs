@@ -131,7 +131,7 @@ instance Monad Spanned where
   Spanned x s1 >>= f = let Spanned y s2 = f x in Spanned y (s1 <> s2) 
 
 instance Show a => Show (Spanned a) where
-  show (Spanned p s) = "at " ++ show p ++ ": " ++ show s
+  show = show . unspan
 
 
 -- | Describes nodes that can be located - their span can be extracted from them. In general, we

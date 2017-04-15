@@ -19,17 +19,17 @@ inp :: InputStream
 sourceFile :: SourceFile Span
 
 -}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances, DeriveDataTypeable #-}
 
 module Language.Rust.Parser (
   -- * Parsing
-  parse, Parse(..), P,execParser, initPos, Span,
+  parse, parse', Parse(..), P, execParser, initPos, Span,
   -- * Lexing
   lexToken, lexNonSpace, lexTokens, translateLit,
   -- * Input stream
   readInputStream, inputStreamToString, inputStreamFromString,
   -- * Error reporting
-  lexicalError, parseError,
+  lexicalError, parseError, ParseFail,
 ) where
 
 import Language.Rust.Syntax.AST
@@ -40,9 +40,29 @@ import Language.Rust.Parser.Lexer (lexToken, lexNonSpace, lexTokens, lexicalErro
 import Language.Rust.Parser.Literals (translateLit)
 import Language.Rust.Parser.ParseMonad (P, execParser, parseError)
 
+import Data.Typeable (Typeable)
+import Control.Exception (Exception, throw) 
+
 -- | Parse something from an input stream (it is assumed the initial position is 'initPos')
 parse :: Parse a => InputStream -> Either (Position,String) a
 parse is = execParser parser is initPos
+
+-- | Same as 'parse', but throws a 'ParseFail' exception if it cannot parse. This function is
+-- intended for situations in which you are already stuck catching exceptions - otherwise you should
+-- prefer 'parse'.
+parse' :: Parse a => InputStream -> a
+parse' is = case execParser parser is initPos of
+              Left (pos, msg) -> throw (ParseFail pos msg)
+              Right x -> x
+
+-- | Exceptions that occur during parsing
+data ParseFail = ParseFail Position String deriving (Eq, Typeable)
+
+instance Show ParseFail where
+  show (ParseFail pos msg) = unwords [ "parse failure at", show pos, "(" ++ msg ++ ")" ]
+
+instance Exception ParseFail
+  
 
 -- | Describes things that can be parsed
 class Parse a where
