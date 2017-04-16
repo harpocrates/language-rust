@@ -21,7 +21,7 @@ import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
-import Text.PrettyPrint.Annotated.WL (pretty, hcat, cat, indent, punctuate, group, angles, space, flatten, align, fillSep, text, vcat, char, annotate, noAnnotate, parens, brackets, (<>), Doc)
+import Text.PrettyPrint.Annotated.WL (pretty, hcat, cat, punctuate, group, angles, space, flatten, align, fillSep, text, vcat, char, {-annotate,-} noAnnotate, flatAlt, parens, brackets, (<>), Doc)
 import qualified Text.PrettyPrint.Annotated.WL as WL
 
 import Data.Char (intToDigit, ord, chr)
@@ -31,6 +31,12 @@ import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
 import Data.Maybe (listToMaybe, maybeToList)
 import Data.Word (Word8)
+import Data.List (mapAccumL)
+
+-- TODO: add annotations back
+annotate :: a -> Doc a -> Doc a
+annotate _ doc = doc
+
 
 -- Rust style guide to explore:
 -- Useful stuff from based on https://aturon.github.io/README.html
@@ -67,9 +73,17 @@ hsep = foldr (<+>) mempty
 (<#>) :: Doc a -> Doc a -> Doc a
 (<#>) = liftOp (WL.<#>)
 
+-- | Lifted version of Wadler's @<##>@
+(<##>) :: Doc a -> Doc a -> Doc a
+(<##>) = liftOp (WL.<##>)
+
 -- | Lifted version of Wadler's @vsep@
 vsep :: Foldable f => f (Doc a) -> Doc a
 vsep = foldr (<#>) mempty
+
+-- | Lifted version of Wadler's @sep@
+sep :: Foldable f => f (Doc a) -> Doc a
+sep = group . vsep
 
 -- | Lifted version of Wadler's @</>@
 (</>) :: Doc a -> Doc a -> Doc a
@@ -88,54 +102,42 @@ when cond d = if cond then d else mempty
 perhaps :: (a -> Doc b) -> Maybe a -> Doc b
 perhaps = maybe mempty
 
--- | Checks that a 'Doc' will for sure render on a single line 
-oneLine :: Doc a -> Bool
-oneLine (WL.FlatAlt d _) = oneLine d
-oneLine (WL.Cat a b) = oneLine a && oneLine b
-oneLine (WL.Union a b) = oneLine a && oneLine b
-oneLine (WL.Annotate _ d) = oneLine d
-oneLine WL.Line = False
-oneLine _ = True
-
--- | Make a curly-brace delimited block, where the body is just one 'Doc'. When possible, permit
--- fitting everything on one line.
-block :: Doc a -> Doc a
-block b | oneLine b = hsep [ "{", b, "}" ] `WL.Union` vsep [ "{", indent 2 b, "}" ]
-        | otherwise = vsep [ "{", indent 2 b, "}" ]
- 
--- | Same as 'block', but the lines are passed in as a list and the elements of the output are comma
--- delimited
-blockComma :: [Doc a] -> Doc a
-blockComma = blockAttrsPunctuated mempty ","
-
--- | Same as 'blockComma', but with the possibility of adding an attribute 'Doc'
-blockAttrsComma :: Doc a -> [Doc a] -> Doc a
-blockAttrsComma as = blockAttrsPunctuated as ","
-
--- | Same as 'blockAttrsComma', but without the commas
-blockAttrs :: Doc a -> [Doc a] -> Doc a
-blockAttrs as = blockAttrsPunctuated as mempty
-
--- | The usual C-style language brace block, with the hanging indent, but adapted for Rust. The
--- first argument is the attributes, then the seperator between lines (between every element if
--- everything fits on one line, but otherwise also after the last element), and finally the lines
--- themselves.
-blockAttrsPunctuated :: Doc a -> Doc a -> [Doc a] -> Doc a
-blockAttrsPunctuated WL.Empty _ [] = "{ }"
-blockAttrsPunctuated as _ [] = "{" <+> as <+> "}"
-blockAttrsPunctuated as s ds = if all oneLine ds then WL.Union singleLine multiLine else multiLine
+-- | This is the most general function for printing blocks. It operates with any delimiter, any
+-- seperator, an optional leading attribute doc (which isn't followed by a seperator), and wraps a
+-- list of entries. It has been tweaked to look Just Right (TM) for the usual cases.
+--
+-- Note that this will try to fit things on one line when possible, so if you want a block that is
+-- sure /not/ to be condensed on one line (e.g. for a fucntion), you have to construct it manually.
+block :: Delim           -- ^ outer delimiters
+       -> Doc a          -- ^ seperator
+       -> Doc a          -- ^ attributes doc, after which no seperator will (use 'mempty' to ignore)
+       -> [Doc a]        -- ^ entries
+       -> Doc a
+block delim s as xs = group (lDel # vsep (as' ++ ys) # rDel)
   where
-    (ds',d') = (Prelude.init ds, Prelude.last ds)
-    singleLine = "{" <+>           hsep (as : [ d <> s | d <- ds' ])  <+> d' <+> "}"
-    multiLine = "{" <#> indent 2 (vsep (as : [ d <> s | d <- ds  ])) <#>        "}"
+  -- left and right delimiter lists
+  (lDel,rDel) = case delim of
+                  Paren ->   ("(", ")")
+                  Bracket -> ("[", "]")
+                  Brace ->   ("{", "}")
+                  NoDelim -> (mempty, mempty)
 
--- | Given a delimiter token, this wraps the 'Doc' with that delimiter. For the 'Brace' case, tries
--- to fit everything on one line, but otherwise indents everything nicely.
-delimiter :: Delim -> Doc a -> Doc a
-delimiter Paren   = parens
-delimiter Bracket = brackets
-delimiter Brace   = block
-delimiter NoDelim = id
+  -- method of contenating delimiters with the rest of the body
+  (#) = case delim of { Paren -> (<##>); _ -> (<#>) }
+
+  -- indentation level
+  n = case delim of {  NoDelim -> 0; _ -> 2 }
+
+  -- attributes
+  as' = case as of
+          WL.Empty -> []
+          as -> [ flatAlt (WL.indent n as) (WL.flatten as) ]
+
+  -- list of entries
+  ys = snd $ mapAccumL (\(x:xs) _ -> (xs, flatAlt (WL.indent n x <> s)
+                                                  (WL.flatten x <> unless (null xs) s)))
+                       xs xs
+  
 
 -- * Pretty printing the AST
 -- As much as possible, these functions should say which function in the @rustc@ printer they are
@@ -165,8 +167,8 @@ printType (Array ty v x)        = annotate x ("[" <> printType ty <> ";" <+> pri
 printType (Ptr mut ty x)        = annotate x ("*" <> printFullMutability mut <+> printType ty)
 printType (Rptr lt mut ty x)    = annotate x ("&" <> perhaps printLifetime lt <+> printMutability mut <+> printType ty)
 printType (Never x)             = annotate x "!"
-printType (TupTy [elt] x)       = annotate x ("(" <> printType elt <> ",)")
-printType (TupTy elts x)        = annotate x ("(" <> hsep (punctuate "," (printType `map` elts)) <> ")")
+printType (TupTy [elt] x)       = annotate x (block Paren ""  mempty [ printType elt <> "," ])
+printType (TupTy elts x)        = annotate x (block Paren "," mempty (printType `map` elts))
 printType (PathTy Nothing p x)  = annotate x (printPath p False)
 printType (PathTy (Just q) p x) = annotate x (printQPath p q False)
 printType (TraitObject bs x)    = annotate x (printBounds mempty (toList bs))
@@ -181,14 +183,14 @@ printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
 
 -- | Print a macro (@print_mac@)
 printMac :: Mac a -> Delim -> Doc a
-printMac (Mac path tts x) d = annotate x (printPath path False <> "!" <> delimiter d body)
-  where body = align (fillSep [ printTt tt | tt <- tts ])
+printMac (Mac path tts x) d = annotate x (printPath path False <> "!" <> body)
+  where body = block d mempty mempty [ fillSep (printTt <$> tts) ]
  
 
 -- | Print a token tree (@print_tt@)
 printTt :: TokenTree -> Doc a
 printTt (Token _ t) = printToken t 
-printTt (Delimited _ d _ tts _) = delimiter d (hcat (printTt <$> tts))
+printTt (Delimited _ d _ tts _) = block d mempty mempty [ fillSep (printTt <$> tts) ]
 printTt (Sequence _ tts s op) = "$" <> parens body <> perhaps printToken s <> suf
   where body = cat [ printTt tt | tt <- tts ]
         suf = case op of ZeroOrMore -> "*"
@@ -312,11 +314,12 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
   case expr of
     Box _ e x                   -> annotate x ("box" <+> printExpr e)
     InPlace _ place e x         -> annotate x (hsep [ printExpr place, "<-", printExpr e ])
-    Vec as exprs x              -> annotate x (brackets (printInnerAttrs as <+> commas exprs printExpr))
-    Call _ func args x          -> annotate x (printExpr func <> "(" <> commas args printExpr <> ")")
+    Vec as exprs x              -> annotate x (block Bracket "," (printInnerAttrs as) (printExpr <$> exprs))
+    Call _ func args x          -> annotate x (printExpr func <> block Paren "," mempty (printExpr <$> args))
     MethodCall _ s i ts' as x   -> let tys' = perhaps (\ts -> "::<" <> commas ts printType <> ">") ts'
-                                   in annotate x (hcat [ printExpr s, ".", printIdent i, tys', "(", commas as printExpr, ")" ])
-    TupExpr as es x             -> annotate x ("(" <> printInnerAttrs as <+> commas es printExpr <> when (length es == 1) "," <> ")")
+                                   in annotate x (hcat [ printExpr s, ".", printIdent i, tys', block Paren "," mempty (printExpr <$> as) ])
+    TupExpr as [e] x            -> annotate x (block Paren ""  (printInnerAttrs as) [ printExpr e <> "," ])
+    TupExpr as es x             -> annotate x (block Paren "," (printInnerAttrs as) (printExpr <$> es))
     Binary _ op lhs rhs x       -> annotate x (hsep [ printExpr lhs, printBinOp op, printExpr rhs ])
     Unary _ op e x              -> annotate x (printUnOp op <> printExpr e)
     Lit _ lit x                 -> annotate x (printLit lit)
@@ -332,7 +335,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Match as e arms x           -> let arms' = if null arms
                                                  then [] 
                                                  else (printArm True `map` Prelude.init arms) ++ [ printArm False (Prelude.last arms) ]
-                                   in annotate x (hsep [ "match", printExpr e, blockAttrs (printInnerAttrs as) arms' ])
+                                   in annotate x (hsep [ "match", printExpr e, block Brace mempty (printInnerAttrs as) arms' ])
     Closure _ cap decl body x   -> annotate x (when (cap == Value) "move" <+> printFnBlockArgs decl <+> printExpr body)
     BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs blk attrs)
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
@@ -349,9 +352,9 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Ret _ result x              -> annotate x ("return" <+> perhaps printExpr result)
     InlineAsmExpr _ inlineAsm x -> annotate x (printInlineAsm inlineAsm)
     MacExpr _ m x               -> annotate x (printMac m Paren)
-    Struct as p fs Nothing x    -> annotate x (printPath p True <+>  blockAttrsComma (printInnerAttrs as) (printField `map` fs))
+    Struct as p fs Nothing x    -> annotate x (printPath p True <+> block Brace "," (printInnerAttrs as) (printField `map` fs))
     Struct as p fs (Just d) x   -> let body = [ printField f <> "," | f <- fs ] ++ [ ".." <> printExpr d ] 
-                                   in annotate x (printPath p True <+> blockAttrs (printInnerAttrs as) body)
+                                   in annotate x (printPath p True <+> block Brace mempty (printInnerAttrs as) body)
     Repeat attrs e cnt x        -> annotate x (brackets (printInnerAttrs attrs <+> printExpr e <> ";" <+> printExpr cnt))
     ParenExpr attrs e x         -> annotate x (parens (printInnerAttrs attrs <+> printExpr e))
     Try _ e x                   -> annotate x (printExpr e <> "?")
@@ -444,34 +447,22 @@ printArm end (Arm as pats guard body x) = annotate x (printOuterAttrs as
   <+> perhaps (\e -> "if" <+> printExpr e) guard
   <+> "=>"
   <+> case body of 
-         BlockExpr _ blk _ -> printBlockUnclosed blk <> when (rules blk == Unsafe && end) ","
+         BlockExpr _ blk _ -> printBlock blk <> when (rules blk == Unsafe && end) ","
          _ -> printExpr body <> when end ",")
 
 -- | Print a block
 printBlock :: Block a -> Doc a
 printBlock blk = printBlockWithAttrs blk []
 
--- | Print a block (@print_block_unclosed@ or @print_block_unclosed_indent@)
-printBlockUnclosed :: Block a -> Doc a
-printBlockUnclosed = printBlock -- TODO maybe?
-
--- | Print a block with attributes (@print_block_unclosed_with_attrs@)
-printBlockUnclosedWithAttrs :: Block a -> [Attribute a] -> Doc a
-printBlockUnclosedWithAttrs = printBlockWithAttrs -- TODO maybe?
-
 -- | Print a block with attributes (@print_block_with_attrs@ or @print_block_maybe_unclosed@)
 printBlockWithAttrs :: Block a -> [Attribute a] -> Doc a
-printBlockWithAttrs (Block stmts rules x) as = annotate x (safety <+> blockAttrs (printInnerAttrs as) (body ++ [ lastStmt ]))
+printBlockWithAttrs (Block stmts rules x) as = annotate x (printUnsafety rules <+> block Brace mempty (printInnerAttrs as) (body ++ [ lastStmt ]))
   where
   body = if null stmts then [] else printStmt `map` Prelude.init stmts
   
   lastStmt = unless (null stmts) (case last stmts of
                                     NoSemi expr _ -> printExprOuterAttrStyle expr False
                                     stmt -> printStmt stmt)
-
-  safety = case rules of
-             Normal -> mempty
-             Unsafe -> "unsafe"
 
 -- | Print an @else@ expression (@print_else@)
 printElse :: Maybe (Expr a) -> Doc a
@@ -501,27 +492,6 @@ printBinOp LeOp = "<="
 printBinOp NeOp = "!="
 printBinOp GeOp = ">="
 printBinOp GtOp = ">"
-
--- | Find the precedence of a binary operation (@util::parser::AssocOp::precedence@)
-opPrecedence :: BinOp -> Int
-opPrecedence AddOp = 12
-opPrecedence SubOp = 12
-opPrecedence MulOp = 13
-opPrecedence DivOp = 13
-opPrecedence RemOp = 13
-opPrecedence AndOp = 6
-opPrecedence OrOp = 5
-opPrecedence BitXorOp = 9
-opPrecedence BitAndOp = 10
-opPrecedence BitOrOp = 8
-opPrecedence ShlOp = 11
-opPrecedence ShrOp = 11
-opPrecedence EqOp = 7
-opPrecedence LtOp = 7
-opPrecedence LeOp = 7
-opPrecedence NeOp = 7
-opPrecedence GeOp = 7
-opPrecedence GtOp = 7
 
 -- | Print a unary operator
 printUnOp :: UnOp -> Doc a
@@ -628,11 +598,13 @@ printEitherAttrs attrs kind inline = unless (null attrs') (glue attrs')
 printAttr :: Attribute a -> Bool -> Doc a
 printAttr a@(Attribute Inner value isSugaredDoc x) inline
   | isSugaredDoc && inline = annotate x ("/*!" <+> perhaps text (valueStr a) <+> "*/")
-  | isSugaredDoc           = annotate x ("//!" <+> perhaps text (valueStr a))
+  | isSugaredDoc           = annotate x (flatAlt ("//!" <+> perhaps text (valueStr a))
+                                                 (printAttr a True))
   | otherwise              = annotate x ("#![" <> printMetaItem value <> "]")
 printAttr a@(Attribute Outer value isSugaredDoc x) inline
   | isSugaredDoc && inline = annotate x ("/**" <+> perhaps text (valueStr a) <+> "*/")
-  | isSugaredDoc           = annotate x ("///" <+> perhaps text (valueStr a))
+  | isSugaredDoc           = annotate x (flatAlt ("///" <+> perhaps text (valueStr a))
+                                                 (printAttr a True))
   | otherwise              = annotate x ("#[" <> printMetaItem value <> "]")
 
 -- | Try to extract a string from an attribute
@@ -669,8 +641,8 @@ printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs a
   Static ty m e     -> hsep [ printVis vis, "static", printMutability m, printIdent ident <> ":", printType ty, "=", printExpr e <> ";" ]
   ConstItem t e     -> hsep [ printVis vis, "const", printIdent ident <> ":", printType t, "=", printExpr e <> ";" ]
   Fn d s c a t b    -> printFn d s c a (Just ident) t vis <+> printBlockWithAttrs b attrs
-  Mod items         -> hsep [ printVis vis, "mod", printIdent ident, block (printMod items attrs) ]
-  ForeignMod a i    -> hsep [ printAbi a, block (printForeignMod i attrs) ]
+  Mod items         -> hsep [ printVis vis, "mod", printIdent ident, printMod items attrs ]
+  ForeignMod a i    -> hsep [ printAbi a, printForeignMod i attrs ]
   TyAlias ty ps     -> hsep [ printVis vis, "type", printIdent ident <> printGenerics ps <> printWhereClause (whereClause ps), "=", printType ty <> ";" ]
   Enum vars ps      -> printEnumDef vars ps ident vis
   StructItem s g    -> hsep [ printVis vis, "struct", printStruct s g ident True True ]
@@ -681,7 +653,7 @@ printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs a
                        in hsep [ printVis vis, printUnsafety u, "impl", generics
                                , traitref <+> printType ty
                                , printWhereClause (whereClause g)
-                               , block (vsep (printInnerAttrs attrs : (printImplItem `map` i)))
+                               , block Brace mempty (printInnerAttrs attrs) (printImplItem `map` i)
                                ]
   Trait u g tys i   -> let tys' = map (\t -> case t of
                                                TraitTyParamBound ptr Maybe x -> Left ("for" <+> annotate x ("?" <> printTraitRef (traitRef ptr)))
@@ -689,7 +661,7 @@ printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs a
                                       tys
                        in hsep [ printVis vis, printUnsafety u, "trait", printIdent ident <> printGenerics g
                                , hsep (lefts tys'), printBounds ":" (rights tys'), printWhereClause (whereClause g)
-                               , block (vsep (printTraitItem `map` i))
+                               , block Brace mempty (printInnerAttrs attrs) (printTraitItem `map` i)
                                ]
   MacItem m         -> printMac m Paren <> ";" 
 
@@ -774,7 +746,7 @@ printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a
 printStruct structDef generics ident printFinalizer annotateGenerics =
   printIdent ident <> gen
     <> case structDef of 
-          StructD fields x -> annotate x $ space <> wc <+> blockComma (printStructField `map` fields)
+          StructD fields x -> annotate x $ space <> wc <+> block Brace "," mempty (printStructField `map` fields)
           TupleD fields x -> annotate x $ parens (commas fields printStructField) <+> wc <+> when printFinalizer ";" 
           UnitD x -> annotate x $ wc <+> when printFinalizer ";"
   where gen = if annotateGenerics then printGenerics generics else noAnnotate (printGenerics generics)
@@ -794,7 +766,7 @@ printEnumDef :: [Variant a] -> Generics a -> Ident -> Visibility a -> Doc a
 printEnumDef variants generics ident vis =
   printVis vis <+> "enum" <+> (printIdent ident <> printGenerics generics)
     <+> printWhereClause (whereClause generics)
-    <+> blockComma [ printOuterAttrs as <#> printVariant v  | v@Variant{ attrs = as } <- variants ]
+    <+> block Brace "," mempty [ printOuterAttrs as <#> printVariant v  | v@Variant{ attrs = as } <- variants ]
 
 -- | Print a variant (@print_variant@)
 printVariant :: Variant a -> Doc a
@@ -825,7 +797,7 @@ printFn decl unsafety constness abi name generics vis =
 
 -- | Print the function arguments and the return type (@print_fn_args_and_ret@)
 printFnArgsAndRet :: FnDecl a -> Doc a
-printFnArgsAndRet (FnDecl args ret var x) = annotate x ("(" <> align (fillSep args') <> ")" </> ret')
+printFnArgsAndRet (FnDecl args ret var x) = annotate x (block Paren mempty mempty args' </> ret')
   where ret' = perhaps (\t -> "->" <+> printType t) ret
         args' = if var then [ printArg a False <> "," | a <- args ] ++ [ "..." ]
                        else punctuate "," ((`printArg` False) `map` args)
@@ -857,7 +829,7 @@ printFullMutability Immutable = "const"
 printPat :: Pat a -> Doc a
 printPat (WildP x)                      = annotate x "_"
 printPat (IdentP bm p s x)              = annotate x (printBindingMode bm <+> printIdent p <+> perhaps (\p' -> "@" <+> printPat p') s)
-printPat (StructP p fs b x)             = annotate x (printPath p True <+> blockComma body)
+printPat (StructP p fs b x)             = annotate x (printPath p True <+> block Brace "," mempty body)
   where body = (printFieldPat `map` fs) ++ [ ".." | b ]
 printPat (TupleStructP p es Nothing x)  = annotate x (printPath p True <> "(" <> commas es printPat <> ")")
 printPat (TupleStructP p es (Just d) x) = let (before,after) = splitAt d es
@@ -907,11 +879,11 @@ printAbi abi = "extern" <+> "\"" <> text (show abi) <> "\""
  
 -- | Print the interior of a module given the list of items and attributes in it (@print_mod@)
 printMod :: [Item a] -> [Attribute a] -> Doc a
-printMod items attrs = vsep (printInnerAttrs attrs : (printItem `map` items))
+printMod items attrs = block Brace mempty (printInnerAttrs attrs) (printItem `map` items)
 
 -- | Print the interior of a foreign module given the list of items and attributes in it (@print_mod@)
 printForeignMod :: [ForeignItem a] -> [Attribute a] -> Doc a
-printForeignMod items attrs = vsep (printInnerAttrs attrs : (printForeignItem `map` items))
+printForeignMod items attrs = block Brace mempty (printInnerAttrs attrs) (printForeignItem `map` items)
 
 -- | Print generics (@print_generics@)
 -- Remark: we are discarding the where clause because it gets printed seperately from the rest of
