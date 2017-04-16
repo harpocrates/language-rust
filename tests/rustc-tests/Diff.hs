@@ -26,7 +26,7 @@ diff explanation v j = tell [ msg ]
 diffSourceFile :: SourceFile a -> Value -> Diff
 diffSourceFile s@(SourceFile _ as items) val = do
   -- Check attributes
-  let as' = val ^.. key "attrs" . values
+  let as' = val ^.. key "attrs" . values . key "node"
   when (length as /= length as') $
     diff "different number of attributes" s val
   sequence_ [ diffAttribute a a' | (a,a') <- as `zip` as' ]
@@ -42,7 +42,7 @@ diffAttribute a@(Attribute sty meta sug _) val = do
 
   -- Check meta item
   let meta' = val ^?! key "value"
-  diffMetaItem meta meta'
+--  diffMetaItem meta meta'
 
   -- Check sugared doc
   when (val ^?! key "is_sugared_doc" . _Bool /= sug) $

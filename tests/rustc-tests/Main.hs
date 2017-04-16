@@ -13,19 +13,20 @@ import Data.Aeson (decode', Value)
 import Language.Rust.Parser (parse', readInputStream, Span)
 import Language.Rust.Syntax.AST (SourceFile)
 
-import System.Directory (listDirectory, doesFileExist)
+import System.Directory (getCurrentDirectory, listDirectory, doesFileExist)
 import System.Process (createProcess, proc, CreateProcess(..), StdStream(..))
+import System.FilePath ((</>), takeFileName)
 
 import Test.Framework (defaultMain)
 import Test.Framework.Providers.API
 
--- TODO: Make folder path relative
 main :: IO ()
 main = do
-  let folder = "/Users/atheriault/Scratch/language-rust/sample-sources/"
-  entries <- map (folder ++) <$> listDirectory folder
+  workingDirectory <- getCurrentDirectory
+  let folder = workingDirectory </> "sample-sources"
+  entries <- map (folder </>) <$> listDirectory folder
   files <- filterM doesFileExist entries
-  defaultMain (map (\f -> Test f (DiffTest f)) files)
+  defaultMain (map (\f -> Test (takeFileName f) (DiffTest f)) files)
 
 
 -- | Given a path pointing to a rust source file, read that file and parse it into a 'SourceFile'
@@ -35,10 +36,12 @@ getSourceFile fileName = parse' <$> readInputStream fileName
 -- | Given a path pointing to a rust source file, read that file and parse it into JSON
 getJsonAST :: FilePath -> IO Value
 getJsonAST fileName = do
-  let cp = (proc "rustc" ["-Z", "ast-json", fileName]){ std_out = CreatePipe
-                                                      , std_err = NoStream
-                                                      , std_in  = NoStream
-                                                      }
+  let cp = (proc "rustc" [ "-Z", "ast-json-noexpand"
+                         , "-Z", "no-analysis"
+                         , fileName ]){ std_out = CreatePipe
+                                      , std_err = NoStream
+                                      , std_in  = NoStream
+                                      }
   (_, Just hOut, _, _) <- createProcess cp
   jsonContents <- hGetContents hOut
   let Just value = decode' jsonContents

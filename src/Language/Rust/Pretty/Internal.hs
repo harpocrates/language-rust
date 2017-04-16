@@ -309,6 +309,8 @@ printExpr expr = printExprOuterAttrStyle expr True
 -- Inlined @print_expr_in_place@, @print_expr_call@, @print_expr_method_call@, @print_expr_tup@,
 -- @print_expr_binary@, @print_expr_unary@, @print_expr_addr_of@, @print_if@, @print_if_let@,
 -- @print_expr_repeat@
+--
+-- TODO: breaking multiple chained method calls onto multiple lines
 printExprOuterAttrStyle :: Expr a -> Bool -> Doc a
 printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs expr) Outer isInline) $
   case expr of
