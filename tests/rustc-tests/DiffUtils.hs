@@ -32,6 +32,12 @@ val@(Aeson.Array vect) ! Index key =
     Just v -> v
 val ! Index key = error $ "Cannot lookup index `" ++ show key ++ "' on non-array JSON `" ++ show val ++ "'"
 
+-- | Accessor method for JSON which fails with 'Nothing'
+(!?) :: Aeson.Value -> AesonKey -> Maybe Aeson.Value
+val@(Aeson.Object map) !? Key key = HM.lookup (fromString key) map
+val@(Aeson.Array vect) !? Index key = vect V.!? key
+_ !? _ = Nothing
+
 -- | This lets us do whatever we want while comparing @rustc@ with our parser
 type Diff = IO ()
 
