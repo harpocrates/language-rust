@@ -93,7 +93,8 @@ test-suite unit-tests
 test-suite rustc-tests
   hs-source-dirs:      tests/rustc-tests
   main-is:             Main.hs
-  other-modules:       Diff 
+  other-modules:       Diff
+                       DiffUtils
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
   build-depends:       base >=4.9 && <4.10
@@ -101,10 +102,10 @@ test-suite rustc-tests
                      , process >= 1.3
                      , bytestring >=0.10
                      , aeson >= 1.0.0.0
-                     , lens-aeson >= 1.0.0.0
-                     , lens >= 4.15.1
                      , directory >= 1.3.0.0
                      , filepath >= 1.4.0.0
                      , transformers >=0.5 && <0.6
                      , test-framework
+                     , vector
+                     , unordered-containers
                      , language-rust

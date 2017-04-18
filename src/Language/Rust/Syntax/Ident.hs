@@ -28,7 +28,7 @@ data Ident
           } deriving (Data, Typeable, Generic)
 
 instance Show Ident where
-  show = show . name
+  show = name
 
 instance IsString Ident where
   fromString = mkIdent

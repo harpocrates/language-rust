@@ -65,17 +65,16 @@ instance Show DiffRunning where
 
 -- | These are the possible final states of a 'DiffTest'
 data DiffResult = Error String
-                | Done [String]
+                | Done
 
 instance Show DiffResult where
   show (Error message) = "ERROR: " ++ message
-  show (Done []) = "OK"
-  show (Done diffs) = unlines ("Found differences:" : diffs)
+  show Done = "OK"
 
 -- | A test is successful if it finishes and has no diffs
 instance TestResultlike DiffRunning DiffResult where
-  testSucceeded (Done []) = True
-  testSucceeded _         = False
+  testSucceeded Done = True
+  testSucceeded (Error _) = False
 
 -- | With timeouts and catching errors
 -- TODO: make this nicer
@@ -95,11 +94,11 @@ instance Testlike DiffRunning DiffResult DiffTest where
           Just (Left e) -> pure (Error e)
           Just (Right val) -> do
             yieldImprovement Diffing
-            diff_m <- maybeTimeoutImprovingIO timeout $ liftIO (try' (evaluate (execWriter (diffSourceFile val val'))))
+            diff_m <- maybeTimeoutImprovingIO timeout $ liftIO (try' (diffSourceFile val val'))
             case diff_m of
               Nothing -> pure (Error "Timed out while finding differences")
               Just (Left e) -> pure (Error e)
-              Just (Right diff) -> pure (Done diff)
+              Just (Right _) -> pure Done
 
 -- | Variant of 'try' which separates the error case by just returning 'Left msg' when there is an
 -- exception.
