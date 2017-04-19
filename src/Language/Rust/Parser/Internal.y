@@ -1117,11 +1117,8 @@ struct_expr :: { Expr Span }
   | expr_path '{' sep_byT(field,',')               '}'  { Struct [] $1 $3 Nothing ($1 # $>) }
 
 field :: { Field Span }
-  : ident ':' expr  { Field (unspan $1) $3 ($1 # $3) }
-  | ident           {
-       let path = (PathExpr [] Nothing (Path False [(unspan $1, NoParameters mempty)]  (spanOf $1)) (spanOf $1))
-       in Field (unspan $1) path (spanOf $1)
-     }
+  : ident ':' expr  { Field (unspan $1) (Just $3) ($1 # $3) }
+  | ident           { Field (unspan $1) Nothing (spanOf $1) }
 
 
 ----------------

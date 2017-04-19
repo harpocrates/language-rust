@@ -778,7 +778,10 @@ parenE False e = e
 
 -- | A field just requires the identifier and expression to be valid
 resolveField :: Monoid a => Field a -> Either String (Field a)
-resolveField (Field i e x) = Field <$> resolveIdent i <*> resolveExpr AnyExpr e <*> pure x
+resolveField (Field i e x) = do
+  i' <- resolveIdent i
+  e' <- sequence (resolveExpr AnyExpr <$> e)
+  pure (Field i' e' x)
 
 instance Monoid a => Resolve (Field a) where resolve = resolveField
 

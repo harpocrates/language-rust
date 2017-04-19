@@ -377,8 +377,8 @@ instance Located a => Located (Expr a) where
 -- Example: @x: 1@ in @Point{ x: 1, y: 2 }@
 data Field a
   = Field
-      { ident :: Ident  -- ^ the field name
-      , expr :: Expr a  -- ^ value assigned to the field
+      { ident :: Ident         -- ^ the field name
+      , expr :: Maybe (Expr a) -- ^ value assigned to the field
       , nodeInfo :: a
       } deriving (Eq, Functor, Show, Typeable, Data, Generic)
 

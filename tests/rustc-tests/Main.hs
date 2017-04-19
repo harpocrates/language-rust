@@ -8,6 +8,7 @@ import Control.Exception (catch, evaluate, SomeException)
 import Control.Monad.Trans.Writer (execWriter, Writer)
 
 import Data.ByteString.Lazy (hGetContents)
+import Data.ByteString.Lazy.Char8 (unpack)
 import Data.Aeson (decode', Value)
 
 import Language.Rust.Parser (parse', readInputStream, Span)
@@ -44,8 +45,9 @@ getJsonAST fileName = do
                                       }
   (_, Just hOut, _, _) <- createProcess cp
   jsonContents <- hGetContents hOut
-  let Just value = decode' jsonContents
-  pure value
+  case decode' jsonContents of
+    Just value -> pure value
+    Nothing -> error (unpack jsonContents)
 
 
 -- * Difference tests

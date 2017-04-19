@@ -26,12 +26,15 @@ import Data.Word (Word8)
 translateLit :: LitTok -> Suffix -> a -> Lit a
 translateLit (ByteTok s)         = let Just (w8,"") = unescapeByte s in Byte w8
 translateLit (CharTok s)         = let Just (c,"")  = unescapeChar s in Char c
-translateLit (IntegerTok s)      = uncurry Int (unescapeInteger s)  
 translateLit (FloatTok s)        = Float (unescapeFloat s) 
 translateLit (StrTok s)          = Str (unfoldr unescapeChar s) Cooked
 translateLit (StrRawTok s n)     = Str s (Raw n)
 translateLit (ByteStrTok s)      = ByteStr (unfoldr unescapeByte s) Cooked
 translateLit (ByteStrRawTok s n) = ByteStr (map (fromIntegral . ord) s) (Raw n) 
+translateLit (IntegerTok s)      = \suf -> case (suf, unescapeInteger s) of
+                                             (F32, (Dec, n)) -> Float (fromInteger n) F32
+                                             (F64, (Dec, n)) -> Float (fromInteger n) F64 
+                                             (_,   (rep, n)) -> Int rep n suf
   
 -- | Given a string of characters read from a Rust source, extract the next underlying char taking
 -- into account escapes and unicode.

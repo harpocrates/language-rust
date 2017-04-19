@@ -429,7 +429,8 @@ expressionAttrs (Try as _ _) = as
 
 -- | Print a field
 printField :: Field a -> Doc a
-printField (Field ident expr x) = annotate x (printIdent ident <> ":" <+> printExpr expr)
+printField (Field ident Nothing x) = annotate x (printIdent ident)
+printField (Field ident (Just expr) x) = annotate x (printIdent ident <>":" <+> printExpr expr)
 
 -- | Print range limits
 printRangeLimits :: RangeLimits -> Doc a

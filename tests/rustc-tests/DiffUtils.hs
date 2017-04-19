@@ -23,14 +23,18 @@ instance IsString AesonKey where fromString = Key
 (!) :: Aeson.Value -> AesonKey -> Aeson.Value
 val@(Aeson.Object map) ! Key key =
   case HM.lookup (fromString key) map of
-    Nothing -> error $ "No key `" ++ key ++ "' on JSON object `" ++ show val ++ "'"
+    Nothing -> error $ "No key `" ++ key ++ "' on JSON object `" ++ showAeson val ++ "'"
     Just v -> v
-val ! Key key = error $ "Cannot lookup key `" ++ key ++ "' on non-object JSON `" ++ show val ++ "'"
+val ! Key key = error $ "Cannot lookup key `" ++ key ++ "' on non-object JSON `" ++ showAeson val ++ "'"
 val@(Aeson.Array vect) ! Index key =
   case vect V.!? key of
-    Nothing -> error $ "Index `" ++ show key ++ "' is OOB on JSON array `" ++ show val ++ "'"
+    Nothing -> error $ "Index `" ++ show key ++ "' is OOB on JSON array `" ++ showAeson val ++ "'"
     Just v -> v
-val ! Index key = error $ "Cannot lookup index `" ++ show key ++ "' on non-array JSON `" ++ show val ++ "'"
+val ! Index key = error $ "Cannot lookup index `" ++ show key ++ "' on non-array JSON `" ++ showAeson val ++ "'"
+
+-- | Pretty print 'Value'
+showAeson :: Aeson.Value -> String
+showAeson = unpack . Aeson.encode
 
 -- | Accessor method for JSON which fails with 'Nothing'
 (!?) :: Aeson.Value -> AesonKey -> Maybe Aeson.Value
