@@ -2,6 +2,7 @@
 module Main where
 
 import Diff
+import DiffUtils
 
 import Control.Monad (filterM)
 import Control.Exception (catch, evaluate, SomeException)
@@ -96,7 +97,7 @@ instance Testlike DiffRunning DiffResult DiffTest where
           Just (Left e) -> pure (Error e)
           Just (Right val) -> do
             yieldImprovement Diffing
-            diff_m <- maybeTimeoutImprovingIO timeout $ liftIO (try' (diffSourceFile val val'))
+            diff_m <- maybeTimeoutImprovingIO timeout $ liftIO (try' (val === val'))
             case diff_m of
               Nothing -> pure (Error "Timed out while finding differences")
               Just (Left e) -> pure (Error e)

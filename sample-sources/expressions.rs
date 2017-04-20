@@ -23,7 +23,7 @@ fn main() {
   loop { break; }
   'l: loop { break 'l 1; }
   match x { _ => () }
-//  let x = move |a,b,c| { a + b + c }; 
+  let x = move |a,b,c| { a + b + c }; 
   let x = { 1 };
   let x = unsafe { 1 };
   a = 1;
@@ -43,4 +43,10 @@ fn main() {
   let x = foo()?;
   return 0;
   return;
+}
+
+fn precedences() {
+  x==&y||z|w.0<=x**y*&&z^=l^m<<=n;
+  y|z..wm;
+  1>!x%y-z*-w||u?==v;
 }

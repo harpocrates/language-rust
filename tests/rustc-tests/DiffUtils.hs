@@ -4,6 +4,7 @@ module DiffUtils where
 import qualified Data.Aeson as Aeson
 import qualified Data.HashMap.Lazy as HM
 import qualified Data.Vector as V
+import qualified Data.List.NonEmpty as N
 import Language.Rust.Syntax.Ident
 import Control.Monad
 import Data.String
@@ -50,7 +51,41 @@ data DiffError = DiffError String deriving (Typeable)
 instance Exception DiffError
 instance Show DiffError where show (DiffError msg) = msg
 
+-- | Class of things that can be diff-ed against their JSON debug output
+class Show a => Diffable a where
+  (===) :: a -> Aeson.Value -> Diff
 
+instance Diffable a => Diffable (N.NonEmpty a) where
+  xs === json = toList xs === json
+
+instance Diffable a => Diffable [a] where
+  xs === json@(Aeson.Array v) = do
+    let xs' = toList v
+    when (length xs /= length xs') $
+      diff "arrays have different lengths" xs json
+    sequence_ (zipWith (===) xs xs')
+  xs === json = diff "comparing array to non-array" xs json
+
+-- | a comparision to accept 'null' as 'Nothing'
+instance Diffable a => Diffable (Maybe a) where
+  Just x    === json       = x === json
+  Nothing   === Aeson.Null = pure ()
+  n@Nothing === json       = diff "expected the JSON to be null" n json
+
+instance Diffable Bool where
+  b1 === j@(Aeson.Bool b2) | b1 == b2 = pure ()
+                           | otherwise = diff "boolean values are different" b1 j
+  b === j = diff "expected the JSON to be a boolean" b j
+
+-- | Report a difference
+diff :: Show a => String -> a -> Aeson.Value -> IO b
+diff explanation v j = throw (DiffError msg)
+  where msg = unlines [ explanation ++ " in"
+                      , " * parsed AST"
+                      , show (show v)
+                      , " * dumped JSON"
+                      , unpack (Aeson.encode j)
+                      ]
 
   
 

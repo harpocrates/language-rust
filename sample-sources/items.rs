@@ -16,7 +16,11 @@ mod foo { }
 mod bar {
 
   extern { }
-  extern "C" { }
+  extern "C" {
+    fn foo(x: int) -> int;
+    static x: int;
+    static mut x: *mut int;
+  }
 
   type Foo = Bar<u8>;
   
@@ -26,14 +30,33 @@ mod bar {
   union Foo<A, B> { x: A, y: B }
   
   trait Foo { }
-  trait Foo<T> { }
+  trait Foo<T> {
+    const ID1: i32;
+    const ID2: i32 = 1;
+
+    fn area1(&self) -> f64;
+    fn area2(&self) -> f64 { 1f64 }
+
+    type N;
+    type N: fmt::Display;
+    type N: fmt::Display = i32;
+
+   // foo!{}
+  }
   
   impl Trait for .. {}
   impl Trait<T> for .. {}
-  impl<A> Foo<A> { }
+  impl<A> Foo<A> {
+    const ID: i32 = 1;
+    fn area(&self) -> f64 { 1f64 }
+    type N = i32;
+    // foo!()
+
+  }
   impl<A> Trait for Foo<A> { }
+  impl<A> !Trait for Foo<A> { }
   
-  macro_rules! foo { }
-  foo!();
+ // macro_rules! foo { }
+ // foo!();
 
 }
