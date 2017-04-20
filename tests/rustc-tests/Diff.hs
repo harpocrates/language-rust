@@ -4,6 +4,7 @@ module Diff where
 import Data.Aeson
 import Language.Rust.Pretty
 import Language.Rust.Syntax.AST
+import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
 import Control.Monad (when)
@@ -15,8 +16,15 @@ import Data.Foldable (sequence_, toList)
 import Data.List.NonEmpty ((<|))
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
+import qualified Data.Vector as V
 
 import DiffUtils
+
+-- TODO:
+--   * attributes
+--   * spans
+
+
 
 -- | Lift a comparision to an array
 liftDiff :: (Foldable f, Show a) => (a -> Value -> Diff) -> (f a -> Value -> Diff)
@@ -105,6 +113,8 @@ instance Show a => Diffable (Item a) where
         mtr === (n' ! "fields" ! 3)
         t === (n' ! "fields" ! 4)
         is === (n' ! "fields" ! 5)
+      ("Mac", MacItem m) ->
+        m === (n' ! "fields" ! 0)
       
       _ -> diff "different items" item val
   
@@ -203,19 +213,37 @@ instance Show a => Diffable (ForeignItem a) where
         m === (n' ! "fields" ! 1)
       _ -> diff "different foreign item" f val
 
+-- TODO: what is even happening here!?
 instance Show a => Diffable (ViewPath a) where
   v === val = do
     let n' = val ! "node"
     case (n' ! "variant", v) of
       ("ViewPathGlob", ViewPathGlob g is _) ->
-        let is' = if g then Ident "{{root}}" undefined : is else is
-        in liftDiff diffViewPathIdent is' (n' ! "fields" ! 0 ! "segments")
+        diffViewPathGlobal g is (n' ! "fields" ! 0 ! "segments")
       ("ViewPathList", ViewPathList g is pl _) -> do
-        let is' = if {- TODO g -} True then Ident "{{root}}" undefined : is else is
-      --  liftDiff diffViewPathIdent is' (n' ! "fields" ! 0 ! "segments")
-        pl === (n' ! "fields" ! 1) 
-      _ -> diff "Unimplemented: diffViewPath" v val
+        diffViewPathGlobal g is (n' ! "fields" ! 0 ! "segments")
+        pl === (n' ! "fields" ! 1)
+      ("ViewPathSimple", ViewPathSimple g is (PathListItem n (Just r) _) _) -> do
+        diffString r (n' ! "fields" ! 0)
+        diffViewPathGlobal g (is ++ [n]) (n' ! "fields" ! 1 ! "segments")
+      ("ViewPathSimple", ViewPathSimple g is (PathListItem n Nothing _) _) -> do
+        diffString n (n' ! "fields" ! 0)
+        diffViewPathGlobal g (is ++ [n]) (n' ! "fields" ! 1 ! "segments")
+      _ -> diff "different view path" v val
     where
+    diffViewPathGlobal :: Bool -> [Ident] -> Value -> Diff
+    diffViewPathGlobal g is v
+      | g || global is = liftDiff diffViewPathIdent is (jsonDrop 1 v)
+      | otherwise = liftDiff diffViewPathIdent is v
+
+    global :: [Ident] -> Bool
+    global (Ident "self" _ : _) = False
+    global (Ident "super" _ : _) = False
+    global _ = True
+
+    jsonDrop :: Int -> Value -> Value
+    jsonDrop i (Data.Aeson.Array v) = Data.Aeson.Array (V.drop i v)
+
     diffViewPathIdent :: Ident -> Value -> Diff
     diffViewPathIdent i val = do
       when (Null /= val ! "parameters") $
@@ -244,12 +272,17 @@ instance Show a => Diffable (FnDecl a) where
     when (Data.Aeson.Bool v /= v') $
       diff "different variadicity" decl val
 
+-- TODO: make this more rigorous
 instance Show a => Diffable (Arg a) where
-  SelfRegion ml m _ === val = pure () -- TODO
-  SelfValue m _ === val = pure ()     -- TODO
-  SelfExplicit t m _ === val = pure ()-- TODO
+  SelfRegion ml m x === val =
+    IdentP (ByValue m) "self" Nothing x === (val ! "pat")
+  SelfValue m x === val =
+    IdentP (ByValue m) "self" Nothing x === (val ! "pat")
+  SelfExplicit t m x === val = do
+    IdentP (ByValue m) "self" Nothing x === (val ! "pat")
+    t === (val ! "ty")
   Arg p t _ === val = do
-   -- p === (val ! "pat") TODO
+    p === (val ! "pat")
     t === (val ! "ty")
 
 instance Diffable Unsafety where
@@ -340,7 +373,15 @@ instance Show a => Diffable (Stmt a) where
       ("Expr", NoSemi e _)   -> e === (n' ! "fields" ! 0) 
       ("Semi", Semi e _)     -> e === (n' ! "fields" ! 0)
       ("Item", ItemStmt i _) -> i === (n' ! "fields" ! 0)
+      ("Mac", MacStmt m s as _) -> do
+        m === (n' ! "fields" ! 0 ! 0)
+        s === (n' ! "fields" ! 0 ! 1)
       _ -> diff "Unimplemented: diffStmt" stmt val
+
+instance Diffable MacStmtStyle where
+  SemicolonMac === "Semicolon" = pure ()
+  BracesMac    === "Braces"    = pure ()
+  sty          === json        = diff "different styles" sty json
 
 instance Show a => Diffable (Visibility a) where
   PublicV === "Public" = pure ()
@@ -434,7 +475,51 @@ instance Show a => Diffable (Pat a) where
       _ -> diff "differing patterns" p val
 
 instance Show a => Diffable (Mac a) where
-  m === val = diff "Unimplemented: diffMac" m val
+  m@(Mac p tts _) === val = do
+    p === (val ! "node" ! "path")
+    tts === (val ! "node" ! "tts")
+
+instance Diffable TokenTree where
+  tt === val = 
+    case (val ! "variant", tt) of
+      ("Token", Token _ t) -> t === (val ! "fields" ! 1)
+      ("Delimited", Delimited _ d _ tts _) -> do
+        d === (val ! "fields" ! 1 ! "delim")
+        tts === (val ! "fields" ! 1 ! "tts")
+      _ -> diff "Unimplemented: diffTokenTree" tt val
+
+instance Diffable Delim where
+  Paren   === "Paren"   = pure ()
+  Bracket === "Bracket" = pure ()
+  Brace   === "Brace"   = pure ()
+  delim   === json      = diff "different delimiters" delim json
+
+instance Diffable Token where
+  Comma === "Comma" = pure ()
+  Dot === "Dot" = pure ()
+  Equal === "Eq" = pure ()
+  Colon === "Colon" = pure ()
+  ModSep === "ModSep" = pure ()
+  Less === "Lt" = pure ()
+  t === val@Object{} =
+    case (val ! "variant", t) of
+      ("BinOp", b) ->
+        case (val ! "fields" ! 0, t) of
+          ("Shl", LessLess) -> pure ()
+          _ -> diff "Unimplemented: diffToken" t val
+      ("Ident", IdentTok i) -> diffString i (val ! "fields" ! 0)
+      ("Literal", LiteralTok l s) -> do
+        l === (val ! "fields" ! 0)
+        -- TODO suffix
+      _ -> diff "Unimplemented: diffToken" t val
+  t === val = diff "Unimplemented: diffToken" t val
+
+instance Diffable LitTok where
+  l === val =
+    case (val ! "variant", l) of
+      ("Str_", StrTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
+      ("Integer", IntegerTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
+      _ -> diff "Unimplemented: diffLitTok" l val
 
 diffIntegral :: (Show i, Integral i) => i -> Value -> Diff
 diffIntegral i (Number s) | fromIntegral i == s = pure ()

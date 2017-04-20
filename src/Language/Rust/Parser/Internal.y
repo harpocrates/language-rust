@@ -1130,9 +1130,9 @@ stmt :: { Stmt Span }
   : ntStmt                                       { $1 }
   | many(outer_attribute) let pat ':' ty initializer ';'   { Local $3 (Just $5) $6 $1 ($1 # $2 # $>) }
   | many(outer_attribute) let pat        initializer ';'   { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
-  | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True ($1 # $2 # $3) }
-  | many(outer_attribute) block_expr                       { toStmt ($1 `addAttrs` $2) False ($1 # $2) }
-  | many(outer_attribute) block_expr ';'                   { toStmt ($1 `addAttrs` $2) True ($1 # $2 # $3) }
+  | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
+  | many(outer_attribute) block_expr                       { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
+  | many(outer_attribute) block_expr ';'                   { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
   | many(outer_attribute)     stmt_item                    { ItemStmt (let Item i a n v s = $2 in Item i ($1 ++ a) n v s) ($1 # $2) }
   | many(outer_attribute) pub stmt_item                    { ItemStmt (let Item i a n _ s = $3 in Item i ($1 ++ a) n PublicV s) ($1 # $2 # $3) }
 
@@ -1140,7 +1140,7 @@ stmt :: { Stmt Span }
 stmts_possibly_no_semi :: { [Stmt Span] }
   : stmt stmts_possibly_no_semi                  { $1 : $2 }
   | stmt                                         { [$1] }
-  | many(outer_attribute) nonblock_expr          { [toStmt ($1 `addAttrs` $2) False ($1 # $2)] }
+  | many(outer_attribute) nonblock_expr          { [toStmt ($1 `addAttrs` $2) False False ($1 # $2)] }
 
 initializer :: { Maybe (Expr Span) }
   : '=' expr                                     { Just $2 }
@@ -1558,9 +1558,10 @@ toIdent (Spanned (IdentTok i) s) = Spanned i s
 
 -- | Try to convert an expression to a statement given information about whether there is a trailing
 -- semicolon
-toStmt :: Expr Span -> Bool -> Span -> Stmt Span
-toStmt (MacExpr a m s) hasSemi = MacStmt m (if hasSemi then SemicolonMac else BracesMac) a
-toStmt e hasSemi = (if hasSemi then Semi else NoSemi) e
+toStmt :: Expr Span -> Bool -> Bool -> Span -> Stmt Span
+toStmt (MacExpr a m s) hasSemi isBlock | hasSemi = MacStmt m SemicolonMac a
+                                       | isBlock = MacStmt m BracesMac a
+toStmt e hasSemi _ = (if hasSemi then Semi else NoSemi) e
 
 -- | Add attributes to an expression
 addAttrs :: [Attribute Span] -> Expr Span -> Expr Span
