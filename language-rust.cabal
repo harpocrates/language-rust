@@ -58,7 +58,7 @@ library
                      , CPP
                      , DeriveFunctor
 
-  build-depends:       base >=4.9 && <4.10
+  build-depends:       base >=4.9 && <5.0
                      , wl-pprint-annotated >=0.0.1 && <0.0.2
                      , transformers >=0.5 && <0.6
                      , array >=0.5 && <0.6
@@ -81,12 +81,12 @@ test-suite unit-tests
                        PrettyTest
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
-  build-depends:       base >=4.9 && <4.10
+  build-depends:       base >=4.9 && <5.0
                      , Cabal >= 1.10.0
                      , transformers >=0.5 && <0.6
-                     , HUnit
+                     , HUnit >=1.5.0.0
                      , wl-pprint-annotated >= 0.0.1 && < 0.0.2
-                     , test-framework
+                     , test-framework >=0.8.0
                      , test-framework-hunit >= 0.3.0
                      , language-rust
 
@@ -97,7 +97,7 @@ test-suite rustc-tests
                        DiffUtils
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
-  build-depends:       base >=4.9 && <4.10
+  build-depends:       base >=4.9 && <5.0
                      , Cabal >= 1.10.0
                      , process >= 1.3
                      , bytestring >=0.10
@@ -105,8 +105,8 @@ test-suite rustc-tests
                      , directory >= 1.3.0.0
                      , filepath >= 1.4.0.0
                      , transformers >=0.5 && <0.6
-                     , test-framework
-                     , vector
-                     , text
-                     , unordered-containers
+                     , test-framework >=0.8.0
+                     , vector >=0.10.0
+                     , text >=1.2.0
+                     , unordered-containers >= 0.2.7
                      , language-rust
