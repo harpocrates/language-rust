@@ -1,4 +1,4 @@
-# NOTE: `language-rust` is complete, but still undergoing testing!
+# NOTE: `language-rust` is complete, but still undergoing testing! [![Build Status][4]][5]
 
 `language-rust` aspires to efficiently and accurately parse and pretty-print the [Rust language][0].
 The underlying AST structures are also intended to be as similar as possible to the AST `rustc` uses
@@ -36,3 +36,5 @@ algorithms are most welcome!
 [1]: https://docs.haskellstack.org/en/stable/README/
 [2]: https://hackage.haskell.org/package/alex
 [3]: https://hackage.haskell.org/package/happy
+[4]: https://travis-ci.org/harpocrates/language-rust.svg?branch=master
+[5]: https://travis-ci.org/harpocrates/language-rust

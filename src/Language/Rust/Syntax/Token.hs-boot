@@ -13,13 +13,13 @@ data Token
 instance Eq Token
 instance Show Token
 instance Data Token
-instance Typeable Token
+-- instance Typeable Token
 instance Generic Token
 
 data Delim
 instance Eq Delim
 instance Data Delim
-instance Typeable Delim
+-- instance Typeable Delim
 instance Generic Delim
 instance Show Delim
 
