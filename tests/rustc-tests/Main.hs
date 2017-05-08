@@ -80,7 +80,6 @@ instance TestResultlike DiffRunning DiffResult where
   testSucceeded (Error _) = False
 
 -- | With timeouts and catching errors
--- TODO: make this nicer
 instance Testlike DiffRunning DiffResult DiffTest where
   testTypeName _ = "Difference tests"
   runTest TestOptions{ topt_timeout = K timeout } (DiffTest file) = runImprovingIO $ do

@@ -9,18 +9,17 @@ Portability : portable
 
 Using a pretty printer is as easy as calling 'pretty' or 'prettyAnn' on the AST node of interest.
 
-@
-ghci> :set -XOverloadedStrings
-ghci> import Language.Rust.Syntax.AST
-ghci> import Language.Rust.Pretty
-ghci> decl = FnDecl [SelfRegion Nothing Immutable ()] (Just (Never ())) False ()
+>>> :set -XOverloadedStrings
+>>> import Language.Rust.Syntax
+>>> import Language.Rust.Pretty
+>>> decl = FnDecl [SelfRegion Nothing Immutable ()] (Just (Never ())) False ()
 decl :: FnDecl ()
-ghci> fn = Fn decl Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [] Normal ()) ()
+>>> fn = Fn decl Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [] Normal ()) ()
 fn :: ItemKind ()
-ghci> pretty (Item "foo" [] fn PublicV ())
+>>> pretty (Item "foo" [] fn PublicV ())
 pub fn foo(&self) -> ! { }
 it :: Doc a
-@
+
 -}
 
 module Language.Rust.Pretty (
@@ -86,6 +85,7 @@ instance Pretty (Variant a) where pretty = noAnnotate . prettyAnn
 instance Pretty (ViewPath a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Visibility a) where pretty = noAnnotate . prettyAnn
 instance Pretty (WhereClause a) where pretty = noAnnotate . prettyAnn
+instance Pretty (WherePredicate a) where pretty = noAnnotate . prettyAnn
 
 
 -- | Similar to 'Pretty', but for types which are parametrized over an annotation type.
@@ -126,4 +126,5 @@ instance PrettyAnnotated Variant where prettyAnn = printVariant
 instance PrettyAnnotated ViewPath where prettyAnn = printViewPath
 instance PrettyAnnotated Visibility where prettyAnn = printVis
 instance PrettyAnnotated WhereClause where prettyAnn = printWhereClause
+instance PrettyAnnotated WherePredicate where prettyAnn = printWherePredicate
 

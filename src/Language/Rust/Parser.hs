@@ -11,7 +11,7 @@ Selecting the right parser may require adding an annotation to avoid an 'Ambiguo
 error.
 
 >>> :set -XTypeApplications
->>> import Language.Rust.Syntax.AST
+>>> import Language.Rust.Syntax
 >>> import Language.Rust.Parser
 >>> inp <- readInputStream "hello_world.rs"
 inp :: InputStream
