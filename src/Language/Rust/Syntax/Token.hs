@@ -6,12 +6,13 @@ License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
-
-Contains roughly the same stuff as @syntax::parse::token@ - data definitions for tokens.
 -}
 {-# LANGUAGE DeriveDataTypeable, DeriveGeneric #-}
 
-module Language.Rust.Syntax.Token (Token(..), DocType(..), Space(..), Delim(..), LitTok(..)) where
+module Language.Rust.Syntax.Token (
+  -- Contains roughly the same stuff as @syntax::parse::token@ - data definitions for tokens.
+  Token(..), DocType(..), Space(..), Delim(..), LitTok(..)
+) where
 
 import GHC.Generics (Generic)
 import Data.Data (Data)

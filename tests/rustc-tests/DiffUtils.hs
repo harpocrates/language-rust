@@ -5,7 +5,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.HashMap.Lazy as HM
 import qualified Data.Vector as V
 import qualified Data.List.NonEmpty as N
-import Language.Rust.Syntax.Ident
+import Language.Rust.Syntax (Ident(..))
 import Control.Monad
 import Data.String
 import Data.ByteString.Lazy.Char8 (unpack)

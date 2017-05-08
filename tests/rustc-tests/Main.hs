@@ -13,7 +13,7 @@ import Data.ByteString.Lazy.Char8 (unpack)
 import Data.Aeson (decode', Value)
 
 import Language.Rust.Parser (parse', readInputStream, Span)
-import Language.Rust.Syntax.AST (SourceFile)
+import Language.Rust.Syntax (SourceFile)
 
 import System.Directory (getCurrentDirectory, listDirectory, doesFileExist)
 import System.Process (createProcess, proc, CreateProcess(..), StdStream(..))

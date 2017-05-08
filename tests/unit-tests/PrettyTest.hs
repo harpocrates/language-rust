@@ -5,9 +5,7 @@ import Test.Framework (testGroup, Test)
 import Test.Framework.Providers.HUnit
 import Test.HUnit hiding (Test)
 
-import Language.Rust.Syntax.AST
-import Language.Rust.Syntax.Token
-import Language.Rust.Syntax.Ident
+import Language.Rust.Syntax
 import Language.Rust.Pretty.Internal
 
 import Control.Monad

@@ -13,9 +13,7 @@ import Test.HUnit hiding (Test)
 
 import Language.Rust.Parser
 import Language.Rust.Pretty
-import Language.Rust.Syntax.AST
-import Language.Rust.Syntax.Token
-import Language.Rust.Syntax.Ident
+import Language.Rust.Syntax
 import Language.Rust.Data.Position
 import Language.Rust.Data.InputStream
 

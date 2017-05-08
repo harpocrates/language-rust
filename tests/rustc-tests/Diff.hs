@@ -3,9 +3,7 @@ module Diff where
 
 import Data.Aeson
 import Language.Rust.Pretty
-import Language.Rust.Syntax.AST
-import Language.Rust.Syntax.Token
-import Language.Rust.Syntax.Ident
+import Language.Rust.Syntax
 
 import Control.Monad (when)
 import Control.Exception (throw)
@@ -577,7 +575,7 @@ instance Show a => Diffable (Ty a) where
             p === (n ! "fields" ! 1)
           ("Tup", TupTy t _) -> t === (n ! "fields" ! 0)
           ("Slice", Slice t _) -> t === (n ! "fields" ! 0)
-          ("Array", Language.Rust.Syntax.AST.Array t e _) -> do
+          ("Array", Language.Rust.Syntax.Array t e _) -> do
             t ===   (n ! "fields" ! 0)
             e ===(n ! "fields" ! 1)
           ("Ptr", Ptr m t _) -> do
@@ -761,7 +759,7 @@ instance Show a => Diffable (Expr a) where
       ("TupField", TupField as e i _) -> do
         e === (n ! "fields" ! 0)
         diffIntegral i (n ! "fields" ! 1 ! "node")
-      ("Index", Language.Rust.Syntax.AST.Index as e1 e2 _) -> do
+      ("Index", Language.Rust.Syntax.Index as e1 e2 _) -> do
         e1 === (n ! "fields" ! 0)
         e2 === (n ! "fields" ! 1)
       ("AddrOf", AddrOf as m e _) -> do
@@ -861,7 +859,7 @@ instance Show a => Diffable (Lit a) where
         diffIntegral b (n ! "fields" ! 0)
       ("ByteStr", ByteStr s sty Unsuffixed _) ->
         liftDiff diffIntegral s (n ! "fields" ! 0)
-      ("Bool", Language.Rust.Syntax.AST.Bool b Unsuffixed _) ->
+      ("Bool", Language.Rust.Syntax.Bool b Unsuffixed _) ->
         when (Data.Aeson.Bool b /= n ! "fields" ! 0) $
           diff "boolean literal has two different values" l val
       _ -> diff "different literals" l val

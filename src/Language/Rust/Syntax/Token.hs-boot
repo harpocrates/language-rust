@@ -1,11 +1,11 @@
- -- .hs-boot files play badly with type families like 'Rep'
-{-# OPTIONS_GHC -w #-}
+-- .hs-boot files play badly with associated type families like 'Rep'
+{-# OPTIONS_GHC -Wno-missing-methods #-}
 
 module Language.Rust.Syntax.Token where
 
 import GHC.Generics (Generic)
 import Data.Data (Data)
-import Data.Typeable (Typeable)
+-- import Data.Typeable (Typeable)
 
 data LitTok
 

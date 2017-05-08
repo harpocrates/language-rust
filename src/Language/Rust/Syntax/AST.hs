@@ -6,38 +6,39 @@ License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
-
-The abstract syntax tree(s) of the Rust language. Based on the definitions in the @syntax::ast@
-crate of @rustc@ whenever possible. Unfortunately, since the internals of @rustc@ are not exposed
-themselves, there are no official docs for them - the current working docs
-are [here](https://manishearth.github.io/rust-internals-docs/syntax/ast/index.html).
 -}
 {-# LANGUAGE DuplicateRecordFields, DeriveFunctor, DeriveDataTypeable, DeriveGeneric, PatternSynonyms #-}
 
 module Language.Rust.Syntax.AST (
-  -- * Top level
+  -- $overview
+  -- ** Top level
   SourceFile(..),
-  -- * General
+  -- ** General
   Mutability(..), Unsafety(..), Arg(..), FnDecl(..),
-  -- * Paths
+  -- ** Paths
   Path(..), PathListItem(..), PathParameters(..), QSelf(..),
-  -- * Attributes
+  -- ** Attributes
   Attribute(..), AttrStyle(..), MetaItem(..), NestedMetaItem(..),
-  -- * Literals
+  -- ** Literals
   Lit(..), byteStr, Suffix(..), suffix, IntRep(..), StrStyle(..),
-  -- * Expressions
-  Expr(..), Abi(..), Arm(..), AsmDialect(..), UnOp(..), BinOp(..), CaptureBy(..), Field(..), InlineAsm(..), InlineAsmOutput(..), RangeLimits(..),
-  -- * Types and lifetimes
-  Ty(..), Generics(..), pattern NoGenerics, Lifetime(..), LifetimeDef(..), TyParam(..), TyParamBound(..), partitionTyParamBounds, WhereClause(..), WherePredicate(..), PolyTraitRef(..), TraitRef(..), TraitBoundModifier(..), 
-  -- * Patterns
+  -- ** Expressions
+  Expr(..), Abi(..), Arm(..), AsmDialect(..), UnOp(..), BinOp(..), CaptureBy(..), Field(..),
+  InlineAsm(..), InlineAsmOutput(..), RangeLimits(..),
+  -- ** Types and lifetimes
+  Ty(..), Generics(..), pattern NoGenerics, Lifetime(..), LifetimeDef(..), TyParam(..),
+  TyParamBound(..), partitionTyParamBounds, WhereClause(..), WherePredicate(..), PolyTraitRef(..),
+  TraitRef(..), TraitBoundModifier(..),
+  -- ** Patterns
   Pat(..), BindingMode(..), FieldPat(..),
-  -- * Statements
+  -- ** Statements
   Stmt(..),
-  -- * Items
-  Item(..), ItemKind(..), ForeignItem(..), ForeignItemKind(..), ImplItem(..), ImplItemKind(..), Defaultness(..), ImplPolarity(..), StructField(..), TraitItem(..), TraitItemKind(..), Variant(..), VariantData(..), ViewPath(..), Visibility(..), Constness(..), MethodSig(..),
-  -- * Blocks
+  -- ** Items
+  Item(..), ItemKind(..), ForeignItem(..), ForeignItemKind(..), ImplItem(..), ImplItemKind(..),
+  Defaultness(..), ImplPolarity(..), StructField(..), TraitItem(..), TraitItemKind(..), Variant(..),
+  VariantData(..), ViewPath(..), Visibility(..), Constness(..), MethodSig(..),
+  -- ** Blocks
   Block(..),
-  -- * Token trees
+  -- ** Token trees
   TokenTree(..), Nonterminal(..), KleeneOp(..), Mac(..), MacStmtStyle(..),
 ) where
 
@@ -56,6 +57,12 @@ import Data.List.NonEmpty (NonEmpty(..))
 import Text.Read (Read(..))
 import Text.ParserCombinators.ReadPrec (lift)
 import Text.ParserCombinators.ReadP (choice, string)
+
+-- $overview
+-- The abstract syntax tree(s) of the Rust language. Based on the definitions in the @syntax::ast@
+-- crate of @rustc@ whenever possible. Unfortunately, since the internals of @rustc@ are not exposed
+-- themselves, there are no official docs for them - the current working docs
+-- are [here](https://manishearth.github.io/rust-internals-docs/syntax/ast/index.html).
 
 -- | ABIs support by Rust's foreign function interface (@syntax::abi::Abi@). Note that of these,
 -- only 'Rust', 'C', 'System', 'RustIntrinsic', 'RustCall', and 'PlatformIntrinsic' and 'Unadjusted'
@@ -129,11 +136,7 @@ instance Read Abi where
 --
 -- Example: @bar: usize@ as in @fn foo(bar: usize)@
 data Arg a
-  = Arg
-      { pat :: Maybe (Pat a) -- ^ argument pattern (may be restricted to 'IdentP' in some cases)
-      , ty :: Ty a           -- ^ type of argument
-      , nodeInfo :: a
-      }
+  = Arg (Maybe (Pat a)) (Ty a) a                   -- ^ @x: i32@
   | SelfValue Mutability a                         -- ^ @self@, @mut self@
   | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ @&'lt self@, @&'lt mut self@
   | SelfExplicit (Ty a) Mutability a               -- ^ @self: i32@, @mut self: i32@

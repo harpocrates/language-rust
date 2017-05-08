@@ -33,9 +33,7 @@ library
   build-tools:         alex, happy
   default-language:    Haskell2010
 
-  exposed-modules:     Language.Rust.Syntax.Ident
-                       Language.Rust.Syntax.AST
-                       Language.Rust.Syntax.Token
+  exposed-modules:     Language.Rust.Syntax
                        Language.Rust.Parser
                        Language.Rust.Parser.ParseMonad
                        Language.Rust.Parser.Lexer
@@ -49,6 +47,9 @@ library
   other-modules:       Language.Rust.Parser.Internal
                        Language.Rust.Parser.Literals
                        Language.Rust.Pretty.Resolve
+                       Language.Rust.Syntax.AST
+                       Language.Rust.Syntax.Ident
+                       Language.Rust.Syntax.Token
 
   other-extensions:    OverloadedStrings
                      , OverloadedLists
