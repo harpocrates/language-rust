@@ -25,7 +25,6 @@ import Text.PrettyPrint.Annotated.WL (pretty, hcat, cat, punctuate, group, angle
 import qualified Text.PrettyPrint.Annotated.WL as WL
 
 import Data.Char (intToDigit, ord, chr)
-import Data.Either (lefts, rights)
 import Data.Foldable (toList)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
@@ -272,7 +271,7 @@ printNonterminal (NtArm arm) = printArm False arm
 printNonterminal (NtImplItem item) = printImplItem item
 printNonterminal (NtTraitItem item) = printTraitItem item
 printNonterminal (NtGenerics generics) = printGenerics generics
-printNonterminal (NtWhereClause clause) = printWhereClause clause
+printNonterminal (NtWhereClause clause) = printWhereClause True clause
 printNonterminal (NtArg arg) = printArg arg True
 printNonterminal (NtLit lit) = printLit lit
 
@@ -658,29 +657,36 @@ printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs a
   Use vp            -> hsep [ printVis vis, "use", printViewPath vp <> ";" ]
   Static ty m e     -> hsep [ printVis vis, "static", printMutability m, printIdent ident <> ":", printType ty, "=", printExpr e <> ";" ]
   ConstItem t e     -> hsep [ printVis vis, "const", printIdent ident <> ":", printType t, "=", printExpr e <> ";" ]
-  Fn d s c a t b    -> printFn d s c a (Just ident) t vis <+> printBlockWithAttrs False b attrs
+  Fn d s c a t b    -> printFn d s c a (Just ident) t vis (Just (b, attrs))
   Mod items         -> hsep [ printVis vis, "mod", printIdent ident, printMod items attrs ]
   ForeignMod a i    -> hsep [ printAbi a, printForeignMod i attrs ]
-  TyAlias ty ps     -> hsep [ printVis vis, "type", printIdent ident <> printGenerics ps <> printWhereClause (whereClause ps), "=", printType ty <> ";" ]
+  TyAlias ty ps     -> let wc = printWhereClause True (whereClause ps)
+                           leading = printVis vis <+> "type" <+> printIdent ident <> printGenerics ps
+                       in case wc of
+                            WL.Empty -> group (WL.hang n (leading <+> "=" <#> printType ty <> ";"))
+                            _ -> leading <#> wc <#> "=" <+> printType ty <> ";"
   Enum vars ps      -> printEnumDef vars ps ident vis
   StructItem s g    -> hsep [ printVis vis, "struct", printStruct s g ident True True ]
   Union s g         -> hsep [ printVis vis, "union", printStruct s g ident True True ]
   DefaultImpl u t   -> hsep [ printVis vis, printUnsafety u, "impl", printTraitRef t, "for", "..", "{ }" ]
   Impl u p g t ty i -> let generics = case g of { Generics [] [] _ _ -> mempty; _ -> printGenerics g }
                            traitref = perhaps (\t' -> printPolarity p <> printTraitRef t' <+> "for") t
-                       in hsep [ printVis vis, printUnsafety u, "impl", generics
-                               , traitref <+> printType ty
-                               , printWhereClause (whereClause g)
-                               , block Brace False mempty (printInnerAttrs attrs) (printImplItem `map` i)
-                               ]
-  Trait u g tys i   -> let tys' = map (\t -> case t of
-                                               TraitTyParamBound ptr Maybe x -> Left ("for" <+> annotate x ("?" <> printTraitRef (traitRef ptr)))
-                                               _ -> Right t)
-                                      tys
-                       in hsep [ printVis vis, printUnsafety u, "trait", printIdent ident <> printGenerics g
-                               , hsep (lefts tys'), printBounds ":" (rights tys'), printWhereClause (whereClause g)
-                               , block Brace False mempty (printInnerAttrs attrs) (printTraitItem `map` i)
-                               ]
+                           leading = hsep [ printVis vis, printUnsafety u
+                                          , "impl" <> generics, traitref, printType ty
+                                          ]
+                           lagging = block Brace False mempty (printInnerAttrs attrs) (printImplItem `map` i)
+                           wc = printWhereClause True (whereClause g)
+                       in case wc of
+                            WL.Empty -> leading <+> lagging
+                            _ -> leading <#> wc <#> lagging
+  Trait u g tys i   -> let leading = hsep [ printVis vis, printUnsafety u, "trait"
+                                          , printIdent ident <> printGenerics g <> printBounds ":" tys
+                                          ]
+                           lagging = block Brace False mempty (printInnerAttrs attrs) (printTraitItem `map` i)
+                           wc = printWhereClause True (whereClause g)
+                       in case wc of
+                            WL.Empty -> leading <+> lagging
+                            _ -> leading <#> wc <#> lagging
   MacItem m         -> printMac m Paren <> ";" 
 
 
@@ -689,7 +695,7 @@ printTraitItem :: TraitItem a -> Doc a
 printTraitItem (TraitItem ident attrs node x) = annotate x $ printOuterAttrs attrs <#>
   case node of
     ConstT ty default_m -> printAssociatedConst ident ty default_m InheritedV
-    MethodT sig block_m -> printMethodSig ident sig InheritedV <+> maybe ";" (\b -> printBlockWithAttrs False b attrs) block_m
+    MethodT sig block_m -> printMethodSig ident sig InheritedV (fmap (\b -> (b, attrs)) block_m)
     TypeT bounds default_m -> printAssociatedType ident (Just bounds) default_m
     MacroT m -> printMac m Paren <> ";"
 
@@ -715,20 +721,20 @@ printImplItem (ImplItem ident vis defaultness attrs node x) = annotate x $ print
   [ printVis vis, when (defaultness == Default) "default"
   , case node of
       ConstI ty expr -> printAssociatedConst ident ty (Just expr) InheritedV
-      MethodI sig body -> printMethodSig ident sig InheritedV <+> printBlockWithAttrs False body attrs
+      MethodI sig body -> printMethodSig ident sig InheritedV (Just (body, attrs))
       TypeI ty -> printAssociatedType ident Nothing (Just ty) 
       MacroI m -> printMac m Paren <> ";" 
   ]
 
 -- | Print an associated type (@printAssociatedType@)
 printAssociatedType :: Ident ->  Maybe [TyParamBound a] -> Maybe (Ty a) -> Doc a
-printAssociatedType ident bounds_m ty_m = "type" <+> printIdent ident
-  <+> perhaps (printBounds ":") bounds_m
+printAssociatedType ident bounds_m ty_m = "type" <+> (printIdent ident
+  <> perhaps (printBounds ":") bounds_m)
   <+> perhaps (\ty -> "=" <+> printType ty) ty_m
   <> ";"
 
 -- | Print a method signature (@print_method_sig@)
-printMethodSig :: Ident -> MethodSig a -> Visibility a -> Doc a
+printMethodSig :: Ident -> MethodSig a -> Visibility a -> Maybe (Block a, [Attribute a]) -> Doc a
 printMethodSig ident (MethodSig unsafety constness abi decl generics)
   = printFn decl unsafety constness abi (Just ident) generics
 
@@ -755,7 +761,7 @@ printVis InheritedV = mempty
 printForeignItem :: ForeignItem a -> Doc a
 printForeignItem (ForeignItem ident attrs node vis x) = annotate x $ printOuterAttrs attrs <+>
   case node of
-    ForeignFn decl generics -> printFn decl Normal NotConst Rust (Just ident) generics vis <> ";"
+    ForeignFn decl generics -> printFn decl Normal NotConst Rust (Just ident) generics vis Nothing
     ForeignStatic ty mut -> printVis vis <+> "static" <+> when mut "mut" <+> printIdent ident <> ":" <+> printType ty <> ";"
 
 
@@ -763,12 +769,15 @@ printForeignItem (ForeignItem ident attrs node vis x) = annotate x $ printOuterA
 printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a
 printStruct structDef generics ident printFinalizer annotateGenerics =
   printIdent ident <> gen
-    <> case structDef of 
-          StructD fields x -> annotate x $ space <> wc <+> block Brace False "," mempty (printStructField `map` fields)
-          TupleD fields x -> annotate x $ parens (commas fields printStructField) <+> wc <+> when printFinalizer ";" 
-          UnitD x -> annotate x $ wc <+> when printFinalizer ";"
+    <> case (structDef, wc) of 
+          (StructD fields x, WL.Empty) -> annotate x $ space <> block Brace False "," mempty (printStructField `map` fields)
+          (StructD fields x, _) -> annotate x $ WL.line <> wc <#> block Brace False "," mempty (printStructField `map` fields)
+          (TupleD fields x, WL.Empty) -> annotate x $ block Paren True "," mempty (printStructField `map` fields) <> when printFinalizer ";" 
+          (TupleD fields x, _) -> annotate x $ block Paren True "," mempty (printStructField `map` fields) <#> wc <> when printFinalizer ";" 
+          (UnitD x, WL.Empty) -> annotate x $ when printFinalizer ";"
+          (UnitD x, _) -> annotate x $ WL.line <> wc <> when printFinalizer ";"
   where gen = if annotateGenerics then printGenerics generics else noAnnotate (printGenerics generics)
-        wc = printWhereClause (whereClause generics)
+        wc = printWhereClause True (whereClause generics)
 
 -- | Print a struct field
 printStructField :: StructField a -> Doc a
@@ -783,7 +792,7 @@ printUnsafety Unsafe = "unsafe"
 printEnumDef :: [Variant a] -> Generics a -> Ident -> Visibility a -> Doc a
 printEnumDef variants generics ident vis =
   printVis vis <+> "enum" <+> (printIdent ident <> printGenerics generics)
-    <+> printWhereClause (whereClause generics)
+    <+> printWhereClause True (whereClause generics)
     <+> block Brace False "," mempty [ printOuterAttrs as <#> printVariant v  | v@Variant{ attrs = as } <- variants ]
 
 -- | Print a variant (@print_variant@)
@@ -792,11 +801,13 @@ printVariant (Variant i _ _data e x) = annotate x (body <+> disc)
   where body = printStruct _data (Generics [] [] (WhereClause [] undefined) undefined) i False False
         disc = perhaps (\e' -> "=" <+> printExpr e') e
 
--- | Print a where clause (@print_where_clause@)
-printWhereClause :: WhereClause a -> Doc a
-printWhereClause (WhereClause predicates x)
+-- | Print a where clause (@print_where_clause@). The 'Bool' argument indicates whether to have a
+-- trailing comma or not.
+printWhereClause :: Bool -> WhereClause a -> Doc a
+printWhereClause trailing (WhereClause predicates x)
   | null predicates = mempty
-  | otherwise = annotate x ("where" <#> block NoDelim False "," mempty (printWherePredicate `map` predicates))
+  | trailing = annotate x ("where" <#> block NoDelim False "," mempty (printWherePredicate `map` predicates))
+  | otherwise = annotate x ("where" <#> block NoDelim False mempty mempty (punctuate "," (printWherePredicate `map` predicates)))
 
 -- | Print a where clause predicate
 printWherePredicate :: WherePredicate a -> Doc a
@@ -806,13 +817,20 @@ printWherePredicate (EqPredicate lhs rhs y) = annotate y (printType lhs <+> "=" 
 
 -- TODO: think carefully about multiline version of this
 -- | Print a function (@print_fn@)
-printFn :: FnDecl a -> Unsafety -> Constness -> Abi -> Maybe Ident -> Generics a -> Visibility a -> Doc a
-printFn decl unsafety constness abi name generics vis =
+printFn :: FnDecl a -> Unsafety -> Constness -> Abi -> Maybe Ident -> Generics a -> Visibility a -> Maybe (Block a, [Attribute a]) -> Doc a
+printFn decl unsafety constness abi name generics vis blkAttrs =
   printFnHeaderInfo unsafety constness abi vis
     <+> perhaps printIdent name
     <> printGenerics generics
     <> printFnArgsAndRet decl
-    <#> printWhereClause (whereClause generics)
+    <+#> whereBlk
+  where
+  ((<+#>), whereBlk) = case (whereClause generics, blkAttrs) of
+                         (WhereClause [] _, Nothing) -> ((<>), ";")
+                         (WhereClause [] _, Just (blk, attrs)) -> ((<+>), printBlockWithAttrs False blk attrs)
+                         (wc,               Nothing) -> ((<#>), printWhereClause False wc <> ";")
+                         (wc,               Just (blk, attrs)) -> ((<#>), printWhereClause True wc <#> printBlockWithAttrs False blk attrs)
+
 
 -- | Print the function arguments and the return type (@print_fn_args_and_ret@)
 printFnArgsAndRet :: FnDecl a -> Doc a

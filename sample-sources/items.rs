@@ -43,6 +43,10 @@ mod bar {
 
    // foo!{}
   }
+
+  fn foo<T: ?Sized>(x: &T) { }
+  struct Foo<T: Send + ?Sized + Sync> { field: Box<T> }
+  trait Bar { type Baz: ?Sized; }
   
   impl Trait for .. {}
   impl Trait<T> for .. {}

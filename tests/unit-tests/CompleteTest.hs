@@ -29,6 +29,9 @@ completeSuite = testGroup "complete suite"
   , lets
   , generics
   , whereClauses
+  , typeAliases
+  , traits
+  , structs
   ] 
 
 functionArgs :: Test
@@ -84,6 +87,7 @@ lets = testGroup "let statements"
     \}"
   ]
 
+-- See <https://github.com/rust-lang-nursery/fmt-rfcs/issues/29>
 generics :: Test
 generics = testGroup "generics"
   [ testComplete "one line"
@@ -109,6 +113,7 @@ generics = testGroup "generics"
     \}"
   ]
 
+-- See <https://github.com/rust-lang-nursery/fmt-rfcs/issues/38>
 whereClauses :: Test
 whereClauses = testGroup "where clauses"
   [ testComplete "where"
@@ -119,7 +124,99 @@ whereClauses = testGroup "where clauses"
     \{\n\
     \  body\n\
     \}"
+  , testComplete "method without body where"
+    "trait T {\n\
+    \  fn foo<T, U>() -> ReturnType\n\
+    \  where\n\
+    \    T: Bound,\n\
+    \    U: AnotherBound;\n\
+    \}"
+  , testComplete "long where"
+    "fn itemize_list<'a, T, I, F1, F2, F3>(\n\
+    \  codemap: &'a CodeMap,\n\
+    \  inner: I,\n\
+    \  terminator: &'a str,\n\
+    \  get_lo: F1,\n\
+    \  get_hi: F2,\n\
+    \  get_item_string: F3,\n\
+    \  prev_span_end: BytePos,\n\
+    \  next_span_start: BytePos,\n\
+    \) -> ListItems<'a, I, F1, F2, F3>\n\
+    \where\n\
+    \  I: Iterator<Item = T>,\n\
+    \  F1: Fn(&T) -> BytePos,\n\
+    \  F2: Fn(&T) -> BytePos,\n\
+    \  F3: Fn(&T) -> Option<String>,\n\
+    \{\n\
+    \  ListItems {\n\
+    \    codemap: codemap,\n\
+    \    inner: inner.peekable(),\n\
+    \    get_lo: get_lo,\n\
+    \    get_hi: get_hi,\n\
+    \    get_item_string: get_item_string,\n\
+    \    prev_span_end: prev_span_end,\n\
+    \    next_span_start: next_span_start,\n\
+    \    terminator: terminator,\n\
+    \  }\n\
+    \}"
+  , testComplete "impl no where"
+    "impl<K: Hash + Eq, V> HashMap<K, V> {\n\
+    \  fn add(key: K, value: V) { }\n\
+    \}"
+  , testComplete "impl"
+    "impl<K, V> HashMap<K, V>\n\
+    \where\n\
+    \  K: Hash + Eq,\n\
+    \{\n\
+    \  fn add(key: K, value: V) { }\n\
+    \}"
   ]
+
+-- See <https://github.com/rust-lang-nursery/fmt-rfcs/issues/32>
+typeAliases :: Test
+typeAliases = testGroup "type aliases"
+  [ testComplete "type alias short"
+    "type FormattedAlias<T: Copy> = Vec<T>;"
+  , testComplete "type alias long"
+    "type LoooooooooooooooonnnnnnnnnnnnnngAlias =\n\
+    \  Vec<Loooooooooooong>;"
+  , testComplete "type alias where"
+    "type FormattedAlias<T>\n\
+    \where\n\
+    \  T: Copy,\n\
+    \= Vec<T>;"
+  ]
+
+traits :: Test
+traits = testGroup "traits"
+  [ testComplete "simple trait"
+    "trait Animal {\n\
+    \  fn new(name: &'static str) -> Self;\n\
+    \}"
+  , testComplete "generic trait"
+    "trait DoubleDrop<T> {\n\
+    \  fn double_drop(self, _: T);\n\
+    \}"
+  , testComplete "trait with bounds"
+    "pub trait Ord: Eq + PartialOrd<Self> {\n\
+    \  fn cmp(&self, other: &Self) -> Ordering;\n\
+    \}"
+  ]
+
+structs :: Test
+structs = testGroup "structs"
+  [ testComplete "generic unit struct"
+    "struct Bleh<T, U>\n\
+    \where\n\
+    \  T: Copy,\n\
+    \  U: Sized;"
+  , testComplete "generic tuple struct"
+    "struct Bleh<T, U>(T, U)\n\
+    \where\n\
+    \  T: Copy,\n\
+    \  U: Sized;"
+  ]
+
 
 testComplete :: String -> String -> Test
 testComplete name inp = testCase name $ do

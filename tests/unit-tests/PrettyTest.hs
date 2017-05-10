@@ -361,7 +361,7 @@ prettyItems = testGroup "printing items"
   , testFlatten "unsafe impl Debug for .. { }" (printItem (Item (mkIdent "") [] (DefaultImpl Unsafe (TraitRef (Path False [debug] ()))) InheritedV ()))
   , testFlatten "impl Debug for i32 { }" (printItem (Item (mkIdent "") [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [debug] ()))) i32 []) InheritedV ()))
   , testFlatten "pub impl !Debug for i32 where 'lt: 'gt { }" (printItem (Item (mkIdent "") [] (Impl Normal Negative (Generics [] [] (WhereClause [RegionPredicate (Lifetime "lt" ()) [Lifetime "gt" ()] ()] ()) ()) (Just (TraitRef (Path False [debug] ()))) i32 []) PublicV ()))
-  , testFlatten "impl <T> GenVal<T> { fn value(&mut self) -> &T { return 1; } }" 
+  , testFlatten "impl<T> GenVal<T> { fn value(&mut self) -> &T { return 1; } }" 
                 (printItem (Item (mkIdent "") [] (Impl Normal Positive
                       (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())
                       Nothing
@@ -392,14 +392,14 @@ prettyItems = testGroup "printing items"
                       , ImplItem (mkIdent "Size") InheritedV Default [] (TypeI i32) ()
                       ]) InheritedV ()))
   , testFlatten "unsafe trait Show { }" (printItem (Item (mkIdent "Show") [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [] []) InheritedV ()))
-  , testFlatten "trait Show<T> : 'l1 + for<'l3: 'l1 + 'l2> Debug + 'l2 { }" (printItem (Item (mkIdent "Show") []
+  , testFlatten "trait Show<T>: 'l1 + for<'l3: 'l1 + 'l2> Debug + 'l2 { }" (printItem (Item (mkIdent "Show") []
                                        (Trait Normal
                                               (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())
                                               [ RegionTyParamBound (Lifetime "l1" ()) ()
                                               , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "l3" ()) [Lifetime "l1" (), Lifetime "l2" ()] ()] (TraitRef (Path False [debug] ())) ())  None ()
                                               , RegionTyParamBound (Lifetime "l2" ()) ()]
                                               []) InheritedV ()))
-  , testFlatten "pub trait Show { fn value(&mut self) -> i32 ; const pi: i32 = 1; const e: i32; type Size = i32; type Length : 'l3; type SomeType : 'l1 = f64; }"
+  , testFlatten "pub trait Show { fn value(&mut self) -> i32; const pi: i32 = 1; const e: i32; type Size = i32; type Length: 'l3; type SomeType: 'l1 = f64; }"
                 (printItem (Item (mkIdent "Show") [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) []
                       [ TraitItem (mkIdent "value") []
                           (MethodT (MethodSig Normal NotConst Rust

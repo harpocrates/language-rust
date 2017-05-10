@@ -125,6 +125,6 @@ instance PrettyAnnotated TyParamBound where prettyAnn = printBound
 instance PrettyAnnotated Variant where prettyAnn = printVariant
 instance PrettyAnnotated ViewPath where prettyAnn = printViewPath
 instance PrettyAnnotated Visibility where prettyAnn = printVis
-instance PrettyAnnotated WhereClause where prettyAnn = printWhereClause
+instance PrettyAnnotated WhereClause where prettyAnn = printWhereClause True
 instance PrettyAnnotated WherePredicate where prettyAnn = printWherePredicate
 
