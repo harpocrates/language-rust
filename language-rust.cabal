@@ -80,6 +80,7 @@ test-suite unit-tests
   other-modules:       LexerTest
                        ParserTest
                        PrettyTest
+                       CompleteTest
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
   build-depends:       base >=4.9 && <5.0

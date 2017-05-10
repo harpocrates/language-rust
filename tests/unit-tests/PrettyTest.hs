@@ -22,7 +22,6 @@ prettySuite = testGroup "pretty suite"
   , prettyStatements
   ]
 
-
 -- | Common types to make tests more straightforward
 i32, f64, usize :: Ty ()
 i32 = PathTy Nothing (Path False [("i32", NoParameters ())] ()) ()

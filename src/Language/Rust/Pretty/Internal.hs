@@ -296,9 +296,9 @@ printStmt (Semi expr x)       = annotate x (printExprOuterAttrStyle expr False <
 printStmt (MacStmt m ms as x) = annotate x (printOuterAttrs as </> printMac m delim <> end)
   where delim = case ms of { BracesMac -> Brace; _ -> Paren }
         end   = case ms of { SemicolonMac -> ";"; _ -> mempty }
-printStmt (Local p ty i as x) = annotate x (printOuterAttrs as </> "let" <+> binding <+> initializer <> ";")
-  where binding = printPat p <> perhaps (\t -> ":" <+> printType t) ty
-        initializer = perhaps (\e -> "=" <+> printExpr e) i
+printStmt (Local p ty i as x) = annotate x (printOuterAttrs as <#> WL.hang n (group ("let" <+> binding <+> initializer <> ";")))
+  where binding = group (printPat p <> perhaps (\t -> ":" <#> printType t) ty)
+        initializer = perhaps (\e -> "=" <#> printExpr e) i
 
 -- | Print an expression
 printExpr :: Expr a -> Doc a
@@ -331,16 +331,16 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     TypeAscription _ e ty x     -> annotate x (printExpr e <> ":" <+> printType ty)
     If _ test blk els x         -> annotate x (hsep [ "if", printExpr test, printBlock blk, printElse els ])
     IfLet _ pat e blk els x     -> annotate x (hsep [ "if let", printPat pat, "=", printExpr e, printBlock blk, printElse els ])
-    While as test blk lbl x     -> annotate x (hsep [ printLbl lbl, "while", printExpr test, printBlockWithAttrs blk as ])
-    WhileLet as p e blk lbl x   -> annotate x (hsep [ printLbl lbl, "while let", printPat p, "=", printExpr e, printBlockWithAttrs blk as ])
-    ForLoop as pat e blk lbl x  -> annotate x (hsep [ printLbl lbl, "for", printPat pat, "in", printExpr e, printBlockWithAttrs blk as ])
-    Loop as blk lbl x           -> annotate x (hsep [ printLbl lbl, "loop", printBlockWithAttrs blk as ])
+    While as test blk lbl x     -> annotate x (hsep [ printLbl lbl, "while", printExpr test, printBlockWithAttrs True blk as ])
+    WhileLet as p e blk lbl x   -> annotate x (hsep [ printLbl lbl, "while let", printPat p, "=", printExpr e, printBlockWithAttrs True blk as ])
+    ForLoop as pat e blk lbl x  -> annotate x (hsep [ printLbl lbl, "for", printPat pat, "in", printExpr e, printBlockWithAttrs True blk as ])
+    Loop as blk lbl x           -> annotate x (hsep [ printLbl lbl, "loop", printBlockWithAttrs True blk as ])
     Match as e arms x           -> let arms' = if null arms
                                                  then [] 
                                                  else (printArm True `map` Prelude.init arms) ++ [ printArm False (Prelude.last arms) ]
                                    in annotate x (hsep [ "match", printExpr e, block Brace False mempty (printInnerAttrs as) arms' ])
     Closure _ cap decl body x   -> annotate x (when (cap == Value) "move" <+> printFnBlockArgs decl <+> printExpr body)
-    BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs blk attrs)
+    BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs True blk attrs)
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
     AssignOp _ op lhs rhs x     -> annotate x (hsep [ printExpr lhs, printBinOp op <> "=", printExpr rhs ])
     FieldAccess _ e ident x     -> annotate x (hcat [ printExpr e, ".", printIdent ident ])
@@ -467,17 +467,20 @@ printArm end (Arm as pats guard body x) = annotate x (printOuterAttrs as
 
 -- | Print a block
 printBlock :: Block a -> Doc a
-printBlock blk = printBlockWithAttrs blk []
+printBlock blk = printBlockWithAttrs True blk []
 
 -- | Print a block with attributes (@print_block_with_attrs@ or @print_block_maybe_unclosed@)
-printBlockWithAttrs :: Block a -> [Attribute a] -> Doc a
-printBlockWithAttrs (Block stmts rules x) as = annotate x (printUnsafety rules <+> block Brace True mempty (printInnerAttrs as) (body ++ [ lastStmt ]))
+printBlockWithAttrs :: Bool -> Block a -> [Attribute a] -> Doc a
+printBlockWithAttrs b (Block stmts rules x) as = annotate x (printUnsafety rules <+> block Brace b mempty (printInnerAttrs as) stmts')
   where
-  body = if null stmts then [] else printStmt `map` Prelude.init stmts
+  stmts' | null stmts = []
+         | otherwise = body ++ [ lastStmt ]
+
+  body = printStmt `map` Prelude.init stmts
   
-  lastStmt = unless (null stmts) (case last stmts of
-                                    NoSemi expr _ -> printExprOuterAttrStyle expr False
-                                    stmt -> printStmt stmt)
+  lastStmt = case last stmts of
+               NoSemi expr _ -> printExprOuterAttrStyle expr False
+               stmt -> printStmt stmt
 
 -- | Print an @else@ expression (@print_else@)
 printElse :: Maybe (Expr a) -> Doc a
@@ -655,7 +658,7 @@ printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs a
   Use vp            -> hsep [ printVis vis, "use", printViewPath vp <> ";" ]
   Static ty m e     -> hsep [ printVis vis, "static", printMutability m, printIdent ident <> ":", printType ty, "=", printExpr e <> ";" ]
   ConstItem t e     -> hsep [ printVis vis, "const", printIdent ident <> ":", printType t, "=", printExpr e <> ";" ]
-  Fn d s c a t b    -> printFn d s c a (Just ident) t vis <#> printBlockWithAttrs b attrs
+  Fn d s c a t b    -> printFn d s c a (Just ident) t vis <+> printBlockWithAttrs False b attrs
   Mod items         -> hsep [ printVis vis, "mod", printIdent ident, printMod items attrs ]
   ForeignMod a i    -> hsep [ printAbi a, printForeignMod i attrs ]
   TyAlias ty ps     -> hsep [ printVis vis, "type", printIdent ident <> printGenerics ps <> printWhereClause (whereClause ps), "=", printType ty <> ";" ]
@@ -686,7 +689,7 @@ printTraitItem :: TraitItem a -> Doc a
 printTraitItem (TraitItem ident attrs node x) = annotate x $ printOuterAttrs attrs <#>
   case node of
     ConstT ty default_m -> printAssociatedConst ident ty default_m InheritedV
-    MethodT sig block_m -> printMethodSig ident sig InheritedV <+> maybe ";" (`printBlockWithAttrs` attrs) block_m
+    MethodT sig block_m -> printMethodSig ident sig InheritedV <+> maybe ";" (\b -> printBlockWithAttrs False b attrs) block_m
     TypeT bounds default_m -> printAssociatedType ident (Just bounds) default_m
     MacroT m -> printMac m Paren <> ";"
 
@@ -712,7 +715,7 @@ printImplItem (ImplItem ident vis defaultness attrs node x) = annotate x $ print
   [ printVis vis, when (defaultness == Default) "default"
   , case node of
       ConstI ty expr -> printAssociatedConst ident ty (Just expr) InheritedV
-      MethodI sig body -> printMethodSig ident sig InheritedV <+> printBlockWithAttrs body attrs
+      MethodI sig body -> printMethodSig ident sig InheritedV <+> printBlockWithAttrs False body attrs
       TypeI ty -> printAssociatedType ident Nothing (Just ty) 
       MacroI m -> printMac m Paren <> ";" 
   ]
@@ -793,7 +796,7 @@ printVariant (Variant i _ _data e x) = annotate x (body <+> disc)
 printWhereClause :: WhereClause a -> Doc a
 printWhereClause (WhereClause predicates x)
   | null predicates = mempty
-  | otherwise = annotate x ("where" <#> block NoDelim False "," mempty (printWherePredicate `map` predicates ))
+  | otherwise = annotate x ("where" <#> block NoDelim False "," mempty (printWherePredicate `map` predicates))
 
 -- | Print a where clause predicate
 printWherePredicate :: WherePredicate a -> Doc a
@@ -909,7 +912,7 @@ printGenerics (Generics lifetimes tyParams _ x)
   | null lifetimes && null tyParams = mempty
   | otherwise =  let lifetimes' = [ printOuterAttrs as <+> printLifetimeBounds lt bds | LifetimeDef as lt bds _ <- lifetimes ]
                      bounds' = [ printTyParam param | param<-tyParams ]
-                 in annotate x ("<" <> hsep (punctuate "," (lifetimes' ++ bounds')) <> ">")
+                 in annotate x (group ("<" <##> block NoDelim True "," mempty (lifetimes' ++ bounds') <##> ">"))
 
 -- | Print a poly-trait ref (@print_poly_trait_ref@)
 printPolyTraitRef :: PolyTraitRef a -> Doc a
