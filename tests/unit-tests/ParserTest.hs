@@ -136,6 +136,9 @@ parserLiterals = testGroup "parsing literals"
   , testP "b\"hello \\n world!\"" (byteStr "hello \n world!" Cooked Unsuffixed ())
   , testP "br\"hello \n world!\"" (byteStr "hello \n world!" (Raw 0) Unsuffixed ())
   , testP "br##\"hello \"#\n world!\"###" (byteStr "hello \"#\n world!" (Raw 2) Unsuffixed ())
+  -- multiline strings
+  , testP "\"hello \\\n     world!\"" (Str "hello world!" Cooked Unsuffixed ())
+  , testP "b\"hello \\\n     world!\"" (byteStr "hello world!" Cooked Unsuffixed ())
   ]
 
 

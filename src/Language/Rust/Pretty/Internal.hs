@@ -21,16 +21,20 @@ import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
-import Text.PrettyPrint.Annotated.WL (pretty, hcat, cat, punctuate, group, angles, space, flatten, align, fillSep, text, vcat, char, annotate, noAnnotate, flatAlt, parens, brackets, (<>), Doc)
+import Text.PrettyPrint.Annotated.WL (
+    hcat, cat, punctuate, group, angles, flatten, align, fillSep, text, vcat, char, annotate, 
+    noAnnotate, flatAlt, parens, brackets, (<>), Doc
+  )
 import qualified Text.PrettyPrint.Annotated.WL as WL
 
 import Data.Char (intToDigit, ord, chr)
-import Data.Foldable (toList)
-import Data.List.NonEmpty (NonEmpty(..))
-import qualified Data.List.NonEmpty as N
 import Data.Maybe (listToMaybe, maybeToList)
 import Data.Word (Word8)
+
+import Data.Foldable (toList)
 import Data.List (mapAccumL)
+import Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.List.NonEmpty as N
 
 -- | indentation level
 n :: Int
@@ -418,7 +422,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
   chainedMethodCalls (Index _ s i x) fdoc
     = chainedMethodCalls s (annotate x . (<> fdoc ("[" <> block NoDelim True mempty mempty [printExpr i] <> "]")))
   chainedMethodCalls (TupField _ s i x) fdoc
-    = chainedMethodCalls s (annotate x . (<> fdoc ("." <> pretty i)))
+    = chainedMethodCalls s (annotate x . (<> fdoc ("." <> WL.pretty i)))
   chainedMethodCalls e fdoc = group (fdoc (printExpr e))
 
 
@@ -573,7 +577,7 @@ printLit lit = case lit of
     (Char c s x)              -> annotate x (hcat [ "'",  escapeChar c, "'", suffix s ])
     (Byte b s x)              -> annotate x (hcat [ "b'", escapeByte b, "'", suffix s ])
     (Int b i s x)             -> annotate x (hcat [ printIntLit i b, suffix s ])
-    (Float d s x)             -> annotate x (hcat [ pretty d,  suffix s ])
+    (Float d s x)             -> annotate x (hcat [ WL.pretty d,  suffix s ])
     (Bool True s x)           -> annotate x (hcat [ "true",  suffix s ])
     (Bool False s x)          -> annotate x (hcat [ "false", suffix s ])
   where
@@ -818,7 +822,7 @@ printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a
 printStruct structDef generics ident printFinalizer annotateGenerics =
   printIdent ident <> gen
     <> case (structDef, whereClause generics) of 
-          (StructD fields x, WhereClause [] _) -> annotate x $ space <> block Brace False "," mempty (printStructField `map` fields)
+          (StructD fields x, WhereClause [] _) -> annotate x $ WL.space <> block Brace False "," mempty (printStructField `map` fields)
           (StructD fields x, wc) -> annotate x $ WL.line <> printWhereClause True wc <#> block Brace False "," mempty (printStructField `map` fields)
           (TupleD fields x, WhereClause [] _) -> annotate x $ block Paren True "," mempty (printStructField `map` fields) <> when printFinalizer ";" 
           (TupleD fields x, wc) -> annotate x $ block Paren True "," mempty (printStructField `map` fields) <#> printWhereClause (not printFinalizer) wc <> when printFinalizer ";" 
@@ -936,7 +940,7 @@ printPat (RangeP lo hi x)               = annotate x (printExpr lo <+> "..." <+>
 printPat (SliceP pb Nothing pa x)       = annotate x ("[" <> commas (pb ++ pa) printPat <> "]")
 printPat (SliceP pb (Just ps) pa x)     = annotate x ("[" <> commas pb printPat <> ps' <+> commas pa printPat <> "]")
   where ps' = hcat [ unless (null pb) ","
-                   , space
+                   , WL.space
                    , case ps of WildP{} -> mempty
                                 _ -> printPat ps
                    , ".."

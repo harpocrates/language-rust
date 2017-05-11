@@ -18,18 +18,18 @@ module Language.Rust.Parser.Literals (
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.AST
 
-import Data.Char (chr, ord, isHexDigit, digitToInt)
+import Data.Char (chr, ord, isHexDigit, digitToInt, isSpace)
 import Data.List (unfoldr)
 import Data.Word (Word8)
 
 -- | Parse a valid 'LitTok' into a 'Lit'.
 translateLit :: LitTok -> Suffix -> a -> Lit a
-translateLit (ByteTok s)         = let Just (w8,"") = unescapeByte s in Byte w8
-translateLit (CharTok s)         = let Just (c,"")  = unescapeChar s in Char c
+translateLit (ByteTok s)         = let Just (w8,"") = unescapeByte False s in Byte w8
+translateLit (CharTok s)         = let Just (c,"")  = unescapeChar False s in Char c
 translateLit (FloatTok s)        = Float (unescapeFloat s) 
-translateLit (StrTok s)          = Str (unfoldr unescapeChar s) Cooked
+translateLit (StrTok s)          = Str (unfoldr (unescapeChar True) s) Cooked
 translateLit (StrRawTok s n)     = Str s (Raw n)
-translateLit (ByteStrTok s)      = ByteStr (unfoldr unescapeByte s) Cooked
+translateLit (ByteStrTok s)      = ByteStr (unfoldr (unescapeByte True) s) Cooked
 translateLit (ByteStrRawTok s n) = ByteStr (map (fromIntegral . ord) s) (Raw n) 
 translateLit (IntegerTok s)      = \suf -> case (suf, unescapeInteger s) of
                                              (F32, (Dec, n)) -> Float (fromInteger n) F32
@@ -38,8 +38,10 @@ translateLit (IntegerTok s)      = \suf -> case (suf, unescapeInteger s) of
   
 -- | Given a string of characters read from a Rust source, extract the next underlying char taking
 -- into account escapes and unicode.
-unescapeChar :: String -> Maybe (Char, String)
-unescapeChar ('\\':c:cs) = case c of
+unescapeChar :: Bool                    -- ^ multi-line strings allowed
+             -> String                  -- ^ input string
+             -> Maybe (Char, String)
+unescapeChar multiline ('\\':c:cs) = case c of
        'n'  -> pure ('\n', cs)
        'r'  -> pure ('\r', cs)
        't'  -> pure ('\t', cs)
@@ -58,14 +60,17 @@ unescapeChar ('\\':c:cs) = case c of
                  '{':x1:x2:x3:x4:x5:'}':cs'    -> do (h,_)   <- readHex 5 [x1,x2,x3,x4,x5];    pure (chr h, cs')
                  '{':x1:x2:x3:x4:x5:x6:'}':cs' -> do (h,_)   <- readHex 6 [x1,x2,x3,x4,x5,x6]; pure (chr h, cs')
                  _                             -> do (h,cs') <- readHex 4 cs;                  pure (chr h, cs')
-       _    -> error "unescape char: bad escape sequence"
-unescapeChar (c:cs) = Just (c, cs)
-unescapeChar [] = fail "unescape char: empty string"
+       '\n' | multiline -> unescapeChar multiline $ dropWhile isSpace cs
+       _ -> error "unescape char: bad escape sequence"
+unescapeChar _ (c:cs) = Just (c, cs)
+unescapeChar _ [] = fail "unescape char: empty string"
 
 -- | Given a string of characters read from a Rust source, extract the next underlying byte taking
 -- into account escapes.
-unescapeByte :: String -> Maybe (Word8, String)
-unescapeByte ('\\':c:cs) = case c of
+unescapeByte :: Bool                    -- ^ multi-line strings allowed
+             -> String                  -- ^ input string
+             -> Maybe (Word8, String)
+unescapeByte multiline ('\\':c:cs) = case c of
        'n'  -> pure (toEnum $ fromEnum '\n', cs)
        'r'  -> pure (toEnum $ fromEnum '\r', cs)
        't'  -> pure (toEnum $ fromEnum '\t', cs)
@@ -75,9 +80,10 @@ unescapeByte ('\\':c:cs) = case c of
        '0'  -> pure (toEnum $ fromEnum '\0', cs)
        'x'  -> do (h,cs') <- readHex 2 cs; pure (h, cs')
        'X'  -> do (h,cs') <- readHex 2 cs; pure (h, cs')
+       '\n' | multiline -> unescapeByte multiline $ dropWhile isSpace cs
        _    -> error "unescape byte: bad escape sequence"
-unescapeByte (c:cs) = Just (toEnum $ fromEnum c, cs)
-unescapeByte [] = fail "unescape byte: empty string"
+unescapeByte _ (c:cs) = Just (toEnum $ fromEnum c, cs)
+unescapeByte _ [] = fail "unescape byte: empty string"
 
 -- | Given a string Rust representation of an integer, parse it into a number
 unescapeInteger :: Num a => String -> (IntRep,a)
