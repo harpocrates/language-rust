@@ -25,13 +25,17 @@ completeSuite = testGroup "complete suite"
     \  }\n\
     \}"
   , functionArgs
+  , functionCalls
   , methodCalls
   , lets
   , generics
   , whereClauses
+  , functions
   , typeAliases
   , traits
   , structs
+  , enums
+  , matchExpressions
   ] 
 
 functionArgs :: Test
@@ -49,11 +53,54 @@ functionArgs = testGroup "function args"
     "fn foo(x: i32, y: i32) -> i32 { }"
   ]
 
+functionCalls :: Test
+functionCalls = testGroup "function calls"
+  [ testComplete "short call"
+    "fn main() {\n\
+    \  foo(1, 2, 3, 4);\n\
+    \}"
+  , testComplete "multi line call"
+    "fn main() {\n\
+    \  foo(\n\
+    \    foooooooooooooooo,\n\
+    \    baaaaaaaaaaaaaaar,\n\
+    \    baaaaaaaaaaaaaaaz,\n\
+    \  );\n\
+    \}"
+  , testComplete "nested mutli line call"
+    "fn main() {\n\
+    \  foo(\n\
+    \    0,\n\
+    \    bar(\n\
+    \      foooooooooooooooo,\n\
+    \      baaaaaaaaaaaaaaar,\n\
+    \      baaaaaaaaaaaaaaaz,\n\
+    \    ),\n\
+    \  );\n\
+    \}"
+  , testComplete "nested one-arg multi line call"
+    "fn main() {\n\
+    \  foo(bar(\n\
+    \    foooooooooooooooo,\n\
+    \    baaaaaaaaaaaaaaar,\n\
+    \    baaaaaaaaaaaaaaaz,\n\
+    \  ));\n\
+    \}"
+  , testComplete "nested one-arg multi line call"
+    "fn main() {\n\
+    \  foo(bar(baz(boo(far(faz(\n\
+    \    foooooooooooooooo,\n\
+    \    baaaaaaaaaaaaaaar,\n\
+    \    baaaaaaaaaaaaaaaz,\n\
+    \  ))))));\n\
+    \}"
+  ]
+
 methodCalls :: Test
 methodCalls = testGroup "method calls"
   [ testComplete "short chained method call"
     "fn foo() {\n\
-    \  obj.bar().baz();\n\
+    \  obj.bar()?.baz();\n\
     \}"
   , testComplete "long chained method call"
     "fn foo() {\n\
@@ -66,6 +113,32 @@ methodCalls = testGroup "method calls"
     \    )\n\
     \    .clone();\n\
     \}"
+  , testComplete "long chained method call / fields / try / index"
+    "fn foo() {\n\
+    \  (foo as ObjectBuilderFactory)\n\
+    \    .baaaaaaaaaaar(foo, bar, baz)\n\
+    \    .foo\n\
+    \    .bar[0]\n\
+    \    .baz?\n\
+    \    .baf[0][0].4\n\
+    \    .bar(baaaaaaaaaaz(\n\
+    \      fooooooooo,\n\
+    \      baaaaaaaar,\n\
+    \      baaaaaaaaz,\n\
+    \    ))\n\
+    \    .clone();\n\
+    \}"
+  , testComplete "long caller"
+    "fn foo() {\n\
+    \  Point {\n\
+    \    withExceeeeeeeeeedingly: 1,\n\
+    \    looooooooooooongFields: 2,\n\
+    \  }\n\
+    \    .baaaaaaaaaaar(foo, bar, baz)\n\
+    \    .foo\n\
+    \    .bar[0]\n\
+    \    .baz?\n\
+    \}" 
   ]
 
 lets :: Test
@@ -172,6 +245,16 @@ whereClauses = testGroup "where clauses"
     \}"
   ]
 
+functions :: Test
+functions = testGroup "functions"
+  -- The '-> ret_ty' should never be on a line of its own - split the args instead.
+  -- See <https://github.com/rust-lang-nursery/fmt-rfcs/issues/77>
+  [ testComplete "long return type"
+    "fn bit(\n\
+    \  x: i32,\n\
+    \) -> LoooooooooooooooooooooooongType { }"
+  ]
+
 -- See <https://github.com/rust-lang-nursery/fmt-rfcs/issues/32>
 typeAliases :: Test
 typeAliases = testGroup "type aliases"
@@ -205,18 +288,115 @@ traits = testGroup "traits"
 
 structs :: Test
 structs = testGroup "structs"
-  [ testComplete "generic unit struct"
+  [ testComplete "unit struct"
+    "struct Bleh;"
+  , testComplete "tuple struct"
+    "struct Bleh(i32, i32);"
+  , testComplete "regular struct"
+    "struct Baz {\n\
+    \  field: i32,\n\
+    \}"
+  , testComplete "generic unit struct"
+    "struct Bleh<T: Copy, U: Sized>;"
+  , testComplete "generic tuple struct"
+    "struct Bleh<T: Copy, U: Sized>(T, U);"
+  , testComplete "generic regular struct"
+    "struct Baz<T: Copy> {\n\
+    \  field: T,\n\
+    \}"
+  , testComplete "where unit struct"
     "struct Bleh<T, U>\n\
     \where\n\
     \  T: Copy,\n\
     \  U: Sized;"
-  , testComplete "generic tuple struct"
+  , testComplete "where tuple struct"
     "struct Bleh<T, U>(T, U)\n\
     \where\n\
     \  T: Copy,\n\
     \  U: Sized;"
+  , testComplete "where regular struct"
+    "struct Baz<T>\n\
+    \where\n\
+    \  T: Copy,\n\
+    \{\n\
+    \  field: T,\n\
+    \}"
   ]
 
+enums :: Test
+enums = testGroup "enums"
+  [ testComplete "empty enum"
+    "enum Foo { }"
+  , testComplete "basic enum"
+    "enum Foo {\n\
+    \  UnitCon,\n\
+    \  UnitCon = 3,\n\
+    \  Baz {\n\
+    \    foo: i32,\n\
+    \    bar: (),\n\
+    \  },\n\
+    \  Bar(i32, i32),\n\
+    \}"
+  , testComplete "generic enum"
+    "enum Foo<T: Sized> {\n\
+    \  UnitCon,\n\
+    \  UnitCon = 3,\n\
+    \  Baz {\n\
+    \    foo: T,\n\
+    \    bar: (),\n\
+    \  },\n\
+    \  Bar(T, i32),\n\
+    \}"
+  , testComplete "where enum"
+    "enum Foo<T>\n\
+    \where\n\
+    \  T: Sized,\n\
+    \{\n\
+    \  UnitCon,\n\
+    \  UnitCon = 3,\n\
+    \  Baz {\n\
+    \    foo: T,\n\
+    \    bar: (),\n\
+    \  },\n\
+    \  Bar(T, i32),\n\
+    \}"
+  ]
+
+-- See <https://github.com/rust-lang-nursery/fmt-rfcs/issues/34>
+matchExpressions :: Test
+matchExpressions = testGroup "match expressions"
+  [ testComplete "empty match"
+    "fn foo() {\n\
+    \  match expr { }\n\
+    \}"
+  , testComplete "simple match"
+    "fn foo() {\n\
+    \  match expr {\n\
+    \    0 => 1,\n\
+    \    1 => { 2 },\n\
+    \    2 => 3,\n\
+    \  }\n\
+    \}"
+  , testComplete "multiple patterns one line match"
+    "fn foo() {\n\
+    \  match expr {\n\
+    \    0 => 1,\n\
+    \    1 | 2 | 3 | 4 => { 2 },\n\
+    \    5 => 3,\n\
+    \  }\n\
+    \}"
+  , testComplete "multiple patterns multiple lines match"
+    "fn foo() {\n\
+    \  match expr {\n\
+    \    0 => 1,\n\
+    \    1432482379423 |\n\
+    \    2423894732 |\n\
+    \    3423423 |\n\
+    \    4234273 => { 2 },\n\
+    \    5 => 3,\n\
+    \  }\n\
+    \}"
+  ]
 
 testComplete :: String -> String -> Test
 testComplete name inp = testCase name $ do

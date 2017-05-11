@@ -63,9 +63,8 @@ import Text.Read (readMaybe)
 -- Conflicts caused in
 --  * (1) around the '::' in path_segments_without_colons
 --  * (1) around the '=' in where_clause
---  * (1) around where with nothing in it in where_clause
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 3
+%expect 2
 
 %token
 
@@ -1221,8 +1220,8 @@ stmt_item :: { Item Span }
   | mod ident '{' inner_attrs many(mod_item) '}'         { Item (unspan $2) (toList $4) (Mod $5) InheritedV ($1 # $>) }
   | extern abi '{'             many(foreign_item) '}'    { Item "" [] (ForeignMod $2 $4) InheritedV ($1 # $>) }
   | extern abi '{' inner_attrs many(foreign_item) '}'    { Item "" (toList $4) (ForeignMod $2 $5) InheritedV ($1 # $>) }
-  | struct ident generics where_clause struct_decl_args  { Item (unspan $2) [] (StructItem $5 $3{ whereClause = $4 }) InheritedV ($1 # $>) }
-  | union ident generics where_clause struct_decl_args   { Item (unspan $2) [] (Union $5 $3{ whereClause = $4 }) InheritedV ($1 # $>) }
+  | struct ident generics struct_decl_args               { Item (unspan $2) [] (StructItem (snd $4) $3{ whereClause = fst $4 }) InheritedV ($1 # snd $>) }
+  | union ident generics struct_decl_args                { Item (unspan $2) [] (Union (snd $4) $3{ whereClause = fst $4 }) InheritedV ($1 # snd $>) }
   | enum ident generics where_clause '{' sep_byT(enum_def,',') '}'
     { Item (unspan $2) [] (Enum $6 $3{ whereClause = $4 }) InheritedV ($1 # $>) }
   | item_impl                                            { $1 }
@@ -1238,10 +1237,10 @@ safety_trait :: { Spanned Unsafety }
   :        trait   { Spanned Normal (spanOf $1) }
   | unsafe trait   { Spanned Unsafe ($1 # $2) }
 
-struct_decl_args :: { VariantData Span }
-  : ';'                                                { StructD [] (spanOf $1) }
-  | '{' sep_byT(struct_decl_field,',') '}'             { StructD $2 ($1 # $3) }
-  | '(' sep_byT(tuple_decl_field,',')  ')' ';'         { TupleD $2 ($1 # $4) }
+struct_decl_args :: { (WhereClause Span, VariantData Span) }
+  : where_clause ';'                                         { ($1, UnitD ($1 # $>)) }
+  | where_clause '{' sep_byT(struct_decl_field,',') '}'      { ($1, StructD $3 ($1 # $>)) }
+  | '(' sep_byT(tuple_decl_field,',') ')' where_clause ';'   { ($4, TupleD $2 ($1 # $>)) }
 
 struct_decl_field :: { StructField Span }
   : many(outer_attribute) vis ident ':' ty                  { StructField (Just (unspan $3)) (unspan $2) $5 $1 ($1 # $2 # $5) }

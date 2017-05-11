@@ -47,6 +47,8 @@ mod bar {
   fn foo<T: ?Sized>(x: &T) { }
   struct Foo<T: Send + ?Sized + Sync> { field: Box<T> }
   trait Bar { type Baz: ?Sized; }
+
+  struct Bleh<T, U> where T: Copy, U: Sized; 
   
   impl Trait for .. {}
   impl Trait<T> for .. {}
@@ -63,4 +65,11 @@ mod bar {
  // macro_rules! foo { }
  // foo!();
 
+  enum Foo {
+    Baz {
+      foo: i32,
+      bar: (),
+    },
+    Bar(i32, i32),
+  }
 }

@@ -622,7 +622,7 @@ parserItems = testGroup "parsing items"
   , testP "extern crate foo;" (Item "foo" [] (ExternCrate Nothing) InheritedV ())
   , testP "extern crate foo as bar;" (Item "bar" [] (ExternCrate (Just "foo")) InheritedV ()) 
   , testP "mod foo;" (Item "foo" [] (Mod []) InheritedV ())
-  , testP "struct Point;" (Item "Point" [] (StructItem (StructD [] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
+  , testP "struct Point;" (Item "Point" [] (StructItem (UnitD ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
   , testP "struct Point { }" (Item "Point" [] (StructItem (StructD [] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
   , testP "struct Point { x: i32, y: i32 }" (Item "Point" [] (StructItem (StructD [StructField (Just "x") InheritedV i32 [] (), StructField (Just "y") InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())
   , testP "struct Point { x: i32, y: i32, }" (Item "Point" [] (StructItem (StructD [StructField (Just "x") InheritedV i32 [] (), StructField (Just "y") InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ())) InheritedV ())

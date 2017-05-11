@@ -272,7 +272,7 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "match foo { _ => 1 }" (printExpr (Match [] foo [Arm [] [WildP ()] Nothing _1 ()] ())) 
   , testFlatten "#[cfgo] match foo { #![cfgi] _ => 1 }" (printExpr (Match [cfgI,cfgO] foo [Arm [] [WildP ()] Nothing _1 ()] ())) 
   , testFlatten "match foo { _ => { return 1; } }" (printExpr (Match [] foo [Arm [] [WildP ()] Nothing (BlockExpr [] retBlk ()) ()] ())) 
-  , testFlatten "match foo { _ => { return 1; } _ | _ if foo => 1 }" (printExpr (Match [] foo [Arm [] [WildP ()] Nothing (BlockExpr [] retBlk ()) (), Arm [] [WildP (), WildP ()] (Just foo) _1 ()] ())) 
+  , testFlatten "match foo { _ => { return 1; }, _ | _ if foo => 1 }" (printExpr (Match [] foo [Arm [] [WildP ()] Nothing (BlockExpr [] retBlk ()) (), Arm [] [WildP (), WildP ()] (Just foo) _1 ()] ())) 
   , testFlatten "move |x: i32| { return 1; }"
                 (printExpr (Closure [] Value (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) 
                                     (BlockExpr [] retBlk ()) ()))
