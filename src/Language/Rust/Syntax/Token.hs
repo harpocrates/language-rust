@@ -94,10 +94,6 @@ data Token
   | Shebang               -- ^ @#!@ shebang token
   | Eof                   -- ^ end of file token
   
-  -- Macro related:
-  | MatchNt Ident Ident   -- ^ matching form (in LHS) for @macro_rules!@ macros (something like @$x:item@)
-  | SubstNt Ident         -- ^ substitution form (in RHS) for @macro_rules!@ macros (something like @$x@)
-  
   -- NOT PRODUCED IN TOKENIZATION!!
   | Interpolated (Nonterminal Span) -- ^ can be expanded into several tokens in macro-expansion
   deriving (Eq, Data, Typeable, Generic)
@@ -189,8 +185,8 @@ instance Show Token where
   show Semicolon = ";"
   show Colon = ":"
   show ModSep = "::"
-  show RArrow = "->"
-  show LArrow = "<-"
+  show RArrow = "<-"
+  show LArrow = "->"
   show FatArrow = "=>"
   show Pound = "#"
   show Dollar = "$"
@@ -225,6 +221,4 @@ instance Show Token where
   show Eof = "<EOF>"
   -- Macro related 
   show Interpolated{} = "<Interpolated>"
-  show (MatchNt x t) = "$" ++ show x ++ ":" ++ show t
-  show (SubstNt x) = "$" ++ show x
 

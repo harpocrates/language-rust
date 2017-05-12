@@ -25,7 +25,7 @@ flag useByteStrings
 
 flag enableQuasiquotes
     description:     Provide the experimental 'Language.Rust.Quote' module
-    default:         False
+    default:         True
 
 library
   hs-source-dirs:      src

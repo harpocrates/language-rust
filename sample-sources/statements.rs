@@ -15,5 +15,5 @@ fn main() {
   2 + { 1 };
 
   // Mac
- // println!("hi")
+  println!("hi")
 }

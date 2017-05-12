@@ -965,20 +965,11 @@ data TokenTree
       , tts :: [TokenTree]         -- ^ delimited sequence of token trees
       , closeSpan :: Span          -- ^ span covering the closing delimiter
       }
-  -- | A kleene-style repetition sequence of token trees (@syntax::tokenstream::SequenceRepition@).
-  -- Example: @$($inits:expr),+@
-  | Sequence 
-      { span :: Span 
-      , tts :: [TokenTree]         -- ^ sequence of token trees
-      , separator :: Maybe Token   -- ^ optional separator
-      , op :: KleeneOp             -- ^ sequence can be repeated zero (@*@), or one or more times (@+@)
-      }
   deriving (Eq, Show, Typeable, Data, Generic)
 
 instance Located TokenTree where
   spanOf (Token s _) = s
   spanOf (Delimited s _ _ _ _) = s
-  spanOf (Sequence s _ _ _) = s
 
 -- | modifier on a bound, currently this is only used for @?Sized@, where the modifier is @Maybe@. Negative
 -- bounds should also be handled here.

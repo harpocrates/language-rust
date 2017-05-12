@@ -1104,13 +1104,6 @@ resolveTt (Token _ (OpenDelim _)) = Left "open delimiter is not allowed as a tok
 resolveTt (Token _ (CloseDelim _)) = Left "close delimiter is not allowed as a token in a token tree"
 resolveTt t@Token{} = pure t
 resolveTt (Delimited s d s' tt s'') = Delimited s d s' <$> sequence (resolveTt <$> tt) <*> pure s''
-resolveTt (Sequence s tt s' o) = do 
-  tt' <- sequence (resolveTt <$> tt)
-  s'' <- case s' of
-          (Just Plus) -> Left "plus cannot be used as a sequence delimiter"
-          (Just Star) -> Left "star cannot be used as a sequence delimiter"
-          _ -> pure s'
-  pure (Sequence s tt' s'' o)
 
 instance Resolve TokenTree where resolve = resolveTt
 

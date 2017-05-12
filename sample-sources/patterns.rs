@@ -20,7 +20,7 @@ fn main() {
     [a, b, i.., y, z] => 0,
     [a, b, .., y, z] => 0,
     [a, b, c] => 0,
- //   LinkedList!(1,2,3) => 0,
+    LinkedList!(1,2,3) => 0,
   }
 }
 

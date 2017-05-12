@@ -22,6 +22,8 @@ from nightly as they come out, but in general will only target compatibility wit
 
 ## Bugs
 
+### Parser
+
 Any difference between what is accepted by the `rustc` parser and the `language-rust` parser
 indicates
 
@@ -29,8 +31,14 @@ indicates
   * a bug in `rustc`
   * that there is a newer version of `rustc` which made a breaking change to this syntax
 
+If the AST/parser of `rustc` changes, the `rustc-tests` test suite should start failing - it
+compares the JSON AST debug output of `rustc` to our parsed AST.
+
+### Pretty-printer
+
 For the pretty-printer, bugs are a bit tougher to list exhaustively. Suggestions for better layout
-algorithms are most welcome!
+algorithms are most welcome! The [`fmt-rfcs`][6] repo is loosely used as the reference for "correct"
+pretty-printing.
 
 [0]: https://www.rust-lang.org/en-US/
 [1]: https://docs.haskellstack.org/en/stable/README/
@@ -38,3 +46,4 @@ algorithms are most welcome!
 [3]: https://hackage.haskell.org/package/happy
 [4]: https://travis-ci.org/harpocrates/language-rust.svg?branch=master
 [5]: https://travis-ci.org/harpocrates/language-rust
+[6]: https://github.com/rust-lang-nursery/fmt-rfcs

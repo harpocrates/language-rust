@@ -131,11 +131,11 @@ parserLiterals = testGroup "parsing literals"
   -- string's
   , testP "\"hello \\n world!\"" (Str "hello \n world!" Cooked Unsuffixed ())
   , testP "r\"hello \n world!\"" (Str "hello \n world!" (Raw 0) Unsuffixed ()) 
-  , testP "r##\"hello \"#\n world!\"###" (Str "hello \"#\n world!" (Raw 2) Unsuffixed ())
+  , testP "r##\"hello \"#\n world!\"##" (Str "hello \"#\n world!" (Raw 2) Unsuffixed ())
   -- bytestring's
   , testP "b\"hello \\n world!\"" (byteStr "hello \n world!" Cooked Unsuffixed ())
   , testP "br\"hello \n world!\"" (byteStr "hello \n world!" (Raw 0) Unsuffixed ())
-  , testP "br##\"hello \"#\n world!\"###" (byteStr "hello \"#\n world!" (Raw 2) Unsuffixed ())
+  , testP "br##\"hello \"#\n world!\"##" (byteStr "hello \"#\n world!" (Raw 2) Unsuffixed ())
   -- multiline strings
   , testP "\"hello \\\n     world!\"" (Str "hello world!" Cooked Unsuffixed ())
   , testP "b\"hello \\\n     world!\"" (byteStr "hello world!" Cooked Unsuffixed ())

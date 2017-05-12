@@ -209,10 +209,6 @@ import Text.Read (readMaybe)
   -- Lifetimes.
   LIFETIME       { Spanned (LifetimeTok _) _ }
 
-  -- macro related
-  substNt        { Spanned (SubstNt _ ) _ }
-  matchNt        { Spanned (MatchNt _ _) _ }
-
   -- Interpolated
   ntItem         { Spanned (Interpolated (NtItem $$)) _ }
   ntBlock        { Spanned (Interpolated (NtBlock $$)) _ }
@@ -1380,19 +1376,12 @@ token_tree :: { TokenTree }
   -- # Delimited
   | '(' many(token_tree) ')'                              { Delimited mempty Paren mempty $2 mempty }
   | '{' many(token_tree) '}'                              { Delimited mempty Brace mempty $2 mempty }
-  | '[' many(token_tree) ']'                              { Delimited mempty Bracket mempty $2 mempty }
-  -- # Sequence
-  | '$' '(' many(token_tree) ')' token_not_plus_star '+'  { Sequence mempty $3 (Just (unspan $5)) OneOrMore }
-  | '$' '(' many(token_tree) ')' token_not_plus_star '*'  { Sequence mempty $3 (Just (unspan $5)) ZeroOrMore }
-  | '$' '(' many(token_tree) ')' '+'                      { Sequence mempty $3 Nothing OneOrMore }
-  | '$' '(' many(token_tree) ')' '*'                      { Sequence mempty $3 Nothing ZeroOrMore }
+  | '[' many(token_tree) ']'                              { Delimited mempty Bracket mempty $2 mempty } 
   -- # Token
   -- Expression-operator symbols.
-  | token_not_plus_star                                   { mkTokenTree $1 }
-  | '+'                                                   { mkTokenTree $1 }
-  | '*'                                                   { mkTokenTree $1 }
+  | token                                                 { let Spanned t s = $1 in Token s t }
 
-token_not_plus_star :: { Spanned Token }
+token :: { Spanned Token }
   : '='        { $1 }
   | '<'        { $1 }
   | '>'        { $1 }
@@ -1400,6 +1389,8 @@ token_not_plus_star :: { Spanned Token }
   | '~'        { $1 }
   | '-'        { $1 }
   | '/'        { $1 }
+  | '+'        { $1 }
+  | '*'        { $1 }
   | '%'        { $1 }
   | '^'        { $1 }
   | '&'        { $1 }
@@ -1437,6 +1428,7 @@ token_not_plus_star :: { Spanned Token }
   | '#'        { $1 }
   | '$' %prec DOLLAR  { $1 }
   | '?'        { $1 }
+  | '#!'       { $1 }
   -- Literals.
   | byte       { $1 }
   | char       { $1 }
@@ -1511,9 +1503,6 @@ token_not_plus_star :: { Spanned Token }
   | '_'        { $1 }
   -- Lifetimes.
   | LIFETIME   { $1 }
-  -- Macro related
-  | substNt    { $1 }
-  | matchNt    { $1 }
 
 
 {
@@ -1602,10 +1591,6 @@ addAttrs as (Repeat as' e1 e2 s)     = Repeat (as ++ as') e1 e2 s
 addAttrs as (ParenExpr as' e s)      = ParenExpr (as ++ as') e s
 addAttrs as (Try as' e s)            = Try (as ++ as') e s
 
-
--- | Given a spanned token, convert it to a token tree. Basically just move the Span
-mkTokenTree :: Spanned Token -> TokenTree
-mkTokenTree (Spanned t s) = Token s t
 
 -- | Given a 'Doc' token, convert it into an attribute
 mkDocAttribute :: Spanned Token -> Attribute Span

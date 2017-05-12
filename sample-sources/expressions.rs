@@ -34,8 +34,8 @@ fn main() {
   let x = &a;
   let x = &mut a;
   let x = return 1;
-//  let x = asm!("NOP");
-//  let x = println!("hi");
+  let x = asm!("NOP");
+  let x = println!("hi");
   let x = Foo { x: 1, y: 2 };
   let x = Foo { x: 1, ..base };
   let x = [1; 5];

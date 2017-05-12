@@ -8,8 +8,8 @@ fn main() {
   let x: &'a i32;
   let x: &i32;
   let x: fn() -> i32;
-//  let x: fn(i32) -> i32;
-//  let x: fn(i32,i32);
+  let x: fn(i32) -> i32;
+  let x: fn(i32,i32);
   let x: !;
   let x: (i32,);
   let x: (i32,!);
@@ -20,7 +20,7 @@ fn main() {
   let x: (i32);
   let x: typeof(1i32);
   let x: _;
-//  let x: HList![i32,(),u8];
+  let x: HList![i32,(),u8];
 }
 
 fn foo() -> impl Bound1 + Bound2 + Bound3 { }

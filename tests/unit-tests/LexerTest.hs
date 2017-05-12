@@ -27,7 +27,8 @@ commonCode = testGroup "lexing common code fragments"
              , Space Whitespace " "
              , Equal
              , Space Whitespace " "
-             , SubstNt (mkIdent "p")
+             , Dollar
+             , IdentTok (mkIdent "p")
              , Dot
              , IdentTok (mkIdent "span")
              , Semicolon
@@ -41,9 +42,6 @@ commonCode = testGroup "lexing common code fragments"
              , CloseDelim Paren
              , Comma
              , Plus
-             ]
-  , testCode "$p:span" 
-             [ MatchNt (mkIdent "p") (mkIdent "span")
              ]
   , testCode "pub s: pp::Printer<'a>,"
              [ IdentTok (mkIdent "pub")
@@ -147,14 +145,14 @@ literals = testGroup "literals (numbers, characters, strings, etc.)"
   -- raw string's
   , testCode "r\"hello \n world!\"" [ LiteralTok (StrRawTok "hello \n world!" 0) Nothing ]
   , testCode "r\"hello \n world!\"suffix" [ LiteralTok (StrRawTok "hello \n world!" 0) (Just "suffix") ]
-  , testCode "r##\"hello \"#\n world!\"###suffix" [ LiteralTok (StrRawTok "hello \"#\n world!" 2) (Just "suffix") ]
+  , testCode "r##\"hello \"#\n world!\"##suffix" [ LiteralTok (StrRawTok "hello \"#\n world!" 2) (Just "suffix") ]
   -- bytestring's
   , testCode "b\"hello \\n world!\"" [ LiteralTok (ByteStrTok "hello \\n world!") Nothing ]
   , testCode "b\"hello \\n world!\"suffix" [ LiteralTok (ByteStrTok "hello \\n world!") (Just "suffix") ]
   -- raw bytestring's
   , testCode "br\"hello \n world!\"" [ LiteralTok (ByteStrRawTok "hello \n world!" 0) Nothing ]
   , testCode "br\"hello \n world!\"suffix" [ LiteralTok (ByteStrRawTok "hello \n world!" 0) (Just "suffix") ]
-  , testCode "br##\"hello \"#\n world!\"###suffix" [ LiteralTok (ByteStrRawTok "hello \"#\n world!" 2) (Just "suffix") ]
+  , testCode "br##\"hello \"#\n world!\"##suffix" [ LiteralTok (ByteStrRawTok "hello \"#\n world!" 2) (Just "suffix") ]
   -- multiline strings
   , testCode "\"hello \\\n     world!\"" [ LiteralTok (StrTok "hello \\\n     world!") Nothing ]
   , testCode "b\"hello \\\n     world!\"" [ LiteralTok (ByteStrTok "hello \\\n     world!") Nothing ]

@@ -974,7 +974,6 @@ $hexit             = [0-9a-fA-F]
 -- Macro related
 
 @subst_nt          = "$" @ident
-@match_nt          = @subst_nt ":" @ident
 
 tokens :-
 
@@ -1076,13 +1075,6 @@ $white+         { \s -> pure (Space Whitespace s)  }
 @line_comment     { \c -> pure (Space Comment (drop 2 c)) }
 @inline_comment   { \_ -> Space Comment <$> nestedComment }
 
-"#!"              { token Shebang } 
-
-@subst_nt         { \(_:i) -> pure (SubstNt (mkIdent i)) }
-@match_nt         { \(_:s) -> let (i,':':n) = Prelude.span (/= ':') s
-                              in pure (MatchNt (mkIdent i) (mkIdent n))
-                  }
-
 {
 
 -- | Make a token.
@@ -1106,8 +1098,7 @@ literal lit = do
     _ -> pure (LiteralTok lit Nothing)
 
 -- | Parses a raw string, the closing quotation, and the appropriate number of
--- '#' characters. Note that there can be more closing '#' characters than
--- opening ones (this is as per Rust's standard).
+-- '#' characters.
 rawString :: Int -> P String
 rawString n = do
   c_m <- nextChar
@@ -1117,8 +1108,8 @@ rawString n = do
     
     -- The string has a chance of being closed
     Just '"' -> do
-      n' <- greedyChar '#'
-      if n' >= n
+      n' <- greedyChar '#' n
+      if n' == n
         then pure ""
         else (('"' : replicate n' '#') ++) <$> rawString n 
 
@@ -1174,12 +1165,13 @@ peekChar = do
          in pure (Just c)
 
 -- | Greedily try to eat as many of a given character as possible (and return
--- how many characters were eaten).
-greedyChar :: Char -> P Int
-greedyChar c = do
+-- how many characters were eaten). The second argument is an upper limit.
+greedyChar :: Char -> Int -> P Int
+greedyChar _ 0 = pure 0
+greedyChar c limit = do
   c_m <- peekChar
   case c_m of
-    Just c' | c == c' -> do { _ <- nextChar; n <- greedyChar c; pure (n+1) }
+    Just c' | c == c' -> do { _ <- nextChar; n <- greedyChar c (limit - 1); pure (n+1) }
     _ -> pure 0
 
 -- | Signal a lexical error.
@@ -1257,19 +1249,13 @@ lexTokens lexer = do
     _ -> (tok :) <$> lexTokens lexer
 
 -- | Lex the first line, if it immediately starts with @#!@ (but not @#![@ - that should be an
--- inner attribute). If this fails to find a shebang line, it consumes no input (in reality it does
--- consume one token, but it pushed it back).
+-- inner attribute). If this fails to find a shebang line, it consumes no input.
 lexShebangLine :: P (Maybe String)
 lexShebangLine = do
-  tok <- lexNonSpace
-  case unspan tok of
-    Shebang -> do
-      c <- peekChar
-      case c of
-        Just '[' -> pushToken tok *> pure Nothing
-        _ -> Just <$> toNewline
-    _ -> pushToken tok *> pure Nothing 
-
+  inp <- getInput
+  case takeChars 3 inp of
+    '#':'!':r | r /= "[" -> Just <$> toNewline
+    _ -> pure Nothing
   where
   -- Lexes a string until a newline
   toNewline :: P String

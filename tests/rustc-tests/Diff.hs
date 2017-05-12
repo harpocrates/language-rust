@@ -13,6 +13,7 @@ import Data.ByteString.Lazy.Char8 (unpack)
 import Data.Foldable (sequence_, toList)
 import Data.List.NonEmpty ((<|))
 import Data.Maybe (fromMaybe)
+import Data.Semigroup ((<>))
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
@@ -273,14 +274,17 @@ instance Show a => Diffable (FnDecl a) where
 -- TODO: make this more rigorous
 instance Show a => Diffable (Arg a) where
   SelfRegion ml m x === val =
-    IdentP (ByValue m) "self" Nothing x === (val ! "pat")
+  -- TODO: why does this commented out line not work?
+  --  IdentP (ByValue m) "self" Nothing x === (val ! "pat")
+    IdentP (ByValue Immutable) "self" Nothing x === (val ! "pat")
   SelfValue m x === val =
     IdentP (ByValue m) "self" Nothing x === (val ! "pat")
   SelfExplicit t m x === val = do
     IdentP (ByValue m) "self" Nothing x === (val ! "pat")
     t === (val ! "ty")
   Arg p t _ === val = do
-    p === (val ! "pat")
+    let p' = fromMaybe (IdentP (ByValue Immutable) invalidIdent Nothing undefined) p
+    p' === (val ! "pat")
     t === (val ! "ty")
 
 instance Diffable Unsafety where
@@ -374,7 +378,7 @@ instance Show a => Diffable (Stmt a) where
       ("Mac", MacStmt m s as _) -> do
         m === (n' ! "fields" ! 0 ! 0)
         s === (n' ! "fields" ! 0 ! 1)
-      _ -> diff "Unimplemented: diffStmt" stmt val
+      _ -> diff "different statements" stmt val
 
 instance Diffable MacStmtStyle where
   SemicolonMac === "Semicolon" = pure ()
@@ -484,7 +488,7 @@ instance Diffable TokenTree where
       ("Delimited", Delimited _ d _ tts _) -> do
         d === (val ! "fields" ! 1 ! "delim")
         tts === (val ! "fields" ! 1 ! "tts")
-      _ -> diff "Unimplemented: diffTokenTree" tt val
+      _ -> diff "different token trees" tt val
 
 instance Diffable Delim where
   Paren   === "Paren"   = pure ()
@@ -496,28 +500,82 @@ instance Diffable Token where
   Comma === "Comma" = pure ()
   Dot === "Dot" = pure ()
   Equal === "Eq" = pure ()
+  NotEqual === "Ne" = pure ()
   Colon === "Colon" = pure ()
   ModSep === "ModSep" = pure ()
   Less === "Lt" = pure ()
+  LessEqual === "Le" = pure ()
+  Greater === "Gt" = pure ()
+  GreaterEqual === "Ge" = pure ()
+  Exclamation === "Not" = pure ()
+  Dollar === "Dollar" = pure ()
+  FatArrow === "FatArrow" = pure ()
+  Semicolon === "Semi" = pure ()
+  Tilde === "Tilde" = pure ()
+  EqualEqual === "EqEq" = pure ()
+  Underscore === "Underscore" = pure ()
+  At === "At" = pure ()
+  Pound === "Pound" = pure ()
+  PipePipe === "OrOr" = pure ()
+  DotDot === "DotDot" = pure ()
+  DotDotDot === "DotDotDot" = pure ()
+  RArrow === "RArrow" = pure ()
+  LArrow === "LArrow" = pure ()
+  Question === "Question" = pure ()
+  AmpersandAmpersand === "AndAnd" = pure ()
   t === val@Object{} =
     case (val ! "variant", t) of
       ("BinOp", b) ->
         case (val ! "fields" ! 0, t) of
+          ("Star", Star) -> pure ()
+          ("Plus", Plus) -> pure ()
+          ("Minus", Minus) -> pure ()
+          ("Slash", Slash) -> pure ()
+          ("Percent", Percent) -> pure ()
+          ("And", Ampersand) -> pure ()
+          ("Caret", Caret) -> pure ()
+          ("Or", Pipe) -> pure ()
+          ("Shr", GreaterGreater) -> pure ()
           ("Shl", LessLess) -> pure ()
-          _ -> diff "Unimplemented: diffToken" t val
+          _ -> diff "differing binary operator tokens" t val
+      ("BinOpEq", b) ->
+        case (val ! "fields" ! 0, t) of
+          ("Shr", GreaterGreaterEqual) -> pure ()
+          ("Shl", LessLessEqual) -> pure ()
+          ("Gt", GreaterEqual) -> pure ()
+          ("Lt", LessEqual) -> pure ()
+          ("Minus", MinusEqual) -> pure ()
+          ("And", AmpersandEqual) -> pure ()
+          ("Or", PipeEqual) -> pure ()
+          ("Plus", PlusEqual) -> pure ()
+          ("Star", StarEqual) -> pure ()
+          ("Slash", SlashEqual) -> pure ()
+          ("Caret", CaretEqual) -> pure ()
+          ("Percent", PercentEqual) -> pure ()
+          _ -> diff "differing binary-equal operator tokens" t val
       ("Ident", IdentTok i) -> diffString i (val ! "fields" ! 0)
+      ("Lifetime", LifetimeTok l) -> diffString ("'" <> l) (val ! "fields" ! 0)
+      -- TODO: compare contents of doc comment
+      ("DocComment", Doc s _) -> pure () 
       ("Literal", LiteralTok l s) -> do
         l === (val ! "fields" ! 0)
         -- TODO suffix
-      _ -> diff "Unimplemented: diffToken" t val
-  t === val = diff "Unimplemented: diffToken" t val
+      _ -> diff "differing tokens" t val
+  t === val = diff "differing tokens" t val
 
 instance Diffable LitTok where
   l === val =
     case (val ! "variant", l) of
-      ("Str_", StrTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
+      ("Byte", ByteTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
+      ("Char", CharTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
       ("Integer", IntegerTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      _ -> diff "Unimplemented: diffLitTok" l val
+      -- TODO: This fails on inputs 123.f32 123e-9f32 0e+10 (which are incorrectly lexed by rustc)
+      ("Float", FloatTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
+      ("Str_", StrTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
+      ("StrRaw", StrRawTok s i) | fromString s == (val ! "fields" ! 0) -> diffIntegral i (val ! "fields" ! 1)
+      ("ByteStr", ByteStrTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
+      ("ByteStrRaw", ByteStrRawTok s i) | fromString s == (val ! "fields" ! 0) -> diffIntegral i (val ! "fields" ! 1)
+      _ -> diff "different literal token" l val
 
 diffIntegral :: (Show i, Integral i) => i -> Value -> Diff
 diffIntegral i (Number s) | fromIntegral i == s = pure ()

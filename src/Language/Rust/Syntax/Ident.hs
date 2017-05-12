@@ -20,6 +20,7 @@ import Data.Typeable (Typeable)
 import Data.List (foldl')
 import Data.Char (ord)
 import Data.String (IsString(..))
+import Data.Semigroup
 
 -- | An identifier
 data Ident
@@ -37,6 +38,12 @@ instance IsString Ident where
 instance Eq Ident where
   i1 == i2 = hash i1 == hash i2 && name i1 == name i2
   i1 /= i2 = hash i1 /= hash i2 || name i1 /= name i2
+
+instance Monoid Ident where
+  Ident n1 _ `mappend` Ident n2 _ = mkIdent (n1 `mappend` n2)
+  mempty = invalidIdent
+
+instance Semigroup Ident
 
 -- | Smart constructor for making an 'Ident'.
 mkIdent :: String -> Ident

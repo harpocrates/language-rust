@@ -2,9 +2,9 @@
 extern crate foo;
 extern crate foo_bar as foo;
 
-// use foo;
-// use foo::bar;
-// use foo::bar as FooBar;
+use foo;
+use foo::bar;
+use foo::bar as FooBar;
 
 static FOO: i32 = 42;
 static mut FOO: i32 = 42;
@@ -34,14 +34,20 @@ mod bar {
     const ID1: i32;
     const ID2: i32 = 1;
 
+    fn area1(self) -> f64;
+    fn area2(mut self) -> f64 { 1f64 }
     fn area1(&self) -> f64;
-    fn area2(&self) -> f64 { 1f64 }
+    fn area2(&mut self) -> f64 { 1f64 }
+    fn area1(&'lt self) -> f64;
+    fn area2(&'lt mut self) -> f64 { 1f64 }
+    fn area1(self: Foo<T>) -> f64;
+    fn area2(mut self: Foo<T>) -> f64 { 1f64 }
 
     type N;
     type N: fmt::Display;
     type N: fmt::Display = i32;
 
-   // foo!{}
+    foo!{}
   }
 
   fn foo<T: ?Sized>(x: &T) { }
@@ -56,14 +62,13 @@ mod bar {
     const ID: i32 = 1;
     fn area(&self) -> f64 { 1f64 }
     type N = i32;
-    // foo!()
-
+    foo!();
   }
   impl<A> Trait for Foo<A> { }
   impl<A> !Trait for Foo<A> { }
   
- // macro_rules! foo { }
- // foo!();
+  macro_rules! foo { }
+  foo!();
 
   enum Foo {
     Baz {

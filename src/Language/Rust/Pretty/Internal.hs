@@ -22,7 +22,7 @@ import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
 import Text.PrettyPrint.Annotated.WL (
-    hcat, cat, punctuate, group, angles, flatten, align, fillSep, text, vcat, char, annotate, 
+    hcat, punctuate, group, angles, flatten, align, fillSep, text, vcat, char, annotate, 
     noAnnotate, flatAlt, parens, brackets, (<>), Doc
   )
 import qualified Text.PrettyPrint.Annotated.WL as WL
@@ -197,10 +197,6 @@ printMac (Mac path tts x) d = annotate x (printPath path False <> "!" <> body)
 printTt :: TokenTree -> Doc a
 printTt (Token _ t) = printToken t 
 printTt (Delimited _ d _ tts _) = block d True mempty mempty [ fillSep (printTt <$> tts) ]
-printTt (Sequence _ tts s op) = "$" <> parens body <> perhaps printToken s <> suf
-  where body = cat [ printTt tt | tt <- tts ]
-        suf = case op of ZeroOrMore -> "*"
-                         OneOrMore -> "+"
 
 -- | Print a token (@token_to_string@)
 -- Single character expression-operator symbols.
@@ -274,8 +270,6 @@ printToken (Doc d OuterDoc) = "/**" <> text d <> "*/"
 printToken Shebang = "#!"
 -- Macro related 
 printToken (Interpolated n) = noAnnotate (printNonterminal n)
-printToken (MatchNt i s) = "$" <> printIdent i <> ":" <> printIdent s
-printToken (SubstNt s) = "$" <> printIdent s
 -- Other
 printToken t = error $ "printToken: " ++ show t
 
