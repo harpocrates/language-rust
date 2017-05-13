@@ -299,6 +299,8 @@ data Expr a
   | Closure [Attribute a] CaptureBy (FnDecl a) (Expr a) a
   -- | (possibly unsafe) block (example: @unsafe { 1 }@)
   | BlockExpr [Attribute a] (Block a) a
+  -- | a catch block (example: @do catch { 1 }@)
+  | Catch [Attribute a] (Block a) a
   -- | assignment (example: @a = foo()@)
   | Assign [Attribute a] (Expr a) (Expr a) a
   -- | assignment with an operator (example: @a += 1@)
@@ -357,6 +359,7 @@ instance Located a => Located (Expr a) where
   spanOf (Match _ _ _ s) = spanOf s
   spanOf (Closure _ _ _ _ s) = spanOf s
   spanOf (BlockExpr _ _ s) = spanOf s
+  spanOf (Catch _ _ s) = spanOf s
   spanOf (Assign _ _ _ s) = spanOf s
   spanOf (AssignOp _ _ _ _ s) = spanOf s
   spanOf (FieldAccess _ _ _ s) = spanOf s

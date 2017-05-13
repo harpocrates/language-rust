@@ -759,6 +759,11 @@ resolveExprP p _ (Match as e ar x) = parenE (p > 14) $ do
   e' <- resolveExprP 0 NoStructExpr e
   ar' <- sequence (resolveArm <$> ar)
   pure (Match as' e' ar' x)
+resolveExprP _ NonBlockExpr e@Catch{} = parenthesize e
+resolveExprP p _ (Catch as b x) = parenE (p > 14) $ do
+  as' <- sequence (resolveAttr EitherAttr <$> as)
+  b' <- resolveBlock b
+  pure (Catch as' b' x) 
 
 isBlockLike :: Expr a -> Bool
 isBlockLike If{} = True

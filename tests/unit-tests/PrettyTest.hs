@@ -281,6 +281,7 @@ prettyExpressions = testGroup "printing expressions"
                                     (BlockExpr [] retBlk ()) ()))
   , testFlatten "#[cfgo] { #![cfgi] return 1; }" (printExpr (BlockExpr [cfgI,cfgO] retBlk ()))
   , testFlatten "{ return 1; }" (printExpr (BlockExpr [] retBlk ()))
+  , testFlatten "do catch { return 1; }" (printExpr (Catch [] retBlk ()))
   , testFlatten "foo = 1" (printExpr (Assign [] foo _1 ()))
   , testFlatten "foo += 1" (printExpr (AssignOp [] AddOp foo _1 ()))
   , testFlatten "foo <<= 1" (printExpr (AssignOp [] ShlOp foo _1 ()))

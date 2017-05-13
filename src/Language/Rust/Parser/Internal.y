@@ -175,12 +175,12 @@ import Text.Read (readMaybe)
   use            { Spanned (IdentTok (Ident "use" _)) _ }
   where          { Spanned (IdentTok (Ident "where" _)) _ }
   while          { Spanned (IdentTok (Ident "while" _)) _ }
+  do             { Spanned (IdentTok (Ident "do" _)) _ }
 
   -- Keywords reserved for future use
   abstract       { Spanned (IdentTok (Ident "abstract" _)) _ }
   alignof        { Spanned (IdentTok (Ident "alignof" _)) _ }
   become         { Spanned (IdentTok (Ident "become" _)) _ }
-  do             { Spanned (IdentTok (Ident "do" _)) _ }
   final          { Spanned (IdentTok (Ident "final" _)) _ }
   macro          { Spanned (IdentTok (Ident "macro" _)) _ }
   offsetof       { Spanned (IdentTok (Ident "offsetof" _)) _ }
@@ -197,6 +197,7 @@ import Text.Read (readMaybe)
   -- Weak keywords, have special meaning only in specific contexts.
   default        { Spanned (IdentTok (Ident "default" _)) _ }
   union          { Spanned (IdentTok (Ident "union" _)) _ }
+  catch          { Spanned (IdentTok (Ident "catch" _)) _ }
 
   -- Comments
   outerDoc       { Spanned (Doc _ OuterDoc) _ }
@@ -234,7 +235,7 @@ import Text.Read (readMaybe)
 %nonassoc mut
 
 -- These are all identifiers of sorts ('union' and 'default' are "weak" keywords)
-%nonassoc IDENT ntIdent union default
+%nonassoc IDENT ntIdent union default catch
 
 -- These are all very low precedence unary operators
 %nonassoc box return break continue IMPLTRAIT
@@ -281,6 +282,7 @@ ident :: { Spanned Ident }
   : ntIdent                       { fmap (\(Interpolated (NtIdent i)) -> i) $1 }
   | union                         { toIdent $1 }
   | default                       { toIdent $1 }
+  | catch                         { toIdent $1 }
   | IDENT                         { toIdent $1 }
 
 -- This should precede any '>' token which could be absorbed in a '>>', '>=', or '>>=' token. Its
@@ -1023,6 +1025,7 @@ block_like_expr :: { Expr Span }
   | match nostruct_expr '{' arms '}'                    { Match [] $2 $4 ($1 # $>) }
   | expr_path '!' '{' many(token_tree) '}'              { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
   | unsafe block                                        { BlockExpr [] $2{ rules = Unsafe } ($1 # $>) }
+  | do catch block                                      { Catch [] $3 ($1 # $>) }
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }

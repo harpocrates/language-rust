@@ -365,6 +365,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Match as e arms x           -> annotate x (hsep [ "match", printExpr e, block Brace False "," (printInnerAttrs as) (printArm `map` arms) ])
     Closure _ cap decl body x   -> annotate x (when (cap == Value) "move" <+> printFnBlockArgs decl <+> printExpr body)
     BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs True blk attrs)
+    Catch attrs blk x           -> annotate x ("do catch" <+> printBlockWithAttrs True blk attrs)
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
     AssignOp _ op lhs rhs x     -> annotate x (hsep [ printExpr lhs, printBinOp op <> "=", printExpr rhs ])
     FieldAccess{}               -> chainedMethodCalls expr id
@@ -466,6 +467,7 @@ expressionAttrs (Loop as _ _ _) = as
 expressionAttrs (Match as _ _ _) = as
 expressionAttrs (Closure as _ _ _ _) = as
 expressionAttrs (BlockExpr as _ _) = as
+expressionAttrs (Catch as _ _) = as
 expressionAttrs (Assign as _ _ _) = as
 expressionAttrs (AssignOp as _ _ _ _) = as
 expressionAttrs (FieldAccess as _ _ _) = as
