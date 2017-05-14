@@ -55,7 +55,6 @@ fn foo(mut x: i32) -> i32 {
 And now we have generated valid code.
 
 -}
-{-# LANGUAGE OverloadedStrings #-}
 
 module Language.Rust.Pretty.Resolve (
   Resolve(..),
@@ -74,6 +73,8 @@ import Data.Either (rights)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
 import Data.Semigroup ((<>))
+
+{-# ANN module "HLint: ignore Reduce duplication" #-}
 
 -- | Types that can have underlying invariants which can be checked and possibly corrected. 
 class Resolve a where
@@ -113,13 +114,11 @@ resolveIdent i
     | i `elem` keywords = Left ("identifier is a keyword `" ++ show i ++ "'")
     | otherwise = pure i
   where
-  keywords = [ "as", "box", "break", "const", "continue", "crate", "else", "enum", "extern"
-             , "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move"
-             , "mut", "pub", "ref", "return", "Self", "self", "static", "struct", "super", "trait"
-             , "true", "type", "unsafe", "use", "where", "while", "abstract", "alignof" , "become"
-             , "do", "final", "macro", "offsetof", "override", "priv", "proc", "pure", "sizeof"
-             , "typeof", "unsized" , "virtual" , "yield" 
-             ]
+  keywords = map mkIdent $ words "as box break const continue crate else enum extern false fn for\
+                                \ if impl in let loop match mod move mut pub ref return Self self\
+                                \ static struct super trait true type unsafe use where while\
+                                \ abstract alignof become do final macro offsetof override priv\
+                                \ proc pure sizeof typeof unsized virtual yield" 
 
 -- | Like 'resolveIdent', but without requiring the identifier not be a keyword.
 resolveIdent' :: Ident -> Either String Ident
@@ -282,7 +281,8 @@ data TyType
   | NoForType      -- ^ Non-sum types not starting with a 'for'
   | ReturnType     -- ^ Type in a return type position
 
--- TODO: document this - just summarize what the different cases are doing (and the motivation)
+-- | Resolve a given type, and a constraint on it (see the parser 'Internal.y' for more details on
+-- these cases). 
 resolveTy :: Monoid a => TyType -> Ty a -> Either String (Ty a)
 -- TraitObject
 resolveTy NoSumType    o@TraitObject{} = resolveTy NoSumType (ParenTy o mempty)
@@ -310,7 +310,8 @@ resolveTy _             (PathTy q p@(Path _ s _) x)
       Nothing                    -> PathTy Nothing <$> resolvePath TypePath p <*> pure x 
 -- BareFn
 resolveTy NoForType   f@(BareFn _ _ (_:_) _ _) = resolveTy NoForType (ParenTy f mempty)
-resolveTy _             (BareFn u a lts fd x) = BareFn u a <$> sequence (resolveLifetimeDef <$> lts) <*> resolveFnDecl NoSelf fd <*> pure x
+resolveTy _             (BareFn u a lts fd x) = BareFn u a <$> sequence (resolveLifetimeDef <$> lts) <*> resolveFnDecl declTy fd <*> pure x
+  where declTy = if a == C then VarNoSelf else NoSelf
 -- Other types (don't care about the context)
 resolveTy _ (Never x) = pure (Never x)
 resolveTy _ (Ptr mut ty' x) = Ptr mut <$> resolveTy NoSumType ty' <*> pure x
@@ -318,27 +319,27 @@ resolveTy _ (Rptr lt mut ty' x) = Rptr <$> sequence (resolveLifetime <$> lt) <*>
 resolveTy _ (Typeof e x) = Typeof <$> resolveExpr AnyExpr e <*> pure x
 resolveTy _ (Infer x) = pure (Infer x)
 resolveTy _ (Slice ty' x) = Slice <$> resolveTy AnyType ty' <*> pure x 
-resolveTy _ (Array ty' e x) = Array <$> resolveTy AnyType ty' <*> resolveExpr AnyExpr e <*> pure x -- TODO: e is only a Lit?
+resolveTy _ (Array ty' e x) = Array <$> resolveTy AnyType ty' <*> resolveExpr AnyExpr e <*> pure x
 resolveTy _ (MacTy (Mac p t x) x') = do
   p' <- resolvePath TypePath p
   MacTy <$> resolveMac TypePath (Mac p' t x) <*> pure x'
 
 instance Monoid a => Resolve (Ty a) where resolve = resolveTy AnyType
 
--- In some cases, the first argument of a function declaration may be a self
--- TODO add check around allowing variadic
+-- In some cases, the first argument of a function declaration may be a 'self'
 data FnDeclType
   = NoSelf     -- ^ the first argument cannot be self
+  | VarNoSelf  -- ^ the first argument cannot be self, and the function can be variadic
   | AllowSelf  -- ^ the first argument can be self
+  deriving (Eq)
 
 -- | A function declaration can be invalid if it has self arguments in the wrong places (or when it
 -- shouldn't)
 resolveFnDecl :: Monoid a => FnDeclType -> FnDecl a -> Either String (FnDecl a)
-resolveFnDecl NoSelf (FnDecl (s : _) _ _ _) | isSelfArg s = Left "self argument is not allowed in this function declaration"
-resolveFnDecl _      (FnDecl [] o v x) = FnDecl [] <$> sequence (resolveTy ReturnType <$> o) <*> pure v <*> pure x
-resolveFnDecl _      (FnDecl (a : as) o v x)
-  | any isSelfArg as = Left "self arguments must always be the first arguments"
-  | otherwise = FnDecl <$> sequence (resolveArg <$> (a : as)) <*> sequence (resolveTy ReturnType <$> o) <*> pure v <*> pure x
+resolveFnDecl NoSelf (FnDecl (s : _) _ _ _)  | isSelfArg s = Left "self argument is not allowed in this function declaration"
+resolveFnDecl _      (FnDecl (_ : as) _ _ _) | any isSelfArg as = Left "self arguments must always be the first arguments"
+resolveFnDecl fn     (FnDecl _ _ True _)     | fn /= VarNoSelf = Left "this function declaration cannot be variadic"
+resolveFnDecl _      (FnDecl as o v x) = FnDecl <$> sequence (resolveArg <$> as) <*> sequence (resolveTy ReturnType <$> o) <*> pure v <*> pure x
 
 -- | Check whether an argument is one of the "self" forms
 isSelfArg :: Arg a -> Bool
@@ -398,7 +399,12 @@ instance Resolve (LifetimeDef a) where resolve = resolveLifetimeDef
 -- Patterns --
 --------------
 
--- TODO: document this - just summarize what the different cases are doing (and the motivation)
+-- | A pattern can be invalid of
+--
+--   * the index of the '...' in the tuple/tuple-struct is out of range
+--   * the index of the qself path is out of range
+--   * any underlying component is invalid
+--
 resolvePat :: Monoid a => Pat a -> Either String (Pat a)
 -- TupleStruct
 resolvePat (TupleStructP p fs Nothing x) = TupleStructP <$> resolvePath ExprPath p <*> sequence (resolvePat <$> fs) <*> pure Nothing <*> pure x
@@ -468,7 +474,7 @@ parenthesize e = do
   e' <- resolveExprP 0 AnyExpr e
   pure (ParenExpr [] e' mempty)
 
--- TODO Double check the last two cases
+-- NOTE: the last two cases may be off...
 rightC :: ExprType -> ExprType
 rightC AnyExpr = AnyExpr
 rightC NoStructExpr = NoStructExpr
@@ -846,12 +852,17 @@ instance Monoid a => Resolve (Block a) where resolve = resolveBlock
 -- Items --
 -----------
 
--- TODO: documentation, double-check 
+-- Whether the item is a statement item, or a general item
 data ItemType
   = StmtItem   -- ^ Corresponds to 'stmt_item' - basically limited visbility and no macros
   | ModItem    -- ^ General item
 
--- TODO: documentation, double-check 
+-- | An item can be invalid if
+--
+--   * it is a macro but has 'StmtItem' restriction
+--   * it has visibility other than public/inherited but has 'StmtItem' restriction
+--   * an underlying component is invalid
+--
 resolveItem :: Monoid a => ItemType -> Item a -> Either String (Item a)
 resolveItem t (Item i as n v x) = do
   i' <- case (i,n) of
@@ -874,7 +885,7 @@ resolveItem t (Item i as n v x) = do
 
 instance Monoid a => Resolve (Item a) where resolve = resolveItem ModItem
 
--- TODO: documentation, double-check 
+-- | An item kind is invalid only if any of its underlying constituents are 
 resolveItemKind :: Monoid a => ItemKind a -> Either String (ItemKind a)
 resolveItemKind (Static t m e) = Static <$> resolveTy AnyType t <*> pure m <*> resolveExpr AnyExpr e
 resolveItemKind (ConstItem t e) = ConstItem <$> resolveTy AnyType t <*> resolveExpr AnyExpr e
@@ -899,7 +910,7 @@ resolveItemKind (Use v) = Use <$> resolveViewPath v
 
 instance Monoid a => Resolve (ItemKind a) where resolve = resolveItemKind
 
--- TODO: documentation 
+-- | A foreign item is invalid only if any of its underlying constituents are 
 resolveForeignItem :: Monoid a => ForeignItem a -> Either String (ForeignItem a)
 resolveForeignItem (ForeignItem i as n v x) = do
   i' <- resolveIdent i
@@ -910,7 +921,7 @@ resolveForeignItem (ForeignItem i as n v x) = do
 
 instance Monoid a => Resolve (ForeignItem a) where resolve = resolveForeignItem
 
--- TODO: documentation 
+-- | A foreign item kind is invalid only if any of its underlying constituents are 
 resolveForeignItemKind :: Monoid a => ForeignItemKind a -> Either String (ForeignItemKind a)
 resolveForeignItemKind (ForeignFn fn g) = ForeignFn <$> resolveFnDecl NoSelf fn <*> resolveGenerics g
 resolveForeignItemKind (ForeignStatic t b) = ForeignStatic <$> resolveTy AnyType t <*> pure b
@@ -944,12 +955,12 @@ resolveTyParam (TyParam as i bds t x) = do
 
 instance Monoid a => Resolve (TyParam a) where resolve = resolveTyParam
 
--- TODO: document
+-- Invariants for struct fields
 data StructFieldType
   = IdentStructField  -- ^ struct style field
   | BareStructField   -- ^ tuple-struct style field
 
--- TODO: document
+-- | A variant is valid if the underlying components are
 resolveVariant :: Monoid a => Variant a -> Either String (Variant a)
 resolveVariant (Variant i as n e x) = do
   i' <- resolveIdent i
@@ -960,7 +971,7 @@ resolveVariant (Variant i as n e x) = do
 
 instance Monoid a => Resolve (Variant a) where resolve = resolveVariant
 
--- TODO: document
+-- | A variant data is valid if the underlying components are
 resolveVariantData :: Monoid a => VariantData a -> Either String (VariantData a)
 resolveVariantData (StructD fs x) = StructD <$> sequence (resolveStructField IdentStructField <$> fs) <*> pure x
 resolveVariantData (TupleD fs x) = TupleD <$> sequence (resolveStructField BareStructField <$> fs) <*> pure x
@@ -968,7 +979,12 @@ resolveVariantData (UnitD x) = pure (UnitD x)
 
 instance Monoid a => Resolve (VariantData a) where resolve = resolveVariantData
 
--- TODO: document
+-- | A struct field is invalid if
+--
+--   * it has the invariant that it needs an identifier, but it doesn't have one
+--   * it has the invariant that should not have an identifier, but it doe have one
+--   * any of the underlying components are invalid
+--
 resolveStructField :: Monoid a => StructFieldType -> StructField a -> Either String (StructField a)
 resolveStructField IdentStructField (StructField Nothing _ _ _ _) = Left "struct field needs an identifier"
 resolveStructField IdentStructField (StructField (Just i) v t as x) = do
@@ -1001,7 +1017,7 @@ resolveWherePredicate (BoundPredicate lts t bds x) = do
 
 instance Monoid a => Resolve (WherePredicate a) where resolve = resolveWherePredicate
 
--- TODO: document
+-- | A trait item is valid if the underlying components are
 resolveTraitItem :: Monoid a => TraitItem a -> Either String (TraitItem a)
 resolveTraitItem (TraitItem i as n x) = do
   (i',n') <- case (i,n) of
@@ -1012,7 +1028,7 @@ resolveTraitItem (TraitItem i as n x) = do
 
 instance Monoid a => Resolve (TraitItem a) where resolve = resolveTraitItem
 
--- TODO: document
+-- | A trait item kind is valid if the underlying components are
 resolveTraitItemKind :: Monoid a => TraitItemKind a -> Either String (TraitItemKind a)
 resolveTraitItemKind (ConstT t e) = ConstT <$> resolveTy AnyType t <*> sequence (resolveExpr AnyExpr <$> e)
 resolveTraitItemKind (MethodT m b) = MethodT <$> resolveMethodSig m <*> sequence (resolveBlock <$> b)
@@ -1021,7 +1037,7 @@ resolveTraitItemKind (MacroT m) = MacroT <$> resolveMac ModPath m
 
 instance Monoid a => Resolve (TraitItemKind a) where resolve = resolveTraitItemKind
 
--- TODO: document
+-- | An impl item is valid if the underlying components are
 resolveImplItem :: Monoid a => ImplItem a -> Either String (ImplItem a)
 resolveImplItem (ImplItem i v d as n x) = do
   (i',n') <- case (i,n) of
@@ -1033,7 +1049,7 @@ resolveImplItem (ImplItem i v d as n x) = do
 
 instance Monoid a => Resolve (ImplItem a) where resolve = resolveImplItem
 
--- TODO: document
+-- | An impl item kind is valid if the underlying components are
 resolveImplItemKind :: Monoid a => ImplItemKind a -> Either String (ImplItemKind a)
 resolveImplItemKind (ConstI t e) = ConstI <$> resolveTy AnyType t <*> resolveExpr AnyExpr e
 resolveImplItemKind (MethodI m b) = MethodI <$> resolveMethodSig m <*> resolveBlock b
@@ -1042,7 +1058,7 @@ resolveImplItemKind (MacroI m) = MacroI <$> resolveMac ModPath m
 
 instance Monoid a => Resolve (ImplItemKind a) where resolve = resolveImplItemKind
 
--- | The Monoid constraint is technically not necessary - restricted visibility paths are mod paths,
+-- | The 'Monoid' constraint is theoretically not necessary - restricted visibility paths are mod paths,
 -- so they should never have generics.
 resolveVisibility :: Monoid a => Visibility a -> Either String (Visibility a)
 resolveVisibility PublicV = pure PublicV
@@ -1052,13 +1068,13 @@ resolveVisibility (RestrictedV p) = RestrictedV <$> resolvePath ModPath p
 
 instance Monoid a => Resolve (Visibility a) where resolve = resolveVisibility
 
--- TODO: document
+-- | A method signature is valid if the underlying components are
 resolveMethodSig :: Monoid a => MethodSig a -> Either String (MethodSig a)
 resolveMethodSig (MethodSig u c a f g) = MethodSig u c a <$> resolveFnDecl AllowSelf f <*> resolveGenerics g
 
 instance Monoid a => Resolve (MethodSig a) where resolve = resolveMethodSig
 
--- TODO: document
+-- | A view path is valid if the underlying components are
 resolveViewPath :: ViewPath a -> Either String (ViewPath a)
 resolveViewPath (ViewPathSimple b is p x) = do
   is' <- sequence (resolveSelfSuperIdent <$> is)
@@ -1074,7 +1090,7 @@ resolveViewPath (ViewPathList b is ps x) = do
 
 instance Resolve (ViewPath a) where resolve = resolveViewPath
 
--- TODO: document
+-- | A path list item is valid if the underlying components are
 resolvePathListItem :: PathListItem a -> Either String (PathListItem a)
 resolvePathListItem (PathListItem n r x) = do
   n' <- resolveSelfSuperIdent n
@@ -1083,7 +1099,7 @@ resolvePathListItem (PathListItem n r x) = do
 
 instance Resolve (PathListItem a) where resolve = resolvePathListItem
 
--- TODO: document
+-- | Accept valid identifiers, as well as identifiers that are 'super' or 'self'
 resolveSelfSuperIdent :: Ident -> Either String Ident
 resolveSelfSuperIdent i@(Ident "self" _) = pure i
 resolveSelfSuperIdent i@(Ident "super" _) = pure i
@@ -1094,16 +1110,18 @@ resolveSelfSuperIdent i = resolveIdent i
 -- Macro related --
 -------------------
 
--- TODO: document
+-- | A macro call is only invalid if any of the underlying components are
 resolveMac :: Monoid a => PathType -> Mac a -> Either String (Mac a)
 resolveMac t (Mac p tt x) = Mac <$> resolvePath t p <*> sequence (resolveTt <$> tt) <*> pure x
 
 instance Monoid a => Resolve (Mac a) where
   resolve (Mac p tt x) = Mac <$> resolve p <*> sequence (resolveTt <$> tt) <*> pure x 
 
--- TODO: document
--- TODO: In Delimited case, forbid a dollar token followed by an open paren (either as a token, or
--- as another delimited)
+-- | A token tree is invalid when
+--
+--   * there is an open or close delim token (those should be balanced and in 'Delimited')
+--   * the underlying token trees are invalid
+--
 resolveTt :: TokenTree -> Either String TokenTree
 resolveTt (Token _ (OpenDelim _)) = Left "open delimiter is not allowed as a token in a token tree"
 resolveTt (Token _ (CloseDelim _)) = Left "close delimiter is not allowed as a token in a token tree"

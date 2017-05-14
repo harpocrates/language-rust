@@ -13,7 +13,7 @@ documented.
 -}
 {-# OPTIONS_GHC -Wall -fno-warn-name-shadowing #-}
 {-# OPTIONS_HADDOCK hide, not-home #-}
-{-# LANGUAGE OverloadedStrings, DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedStrings  #-}
 
 module Language.Rust.Pretty.Internal where
 
@@ -503,7 +503,6 @@ printFnBlockArgs (FnDecl args ret _ x) = annotate x ("|" <> args' <> "|" <+> ret
         args' = commas args (`printArg` True)
 
 -- | Print the arm of a match expression (@print_arm@)
--- TODO: Consider removing the comma on block cases of matches
 printArm :: Arm a -> Doc a
 printArm (Arm as pats guard body x) = annotate x $ printOuterAttrs as
   </> group (foldr1 (\a b -> a <+> "|" <#> b) (printPat `map` toList pats))
@@ -693,7 +692,7 @@ synthComment com = "/*" <+> text com <+> "*/"
 
 -- | Print an identifier as is, or as cooked string if containing a hyphen
 printCookedIdent :: Ident -> Doc a
-printCookedIdent ident@Ident{ name = str }
+printCookedIdent ident@(Ident str _)
   | '-' `elem` str = printStr Cooked str
   | otherwise = printIdent ident 
 
@@ -750,7 +749,7 @@ printTraitItem (TraitItem ident attrs node x) = annotate x $ printOuterAttrs att
 -- TODO: follow up on <https://github.com/rust-lang-nursery/fmt-rfcs/issues/80>
 printBounds :: Doc a -> [TyParamBound a] -> Doc a
 printBounds _ [] = mempty
-printBounds prefix (b:bs) = align (fillSep ((prefix <+> printBound b) : [ "+" <+> printBound b' | b' <- bs ]))
+printBounds prefix bs = group (prefix <#> block NoDelim False " +" mempty (printBound `map` bs))
 
 -- | Print a type parameter bound
 printBound :: TyParamBound a -> Doc a
@@ -842,8 +841,7 @@ printEnumDef variants generics ident vis =
      WhereClause [] _ -> leading <+> lagging
      wc -> leading <#> printWhereClause True wc <#> lagging
   where leading = printVis vis <+> "enum" <+> (printIdent ident <> printGenerics generics)
-        lagging = block Brace False "," mempty [ printOuterAttrs as <#> printVariant v | v@Variant{ attrs = as } <- variants ]
-
+        lagging = block Brace False "," mempty [ printOuterAttrs as <#> printVariant v | v@(Variant _ as _ _ _) <- variants ]
 
 -- | Print a variant (@print_variant@)
 printVariant :: Variant a -> Doc a
@@ -865,7 +863,6 @@ printWherePredicate (BoundPredicate blt ty bds y) = annotate y (printFormalLifet
 printWherePredicate (RegionPredicate lt bds y) = annotate y (printLifetimeBounds lt bds)
 printWherePredicate (EqPredicate lhs rhs y) = annotate y (printType lhs <+> "=" <+> printType rhs)
 
--- TODO: think carefully about multiline version of this
 -- | Print a function (@print_fn@)
 printFn :: FnDecl a -> Unsafety -> Constness -> Abi -> Maybe Ident -> Generics a -> Visibility a -> Maybe (Block a, [Attribute a]) -> Doc a
 printFn decl unsafety constness abi name generics vis blkAttrs =

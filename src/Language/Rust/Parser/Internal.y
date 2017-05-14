@@ -26,10 +26,8 @@ module Language.Rust.Parser.Internal (
   parseBlock, parseImplItem, parseTraitItem, parseTt,
 ) where
 
-import Language.Rust.Syntax.Token
-import Language.Rust.Syntax.AST
-import Language.Rust.Syntax.Ident (mkIdent, Ident(..))
-import Language.Rust.Data.Position -- (Spanned(..), Span(..), Located(..))
+import Language.Rust.Syntax
+import Language.Rust.Data.Position
 import Language.Rust.Parser.Lexer (lexNonSpace, lexShebangLine)
 import Language.Rust.Parser.ParseMonad (pushToken, getPosition, P, parseError)
 import Language.Rust.Parser.Literals (translateLit)
@@ -139,72 +137,72 @@ import Text.Read (readMaybe)
   rawByteStr     { Spanned (LiteralTok ByteStrRawTok{} _) _ }
 
   -- Strict keywords used in the language
-  as             { Spanned (IdentTok (Ident "as" _)) _ }
-  box            { Spanned (IdentTok (Ident "box" _)) _ }
-  break          { Spanned (IdentTok (Ident "break" _)) _ }
-  const          { Spanned (IdentTok (Ident "const" _)) _ }
-  continue       { Spanned (IdentTok (Ident "continue" _)) _ }
-  crate          { Spanned (IdentTok (Ident "crate" _)) _ }
-  else           { Spanned (IdentTok (Ident "else" _)) _ }
-  enum           { Spanned (IdentTok (Ident "enum" _)) _ }
-  extern         { Spanned (IdentTok (Ident "extern" _)) _ }
-  false          { Spanned (IdentTok (Ident "false" _)) _ }
-  fn             { Spanned (IdentTok (Ident "fn" _)) _ }
-  for            { Spanned (IdentTok (Ident "for" _)) _ }
-  if             { Spanned (IdentTok (Ident "if" _)) _ }
-  impl           { Spanned (IdentTok (Ident "impl" _)) _ }
-  in             { Spanned (IdentTok (Ident "in" _)) _ }
-  let            { Spanned (IdentTok (Ident "let" _)) _ }
-  loop           { Spanned (IdentTok (Ident "loop" _)) _ }
-  match          { Spanned (IdentTok (Ident "match" _)) _ }
-  mod            { Spanned (IdentTok (Ident "mod" _)) _ }
-  move           { Spanned (IdentTok (Ident "move" _)) _ }
-  mut            { Spanned (IdentTok (Ident "mut" _)) _ }
-  pub            { Spanned (IdentTok (Ident "pub" _)) _ }
-  ref            { Spanned (IdentTok (Ident "ref" _)) _ }
-  return         { Spanned (IdentTok (Ident "return" _)) _ }
-  Self           { Spanned (IdentTok (Ident "Self" _)) _ }
-  self           { Spanned (IdentTok (Ident "self" _)) _ }
-  static         { Spanned (IdentTok (Ident "static" _)) _ }
-  struct         { Spanned (IdentTok (Ident "struct" _)) _ }
-  super          { Spanned (IdentTok (Ident "super" _)) _ }
-  trait          { Spanned (IdentTok (Ident "trait" _)) _ }
-  true           { Spanned (IdentTok (Ident "true" _)) _ }
-  type           { Spanned (IdentTok (Ident "type" _)) _ }
-  unsafe         { Spanned (IdentTok (Ident "unsafe" _)) _ }
-  use            { Spanned (IdentTok (Ident "use" _)) _ }
-  where          { Spanned (IdentTok (Ident "where" _)) _ }
-  while          { Spanned (IdentTok (Ident "while" _)) _ }
-  do             { Spanned (IdentTok (Ident "do" _)) _ }
+  as             { Spanned (IdentTok "as") _ }
+  box            { Spanned (IdentTok "box") _ }
+  break          { Spanned (IdentTok "break") _ }
+  const          { Spanned (IdentTok "const") _ }
+  continue       { Spanned (IdentTok "continue") _ }
+  crate          { Spanned (IdentTok "crate") _ }
+  else           { Spanned (IdentTok "else") _ }
+  enum           { Spanned (IdentTok "enum") _ }
+  extern         { Spanned (IdentTok "extern") _ }
+  false          { Spanned (IdentTok "false") _ }
+  fn             { Spanned (IdentTok "fn") _ }
+  for            { Spanned (IdentTok "for") _ }
+  if             { Spanned (IdentTok "if") _ }
+  impl           { Spanned (IdentTok "impl") _ }
+  in             { Spanned (IdentTok "in") _ }
+  let            { Spanned (IdentTok "let") _ }
+  loop           { Spanned (IdentTok "loop") _ }
+  match          { Spanned (IdentTok "match") _ }
+  mod            { Spanned (IdentTok "mod") _ }
+  move           { Spanned (IdentTok "move") _ }
+  mut            { Spanned (IdentTok "mut") _ }
+  pub            { Spanned (IdentTok "pub") _ }
+  ref            { Spanned (IdentTok "ref") _ }
+  return         { Spanned (IdentTok "return") _ }
+  Self           { Spanned (IdentTok "Self") _ }
+  self           { Spanned (IdentTok "self") _ }
+  static         { Spanned (IdentTok "static") _ }
+  struct         { Spanned (IdentTok "struct") _ }
+  super          { Spanned (IdentTok "super") _ }
+  trait          { Spanned (IdentTok "trait") _ }
+  true           { Spanned (IdentTok "true") _ }
+  type           { Spanned (IdentTok "type") _ }
+  unsafe         { Spanned (IdentTok "unsafe") _ }
+  use            { Spanned (IdentTok "use") _ }
+  where          { Spanned (IdentTok "where") _ }
+  while          { Spanned (IdentTok "while") _ }
+  do             { Spanned (IdentTok "do") _ }
 
   -- Keywords reserved for future use
-  abstract       { Spanned (IdentTok (Ident "abstract" _)) _ }
-  alignof        { Spanned (IdentTok (Ident "alignof" _)) _ }
-  become         { Spanned (IdentTok (Ident "become" _)) _ }
-  final          { Spanned (IdentTok (Ident "final" _)) _ }
-  macro          { Spanned (IdentTok (Ident "macro" _)) _ }
-  offsetof       { Spanned (IdentTok (Ident "offsetof" _)) _ }
-  override       { Spanned (IdentTok (Ident "override" _)) _ }
-  priv           { Spanned (IdentTok (Ident "priv" _)) _ }
-  proc           { Spanned (IdentTok (Ident "proc" _)) _ }
-  pure           { Spanned (IdentTok (Ident "pure" _)) _ }
-  sizeof         { Spanned (IdentTok (Ident "sizeof" _)) _ }
-  typeof         { Spanned (IdentTok (Ident "typeof" _)) _ }
-  unsized        { Spanned (IdentTok (Ident "unsized" _)) _ }
-  virtual        { Spanned (IdentTok (Ident "virtual" _)) _ }
-  yield          { Spanned (IdentTok (Ident "yield" _)) _ }
+  abstract       { Spanned (IdentTok "abstract") _ }
+  alignof        { Spanned (IdentTok "alignof") _ }
+  become         { Spanned (IdentTok "become") _ }
+  final          { Spanned (IdentTok "final") _ }
+  macro          { Spanned (IdentTok "macro") _ }
+  offsetof       { Spanned (IdentTok "offsetof") _ }
+  override       { Spanned (IdentTok "override") _ }
+  priv           { Spanned (IdentTok "priv") _ }
+  proc           { Spanned (IdentTok "proc") _ }
+  pure           { Spanned (IdentTok "pure") _ }
+  sizeof         { Spanned (IdentTok "sizeof") _ }
+  typeof         { Spanned (IdentTok "typeof") _ }
+  unsized        { Spanned (IdentTok "unsized") _ }
+  virtual        { Spanned (IdentTok "virtual") _ }
+  yield          { Spanned (IdentTok "yield") _ }
 
   -- Weak keywords, have special meaning only in specific contexts.
-  default        { Spanned (IdentTok (Ident "default" _)) _ }
-  union          { Spanned (IdentTok (Ident "union" _)) _ }
-  catch          { Spanned (IdentTok (Ident "catch" _)) _ }
+  default        { Spanned (IdentTok "default") _ }
+  union          { Spanned (IdentTok "union") _ }
+  catch          { Spanned (IdentTok "catch") _ }
 
   -- Comments
   outerDoc       { Spanned (Doc _ OuterDoc) _ }
   innerDoc       { Spanned (Doc _ InnerDoc) _ }
 
   -- Identifiers.
-  IDENT          { Spanned (IdentTok (Ident _ _)) _ }
+  IDENT          { Spanned IdentTok{} _ }
   '_'            { Spanned Underscore _ }
 
   -- Lifetimes.

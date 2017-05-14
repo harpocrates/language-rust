@@ -64,7 +64,7 @@ testP inp x = testCase inp $ do
 -- If that is the case /and/ the value is locatable, try extracting the appropriate slice from the
 -- input stream and check that it parses to the same thing.
 --
--- TODO: statements are a problem since the last statement in a block can be an expression which, by
+-- NOTE: statements are a problem since the last statement in a block can be an expression which, by
 -- itself, is not a statement.
 checkTerm :: Typeable a => InputStream -> a -> IO ()
 checkTerm inp x = sequence_ $ catMaybes tests
@@ -287,8 +287,8 @@ parserTypes = testGroup "parsing types"
                                                       , ("Trait", Parenthesized [i32] (Just i32) ())
                                                       , ("AssociatedItem", NoParameters ())
                                                       ] ()) ())
-  , testP "fn(i32,...)"
-             (BareFn Normal Rust [] (FnDecl [Arg Nothing i32 ()] Nothing True ()) ())
+  , testP "extern fn(i32,...)"
+             (BareFn Normal C [] (FnDecl [Arg Nothing i32 ()] Nothing True ()) ())
   , testP "fn(i32) -> i32"
              (BareFn Normal Rust [] (FnDecl [Arg Nothing i32 ()] (Just i32) False ()) ())
   , testP "fn(i32,) -> i32"

@@ -184,6 +184,19 @@ generics = testGroup "generics"
     \) -> ReturnType {\n\
     \  return;\n\
     \}"
+  , testComplete "break generics and bounds"
+    "fn ridiculously_long_name_1<\n\
+    \  ExcessivelyLongGenericName:\n\
+    \    Sized +\n\
+    \    PartialEq +\n\
+    \    PartialOrd +,\n\
+    \  AnotherExcessivelyLongGenericName: Sized,\n\
+    \>(\n\
+    \  x: Vec<ExcessivelyLongGenericName>,\n\
+    \  y: Vec<AnotherExcessivelyLongGenericName>,\n\
+    \) -> ReturnType {\n\
+    \  return;\n\
+    \}"
   ]
 
 -- See <https://github.com/rust-lang-nursery/fmt-rfcs/issues/38>
