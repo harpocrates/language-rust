@@ -61,8 +61,9 @@ import Text.Read (readMaybe)
 -- Conflicts caused in
 --  * (1) around the '::' in path_segments_without_colons
 --  * (1) around the '=' in where_clause
+--  * (1) around the ';' terminating block expressions in stmt
 -- However, they are all S/R and seem to be currently doing what they should
-%expect 2
+%expect 3
 
 %token
 
@@ -460,7 +461,7 @@ unsuffixed :: { Lit Span }
   : lit               {%
       case suffix $1 of
         Unsuffixed -> pure $1
-        _ -> fail "expected unsuffixed literal"
+        _ -> parseError $1      {-  "expected unsuffixed literal" -}
     }
 
 
@@ -557,7 +558,7 @@ path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
        case (N.last (unspan $1), unspan $3) of
          ((i, NoParameters{}), (lts, tys, bds)) -> let seg = (i, AngleBracketed lts tys bds (spanOf $3))
                                                    in pure $ Spanned (N.init (unspan $1) |: seg) ($1 # $3)
-         _ -> error "invalid path segment in expression path"
+         _ -> fail "invalid path segment in expression path"
     }
 
 -- Mod related:
@@ -703,8 +704,8 @@ arg_self :: { Arg Span }
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Abi }
   : str             {% case unspan $1 of
-                         (LiteralTok (StrTok s) Nothing) -> maybe (fail "invalid ABI") pure (readMaybe s)
-                         _ -> fail "invalid ABI"
+                         (LiteralTok (StrTok s) Nothing) -> maybe (parseError $1 {- "invalid ABI" -}) pure (readMaybe s)
+                         _ -> parseError $1 {- "invalid ABI" -}
                     }
   | {- empty -}     { C }
 
@@ -737,8 +738,6 @@ lifetime_def :: { LifetimeDef Span }
 -- Patterns --
 --------------
 
--- TODO: Double-check that the error message in the one element tuple case makes sense. It should...
---
 -- There is a funky trick going on here around 'IdentP'. When there is a binding mode (ie a 'mut' or
 -- 'ref') or an '@' pattern, everything is fine, but otherwise there is no difference between an
 -- expression variable path and a pattern. To deal with this, we intercept expression paths with
@@ -770,7 +769,7 @@ pat :: { Pat Span }
   | '[' pat_slice ']'               { let (b,s,a) = $2 in SliceP b s a ($1 # $3) }
   | '(' pat_tup ')'                 {%
       case $2 of
-        ([p], Nothing, False) -> fail "Syntax error: the symbol `)' does not fit here"
+        ([p], Nothing, False) -> parseError (CloseDelim Paren)
         (ps,m,t) -> pure (TupleP ps m ($1 # $3))
     }
 
@@ -862,9 +861,9 @@ gen_postfix_expr(lhs) :: { Expr Span }
   | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
      { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
   | lhs '.' int                              {%
-      case lit $3 of
-        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
-        _ -> fail "make better error message"
+     case lit $3 of
+       Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
+       _ -> parseError $3
     }
 
 -- Arithmetic (unary and binary) generalized expressions. Precedences are handled by Happy (right
@@ -989,7 +988,7 @@ nonblock_expr :: { Expr Span }
   | nb_arithmetic_expr                                                        { $1 }
   | lambda_expr_nostruct                                                      { $1 }
 nb_arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)    { $1 }  -- TODO: 3rd arg should be 'arithmetic_expr'
+  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,arithmetic_expr)        { $1 }
   | nb_postfix_expr                                                           { $1 }
 nb_postfix_expr :: { Expr Span }
   : gen_postfix_expr(nb_postfix_expr)                                         { $1 }
@@ -1060,7 +1059,7 @@ expr_arms :: { (Expr Span, [Arm Span]) }
   | lambda_expr_nostruct              comma_arms              { ($1, $2) }
   | arithmetic_expr_arms                                      { $1 }
 arithmetic_expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr) comma_arms  { ($1, $2) }
+  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,arithmetic_expr) comma_arms  { ($1, $2) }
   | postfix_expr_arms                                         { $1 }
 postfix_expr_arms :: { (Expr Span, [Arm Span]) }
   : gen_postfix_expr(nb_postfix_expr) comma_arms              { ($1, $2) }
@@ -1123,9 +1122,8 @@ field :: { Field Span }
 -- Statements --
 ----------------
 
--- TODO: do something with single semicolons
 stmt :: { Stmt Span }
-  : ntStmt                                       { $1 }
+  : ntStmt                                                 { $1 }
   | many(outer_attribute) let pat ':' ty initializer ';'   { Local $3 (Just $5) $6 $1 ($1 # $2 # $>) }
   | many(outer_attribute) let pat        initializer ';'   { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
   | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
@@ -1134,11 +1132,15 @@ stmt :: { Stmt Span }
   | many(outer_attribute)     stmt_item                    { ItemStmt (let Item i a n v s = $2 in Item i ($1 ++ a) n v s) ($1 # $2) }
   | many(outer_attribute) pub stmt_item                    { ItemStmt (let Item i a n _ s = $3 in Item i ($1 ++ a) n PublicV s) ($1 # $2 # $3) }
 
+stmtOrSemi :: { Maybe (Stmt Span) }
+  : ';'            { Nothing }
+  | stmt           { Just $1 }
+
 -- List of statements where the last statement might be a no-semicolon statement.
-stmts_possibly_no_semi :: { [Stmt Span] }
-  : stmt stmts_possibly_no_semi                  { $1 : $2 }
-  | stmt                                         { [$1] }
-  | many(outer_attribute) nonblock_expr          { [toStmt ($1 `addAttrs` $2) False False ($1 # $2)] }
+stmts_possibly_no_semi :: { [Maybe (Stmt Span)] }
+  : stmtOrSemi stmts_possibly_no_semi    { $1 : $2 }
+  | stmtOrSemi                           { [$1] }
+  | many(outer_attribute) nonblock_expr  { [Just (toStmt ($1 `addAttrs` $2) False False ($1 # $2))] }
 
 initializer :: { Maybe (Expr Span) }
   : '=' expr                                     { Just $2 }
@@ -1147,13 +1149,13 @@ initializer :: { Maybe (Expr Span) }
 
 block :: { Block Span }
   : ntBlock                                      { $1 }
-  | '{' '}'                                      { Block [] Normal ($1 # $2) }
-  | '{' stmts_possibly_no_semi '}'               { Block $2 Normal ($1 # $>) }
+  | '{' '}'                            { Block [] Normal ($1 # $>) }
+  | '{' stmts_possibly_no_semi '}'     { Block [ s | Just s <- $2 ] Normal ($1 # $>) }
 
 inner_attrs_block :: { ([Attribute Span], Block Span) }
-  : block                                        { ([], $1) }
+  : block                                                  { ([], $1) }
   | '{' inner_attrs '}'                          { (toList $2, Block [] Normal ($1 # $>)) }
-  | '{' inner_attrs stmts_possibly_no_semi '}'   { (toList $2, Block $3 Normal ($1 # $>)) }
+  | '{' inner_attrs stmts_possibly_no_semi '}'   { (toList $2, Block [ s | Just s <- $3 ] Normal ($1 # $>)) }
 
 
 -----------
@@ -1300,16 +1302,15 @@ impl_item :: { ImplItem Span }
   | many(outer_attribute) vis def safety ext_abi fn ident generics fn_decl_with_self where_clause inner_attrs_block
      { ImplItem (unspan $7) (unspan $2) $3 ($1 ++ fst $>) (MethodI (MethodSig $4 NotConst $5 $9 $8{ whereClause = $10 }) (snd $>)) ($1 # $2 # snd $>) }
 
--- TODO: the span on the last two cases won't cover the 'safety' or 'abi' if there are no outer_attributes
 trait_item :: { TraitItem Span }
   : ntTraitItem                                    { $1 }
   | many(outer_attribute) const ident ':' ty initializer ';' { TraitItem (unspan $3) $1 (ConstT $5 $6) ($1 # $2 # $>) }
   | many(outer_attribute) mod_mac                            { TraitItem (mkIdent "") $1 (MacroT $2) ($1 # $>) }
   | many(outer_attribute) type ty_param ';'                  { let TyParam _ i b d _ = $3 in TraitItem i $1 (TypeT b d) ($1 # $2 # $>) }
-  | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self where_clause ';'
-     { TraitItem (unspan $5) $1 (MethodT (MethodSig $2 NotConst $3 $7 $6{ whereClause = $8 }) Nothing) ($1 # $4 # $>)  }
-  | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self where_clause block
-     { TraitItem (unspan $5) $1 (MethodT (MethodSig $2 NotConst $3 $7 $6{ whereClause = $8 }) (Just $>)) ($1 # $4 # $>) }
+  | many(outer_attribute) safetyS ext_abiS fn ident generics fn_decl_with_self where_clause ';'
+     { TraitItem (unspan $5) $1 (MethodT (MethodSig (unspan $2) NotConst (unspan $3) $7 $6{ whereClause = $8 }) Nothing) ($1 # $2 # $3 # $4 # $>)  }
+  | many(outer_attribute) safetyS ext_abiS fn ident generics fn_decl_with_self where_clause block
+     { TraitItem (unspan $5) $1 (MethodT (MethodSig (unspan $2) NotConst (unspan $3) $7 $6{ whereClause = $8 }) (Just $>)) ($1 # $2 # $3 # $4 # $>) }
 
 
 safety :: { Unsafety }
@@ -1319,6 +1320,14 @@ safety :: { Unsafety }
 ext_abi :: { Abi }
   : {- empty -}     { Rust }
   | extern abi      { $2 }
+
+safetyS :: { Spanned Unsafety }
+  : {- empty -}     { pure Normal }
+  | unsafe          { Spanned Unsafe (spanOf $1) }
+
+ext_abiS :: { Spanned Abi }
+  : {- empty -}     { pure Rust }
+  | extern abi      { Spanned $2 (spanOf $1) }
 
 vis :: { Spanned (Visibility Span) }
   : {- empty -}          { Spanned InheritedV mempty }
@@ -1628,7 +1637,7 @@ lit (Spanned (LiteralTok litTok suffix_m) s) = translateLit litTok suffix s
                (Just "u128")  -> U128
                (Just "f32")   -> F32
                (Just "f64")   -> F64
-               _ -> error "lit"
+               _ -> error "invalid literal"
 
 isTraitTyParamBound TraitTyParamBound{} = True
 isTraitTyParamBound _ = False

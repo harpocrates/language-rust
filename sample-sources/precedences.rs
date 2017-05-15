@@ -1,3 +1,5 @@
+// See <https://github.com/rust-lang/rust/blob/master/src/libsyntax/util/parser.rs>
+
 fn main() {
   a /= - b ? ^= * - c >= - * d [0] ? == box & ! e ? [0] .0 ? [0] .0 ?;
   - a == box b [0] [0] [0] .0 || c [0] ^= d % e = f != g;
@@ -35,9 +37,9 @@ fn range_expressions() {
   let _ = ..{};
   
   // non-block expression 
- // ..Point { x: 1 };     // TODO: should pass
- // ..{};                 // TODO: should pass
-
+  ..Point { x: 1 };
+  ..{};
+;
   // no struct expression
   for x in 1.. { }
   for x in ..1 { }

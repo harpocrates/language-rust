@@ -5,6 +5,9 @@ fn main() {
   // Item
   fn foo() { return 1 }
 
+  // Empty
+  ;;;
+
   // NoSemi
   if true {
     foo()

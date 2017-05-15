@@ -15,6 +15,7 @@ module Language.Rust.Syntax.Token (
 ) where
 
 import GHC.Generics (Generic)
+import Data.Maybe (fromMaybe)
 import Data.Data (Data)
 import Data.Typeable (Typeable)
 
@@ -201,14 +202,14 @@ instance Show Token where
   show (CloseDelim Brace) = "}"
   show (CloseDelim NoDelim) = ""
   -- Literals
-  show (LiteralTok (ByteTok n) s) = "b'" ++ show n ++ "'" ++ maybe "" show s
-  show (LiteralTok (CharTok n) s) = "'"  ++ show n ++ "'" ++ maybe "" show s
-  show (LiteralTok (IntegerTok n) s) = show n ++ maybe "" show s
-  show (LiteralTok (FloatTok n) s) = show n ++ maybe "" show s
-  show (LiteralTok (StrTok n) s) = "\"" ++ show n ++ "\"" ++ maybe "" show s
-  show (LiteralTok (StrRawTok n i) s) = "r" ++ replicate i '#' ++ "\"" ++ show n ++ "\"" ++ replicate i '#' ++ maybe "" show s
-  show (LiteralTok (ByteStrTok n) s) = "b\"" ++ show n ++ "\"" ++ maybe "" show s
-  show (LiteralTok (ByteStrRawTok n i) s) = "br" ++ replicate i '#' ++ "\"" ++ show n ++ "\"" ++ replicate i '#' ++ maybe "" show s
+  show (LiteralTok (ByteTok n) s) = "b'" ++ n ++ "'" ++ fromMaybe "" s
+  show (LiteralTok (CharTok n) s) = "'"  ++ n ++ "'" ++ fromMaybe "" s
+  show (LiteralTok (IntegerTok n) s) = n ++ fromMaybe "" s
+  show (LiteralTok (FloatTok n) s) = n ++ fromMaybe "" s
+  show (LiteralTok (StrTok n) s) = "\"" ++ n ++ "\"" ++ fromMaybe "" s
+  show (LiteralTok (StrRawTok n i) s) = "r" ++ replicate i '#' ++ "\"" ++ n ++ "\"" ++ replicate i '#' ++ fromMaybe "" s
+  show (LiteralTok (ByteStrTok n) s) = "b\"" ++ n ++ "\"" ++ fromMaybe "" s
+  show (LiteralTok (ByteStrRawTok n i) s) = "br" ++ replicate i '#' ++ "\"" ++ n ++ "\"" ++ replicate i '#' ++ fromMaybe "" s
   -- Name components
   show (IdentTok i) = show i
   show Underscore = "_"
