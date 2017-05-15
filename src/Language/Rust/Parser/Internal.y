@@ -239,10 +239,13 @@ import Text.Read (readMaybe)
 %nonassoc box return break continue IMPLTRAIT
 
 -- These are the usual arithmetic precedences. 'UNARY' is introduced here for '*', '!', '-', '&'
---
--- TODO: revisit these precedences and write some tests for them
-%right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%=' '..' '...'
+%right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%='
 %right '<-'
+%nonassoc SINGLERNG
+%nonassoc INFIXRNG
+%nonassoc POSTFIXRNG
+%nonassoc PREFIXRNG
+%nonassoc '..' '...'
 %left '||'
 %left '&&'
 %left '==' '!=' '<' '>' '<=' '>='
@@ -867,59 +870,59 @@ gen_postfix_expr(lhs) :: { Expr Span }
 -- Arithmetic (unary and binary) generalized expressions. Precedences are handled by Happy (right
 -- at the end of the token section)
 gen_arithmetic(lhs,rhs,rhs2) :: { Expr Span }
-  : '*' lhs          %prec UNARY { Unary [] Deref $2 ($1 # $>) }
-  | '!' lhs          %prec UNARY { Unary [] Not $2 ($1 # $>) }
-  | '-' lhs          %prec UNARY { Unary [] Neg $2 ($1 # $>) }
-  | '&'      lhs     %prec UNARY { AddrOf [] Immutable $2 ($1 # $>) }
-  | '&'  mut lhs     %prec UNARY { AddrOf [] Mutable $3 ($1 # $>) }
-  | '&&'     lhs     %prec UNARY { AddrOf [] Immutable (AddrOf [] Immutable $2 (nudge 1 0 ($1 # $2))) ($1 # $2) }
-  | '&&' mut lhs     %prec UNARY { AddrOf [] Immutable (AddrOf [] Mutable $3 (nudge 1 0 ($1 # $3))) ($1 # $3) }
-  | box lhs          %prec UNARY { Box [] $2 ($1 # $>) }
-  | lhs ':' ty_no_plus           { TypeAscription [] $1 $3 ($1 # $>) }
-  | lhs as ty_no_plus            { Cast [] $1 $3 ($1 # $>) }
-  | lhs '*' rhs                  { Binary [] MulOp $1 $3 ($1 # $>) }
-  | lhs '/' rhs                  { Binary [] DivOp $1 $3 ($1 # $>) }
-  | lhs '%' rhs                  { Binary [] RemOp $1 $3 ($1 # $>) }
-  | lhs '+' rhs                  { Binary [] AddOp $1 $3 ($1 # $>) }
-  | lhs '-' rhs                  { Binary [] SubOp $1 $3 ($1 # $>) }
-  | lhs '<<' rhs                 { Binary [] ShlOp $1 $3 ($1 # $>) }
-  | lhs '>>' rhs                 { Binary [] ShrOp $1 $3 ($1 # $>) }
-  | lhs '&' rhs                  { Binary [] BitAndOp $1 $3 ($1 # $>) }
-  | lhs '^' rhs                  { Binary [] BitXorOp $1 $3 ($1 # $>) }
-  | lhs '|' rhs                  { Binary [] BitOrOp $1 $3 ($1 # $>) }
-  | lhs '==' rhs                 { Binary [] EqOp $1 $3 ($1 # $>) }
-  | lhs '!=' rhs                 { Binary [] NeOp $1 $3 ($1 # $>) }
-  | lhs '<'  rhs                 { Binary [] LtOp $1 $3 ($1 # $>) }
-  | lhs '>'  rhs                 { Binary [] GtOp $1 $3 ($1 # $>) }
-  | lhs '<=' rhs                 { Binary [] LeOp $1 $3 ($1 # $>) }
-  | lhs '>=' rhs                 { Binary [] GeOp $1 $3 ($1 # $>) }
-  | lhs '&&' rhs                 { Binary [] AndOp $1 $3 ($1 # $>) }
-  | lhs '||' rhs                 { Binary [] OrOp $1 $3 ($1 # $>) }
-  | lhs '<-' rhs                 { InPlace [] $1 $3 ($1 # $>) }
-  | lhs '=' rhs                  { Assign [] $1 $3 ($1 # $>) }
-  | lhs '>>=' rhs                { AssignOp [] ShrOp $1 $3 ($1 # $>) }
-  | lhs '<<=' rhs                { AssignOp [] ShlOp $1 $3 ($1 # $>) }
-  | lhs '-=' rhs                 { AssignOp [] SubOp $1 $3 ($1 # $>) }
-  | lhs '+=' rhs                 { AssignOp [] AddOp $1 $3 ($1 # $>) }
-  | lhs '*=' rhs                 { AssignOp [] MulOp $1 $3 ($1 # $>) }
-  | lhs '/=' rhs                 { AssignOp [] DivOp $1 $3 ($1 # $>) }
-  | lhs '^=' rhs                 { AssignOp [] BitXorOp $1 $3 ($1 # $>) }
-  | lhs '|=' rhs                 { AssignOp [] BitOrOp $1 $3 ($1 # $>) }
-  | lhs '&=' rhs                 { AssignOp [] BitAndOp $1 $3 ($1 # $>) }
-  | lhs '%=' rhs                 { AssignOp [] RemOp $1 $3 ($1 # $>) }
-  | lhs '..'                     { Range [] (Just $1) Nothing HalfOpen ($1 # $>) }
-  | lhs '...'                    { Range [] (Just $1) Nothing Closed ($1 # $>) }
-  | lhs '..' rhs2                { Range [] (Just $1) (Just $3) HalfOpen ($1 # $>) }
-  | lhs '...' rhs2               { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
+  : '*' lhs          %prec UNARY     { Unary [] Deref $2 ($1 # $>) }
+  | '!' lhs          %prec UNARY     { Unary [] Not $2 ($1 # $>) }
+  | '-' lhs          %prec UNARY     { Unary [] Neg $2 ($1 # $>) }
+  | '&'      lhs     %prec UNARY     { AddrOf [] Immutable $2 ($1 # $>) }
+  | '&'  mut lhs     %prec UNARY     { AddrOf [] Mutable $3 ($1 # $>) }
+  | '&&'     lhs     %prec UNARY     { AddrOf [] Immutable (AddrOf [] Immutable $2 (nudge 1 0 ($1 # $2))) ($1 # $2) }
+  | '&&' mut lhs     %prec UNARY     { AddrOf [] Immutable (AddrOf [] Mutable $3 (nudge 1 0 ($1 # $3))) ($1 # $3) }
+  | box lhs          %prec UNARY     { Box [] $2 ($1 # $>) }
+  | lhs ':' ty_no_plus               { TypeAscription [] $1 $3 ($1 # $>) }
+  | lhs as ty_no_plus                { Cast [] $1 $3 ($1 # $>) }
+  | lhs '*' rhs                      { Binary [] MulOp $1 $3 ($1 # $>) }
+  | lhs '/' rhs                      { Binary [] DivOp $1 $3 ($1 # $>) }
+  | lhs '%' rhs                      { Binary [] RemOp $1 $3 ($1 # $>) }
+  | lhs '+' rhs                      { Binary [] AddOp $1 $3 ($1 # $>) }
+  | lhs '-' rhs                      { Binary [] SubOp $1 $3 ($1 # $>) }
+  | lhs '<<' rhs                     { Binary [] ShlOp $1 $3 ($1 # $>) }
+  | lhs '>>' rhs                     { Binary [] ShrOp $1 $3 ($1 # $>) }
+  | lhs '&' rhs                      { Binary [] BitAndOp $1 $3 ($1 # $>) }
+  | lhs '^' rhs                      { Binary [] BitXorOp $1 $3 ($1 # $>) }
+  | lhs '|' rhs                      { Binary [] BitOrOp $1 $3 ($1 # $>) }
+  | lhs '==' rhs                     { Binary [] EqOp $1 $3 ($1 # $>) }
+  | lhs '!=' rhs                     { Binary [] NeOp $1 $3 ($1 # $>) }
+  | lhs '<'  rhs                     { Binary [] LtOp $1 $3 ($1 # $>) }
+  | lhs '>'  rhs                     { Binary [] GtOp $1 $3 ($1 # $>) }
+  | lhs '<=' rhs                     { Binary [] LeOp $1 $3 ($1 # $>) }
+  | lhs '>=' rhs                     { Binary [] GeOp $1 $3 ($1 # $>) }
+  | lhs '&&' rhs                     { Binary [] AndOp $1 $3 ($1 # $>) }
+  | lhs '||' rhs                     { Binary [] OrOp $1 $3 ($1 # $>) }
+  | lhs '<-' rhs                     { InPlace [] $1 $3 ($1 # $>) }
+  | lhs '=' rhs                      { Assign [] $1 $3 ($1 # $>) }
+  | lhs '>>=' rhs                    { AssignOp [] ShrOp $1 $3 ($1 # $>) }
+  | lhs '<<=' rhs                    { AssignOp [] ShlOp $1 $3 ($1 # $>) }
+  | lhs '-=' rhs                     { AssignOp [] SubOp $1 $3 ($1 # $>) }
+  | lhs '+=' rhs                     { AssignOp [] AddOp $1 $3 ($1 # $>) }
+  | lhs '*=' rhs                     { AssignOp [] MulOp $1 $3 ($1 # $>) }
+  | lhs '/=' rhs                     { AssignOp [] DivOp $1 $3 ($1 # $>) }
+  | lhs '^=' rhs                     { AssignOp [] BitXorOp $1 $3 ($1 # $>) }
+  | lhs '|=' rhs                     { AssignOp [] BitOrOp $1 $3 ($1 # $>) }
+  | lhs '&=' rhs                     { AssignOp [] BitAndOp $1 $3 ($1 # $>) }
+  | lhs '%=' rhs                     { AssignOp [] RemOp $1 $3 ($1 # $>) }
+  |     '..'  rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) HalfOpen ($1 # $2) }
+  |     '...' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) Closed ($1 # $2) }
+  | lhs '..'        %prec POSTFIXRNG { Range [] (Just $1) Nothing HalfOpen ($1 # $>) }
+  | lhs '...'       %prec POSTFIXRNG { Range [] (Just $1) Nothing Closed ($1 # $>) }
+  | lhs '..'  rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) HalfOpen ($1 # $>) }
+  | lhs '...' rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
+  |     '..'        %prec SINGLERNG  { Range [] Nothing Nothing HalfOpen (spanOf $1) }
+  |     '...'       %prec SINGLERNG  { Range [] Nothing Nothing Closed (spanOf $1) }
 
 -- Lowest precedence generalized expression
 gen_expr :: { Expr Span }
   : return                       { Ret [] Nothing (spanOf $1) }
   | return expr                  { Ret [] (Just $2) ($1 # $2) }
-  | '..'                         { Range [] Nothing Nothing HalfOpen (spanOf $1) }
-  | '...'                        { Range [] Nothing Nothing Closed (spanOf $1) }
-  | '..' expr                    { Range [] Nothing (Just $2) HalfOpen ($1 # $2) }
-  | '...' expr                   { Range [] Nothing (Just $2) Closed ($1 # $2) }
   | continue                     { Continue [] Nothing (spanOf $1) }
   | continue lifetime            { Continue [] (Just $2) ($1 # $2) }
   | break                        { Break [] Nothing Nothing (spanOf $1) }
@@ -932,7 +935,7 @@ gen_expr :: { Expr Span }
 --
 --   ['expr']               Most general class of expressions, no restrictions
 --
---   ['nostruct_expr']      Forbids struct literals
+--   ['nostruct_expr']      Forbids struct literals (for use as scrutinee of loops, ifs, etc)
 --
 --   ['nostructblock_expr'] Forbids struct literals and block expressions (but not block-like things
 --                          like 'if' expressions or 'loop' expressions)
@@ -946,10 +949,10 @@ gen_expr :: { Expr Span }
 
 expr :: { Expr Span }
   : gen_expr                                                                  { $1 }
-  | arithmetic_expr                                                           { $1 }
   | lambda_expr                                                               { $1 }
+  | arithmetic_expr                                                           { $1 }
 arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)       { $1 }
+  : gen_arithmetic(arithmetic_expr,arithmetic_expr,arithmetic_expr)           { $1 }
   | postfix_expr                                                              { $1 }
 postfix_expr  :: { Expr Span }
   : gen_postfix_expr(postfix_expr)                                            { $1 }
@@ -973,9 +976,8 @@ nostructblock_expr :: { Expr Span }
   : gen_expr                                                                  { $1 }
   | nsb_arithmetic_expr                                                       { $1 }
   | lambda_expr_nostruct                                                      { $1 }
--- TODO: should the first case not be 'gen_arithmetic(nsb_arithmetic_expr,ns_arithmetic_expr,nsb_arithmetic_expr)'
 nsb_arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(nsb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)   { $1 }
+  : gen_arithmetic(nsb_arithmetic_expr,ns_arithmetic_expr,nsb_arithmetic_expr){ $1 }
   | nsb_postfix_expr                                                          { $1 }
 nsb_postfix_expr  :: { Expr Span }
   : gen_postfix_expr(nsb_postfix_expr)                                        { $1 }
@@ -987,7 +989,7 @@ nonblock_expr :: { Expr Span }
   | nb_arithmetic_expr                                                        { $1 }
   | lambda_expr_nostruct                                                      { $1 }
 nb_arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)    { $1 }
+  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,nsb_arithmetic_expr)    { $1 }  -- TODO: 3rd arg should be 'arithmetic_expr'
   | nb_postfix_expr                                                           { $1 }
 nb_postfix_expr :: { Expr Span }
   : gen_postfix_expr(nb_postfix_expr)                                         { $1 }
