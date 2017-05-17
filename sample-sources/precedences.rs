@@ -27,6 +27,8 @@ fn main() {
   a .0 .0 >>= -b >= -box*c || d? &= box&-e | f << g * h[0][0] |= i * j;
   box-a / b != c -= d == &e.0 >>= f - *g[0] %= h & i << &-j??;
   !&-a.0 == b *= c.0 <<= --d && e? ^= !f <<= g[0] > h += -i >>= j;
+  return box break 'lt 1? + 2?;
+  break 'lt box return 1? + 2?;
 }
 
 struct Point { x: i32 }
@@ -39,7 +41,9 @@ fn range_expressions() {
   // non-block expression 
   ..Point { x: 1 };
   ..{};
-;
+  - { 1 };
+  return |x: i32| x + 1;
+
   // no struct expression
   for x in 1.. { }
   for x in ..1 { }

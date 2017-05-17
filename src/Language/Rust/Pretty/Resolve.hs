@@ -507,7 +507,8 @@ resolveExprP p _ (Break as ml me x) = parenE (p > 0) $ do
 resolveExprP p _ (Continue as ml x) = parenE (p > 0) $ do 
   as' <- sequence (resolveAttr OuterAttr <$> as)
   ml' <- sequence (resolveLifetime <$> ml)
-  pure (Continue as' ml' x) 
+  pure (Continue as' ml' x)
+resolveExprP _ _ (Range _ _ Nothing Closed _) = Left "inclusive ranges must be bounded at the end"
 resolveExprP p _ (Range as Nothing r l x) = parenE (p > 0) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   r' <- sequence (resolveExprP 0 AnyExpr <$> r)

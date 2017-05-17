@@ -237,7 +237,7 @@ import Text.Read (readMaybe)
 %nonassoc IDENT ntIdent union default catch
 
 -- These are all very low precedence unary operators
-%nonassoc box return break continue IMPLTRAIT
+%nonassoc box return break continue IMPLTRAIT LAMBDA
 
 -- These are the usual arithmetic precedences. 'UNARY' is introduced here for '*', '!', '-', '&'
 %right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%='
@@ -257,7 +257,7 @@ import Text.Read (readMaybe)
 %left '+' '-'
 %left '*' '/' '%'
 %left ':' as
-%left UNARY
+%nonassoc UNARY
 
 -- These are all generated precedence tokens.
 --
@@ -268,6 +268,7 @@ import Text.Read (readMaybe)
 --  * 'WHERE' is for non-empty where clauses
 --
 %nonassoc POSTFIX VIS PATH DOLLAR WHERE
+%nonassoc '?' '.'
 
 -- Delimiters have the highest precedence. 'ntBlock' counts as a delimiter since it always starts
 -- and ends with '{' and '}'
@@ -844,20 +845,29 @@ binding_mode :: { Spanned BindingMode }
 -- have to define production rules for every combination of restrications used. Parametrized
 -- productions make this a bit easier by letting us factor out the core expressions used everywhere.
 
--- General postfix expression
-gen_postfix_expr(lhs) :: { Expr Span }
-  : ntExpr                                   { $1 }
-  | lit_expr                                 { $1 }
-  | expr_path                     %prec PATH { PathExpr [] Nothing $1 (spanOf $1) }
-  | expr_qual_path                           { PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1)) (spanOf $1) }
-  | expr_mac                                 { MacExpr [] $1 (spanOf $1) }
-  | '[' sep_byT(expr,',') ']'                { Vec [] $2 ($1 # $>) }
-  | '[' expr ';' expr ']'                    { Repeat [] $2 $4 ($1 # $>) }
-  | lhs '[' expr ']'                         { Index [] $1 $3 ($1 # $>) }
-  | lhs '?'                                  { Try [] $1 ($1 # $>) }
-  | lhs '(' sep_byT(expr,',') ')'            { Call [] $1 $3 ($1 # $>) }
-  | lhs '.' ident '(' sep_byT(expr,',') ')'  { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
-  | lhs '.' ident              %prec POSTFIX { FieldAccess [] $1 (unspan $3) ($1 # $>) }
+-- Generalized expressions, parametrized by
+--
+--   * 'lhs' - expressions allowed on the left extremity of the term
+--   * 'rhs' - expressions allowed on the right extremity of the term
+--   * 'rhs2' - expressions allowed on the right extremity following '..'/'...'
+--
+-- Precedences are handled by Happy (right at the end of the token section)
+gen_expression(lhs,rhs,rhs2) :: { Expr Span }
+  -- immediate expressions
+  : ntExpr                           { $1 }
+  | lit_expr                         { $1 }
+  | '[' sep_byT(expr,',') ']'        { Vec [] $2 ($1 # $>) }
+  | '[' expr ';' expr ']'            { Repeat [] $2 $4 ($1 # $>) }
+  | expr_mac                         { MacExpr [] $1 (spanOf $1) }
+  | expr_path            %prec PATH  { PathExpr [] Nothing $1 (spanOf $1) }
+  | expr_qual_path                   { PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1)) (spanOf $1) }
+  -- postfix expressions
+  | lhs '?'                          { Try [] $1 ($1 # $>) }
+  | lhs '[' expr ']'                 { Index [] $1 $3 ($1 # $>) }
+  | lhs '(' sep_byT(expr,',') ')'    { Call [] $1 $3 ($1 # $>) }
+  | lhs '.' ident                    { FieldAccess [] $1 (unspan $3) ($1 # $>) }
+  | lhs '.' ident '(' sep_byT(expr,',') ')'
+     { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
   | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
      { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
   | lhs '.' int                              {%
@@ -865,20 +875,18 @@ gen_postfix_expr(lhs) :: { Expr Span }
        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
        _ -> parseError $3
     }
-
--- Arithmetic (unary and binary) generalized expressions. Precedences are handled by Happy (right
--- at the end of the token section)
-gen_arithmetic(lhs,rhs,rhs2) :: { Expr Span }
-  : '*' lhs          %prec UNARY     { Unary [] Deref $2 ($1 # $>) }
-  | '!' lhs          %prec UNARY     { Unary [] Not $2 ($1 # $>) }
-  | '-' lhs          %prec UNARY     { Unary [] Neg $2 ($1 # $>) }
-  | '&'      lhs     %prec UNARY     { AddrOf [] Immutable $2 ($1 # $>) }
-  | '&'  mut lhs     %prec UNARY     { AddrOf [] Mutable $3 ($1 # $>) }
-  | '&&'     lhs     %prec UNARY     { AddrOf [] Immutable (AddrOf [] Immutable $2 (nudge 1 0 ($1 # $2))) ($1 # $2) }
-  | '&&' mut lhs     %prec UNARY     { AddrOf [] Immutable (AddrOf [] Mutable $3 (nudge 1 0 ($1 # $3))) ($1 # $3) }
-  | box lhs          %prec UNARY     { Box [] $2 ($1 # $>) }
+  -- unary expressions
+  | '*'      rhs     %prec UNARY     { Unary [] Deref $2 ($1 # $>) }
+  | '!'      rhs     %prec UNARY     { Unary [] Not $2 ($1 # $>) }
+  | '-'      rhs     %prec UNARY     { Unary [] Neg $2 ($1 # $>) }
+  | '&'      rhs     %prec UNARY     { AddrOf [] Immutable $2 ($1 # $>) }
+  | '&'  mut rhs     %prec UNARY     { AddrOf [] Mutable $3 ($1 # $>) }
+  | '&&'     rhs     %prec UNARY     { AddrOf [] Immutable (AddrOf [] Immutable $2 (nudge 1 0 ($1 # $2))) ($1 # $2) }
+  | '&&' mut rhs     %prec UNARY     { AddrOf [] Immutable (AddrOf [] Mutable $3 (nudge 1 0 ($1 # $3))) ($1 # $3) }
+  | box rhs          %prec UNARY     { Box [] $2 ($1 # $>) }
   | lhs ':' ty_no_plus               { TypeAscription [] $1 $3 ($1 # $>) }
   | lhs as ty_no_plus                { Cast [] $1 $3 ($1 # $>) }
+  -- binary expressions
   | lhs '*' rhs                      { Binary [] MulOp $1 $3 ($1 # $>) }
   | lhs '/' rhs                      { Binary [] DivOp $1 $3 ($1 # $>) }
   | lhs '%' rhs                      { Binary [] RemOp $1 $3 ($1 # $>) }
@@ -897,6 +905,16 @@ gen_arithmetic(lhs,rhs,rhs2) :: { Expr Span }
   | lhs '>=' rhs                     { Binary [] GeOp $1 $3 ($1 # $>) }
   | lhs '&&' rhs                     { Binary [] AndOp $1 $3 ($1 # $>) }
   | lhs '||' rhs                     { Binary [] OrOp $1 $3 ($1 # $>) }
+  -- range expressions
+  |     '..'  rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) HalfOpen ($1 # $2) }
+  |     '...' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) Closed ($1 # $2) }
+  | lhs '..'        %prec POSTFIXRNG { Range [] (Just $1) Nothing HalfOpen ($1 # $>) }
+  | lhs '...'       %prec POSTFIXRNG { Range [] (Just $1) Nothing Closed ($1 # $>) }
+  | lhs '..'  rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) HalfOpen ($1 # $>) }
+  | lhs '...' rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
+  |     '..'        %prec SINGLERNG  { Range [] Nothing Nothing HalfOpen (spanOf $1) }
+  |     '...'       %prec SINGLERNG  { Range [] Nothing Nothing Closed (spanOf $1) }
+  -- assignment expressions
   | lhs '<-' rhs                     { InPlace [] $1 $3 ($1 # $>) }
   | lhs '=' rhs                      { Assign [] $1 $3 ($1 # $>) }
   | lhs '>>=' rhs                    { AssignOp [] ShrOp $1 $3 ($1 # $>) }
@@ -909,28 +927,23 @@ gen_arithmetic(lhs,rhs,rhs2) :: { Expr Span }
   | lhs '|=' rhs                     { AssignOp [] BitOrOp $1 $3 ($1 # $>) }
   | lhs '&=' rhs                     { AssignOp [] BitAndOp $1 $3 ($1 # $>) }
   | lhs '%=' rhs                     { AssignOp [] RemOp $1 $3 ($1 # $>) }
-  |     '..'  rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) HalfOpen ($1 # $2) }
-  |     '...' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) Closed ($1 # $2) }
-  | lhs '..'        %prec POSTFIXRNG { Range [] (Just $1) Nothing HalfOpen ($1 # $>) }
-  | lhs '...'       %prec POSTFIXRNG { Range [] (Just $1) Nothing Closed ($1 # $>) }
-  | lhs '..'  rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) HalfOpen ($1 # $>) }
-  | lhs '...' rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
-  |     '..'        %prec SINGLERNG  { Range [] Nothing Nothing HalfOpen (spanOf $1) }
-  |     '...'       %prec SINGLERNG  { Range [] Nothing Nothing Closed (spanOf $1) }
-
--- Lowest precedence generalized expression
-gen_expr :: { Expr Span }
-  : return                       { Ret [] Nothing (spanOf $1) }
-  | return expr                  { Ret [] (Just $2) ($1 # $2) }
-  | continue                     { Continue [] Nothing (spanOf $1) }
-  | continue lifetime            { Continue [] (Just $2) ($1 # $2) }
-  | break                        { Break [] Nothing Nothing (spanOf $1) }
-  | break          expr          { Break [] Nothing (Just $2) ($1 # $2) }
-  | break lifetime               { Break [] (Just $2) Nothing ($1 # $2) }
-  | break lifetime expr          { Break [] (Just $2) (Just $3) ($1 # $3) }
+  -- low precedence prefix expressions
+  | return                           { Ret [] Nothing (spanOf $1) }
+  | return rhs                       { Ret [] (Just $2) ($1 # $2) }
+  | continue                         { Continue [] Nothing (spanOf $1) }
+  | continue lifetime                { Continue [] (Just $2) ($1 # $2) }
+  | break                            { Break [] Nothing Nothing (spanOf $1) }
+  | break          rhs               { Break [] Nothing (Just $2) ($1 # $2) }
+  | break lifetime                   { Break [] (Just $2) Nothing ($1 # $2) }
+  | break lifetime rhs   %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
+  -- lambda expressions
+  | move args      rhs   %prec LAMBDA
+    { Closure [] Value (FnDecl (unspan $2) Nothing   False (spanOf $2)) $> ($1 # $>) }
+  |      args      rhs   %prec LAMBDA
+    { Closure [] Ref   (FnDecl (unspan $1) Nothing   False (spanOf $1)) $> ($1 # $>) }
 
 
--- Then, we instantiate these general productions into the following families of rules:
+-- Then, we instantiate this general production into the following families of rules:
 --
 --   ['expr']               Most general class of expressions, no restrictions
 --
@@ -947,53 +960,27 @@ gen_expr :: { Expr Span }
 -- different types.
 
 expr :: { Expr Span }
-  : gen_expr                                                                  { $1 }
-  | lambda_expr                                                               { $1 }
-  | arithmetic_expr                                                           { $1 }
-arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(arithmetic_expr,arithmetic_expr,arithmetic_expr)           { $1 }
-  | postfix_expr                                                              { $1 }
-postfix_expr  :: { Expr Span }
-  : gen_postfix_expr(postfix_expr)                                            { $1 }
+  : gen_expression(expr,expr,expr)                                            { $1 }
   | paren_expr                                                                { $1 }
   | struct_expr                                                               { $1 }
   | block_expr                                                                { $1 }
+  | lambda_expr_block                                                         { $1 }
 
 nostruct_expr :: { Expr Span }
-  : gen_expr                                                                  { $1 }
-  | ns_arithmetic_expr                                                        { $1 }
-  | lambda_expr_nostruct                                                      { $1 }
-ns_arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(ns_arithmetic_expr,ns_arithmetic_expr,nsb_arithmetic_expr) { $1 }
-  | ns_postfix_expr                                                           { $1 }
-ns_postfix_expr  :: { Expr Span }
-  : gen_postfix_expr(ns_postfix_expr)                                         { $1 }
+  : gen_expression(nostruct_expr,nostruct_expr,nonstructblock_expr)           { $1 }
   | paren_expr                                                                { $1 }
   | block_expr                                                                { $1 }
 
-nostructblock_expr :: { Expr Span }
-  : gen_expr                                                                  { $1 }
-  | nsb_arithmetic_expr                                                       { $1 }
-  | lambda_expr_nostruct                                                      { $1 }
-nsb_arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(nsb_arithmetic_expr,ns_arithmetic_expr,nsb_arithmetic_expr){ $1 }
-  | nsb_postfix_expr                                                          { $1 }
-nsb_postfix_expr  :: { Expr Span }
-  : gen_postfix_expr(nsb_postfix_expr)                                        { $1 }
+nonstructblock_expr :: { Expr Span }
+  : gen_expression(nonstructblock_expr,nostruct_expr,nonstructblock_expr)     { $1 }
   | paren_expr                                                                { $1 }
   | block_like_expr                                                           { $1 }
 
 nonblock_expr :: { Expr Span }
-  : gen_expr                                                                  { $1 }
-  | nb_arithmetic_expr                                                        { $1 }
-  | lambda_expr_nostruct                                                      { $1 }
-nb_arithmetic_expr :: { Expr Span }
-  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,arithmetic_expr)        { $1 }
-  | nb_postfix_expr                                                           { $1 }
-nb_postfix_expr :: { Expr Span }
-  : gen_postfix_expr(nb_postfix_expr)                                         { $1 }
+  : gen_expression(nonblock_expr,expr,expr)                                   { $1 }
   | paren_expr                                                                { $1 }
   | struct_expr                                                               { $1 }
+  | lambda_expr_block                                                         { $1 }
 
 
 -- Finally, what remains is the more mundane definitions of particular types of expressions.
@@ -1001,7 +988,6 @@ nb_postfix_expr :: { Expr Span }
 -- Literal expressions (composed of just literals)
 lit_expr :: { Expr Span }
   : lit       { Lit [] $1 (spanOf $1) }
-
 
 -- An expression ending in a '{ ... }' block. Useful since "There is a convenience rule that allows
 -- one to omit the separating ';' after 'if', 'match', 'loop', 'for', 'while'"
@@ -1055,14 +1041,7 @@ comma_arms :: { [Arm Span] }
 
 -- An expression followed by match arms. If there is a comma needed, it is added
 expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_expr                          comma_arms              { ($1, $2) }
-  | lambda_expr_nostruct              comma_arms              { ($1, $2) }
-  | arithmetic_expr_arms                                      { $1 }
-arithmetic_expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_arithmetic(nb_arithmetic_expr,arithmetic_expr,arithmetic_expr) comma_arms  { ($1, $2) }
-  | postfix_expr_arms                                         { $1 }
-postfix_expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_postfix_expr(nb_postfix_expr) comma_arms              { ($1, $2) }
+  : gen_expression(nonblock_expr,expr,expr) comma_arms  { ($1, $2) }
   | paren_expr                        comma_arms              { ($1, $2) }
   | struct_expr                       comma_arms              { ($1, $2) }
   | block_like_expr                   comma_arms              { ($1, $2) }
@@ -1080,21 +1059,12 @@ paren_expr :: { Expr Span }
   | '(' expr ',' sep_by1T(expr,',') ')' { TupExpr [] ($2 : toList $4) ($1 # $5) }
 
 
--- Closure
-lambda_expr :: { Expr Span }
+-- Closure ending in blocks
+lambda_expr_block :: { Expr Span }
   : move args '->' ty_no_plus block
     { Closure [] Value (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  | move args         expr
-    { Closure [] Value (FnDecl (unspan $2) Nothing   False (spanOf $2)) $> ($1 # $>) }
   |      args '->' ty_no_plus block
     { Closure [] Ref   (FnDecl (unspan $1) (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |      args         expr
-    { Closure [] Ref   (FnDecl (unspan $1) Nothing   False (spanOf $1)) $> ($1 # $>) }
-
--- Closure expression in a "no struct context"
-lambda_expr_nostruct :: { Expr Span }
-  : move args nostruct_expr  { Closure [] Value (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $3) }
-  |      args nostruct_expr  { Closure [] Ref   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $2) }
 
 -- Closure arguments
 args :: { Spanned [Arg Span] }
