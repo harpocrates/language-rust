@@ -109,6 +109,22 @@ commonCode = testGroup "lexing common code fragments"
               , Space Whitespace " "
               , CloseDelim Brace
               ]
+  , testCode "123.f32"
+              [ LiteralTok (IntegerTok "123") Nothing
+              , Dot
+              , IdentTok (mkIdent "f32")
+              ]
+  , testCode "0e+10"
+              [ LiteralTok (IntegerTok "0") (Just "e")
+              , Plus
+              , LiteralTok (IntegerTok "10") Nothing
+              ]
+  , testCode "123.+1"
+              [ LiteralTok (FloatTok "123.") Nothing
+              , Plus
+              , LiteralTok (IntegerTok "1") Nothing
+              ]
+
   ]
 
 
@@ -134,11 +150,11 @@ literals = testGroup "literals (numbers, characters, strings, etc.)"
   , testCode "0xAFAC" [ LiteralTok (IntegerTok "0xAFAC") Nothing ]
   , testCode "0xAFACu32" [ LiteralTok (IntegerTok "0xAFAC") (Just "u32") ]
   -- float's
+  , testCode "123." [ LiteralTok (FloatTok "123.") Nothing ]
   , testCode "123.1" [ LiteralTok (FloatTok "123.1") Nothing ]
-  , testCode "123.f32" [ LiteralTok (FloatTok "123.") (Just "f32") ]
   , testCode "123.1f32" [ LiteralTok (FloatTok "123.1") (Just "f32") ]
   , testCode "123e-9f32" [ LiteralTok (FloatTok "123e-9") (Just "f32") ]
-  , testCode "0e+10" [ LiteralTok (FloatTok "0e+10") Nothing ]
+  , testCode "9e+10" [ LiteralTok (FloatTok "9e+10") Nothing ]
   -- string's
   , testCode "\"hello \\n world!\"" [ LiteralTok (StrTok "hello \\n world!") Nothing ]
   , testCode "\"hello \\n world!\"suffix" [ LiteralTok (StrTok "hello \\n world!") (Just "suffix") ]

@@ -127,7 +127,7 @@ instance Diffable ImplPolarity where
 
 instance Show a => Diffable (TraitItem a) where
   item@(TraitItem i as n _) === val = do
-    diffString i (val ! "ident")
+    i === (val ! "ident")
     
     let n' = val ! "node"
     case (n' ! "variant", n) of
@@ -146,7 +146,7 @@ instance Show a => Diffable (TraitItem a) where
 
 instance Show a => Diffable (ImplItem a) where
   item@(ImplItem i v d as n _) === val = do
-    diffString i (val ! "ident")
+    i === (val ! "ident")
     v === (val ! "vis")
     d === (val ! "defaultness")
     
@@ -194,13 +194,13 @@ instance Show a => Diffable (VariantData a) where
 
 instance Show a => Diffable (StructField a) where
   s@(StructField i v t as _) === val = do
-    maybeDiff diffString i (val ! "ident")
+    i === (val ! "ident")
     v === (val ! "vis")
     t === (val ! "ty")
 
 instance Show a => Diffable (ForeignItem a) where
   f@(ForeignItem i as n v _) === val = do
-    diffString i (val ! "ident")
+    i === (val ! "ident")
     v === (val ! "vis")
     let n' = val ! "node"
     case (n' ! "variant", n) of
@@ -223,10 +223,10 @@ instance Show a => Diffable (ViewPath a) where
         diffViewPathGlobal g is (n' ! "fields" ! 0 ! "segments")
         pl === (n' ! "fields" ! 1)
       ("ViewPathSimple", ViewPathSimple g is (PathListItem n (Just r) _) _) -> do
-        diffString r (n' ! "fields" ! 0)
+        r === (n' ! "fields" ! 0)
         diffViewPathGlobal g (is ++ [n]) (n' ! "fields" ! 1 ! "segments")
       ("ViewPathSimple", ViewPathSimple g is (PathListItem n Nothing _) _) -> do
-        diffString n (n' ! "fields" ! 0)
+        n === (n' ! "fields" ! 0)
         diffViewPathGlobal g (is ++ [n]) (n' ! "fields" ! 1 ! "segments")
       _ -> diff "different view path" v val
     where
@@ -247,12 +247,12 @@ instance Show a => Diffable (ViewPath a) where
     diffViewPathIdent i val = do
       when (Null /= val ! "parameters") $
         diff "view path identifier has parameters" i val
-      diffString i (val ! "identifier")
+      i === (val ! "identifier")
 
 instance Show a => Diffable (PathListItem a) where
   p@(PathListItem n r _) === val = do
-    diffString           n (val ! "node" ! "name")
-    maybeDiff diffString r (val ! "node" ! "rename")
+    n === (val ! "node" ! "name")
+    r === (val ! "node" ! "rename")
 
 instance Show a => Diffable (FnDecl a) where
   decl@(FnDecl as out v _) === val = do
@@ -333,13 +333,9 @@ instance Show a => Diffable (LifetimeDef a) where
 
 instance Show a => Diffable (TyParam a) where
   TyParam as i bd d _ === val = do
-    diffString i  (val ! "ident")
+    i === (val ! "ident")
     bd === (val ! "bounds")
     d === (val ! "default")
-
-diffString :: Ident -> Value -> Diff
-diffString (Ident i _) (String s) | fromString i == s = pure ()
-diffString i val = diff "identifiers are different" i val
 
 instance Show a => Diffable (WhereClause a) where
   whr@(WhereClause preds _) === val = preds === (val ! "predicates")
@@ -447,7 +443,7 @@ instance Show a => Diffable (Pat a) where
           ("Mac", MacP m _) -> m === (val' ! "fields" ! 0)
           ("Ident", IdentP bm i m _) -> do
             bm === (val' ! "fields" ! 0)
-            i === (val' ! "fields" ! 1)
+            i === (val' ! "fields" ! 1 ! "node")
             m === (val' ! "fields" ! 2)
           ("Ref", RefP p m _) -> do
             p === (val' ! "fields" ! 0)
@@ -553,13 +549,13 @@ instance Diffable Token where
           ("Caret", CaretEqual) -> pure ()
           ("Percent", PercentEqual) -> pure ()
           _ -> diff "differing binary-equal operator tokens" t val
-      ("Ident", IdentTok i) -> diffString i (val ! "fields" ! 0)
-      ("Lifetime", LifetimeTok l) -> diffString ("'" <> l) (val ! "fields" ! 0)
+      ("Ident", IdentTok i) -> i === (val ! "fields" ! 0)
+      ("Lifetime", LifetimeTok l) -> ("'" <> l) === (val ! "fields" ! 0)
       -- TODO: compare contents of doc comment
       ("DocComment", Doc s _) -> pure () 
       ("Literal", LiteralTok l s) -> do
         l === (val ! "fields" ! 0)
-        -- TODO suffix
+        fmap mkIdent s === (val ! "fields" ! 1)
       _ -> diff "differing tokens" t val
   t === val = diff "differing tokens" t val
 
@@ -569,7 +565,6 @@ instance Diffable LitTok where
       ("Byte", ByteTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
       ("Char", CharTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
       ("Integer", IntegerTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      -- TODO: This fails on inputs 123.f32 123e-9f32 0e+10 (which are incorrectly lexed by rustc)
       ("Float", FloatTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
       ("Str_", StrTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
       ("StrRaw", StrRawTok s i) | fromString s == (val ! "fields" ! 0) -> diffIntegral i (val ! "fields" ! 1)
@@ -601,12 +596,11 @@ instance Show a => Diffable (Field a) where
       (Nothing, Data.Aeson.Bool True) -> pure ()
       (Just e, Data.Aeson.Bool False) -> e === (val ! "expr")
     
-    i === (val ! "ident")
+    i === (val ! "ident" ! "node")
 
 instance Diffable Ident where
-  a@(Ident i _) === val
-    | String (fromString i) == val ! "node" = pure ()
-    | otherwise = diff "different identifiers" a val 
+  Ident i _ === String s | fromString i == s = pure ()
+  ident     === val = diff "identifiers are different" ident val
 
 instance Diffable BindingMode where
   bm === val =
@@ -718,7 +712,7 @@ instance Show a => Diffable (PathParameters a) where
     where
     diffBinding :: Show a => (Ident, Ty a) -> Value -> Diff
     diffBinding (i,t) v = do
-      diffString i (v ! "ident")
+      i === (v ! "ident")
       t === (v ! "ty")
 
 -- TODO: attribtues
@@ -747,7 +741,7 @@ instance Show a => Diffable (Expr a) where
         f === (n ! "fields" ! 0)
         es === (n ! "fields" ! 1)
       ("MethodCall", MethodCall as o i tys es _) -> do
-        i === (n ! "fields" ! 0)
+        i === (n ! "fields" ! 0 ! "node")
         fromMaybe [] tys === (n ! "fields" ! 1)
         (o : es) === (n ! "fields" ! 2) 
       ("Binary", Binary as o e1 e2 _) -> do
@@ -813,7 +807,7 @@ instance Show a => Diffable (Expr a) where
         r === (n ! "fields" ! 2)
       ("Field", FieldAccess as e i _) -> do
         e === (n ! "fields" ! 0)
-        i === (n ! "fields" ! 1)
+        i === (n ! "fields" ! 1 ! "node")
       ("TupField", TupField as e i _) -> do
         e === (n ! "fields" ! 0)
         diffIntegral i (n ! "fields" ! 1 ! "node")

@@ -124,8 +124,9 @@ parserLiterals = testGroup "parsing literals"
   , testP "0xAFAC" (Int Hex 44972 Unsuffixed ())
   , testP "0xAFACu32" (Int Hex 44972 U32 ())
   -- float's
+  , testP "123." (Float 123.0 Unsuffixed ())
   , testP "123.1" (Float 123.1 Unsuffixed ())
-  , testP "123.f32" (Float 123.0 F32 ())
+  , testP "123.0f32" (Float 123.0 F32 ())
   , testP "123.1f32" (Float 123.1 F32 ())
   , testP "123e-9f32" (Float 123e-9 F32 ())
   -- string's

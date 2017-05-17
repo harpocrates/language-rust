@@ -950,7 +950,10 @@ $hexit             = [0-9a-fA-F]
   | 0o [0-8_]+
   | 0x [0-9a-fA-F_]+
 
-@lit_float         = [0-9][0-9_]* (\. [0-9][0-9_]*)? ([eE] [\-\+]? [0-9][0-9_]*)?
+@decimal_suffix    = \. [0-9][0-9_]*
+@exponent_suffix   = [eE] [\-\+]? [0-9][0-9_]*
+
+@lit_float         = ( 0 @decimal_suffix | ( [1-9][0-9_]* | 0[0-9_]+ ) @decimal_suffix? ) @exponent_suffix?
 @lit_float2        = [0-9][0-9_]* \.
 
 @lit_str           = \" (\\\n | \\\r\n | \\ @char_escape | [^\"])* \"
@@ -1037,9 +1040,9 @@ $white+         { \s -> pure (Space Whitespace s)  }
 
 @lit_integer    { \i -> literal (IntegerTok i) }
 @lit_float      { \f -> literal (FloatTok   f) }
-@lit_float / [^\._a-zA-Z]
+@lit_float2 / [^\._a-zA-Z]
                 { \f -> literal (FloatTok   f) }
-@lit_float2 / [^\.]
+@lit_float2 / { \_ _ _ (_,is) -> inputStreamEmpty is }
                 { \f -> literal (FloatTok   f) }
 
 @lit_byte       { \c -> literal (ByteTok    (drop 2 (init c))) }
