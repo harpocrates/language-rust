@@ -1191,11 +1191,7 @@ data WherePredicate a
       }
   -- | equality predicate (@syntax::ast::WhereEqPredicate@) (example: @T=int@). Note that this is
   -- not currently supported.
-  | EqPredicate
-      { lhs :: Ty a                             -- ^ LHS of the equality predicate (@T@ in the example)
-      , rhs :: Ty a                             -- ^ RHS of the equality predicate (@int@ in the example)
-      , nodeInfo :: a
-      }
+  | EqPredicate (Ty a) (Ty a) a
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (WherePredicate a) where

@@ -455,10 +455,10 @@ instance Show a => Diffable (Pat a) where
           ("TupleStruct", TupleStructP p fp mi _) -> do
             p  === (val' ! "fields" ! 0)
             fp === (val' ! "fields" ! 1)
-            maybeDiff diffIntegral mi (val' ! "fields" ! 2)
+            mi === (val' ! "fields" ! 2)
           ("Tuple", TupleP fp mi _) -> do
             fp === (val' ! "fields" ! 0)
-            maybeDiff diffIntegral mi (val' ! "fields" ! 1)
+            mi === (val' ! "fields" ! 1)
           ("Range", RangeP e1 e2 _) -> do
             e1 === (val' ! "fields" ! 0)
             e2 === (val' ! "fields" ! 1)
@@ -567,14 +567,10 @@ instance Diffable LitTok where
       ("Integer", IntegerTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
       ("Float", FloatTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
       ("Str_", StrTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      ("StrRaw", StrRawTok s i) | fromString s == (val ! "fields" ! 0) -> diffIntegral i (val ! "fields" ! 1)
+      ("StrRaw", StrRawTok s i) | fromString s == (val ! "fields" ! 0) -> i === (val ! "fields" ! 1)
       ("ByteStr", ByteStrTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      ("ByteStrRaw", ByteStrRawTok s i) | fromString s == (val ! "fields" ! 0) -> diffIntegral i (val ! "fields" ! 1)
+      ("ByteStrRaw", ByteStrRawTok s i) | fromString s == (val ! "fields" ! 0) -> i === (val ! "fields" ! 1)
       _ -> diff "different literal token" l val
-
-diffIntegral :: (Show i, Integral i) => i -> Value -> Diff
-diffIntegral i (Number s) | fromIntegral i == s = pure ()
-diffIntegral i val = diff "different integral values" i val
 
 instance Show a => Diffable (FieldPat a) where
   f@(FieldPat mi p _) === val = do 
@@ -810,7 +806,7 @@ instance Show a => Diffable (Expr a) where
         i === (n ! "fields" ! 1 ! "node")
       ("TupField", TupField as e i _) -> do
         e === (n ! "fields" ! 0)
-        diffIntegral i (n ! "fields" ! 1 ! "node")
+        i === (n ! "fields" ! 1 ! "node")
       ("Index", Language.Rust.Syntax.Index as e1 e2 _) -> do
         e1 === (n ! "fields" ! 0)
         e2 === (n ! "fields" ! 1)
@@ -908,9 +904,9 @@ instance Show a => Diffable (Lit a) where
         when (String (fromString [c]) /= n ! "fields" ! 0) $
           diff "character literal has two different values" l val
       ("Byte", Byte b Unsuffixed _) ->
-        diffIntegral b (n ! "fields" ! 0)
+        b === (n ! "fields" ! 0)
       ("ByteStr", ByteStr s sty Unsuffixed _) ->
-        liftDiff diffIntegral s (n ! "fields" ! 0)
+        s === (n ! "fields" ! 0)
       ("Bool", Language.Rust.Syntax.Bool b Unsuffixed _) ->
         when (Data.Aeson.Bool b /= n ! "fields" ! 0) $
           diff "boolean literal has two different values" l val
@@ -918,7 +914,7 @@ instance Show a => Diffable (Lit a) where
 
 instance Diffable StrStyle where
   Cooked === "Cooked" = pure ()
-  (Raw n) === val | val ! "variant" == "Raw" = diffIntegral n (val ! "fields" ! 0)
+  (Raw n) === val | val ! "variant" == "Raw" = n === (val ! "fields" ! 0)
   sty === val = diff "different string style" sty val
 
 instance Diffable Suffix where

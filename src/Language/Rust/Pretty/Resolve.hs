@@ -60,9 +60,7 @@ module Language.Rust.Pretty.Resolve (
   Resolve(..),
 ) where
 
-import Language.Rust.Syntax.AST
-import Language.Rust.Syntax.Token
-import Language.Rust.Syntax.Ident
+import Language.Rust.Syntax
 
 import Language.Rust.Parser.ParseMonad (execParser)
 import Language.Rust.Parser.Lexer (lexTokens, lexToken)
@@ -463,7 +461,34 @@ data ExprType
   | NoStructBlockExpr -- ^ No struct literals or block expressions (block-like things like 'if' are fine)
   | NonBlockExpr      -- ^ Forbids expressions starting with blocks (things like '{ 1 } + 2')
 
+-- | Given the type of expression, what type of expression is allowed on the LHS
+lhs :: ExprType -> ExprType
+lhs LitExpr = error "literal expressions never have a left hand side"
+lhs LitOrPathExpr = error "literal or path expressions never have a left hand side"
+lhs AnyExpr = AnyExpr
+lhs NoStructExpr = NoStructExpr
+lhs NoStructBlockExpr = NoStructBlockExpr
+lhs NonBlockExpr = NonBlockExpr
 
+-- | Given the type of expression, what type of expression is allowed on the RHS
+rhs :: ExprType -> ExprType
+rhs LitExpr = error "literal expressions never have a right hand side"
+rhs LitOrPathExpr = error "literal or path expressions never have a right hand side"
+rhs AnyExpr = AnyExpr
+rhs NoStructExpr = NoStructExpr
+rhs NoStructBlockExpr = NoStructExpr
+rhs NonBlockExpr = AnyExpr
+
+-- | Given the type of expression, what type of expression is allowed on the RHS (after '..'/'...')
+rhs2 :: ExprType -> ExprType
+rhs2 LitExpr = error "literal expressions never have a right hand side (2)"
+rhs2 LitOrPathExpr = error "literal or path expressions never have a right hand side (2)"
+rhs2 AnyExpr = AnyExpr
+rhs2 NoStructExpr = NoStructBlockExpr
+rhs2 NoStructBlockExpr = NoStructBlockExpr
+rhs2 NonBlockExpr = AnyExpr
+
+-- | Resolve an expression of the given type in a general context
 resolveExpr :: Monoid a => ExprType -> Expr a -> Either String (Expr a)
 resolveExpr = resolveExprP 0
 
@@ -474,13 +499,30 @@ parenthesize e = do
   e' <- resolveExprP 0 AnyExpr e
   pure (ParenExpr [] e' mempty)
 
--- NOTE: the last two cases may be off...
-rightC :: ExprType -> ExprType
-rightC AnyExpr = AnyExpr
-rightC NoStructExpr = NoStructExpr
-rightC NoStructBlockExpr = AnyExpr
-rightC NonBlockExpr = AnyExpr
-rightC _ = error "rightC: ExprType should already have been covered!"
+{-
+Precedences (from 'Internal.y')
+===============================
+
+0   %nonassoc box return break continue LAMBDA
+1   %right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%='
+2   %right '<-'
+    %nonassoc SINGLERNG                 --    '..'
+3   %nonassoc INFIXRNG                  -- e1 '..' e2
+4   %nonassoc POSTFIXRNG                -- e1 '..'
+5   %nonassoc PREFIXRNG                 --    '..' e2
+6   %left '||'
+7   %left '&&'
+8   %left '==' '!=' '<' '>' '<=' '>='
+9   %left '|'
+10  %left '^'
+11  %left '&'
+12  %left '<<' '>>'
+13  %left '+' '-'
+14  %left '*' '/' '%'
+15  %left ':' as
+16  %nonassoc UNARY                     -- 'UNARY' is introduced here for '*', '!', '-', '&'
+17  %nonassoc POSTFIX                   -- 'POSTFIX' is introduced here for things like '?'
+-}
 
 -- | This has a double role: to resolve the expression and keep track of precedences
 resolveExprP :: Monoid a => Int -> ExprType -> Expr a -> Either String (Expr a)
@@ -493,213 +535,219 @@ resolveExprP p LitOrPathExpr l@Lit{} = resolveExprP p AnyExpr l
 resolveExprP p LitOrPathExpr n@(Unary _ Neg Lit{} _) = resolveExprP p AnyExpr n
 resolveExprP p LitOrPathExpr p'@PathExpr{} = resolveExprP p AnyExpr p'
 resolveExprP _ LitOrPathExpr _ = Left "expression is not literal, negated literal, path, or qualified path"
--- The following group of expression variants work in all of the remaining contexts (see 'gen_expr'
--- in the parser or 'lambda_expr')
-resolveExprP p _ (Ret as me x) = parenE (p > 0) $ do
+-- The following group of expression variants work in all of the remaining contexts (see
+-- 'gen_expression' in the parser)
+resolveExprP p c (Box as e x) = parenE (p > 0) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  me' <- sequence (resolveExprP 0 AnyExpr <$> me)
+  e' <- resolveExprP 0 (rhs c) e
+  pure (Box as' e' x)
+resolveExprP p c (Ret as me x) = parenE (p > 0) $ do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  me' <- sequence (resolveExprP 0 (rhs c) <$> me)
   pure (Ret as' me' x)
-resolveExprP p _ (Break as ml me x) = parenE (p > 0) $ do
+resolveExprP p c (Break as ml me x) = parenE (p > 0) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   ml' <- sequence (resolveLifetime <$> ml)
-  me' <- sequence (resolveExprP 0 AnyExpr <$> me)
+  me' <- sequence (resolveExprP 0 (rhs c) <$> me)
   pure (Break as' ml' me' x) 
 resolveExprP p _ (Continue as ml x) = parenE (p > 0) $ do 
   as' <- sequence (resolveAttr OuterAttr <$> as)
   ml' <- sequence (resolveLifetime <$> ml)
   pure (Continue as' ml' x)
-resolveExprP _ _ (Range _ _ Nothing Closed _) = Left "inclusive ranges must be bounded at the end"
-resolveExprP p _ (Range as Nothing r l x) = parenE (p > 0) $ do
-  as' <- sequence (resolveAttr OuterAttr <$> as)
-  r' <- sequence (resolveExprP 0 AnyExpr <$> r)
-  pure (Range as' Nothing r' l x)
 -- Closures
 resolveExprP _ _ (Closure _ _ (FnDecl _ _ True _) _ _) = Left "closures can never be variadic"
-resolveExprP p AnyExpr (Closure as cb fn@(FnDecl _ (Just _) _ _) e x) = parenE (p > 0) $ do
-  as' <- sequence (resolveAttr OuterAttr <$> as)
-  fn' <- resolveFnDecl NoSelf fn
-  let e' = case e of
-             BlockExpr{} -> e
-             _ -> BlockExpr [] (Block [NoSemi e mempty] Normal mempty) mempty
-  e'' <- resolveExprP 0 AnyExpr e'
-  pure (Closure as' cb fn' e'' x)
-resolveExprP _ _ e@(Closure _ _ (FnDecl _ (Just _) _ _) _ _) = parenthesize e
-resolveExprP p c (Closure as cb fn@(FnDecl _ Nothing _ _) e x) = parenE (p > 0) $ do
-  as' <- sequence (resolveAttr OuterAttr <$> as)
-  fn' <- resolveFnDecl NoSelf fn
-  e' <- resolveExprP 0 (rightC c) e
-  pure (Closure as' cb fn' e' x)
+resolveExprP p c e@(Closure as cb fn@(FnDecl _ ret _ _) b x)
+    = case (c, ret, b) of
+      (NoStructExpr,      Just _, BlockExpr{}) -> parenthesize e
+      (NoStructBlockExpr, Just _, BlockExpr{}) -> parenthesize e
+      (NoStructExpr,      Just _, _          ) -> parenthesize (Closure as cb fn (asBlock b) x) 
+      (NoStructBlockExpr, Just _, _          ) -> parenthesize (Closure as cb fn (asBlock b) x)
+      (_,                 Just _, BlockExpr{}) -> resolved AnyExpr
+      (_,                 Just _, _          ) -> parenthesize (Closure as cb fn (asBlock b) x)
+      _                                         -> resolved (rhs c)
   where
-  rightC :: ExprType -> ExprType
-  rightC AnyExpr = AnyExpr
-  rightC NoStructExpr = NoStructExpr
-  rightC NoStructBlockExpr = NoStructExpr
-  rightC NonBlockExpr = NoStructExpr
-  rightC _ = error "rightC: ExprType should already have been covered!"
--- Binary expressions
+  asBlock ex = BlockExpr [] (Block [NoSemi ex mempty] Normal mempty) mempty
+
+  resolved c' = parenE (p > 0) $ do
+    as' <- sequence (resolveAttr OuterAttr <$> as)
+    fn' <- resolveFnDecl NoSelf fn
+    b' <- resolveExprP 0 c' b
+    pure (Closure as' cb fn' b' x)
+-- Assignment/in-place expressions
 resolveExprP p c (Assign as l r x) = parenE (p > 1) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  l' <- resolveExprP 2 c l
-  r' <- resolveExprP 1 (rightC c) r
+  l' <- resolveExprP 2 (lhs c) l
+  r' <- resolveExprP 1 (rhs c) r
   pure (Assign as' l' r' x)
 resolveExprP p c (AssignOp as o l r x) = parenE (p > 1) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  l' <- resolveExprP 2 c l
-  r' <- resolveExprP 1 (rightC c) r
+  l' <- resolveExprP 2 (lhs c) l
+  r' <- resolveExprP 1 (rhs c) r
   pure (AssignOp as' o l' r' x)
-resolveExprP p c (Range as (Just l) mr rl x) = parenE (p > 1) $ do
-  as' <- sequence (resolveAttr OuterAttr <$> as)
-  l' <- resolveExprP 2 c l
-  mr' <- sequence (resolveExprP 1 NoStructBlockExpr <$> mr)
-  pure (Range as' (Just l') mr' rl x)
 resolveExprP p c (InPlace as l r x) = parenE (p > 2) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  l' <- resolveExprP 3 c l 
-  r' <- resolveExprP 2 (rightC c) r 
+  l' <- resolveExprP 3 (lhs c) l 
+  r' <- resolveExprP 2 (rhs c) r 
   pure (InPlace as' l' r' x)
+-- Range expressions
+resolveExprP _ _ (Range _ _ Nothing Closed _) = Left "inclusive ranges must be bounded at the end"
+resolveExprP _ _ (Range as Nothing Nothing rl x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  pure (Range as' Nothing Nothing rl x)
+resolveExprP p c (Range as (Just l) (Just r) rl x) = parenE (p > 3) $ do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  l' <- resolveExprP 4 (lhs c) l
+  r' <- resolveExprP 4 (rhs2 c) r
+  pure (Range as' (Just l') (Just r') rl x)
+resolveExprP p c (Range as (Just l) Nothing rl x) = parenE (p > 4) $ do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  l' <- resolveExprP 4 (lhs c) l
+  pure (Range as' (Just l') Nothing rl x)
+resolveExprP p c (Range as Nothing (Just r) rl x) = parenE (p > 5) $ do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  r' <- resolveExprP 5 (rhs2 c) r
+  pure (Range as' Nothing (Just r') rl x)
+-- Binary expressions
 resolveExprP p c (Binary as o l r x) = parenE (p > p') $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  l' <- resolveExprP p' c l 
-  r' <- resolveExprP (p' + 1) (rightC c) r 
+  l' <- resolveExprP p' (lhs c) l 
+  r' <- resolveExprP (p' + 1) (rhs c) r 
   pure (Binary as' o l' r' x)
   where
   p' = opPrec o
 
   opPrec :: BinOp -> Int
-  opPrec AddOp = 10
-  opPrec SubOp = 10
-  opPrec MulOp = 11
-  opPrec DivOp = 11
-  opPrec RemOp = 11
-  opPrec AndOp = 4
-  opPrec OrOp = 3
-  opPrec BitXorOp = 7
-  opPrec BitAndOp = 8
-  opPrec BitOrOp = 6
-  opPrec ShlOp = 9
-  opPrec ShrOp = 9
-  opPrec EqOp = 5
-  opPrec LtOp = 5
-  opPrec LeOp = 5
-  opPrec NeOp = 5
-  opPrec GeOp = 5
-  opPrec GtOp = 5
--- Cast and type ascriptions expressions pass on their restrictions to their wrapped expression
-resolveExprP p c (Cast as e t x) = parenE (p > 12) $ do
+  opPrec AddOp = 13
+  opPrec SubOp = 13
+  opPrec MulOp = 14
+  opPrec DivOp = 14
+  opPrec RemOp = 14
+  opPrec AndOp = 7
+  opPrec OrOp = 6
+  opPrec BitXorOp = 10
+  opPrec BitAndOp = 11
+  opPrec BitOrOp = 9
+  opPrec ShlOp = 12
+  opPrec ShrOp = 12
+  opPrec EqOp = 8
+  opPrec LtOp = 8
+  opPrec LeOp = 8
+  opPrec NeOp = 8
+  opPrec GeOp = 8
+  opPrec GtOp = 8
+-- Cast and type ascriptions expressions
+resolveExprP p c (Cast as e t x) = parenE (p > 15) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  e' <- resolveExprP 12 c e
+  e' <- resolveExprP 15 (lhs c) e
   t' <- resolveTy NoSumType t
   pure (Cast as' e' t' x)
-resolveExprP p c (TypeAscription as e t x) = parenE (p > 12) $ do
+resolveExprP p c (TypeAscription as e t x) = parenE (p > 15) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  e' <- resolveExprP 12 c e
+  e' <- resolveExprP 15 (lhs c) e
   t' <- resolveTy NoSumType t
   pure (TypeAscription as' e' t' x)
--- Unary expressions pass on their restrictions to their wrapped expression
-resolveExprP p c (Unary as o e x) = parenE (p > 13) $ do
+-- Unary expressions
+resolveExprP p c (Unary as o e x) = parenE (p > 16) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  e' <- resolveExprP 13 c e
+  e' <- resolveExprP 16 (rhs c) e
   pure (Unary as' o e' x)
-resolveExprP p c (AddrOf as m e x) = parenE (p > 13) $ do
+resolveExprP p c (AddrOf as m e x) = parenE (p > 16) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  e' <- resolveExprP 13 c e
+  e' <- resolveExprP 16 (rhs c) e
   pure (AddrOf as' m e' x)
-resolveExprP p c (Box as e x) = parenE (p > 13) $ do
+-- Postfix expressions
+resolveExprP p c (Index as e i x) = parenE (p > 17) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  e' <- resolveExprP 13 c e
-  pure (Box as' e' x)
--- Postfix expressions pass on their restrictions to their wrapped expression (see 'gen_postfix_exp')
-resolveExprP p c (Index as e i x) = parenE (p > 14) $ do
-  as' <- sequence (resolveAttr OuterAttr <$> as)
-  e' <- resolveExprP 14 c e
+  e' <- resolveExprP 17 (lhs c) e
   i' <- resolveExprP 0 AnyExpr i
   pure (Index as' e' i' x)
-resolveExprP p c (Try as e x) = parenE (p > 14) $ do
+resolveExprP p c (Try as e x) = parenE (p > 17) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  e' <- resolveExprP 14 c e
+  e' <- resolveExprP 17 (lhs c) e
   pure (Try as' e' x) 
-resolveExprP p c (Call as f xs x) = parenE (p > 14) $ do
+resolveExprP p c (Call as f xs x) = parenE (p > 17) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  f' <- resolveExprP 14 c f
+  f' <- resolveExprP 17 (lhs c) f
   xs' <- sequence (resolveExprP 0 AnyExpr <$> xs)
   pure (Call as' f' xs' x)
-resolveExprP p c (MethodCall as e i mt es x) = parenE (p > 14) $ do
+resolveExprP p c (MethodCall as e i mt es x) = parenE (p > 17) $ do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  e' <- resolveExprP 14 c e
+  e' <- resolveExprP 17 (lhs c) e
   i' <- resolveIdent i
   mt' <- case mt of
            Just t -> Just <$> sequence (resolveTy AnyType <$> t)
            Nothing -> pure Nothing
   es' <- sequence (resolveExprP 0 AnyExpr <$> es)
   pure (MethodCall as' e' i' mt' es' x)
-resolveExprP p _ (Vec as es x) = parenE (p > 14) $ do
+resolveExprP p c (TupField as e i x) = parenE (p > 17) $ do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  e' <- resolveExprP 17 (lhs c) e
+  pure (TupField as' e' i x)
+resolveExprP p c (FieldAccess as e i x) = parenE (p > 17) $ do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  e' <- resolveExprP 17 (lhs c) e
+  i' <- resolveIdent i
+  pure (FieldAccess as' e' i' x)
+-- Immediate expressions
+resolveExprP _ _ (Vec as es x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   es' <- sequence (resolveExprP 0 AnyExpr <$> es)
   pure (Vec as' es' x) 
-resolveExprP p c (TupField as e i x) = parenE (p > 14) $ do
-  as' <- sequence (resolveAttr OuterAttr <$> as)
-  e' <- resolveExprP 14 c e
-  pure (TupField as' e' i x)
-resolveExprP p c (FieldAccess as e i x) = parenE (p > 14) $ do
-  as' <- sequence (resolveAttr OuterAttr <$> as)
-  e' <- resolveExprP 14 c e
-  i' <- resolveIdent i
-  pure (FieldAccess as' e' i' x)
-resolveExprP p _ (PathExpr as Nothing p' x) = parenE (p > 14) $ do
+resolveExprP _ _ (PathExpr as Nothing p' x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   p'' <- resolvePath ExprPath p'
   pure (PathExpr as' Nothing p'' x)
-resolveExprP p _ (PathExpr as q@(Just (QSelf _ i)) p'@(Path g s x) x')
+resolveExprP _ _ (PathExpr as q@(Just (QSelf _ i)) p'@(Path g s x) x')
   | i < 0 || i >= length s = Left "index given by QSelf is outside the possible range"
-  | i == 0 = parenE (p > 14) $ do
+  | i == 0 = do
       as' <- sequence (resolveAttr OuterAttr <$> as)
       q' <- sequence (resolveQSelf <$> q)
       p'' <- resolvePath ExprPath p'
       pure (PathExpr as' q' p'' x)
-  | otherwise = parenE (p > 14) $ do
+  | otherwise = do
       as' <- sequence (resolveAttr OuterAttr <$> as)
       tyP <-   resolvePath TypePath $ Path g     (N.fromList (N.take i s)) mempty
       exprP <- resolvePath ExprPath $ Path False (N.fromList (N.drop i s)) x
       q' <- sequence (resolveQSelf <$> q)
       pure (PathExpr as' q' (Path g (segments tyP <> segments exprP) x) x') 
-resolveExprP p _ (Lit as l x) = parenE (p > 14) $ do
+resolveExprP _ _ (Lit as l x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   l' <- resolveLit l
   pure (Lit as' l' x)
-resolveExprP p _ (Repeat as e r x) = parenE (p > 14) $ do
+resolveExprP _ _ (Repeat as e r x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   e' <- resolveExprP 0 AnyExpr e
   r' <- resolveExprP 0 AnyExpr r
   pure (Repeat as' e' r' x)
 -- Macro expressions
-resolveExprP p _ (MacExpr as m x) = parenE (p > 14) $ do
+resolveExprP _ _ (MacExpr as m x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   m' <- resolveMac ExprPath m
   pure (MacExpr as' m' x)
-resolveExprP p _ (InlineAsmExpr as i x) = parenE (p > 14) $ do
+resolveExprP _ _ (InlineAsmExpr as i x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   i' <- resolveInlineAsm i
   pure (InlineAsmExpr as' i' x)
 -- Paren expressions
-resolveExprP p _ (ParenExpr as e x) = parenE (p > 14) $ do
+resolveExprP _ _ (ParenExpr as e x) = do
   as' <- sequence (resolveAttr EitherAttr <$> as)
   e' <- resolveExprP 0 AnyExpr e
   pure (ParenExpr as' e' x)
-resolveExprP p _ (TupExpr as es x) = parenE (p > 14) $ do
+resolveExprP _ _ (TupExpr as es x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   es' <- sequence (resolveExprP 0 AnyExpr <$> es)
   pure (TupExpr as' es' x)
 -- Block expressions
 resolveExprP _ NoStructBlockExpr e@BlockExpr{} = parenthesize e
 resolveExprP _ NonBlockExpr e@BlockExpr{} = parenthesize e
-resolveExprP p _ (BlockExpr as b x) = parenE (p > 14) $ do
+resolveExprP _ _ (BlockExpr as b x) = do
   as' <- sequence (resolveAttr EitherAttr <$> as)
   b' <- resolveBlock b
   pure (BlockExpr as' b' x) 
 -- Struct expressions
 resolveExprP _ NoStructExpr e@Struct{} = parenthesize e
 resolveExprP _ NoStructBlockExpr e@Struct{} = parenthesize e
-resolveExprP p _ (Struct as p' fs e x) = parenE (p > 14) $ do
+resolveExprP _ _ (Struct as p' fs e x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   p'' <- resolvePath ExprPath p'
   fs' <- sequence (resolveField <$> fs)
@@ -707,7 +755,7 @@ resolveExprP p _ (Struct as p' fs e x) = parenE (p > 14) $ do
   pure (Struct as' p'' fs' e' x)
 -- Block-like expressions
 resolveExprP _ NonBlockExpr e@If{} = parenthesize e
-resolveExprP p c (If as e b es x) = parenE (p > 14) $ do
+resolveExprP p c (If as e b es x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
@@ -719,7 +767,7 @@ resolveExprP p c (If as e b es x) = parenE (p > 14) $ do
            (Just e'') -> Just <$> resolveExprP p c (BlockExpr [] (Block [NoSemi e'' mempty] Normal mempty) mempty)
   pure (If as' e' b' es' x)
 resolveExprP _ NonBlockExpr e@IfLet{} = parenthesize e
-resolveExprP p c (IfLet as p' e b es x) = parenE (p > 14) $ do
+resolveExprP p c (IfLet as p' e b es x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   p'' <- resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
@@ -732,14 +780,14 @@ resolveExprP p c (IfLet as p' e b es x) = parenE (p > 14) $ do
            (Just e'') -> Just <$> resolveExprP p c (BlockExpr [] (Block [NoSemi e'' mempty] Normal mempty) mempty)
   pure (IfLet as' p'' e' b' es' x)
 resolveExprP _ NonBlockExpr e@While{} = parenthesize e
-resolveExprP p _ (While as e b l x) = parenE (p > 14) $ do
+resolveExprP _ _ (While as e b l x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   l' <- sequence (resolveLifetime <$> l)
   pure (While as' e' b' l' x)
 resolveExprP _ NonBlockExpr e@WhileLet{} = parenthesize e
-resolveExprP p _ (WhileLet as p' e b l x) = parenE (p > 14) $ do
+resolveExprP _ _ (WhileLet as p' e b l x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   p'' <- resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
@@ -747,7 +795,7 @@ resolveExprP p _ (WhileLet as p' e b l x) = parenE (p > 14) $ do
   l' <- sequence (resolveLifetime <$> l)
   pure (WhileLet as' p'' e' b' l' x)
 resolveExprP _ NonBlockExpr e@ForLoop{} = parenthesize e
-resolveExprP p _ (ForLoop as p' e b l x) = parenE (p > 14) $ do
+resolveExprP _ _ (ForLoop as p' e b l x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   p'' <- resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
@@ -755,19 +803,19 @@ resolveExprP p _ (ForLoop as p' e b l x) = parenE (p > 14) $ do
   l' <- sequence (resolveLifetime <$> l)
   pure (ForLoop as' p'' e' b' l' x)
 resolveExprP _ NonBlockExpr e@Loop{} = parenthesize e
-resolveExprP p _ (Loop as b l x) = parenE (p > 14) $ do
+resolveExprP _ _ (Loop as b l x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   b' <- resolveBlock b
   l' <- sequence (resolveLifetime <$> l)
   pure (Loop as' b' l' x)
 resolveExprP _ NonBlockExpr e@Match{} = parenthesize e
-resolveExprP p _ (Match as e ar x) = parenE (p > 14) $ do
+resolveExprP _ _ (Match as e ar x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   e' <- resolveExprP 0 NoStructExpr e
   ar' <- sequence (resolveArm <$> ar)
   pure (Match as' e' ar' x)
 resolveExprP _ NonBlockExpr e@Catch{} = parenthesize e
-resolveExprP p _ (Catch as b x) = parenE (p > 14) $ do
+resolveExprP _ _ (Catch as b x) = do
   as' <- sequence (resolveAttr EitherAttr <$> as)
   b' <- resolveBlock b
   pure (Catch as' b' x) 

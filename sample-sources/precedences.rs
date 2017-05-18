@@ -43,6 +43,7 @@ fn range_expressions() {
   ..{};
   - { 1 };
   return |x: i32| x + 1;
+  box 1 + 2;
 
   // no struct expression
   for x in 1.. { }

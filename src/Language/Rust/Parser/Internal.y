@@ -9,14 +9,19 @@ Stability   : experimental
 Portability : portable
 
 The parsers in this file are all re-exported to 'Language.Rust.Parser' via the 'Parse' class. The
-parsers are based off:
+parsers are based off of:
 
-  * the reference @rustc@ [implementation](https://github.com/rust-lang/rust/blob/master/src/libsyntax/parse/parser.rs)
-  * a slightly outdated [ANTLR grammar](https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y)
-  * some documentation on [rust-lang](https://doc.rust-lang.org/grammar.html)
+  * primarily the reference @rustc@ [implementation][0]
+  * some documentation on [rust-lang][2]
+  * drawing a couple ideas from a slightly outdated [ANTLR grammar][1]
 
-To log Happy's debug information (about transition states and such), run @happy --info=happyinfo.txt
--o /dev/null src/Language/Rust/Parser/Internal.y@.
+To get information about transition states and such, run
+
+>  happy --info=happyinfo.txt -o /dev/null src/Language/Rust/Parser/Internal.y
+
+  [0]: https://github.com/rust-lang/rust/blob/master/src/libsyntax/parse/parser.rs
+  [1]: https://github.com/rust-lang/rust/blob/master/src/grammar/parser-lalr.y
+  [2]: https://doc.rust-lang.org/grammar.html
 -}
 {-# OPTIONS_HADDOCK hide, not-home #-}
 {-# LANGUAGE OverloadedStrings, OverloadedLists #-}
@@ -256,18 +261,20 @@ import Text.Read (readMaybe)
 %left '<<' '>>'
 %left '+' '-'
 %left '*' '/' '%'
-%left ':' as
+%nonassoc ':' as
 %nonassoc UNARY
 
 -- These are all generated precedence tokens.
 --
---  * 'POSTFIX' for postfix operators (which bind more tightly than pretty much anything but parens)
+--  * 'FIELD' for field access expressions (which bind less tightly than '.' for method calls)
 --  * 'VIS' for adjusting the precedence of 'pub' compared to other visbility modifiers (see 'vis')
 --  * 'PATH' boosts the precedences of paths in types and expressions
 --  * 'DOLLAR' is for a single '$' token not in sequence expression
 --  * 'WHERE' is for non-empty where clauses
 --
-%nonassoc POSTFIX VIS PATH DOLLAR WHERE
+%nonassoc FIELD VIS PATH DOLLAR WHERE
+
+-- These are postfix operators.
 %nonassoc '?' '.'
 
 -- Delimiters have the highest precedence. 'ntBlock' counts as a delimiter since it always starts
@@ -277,8 +284,8 @@ import Text.Read (readMaybe)
 %%
 
 -- Unwraps the IdentTok into just an Ident
--- For questionable reasons of backwards compatibility, 'union' and 'default' can be used as
--- identifiers, even if they are also keywords. They are "contextual" keywords.
+-- For questionable reasons of backwards compatibility, 'union', 'default', and 'catch' can be used
+-- as identifiers, even if they are also keywords. They are "contextual" keywords.
 --
 -- Union's RFC: https://github.com/rust-lang/rfcs/blob/master/text/1444-union.md
 ident :: { Spanned Ident }
@@ -473,7 +480,7 @@ unsuffixed :: { Lit Span }
 -- parse_qualified_path(PathStyle::Type)
 -- qual_path :: Spanned (NonEmpty (Ident, PathParameters Span)) -> P (Spanned (QSelf Span, Path Span))
 qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
-  : '<' qual_path_suf(segs)                     { let Spanned x _ = $2 in Spanned x ($1 # $2) }
+  : '<' qual_path_suf(segs)                    { let Spanned x _ = $2 in Spanned x ($1 # $2) }
   | lt_ty_qual_path as ty_path '>' '::' segs   {
       let segs = segments $3 <> unspan $6
       in Spanned (QSelf (unspan $1) (length (segments $3)), $3{ segments = segs }) ($1 # $>)
@@ -865,12 +872,12 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | lhs '?'                          { Try [] $1 ($1 # $>) }
   | lhs '[' expr ']'                 { Index [] $1 $3 ($1 # $>) }
   | lhs '(' sep_byT(expr,',') ')'    { Call [] $1 $3 ($1 # $>) }
-  | lhs '.' ident                    { FieldAccess [] $1 (unspan $3) ($1 # $>) }
+  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
   | lhs '.' ident '(' sep_byT(expr,',') ')'
      { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
   | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
      { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
-  | lhs '.' int                              {%
+  | lhs '.' int                      {%
      case lit $3 of
        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
        _ -> parseError $3
@@ -938,9 +945,9 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | break lifetime rhs   %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
   -- lambda expressions
   | move args      rhs   %prec LAMBDA
-    { Closure [] Value (FnDecl (unspan $2) Nothing   False (spanOf $2)) $> ($1 # $>) }
+    { Closure [] Value (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
   |      args      rhs   %prec LAMBDA
-    { Closure [] Ref   (FnDecl (unspan $1) Nothing   False (spanOf $1)) $> ($1 # $>) }
+    { Closure [] Ref   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $>) }
 
 
 -- Then, we instantiate this general production into the following families of rules:
@@ -987,7 +994,7 @@ nonblock_expr :: { Expr Span }
 
 -- Literal expressions (composed of just literals)
 lit_expr :: { Expr Span }
-  : lit       { Lit [] $1 (spanOf $1) }
+  : lit                                                 { Lit [] $1 (spanOf $1) }
 
 -- An expression ending in a '{ ... }' block. Useful since "There is a convenience rule that allows
 -- one to omit the separating ';' after 'if', 'match', 'loop', 'for', 'while'"
@@ -1018,16 +1025,17 @@ if_expr :: { Expr Span }
   | if let pat '=' nostruct_expr block else_expr        { IfLet [] $3 $5 $6 $7 ($1 # $6 # $>) }
 
 else_expr :: { Maybe (Expr Span) }
-  : else block      { Just (BlockExpr [] $2 (spanOf $2)) }
-  | else if_expr    { Just $2 }
-  | {- empty -}     { Nothing }
+  : else block                                          { Just (BlockExpr [] $2 (spanOf $2)) }
+  | else if_expr                                        { Just $2 }
+  | {- empty -}                                         { Nothing }
 
 -- Match arms usually have to be seperated by commas (with an optional comma at the end). This
 -- condition is loosened (so that there is no seperator needed) if the arm ends in a safe block.
 arms :: { [Arm Span] }
-  : ntArm                                                  { [$1] }
-  | ntArm arms                                             { $1 : $2 }
-  | many(outer_attribute) sep_by1(pat,'|') arm_guard '=>' expr_arms  { let (e,as) = $> in (Arm $1 $2 $3 e ($1 # $2 # e) : as) }
+  : ntArm                                               { [$1] }
+  | ntArm arms                                          { $1 : $2 }
+  | many(outer_attribute) sep_by1(pat,'|') arm_guard '=>' expr_arms
+    { let (e,as) = $> in (Arm $1 $2 $3 e ($1 # $2 # e) : as) }
 
 arm_guard :: { Maybe (Expr Span) }
   : {- empty -}  { Nothing }
@@ -1042,21 +1050,21 @@ comma_arms :: { [Arm Span] }
 -- An expression followed by match arms. If there is a comma needed, it is added
 expr_arms :: { (Expr Span, [Arm Span]) }
   : gen_expression(nonblock_expr,expr,expr) comma_arms  { ($1, $2) }
-  | paren_expr                        comma_arms              { ($1, $2) }
-  | struct_expr                       comma_arms              { ($1, $2) }
-  | block_like_expr                   comma_arms              { ($1, $2) }
-  | block                             comma_arms              { (BlockExpr [] $1 (spanOf $1), $2) }
-  | block                                   arms              { (BlockExpr [] $1 (spanOf $1), $2) }
+  | paren_expr                              comma_arms  { ($1, $2) }
+  | struct_expr                             comma_arms  { ($1, $2) }
+  | block_like_expr                         comma_arms  { ($1, $2) }
+  | block                                   comma_arms  { (BlockExpr [] $1 (spanOf $1), $2) }
+  | block                                         arms  { (BlockExpr [] $1 (spanOf $1), $2) }
 
 
 -- As per https://github.com/rust-lang/rust/issues/15701 (as of March 10 2017), the only way to have
 -- attributes on expressions should be with inner attributes on a paren expression.
 paren_expr :: { Expr Span }
-  : '(' ')'                             { TupExpr [] [] ($1 # $2) }
-  | '(' expr ')'                        { ParenExpr [] $2 ($1 # $3) }
-  | '(' inner_attrs expr ')'            { ParenExpr (toList $2) $3 ($1 # $4) }
-  | '(' expr ',' ')'                    { TupExpr [] [$2] ($1 # $4) }
-  | '(' expr ',' sep_by1T(expr,',') ')' { TupExpr [] ($2 : toList $4) ($1 # $5) }
+  : '(' ')'                                             { TupExpr [] [] ($1 # $2) }
+  | '(' expr ')'                                        { ParenExpr [] $2 ($1 # $3) }
+  | '(' inner_attrs expr ')'                            { ParenExpr (toList $2) $3 ($1 # $4) }
+  | '(' expr ',' ')'                                    { TupExpr [] [$2] ($1 # $4) }
+  | '(' expr ',' sep_by1T(expr,',') ')'                 { TupExpr [] ($2 : toList $4) ($1 # $5) }
 
 
 -- Closure ending in blocks
@@ -1354,14 +1362,13 @@ mod_mac :: { Mac Span }
   | mod_path '!' '(' many(token_tree) ')' ';'  { Mac $1 $4 ($1 # $>) }
 
 token_tree :: { TokenTree }
-  : ntTT                                                  { $1 }
+  : ntTT                                       { $1 }
   -- # Delimited
-  | '(' many(token_tree) ')'                              { Delimited mempty Paren mempty $2 mempty }
-  | '{' many(token_tree) '}'                              { Delimited mempty Brace mempty $2 mempty }
-  | '[' many(token_tree) ']'                              { Delimited mempty Bracket mempty $2 mempty } 
+  | '(' many(token_tree) ')'                   { Delimited mempty Paren mempty $2 mempty }
+  | '{' many(token_tree) '}'                   { Delimited mempty Brace mempty $2 mempty }
+  | '[' many(token_tree) ']'                   { Delimited mempty Bracket mempty $2 mempty } 
   -- # Token
-  -- Expression-operator symbols.
-  | token                                                 { let Spanned t s = $1 in Token s t }
+  | token                                      { let Spanned t s = $1 in Token s t }
 
 token :: { Spanned Token }
   : '='        { $1 }

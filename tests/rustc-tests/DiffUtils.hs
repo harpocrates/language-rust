@@ -1,3 +1,4 @@
+{-# LANGUAGE ExistentialQuantification #-}
 {-# OPTIONS_GHC -Wno-missing-methods #-}
 module DiffUtils where
 
@@ -13,6 +14,7 @@ import Debug.Trace
 import Control.Exception
 import Data.Typeable
 import Data.Foldable
+import Data.Word (Word8)
 
 
 -- | This type is a straightforward hack to let me index by both 'String' and 'Int' in '(!)' below.
@@ -76,6 +78,15 @@ instance Diffable Bool where
   b1 === j@(Aeson.Bool b2) | b1 == b2 = pure ()
                            | otherwise = diff "boolean values are different" b1 j
   b === j = diff "expected the JSON to be a boolean" b j
+
+instance Diffable Word8 where (===) = diffIntegral
+instance Diffable Int where (===) = diffIntegral
+instance Diffable Integer where (===) = diffIntegral
+
+-- | Diff something that is a number and can be shown
+diffIntegral :: (Show i, Integral i) => i -> Aeson.Value -> Diff
+diffIntegral i (Aeson.Number s) | fromIntegral i == s = pure ()
+diffIntegral i val = diff "different integral values" i val
 
 -- | Report a difference
 diff :: Show a => String -> a -> Aeson.Value -> IO b
