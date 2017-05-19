@@ -1164,12 +1164,12 @@ foreign_item :: { ForeignItem Span }
 -- parse_generics
 -- Leaves the WhereClause empty
 generics :: { Generics Span }
-  : {- empty -}                                                     { Generics [] [] (WhereClause [] mempty) mempty }
-  | ntGenerics                                                      { $1 }
+  : ntGenerics                                                      { $1 }
   | '<' sep_by1(lifetime_def,',') ',' sep_by1T(ty_param,',') gt '>' { Generics (toList $2) (toList $4) (WhereClause [] mempty) ($1 # $>) }
   | '<' sep_by1T(lifetime_def,',')                           gt '>' { Generics (toList $2) []          (WhereClause [] mempty) ($1 # $>) }
   | '<'                               sep_by1T(ty_param,',') gt '>' { Generics []          (toList $2) (WhereClause [] mempty) ($1 # $>) }
   | '<'                                                      gt '>' { Generics []          []          (WhereClause [] mempty) ($1 # $>) }
+  | {- empty -}                                                     { Generics []          []          (WhereClause [] mempty) mempty }
 
 -- TODO: Attributes? The AST has them, so the parser should produce them
 ty_param :: { TyParam Span }
@@ -1260,7 +1260,10 @@ item_impl :: { Item Span }
   | safety_impl generics     trait_ref for ty where_clause '{' impl_items '}'
     { Item (mkIdent "") (fst $8) (Impl (unspan $1) Positive $2{ whereClause = $6 } (Just $3) $5 (snd $8)) InheritedV ($1 # $>) }
   | safety_impl generics     trait_ref for '..'            '{'            '}'
-    { Item (mkIdent "") [] (case $2 of { Generics [] [] _ _ -> (DefaultImpl (unspan $1) $3); _ -> error "todo" }) InheritedV ($1 # $>) }
+    {% case $2 of
+         Generics [] [] _ _ -> pure $ Item (mkIdent "") [] (DefaultImpl (unspan $1) $3) InheritedV ($1 # $>)
+         _ -> fail "non-empty generics are no allowed on default implementations"
+    }
 
 safety_impl :: { Spanned Unsafety }
   :        impl   { Spanned Normal (spanOf $1) }

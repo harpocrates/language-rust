@@ -8,8 +8,7 @@ import Test.HUnit hiding (Test)
 import Language.Rust.Syntax
 import Language.Rust.Pretty.Internal
 
-import Control.Monad
-import Text.PrettyPrint.Annotated.WL (Doc, flatten, renderPretty, renderPrettyDefault, display, renderCompact)
+import Text.PrettyPrint.Annotated.WL (Doc, flatten, renderPretty, display)
 
 prettySuite :: Test
 prettySuite = testGroup "pretty suite"
@@ -29,6 +28,7 @@ f64 = PathTy Nothing (Path False [("f64", NoParameters ())] ()) ()
 usize = PathTy Nothing (Path False [("usize", NoParameters ())] ()) ()
 
 -- | Common path segments to make tests more straightforward
+std, vec, veci32, debug, println :: (Ident, PathParameters ())
 std = ("std", NoParameters ())
 vec = ("vec", NoParameters ())
 veci32 = ("Vec", AngleBracketed [] [i32] [] ())
@@ -36,6 +36,7 @@ debug = ("Debug", NoParameters ())
 println = ("println", NoParameters ())
 
 -- | Type parameter bounds to make tests more straightforward
+debug', lt, iterator :: TyParamBound ()
 debug' = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [debug] ())) ()) None ()
 lt = RegionTyParamBound (Lifetime "lt" ()) ()
 iterator = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Iterator", AngleBracketed [] [] [(mkIdent "Item",i32)] ())] ())) ()) None ()
@@ -53,6 +54,7 @@ cfgI = Attribute Inner (Word (mkIdent "cfgi") ()) False ()
 cfgO = Attribute Outer (Word (mkIdent "cfgo") ()) False ()
 
 -- | Blocks to make tests more straightforward
+assBlk, retBlk :: Block ()
 assBlk = Block [ NoSemi (Assign [] foo _1 ()) () ] Normal ()
 retBlk = Block [ Semi (Ret [] (Just _1) ()) () ] Normal ()
 
@@ -438,10 +440,6 @@ prettyStatements = testGroup "printing statements"
   , testFlatten "println!{ foo }" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) BracesMac [] ()))
   ]
   
--- | Default pretty-printing
-testRender :: String -> Doc a -> Test
-testRender str doc = testCase (escapeNewlines str) $ str @=? display (renderPrettyDefault doc)
-
 -- | This tries to make it so that the `Doc` gets rendered onto only one line.
 testFlatten :: String -> Doc a -> Test
 testFlatten str doc = testCase (escapeNewlines str) $ str @=? display (renderPretty 0.5 1000 (flatten doc))

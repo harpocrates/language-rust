@@ -1,52 +1,28 @@
+{-# OPTIONS_GHC -Wall -Wno-orphans #-}
 {-# LANGUAGE OverloadedStrings, OverloadedLists, InstanceSigs #-}
 module Diff where
 
 import Data.Aeson
-import Language.Rust.Pretty
 import Language.Rust.Syntax
 
 import Control.Monad (when)
-import Control.Exception (throw)
 
 import Data.String (fromString)
-import Data.ByteString.Lazy.Char8 (unpack)
-import Data.Foldable (sequence_, toList)
 import Data.List.NonEmpty ((<|))
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Semigroup ((<>))
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
 import DiffUtils
 
--- TODO:
---   * attributes
---   * spans
-
-
-
--- | Lift a comparision to an array
-liftDiff :: (Foldable f, Show a) => (a -> Value -> Diff) -> (f a -> Value -> Diff)
-liftDiff f xs val@(Data.Aeson.Array v) = do
-  let xs' = toList v
-  when (length xs /= length xs') $
-    diff "arrays have different lengths" (toList xs) val
-  sequence_ [ f x x' | (x,x') <- toList xs `zip` xs' ]
-liftDiff _ xs v = diff "comparing array to non-array" (toList xs) v
-
--- | Lift a comparision to accept 'null' as 'Nothing'
-maybeDiff :: Show a => (a -> Value -> Diff) -> (Maybe a -> Value -> Diff)
-maybeDiff f (Just x) val = f x val
-maybeDiff f Nothing Data.Aeson.Null = pure ()
-maybeDiff f n@Nothing val = diff "expected the JSON to be null" n val
-
 instance Show a => Diffable (SourceFile a) where
-  s@(SourceFile _ as items) === val = do
+  SourceFile _ as is === val = do
     -- Check attributes
     as === (val ! "attrs")
    
     -- Check items
-    items === (val ! "module" ! "items")
+    is === (val ! "module" ! "items")
 
 instance Show a => Diffable (Item a) where
   item@(Item i as n v _) === val = do
@@ -68,11 +44,11 @@ instance Show a => Diffable (Item a) where
         gen  === (n' ! "fields" ! 4)
         bod  === (n' ! "fields" ! 5)
       ("ExternCrate", ExternCrate Nothing) -> pure ()
-      ("ExternCrate", ExternCrate (Just (Ident i _))) -> 
-        when (n' ! "fields" ! 0 /= String (fromString i)) $
+      ("ExternCrate", ExternCrate (Just (Ident i' _))) -> 
+        when (n' ! "fields" ! 0 /= String (fromString i')) $
           diff "different crate import" item val
-      ("Use", Use v) ->
-        v === (n' ! "fields" ! 0)
+      ("Use", Use v') ->
+        v' === (n' ! "fields" ! 0)
       ("Static", Static t m e) -> do
         t === (n' ! "fields" ! 0)
         m === (n' ! "fields" ! 1)
@@ -91,11 +67,11 @@ instance Show a => Diffable (Item a) where
       ("Enum", Enum vs g) -> do
         vs === (n' ! "fields" ! 0 ! "variants") 
         g === (n' ! "fields" ! 1)
-      ("Struct", StructItem v g) ->  do
-        v === (n' ! "fields" ! 0)
+      ("Struct", StructItem v' g) ->  do
+        v' === (n' ! "fields" ! 0)
         g === (n' ! "fields" ! 1)
-      ("Union", Union v g) ->  do
-        v === (n' ! "fields" ! 0)
+      ("Union", Union v' g) ->  do
+        v' === (n' ! "fields" ! 0)
         g === (n' ! "fields" ! 1)
       ("Trait", Trait u g bd is) -> do
         u === (n' ! "fields" ! 0)
@@ -127,6 +103,7 @@ instance Diffable ImplPolarity where
 
 instance Show a => Diffable (TraitItem a) where
   item@(TraitItem i as n _) === val = do
+    as === (val ! "attrs")
     i === (val ! "ident")
     
     let n' = val ! "node"
@@ -146,6 +123,7 @@ instance Show a => Diffable (TraitItem a) where
 
 instance Show a => Diffable (ImplItem a) where
   item@(ImplItem i v d as n _) === val = do
+    as === (val ! "attrs")
     i === (val ! "ident")
     v === (val ! "vis")
     d === (val ! "defaultness")
@@ -165,7 +143,7 @@ instance Show a => Diffable (ImplItem a) where
       _ -> diff "different impl item" item val
       
 instance Show a => Diffable (MethodSig a) where
-  m@(MethodSig u c a decl g) === val = do
+  MethodSig u c a decl g === val = do
     u === (val ! "unsafety")
     a === (val ! "abi")
     g === (val ! "generics")
@@ -178,11 +156,11 @@ instance Diffable Defaultness where
   d       === val = diff "different defaultness" d val
 
 instance Show a => Diffable (Variant a) where
-  v@(Variant (Ident i _) as d e _) === val = do
-    e === (val ! "node" ! "disr_expr")
+  Variant i as d e _ === val = do
+    i === (val ! "node" ! "name")
+    as === (val ! "node" ! "attrs")
     d === (val ! "node" ! "data")
-    when (fromString i /= val ! "node" ! "name") $
-      diff "variant has different name" v val
+    e === (val ! "node" ! "disr_expr")
 
 instance Show a => Diffable (VariantData a) where
   d === val =
@@ -193,14 +171,16 @@ instance Show a => Diffable (VariantData a) where
       _ -> diff "different variants" d val
 
 instance Show a => Diffable (StructField a) where
-  s@(StructField i v t as _) === val = do
+  StructField i v t as _ === val = do
     i === (val ! "ident")
     v === (val ! "vis")
     t === (val ! "ty")
+    as === (val ! "attrs")
 
 instance Show a => Diffable (ForeignItem a) where
   f@(ForeignItem i as n v _) === val = do
     i === (val ! "ident")
+    as === (val ! "attrs")
     v === (val ! "vis")
     let n' = val ! "node"
     case (n' ! "variant", n) of
@@ -212,45 +192,47 @@ instance Show a => Diffable (ForeignItem a) where
         m === (n' ! "fields" ! 1)
       _ -> diff "different foreign item" f val
 
--- TODO: what is even happening here!?
 instance Show a => Diffable (ViewPath a) where
   v === val = do
     let n' = val ! "node"
     case (n' ! "variant", v) of
-      ("ViewPathGlob", ViewPathGlob g is _) ->
-        diffViewPathGlobal g is (n' ! "fields" ! 0 ! "segments")
+      ("ViewPathGlob", ViewPathGlob g is _) -> do
+        v' <- jsonDrop (if g || glbl is then 1 else 0) (n' ! "fields" ! 0 ! "segments")
+        map ViewPathIdent is === v' 
       ("ViewPathList", ViewPathList g is pl _) -> do
-        diffViewPathGlobal g is (n' ! "fields" ! 0 ! "segments")
+        v' <- jsonDrop (if g || glbl is then 1 else 0) (n' ! "fields" ! 0 ! "segments")
+        map ViewPathIdent is === v' 
         pl === (n' ! "fields" ! 1)
       ("ViewPathSimple", ViewPathSimple g is (PathListItem n (Just r) _) _) -> do
         r === (n' ! "fields" ! 0)
-        diffViewPathGlobal g (is ++ [n]) (n' ! "fields" ! 1 ! "segments")
+        v' <- jsonDrop (if g || glbl is then 1 else 0) (n' ! "fields" ! 1 ! "segments")
+        map ViewPathIdent (is ++ [n]) === v' 
       ("ViewPathSimple", ViewPathSimple g is (PathListItem n Nothing _) _) -> do
         n === (n' ! "fields" ! 0)
-        diffViewPathGlobal g (is ++ [n]) (n' ! "fields" ! 1 ! "segments")
+        v' <- jsonDrop (if g || glbl is then 1 else 0) (n' ! "fields" ! 1 ! "segments")
+        map ViewPathIdent (is ++ [n]) === v' 
       _ -> diff "different view path" v val
     where
-    diffViewPathGlobal :: Bool -> [Ident] -> Value -> Diff
-    diffViewPathGlobal g is v
-      | g || global is = liftDiff diffViewPathIdent is (jsonDrop 1 v)
-      | otherwise = liftDiff diffViewPathIdent is v
+    
+    glbl :: [Ident] -> Bool
+    glbl (Ident "self" _ : _) = False
+    glbl (Ident "super" _ : _) = False
+    glbl _ = True
 
-    global :: [Ident] -> Bool
-    global (Ident "self" _ : _) = False
-    global (Ident "super" _ : _) = False
-    global _ = True
+    jsonDrop :: Int -> Value -> IO Value
+    jsonDrop i (Data.Aeson.Array v') = pure $ Data.Aeson.Array (V.drop i v')
+    jsonDrop i val' = diff "cannot use 'jsonDrop' on non-array" i val'
 
-    jsonDrop :: Int -> Value -> Value
-    jsonDrop i (Data.Aeson.Array v) = Data.Aeson.Array (V.drop i v)
+newtype ViewPathIdent = ViewPathIdent Ident deriving (Show)
 
-    diffViewPathIdent :: Ident -> Value -> Diff
-    diffViewPathIdent i val = do
+instance Diffable ViewPathIdent where
+  ViewPathIdent i === val = do
       when (Null /= val ! "parameters") $
         diff "view path identifier has parameters" i val
       i === (val ! "identifier")
 
 instance Show a => Diffable (PathListItem a) where
-  p@(PathListItem n r _) === val = do
+  PathListItem n r _ === val = do
     n === (val ! "node" ! "name")
     r === (val ! "node" ! "rename")
 
@@ -271,11 +253,8 @@ instance Show a => Diffable (FnDecl a) where
     when (Data.Aeson.Bool v /= v') $
       diff "different variadicity" decl val
 
--- TODO: make this more rigorous
 instance Show a => Diffable (Arg a) where
-  SelfRegion ml m x === val =
-  -- TODO: why does this commented out line not work?
-  --  IdentP (ByValue m) "self" Nothing x === (val ! "pat")
+  SelfRegion _ _ x === val =
     IdentP (ByValue Immutable) "self" Nothing x === (val ! "pat")
   SelfValue m x === val =
     IdentP (ByValue m) "self" Nothing x === (val ! "pat")
@@ -317,28 +296,30 @@ instance Diffable Abi where
   RustCall          === "RustCall"          = pure ()
   PlatformIntrinsic === "PlatformIntrinsic" = pure ()
   Unadjusted        === "Unadjusted"        = pure ()
-  abi             === json                  = diff "different ABI" abi json
+  a                 === val                 = diff "different ABI" a val
 
 instance Show a => Diffable (Generics a) where
-  gen@(Generics lts tys whr _) === val = do
+  Generics lts tys whr _ === val = do
     lts === (val ! "lifetimes")
     tys === (val ! "ty_params")
     whr === (val ! "where_clause")
 
 
 instance Show a => Diffable (LifetimeDef a) where
-  ld@(LifetimeDef as l bd _) === val = do
+  LifetimeDef as l bd _ === val = do
+    NullList as === (val ! "attrs" ! "_field0")
     l === (val ! "lifetime")
     bd === (val ! "bounds")
 
 instance Show a => Diffable (TyParam a) where
   TyParam as i bd d _ === val = do
+    NullList as === (val ! "attrs" ! "_field0")
     i === (val ! "ident")
     bd === (val ! "bounds")
     d === (val ! "default")
 
 instance Show a => Diffable (WhereClause a) where
-  whr@(WhereClause preds _) === val = preds === (val ! "predicates")
+  WhereClause preds _ === val = preds === (val ! "predicates")
 
 instance Show a => Diffable (WherePredicate a) where
   w === val =
@@ -356,7 +337,7 @@ instance Show a => Diffable (WherePredicate a) where
       _ -> diff "different where predicate" w val
 
 instance Show a => Diffable (Block a) where
-  blk@(Block ss ru _) === val = do
+  Block ss ru _ === val = do
     ss === (val ! "stmts")
     ru === (val ! "rules")
 
@@ -368,61 +349,61 @@ instance Show a => Diffable (Stmt a) where
         p === (n' ! "fields" ! 0 ! "pat")
         t === (n' ! "fields" ! 0 ! "ty")
         i === (n' ! "fields" ! 0 ! "init")
+        NullList as === (n' ! "fields" ! 0 ! "attrs" ! "_field0")
       ("Expr", NoSemi e _)   -> e === (n' ! "fields" ! 0) 
       ("Semi", Semi e _)     -> e === (n' ! "fields" ! 0)
       ("Item", ItemStmt i _) -> i === (n' ! "fields" ! 0)
       ("Mac", MacStmt m s as _) -> do
         m === (n' ! "fields" ! 0 ! 0)
         s === (n' ! "fields" ! 0 ! 1)
+        NullList as === (n' ! "fields" ! 0 ! 2 ! "_field0")
       _ -> diff "different statements" stmt val
 
 instance Diffable MacStmtStyle where
   SemicolonMac === "Semicolon" = pure ()
   BracesMac    === "Braces"    = pure ()
-  sty          === json        = diff "different styles" sty json
+  sty          === val         = diff "different styles" sty val
 
 instance Show a => Diffable (Visibility a) where
   PublicV === "Public" = pure ()
   CrateV  === "Crate" = pure ()
-  RestrictedV p === _ = error "todo"
+  RestrictedV p === val = do
+    mkIdent "Restricted" === (val ! "variant")
+    p === (val ! "fields" ! 0) 
   InheritedV === "Inherited" = pure ()
   v === val = diff "different visibilities" v val
 
 instance Show a => Diffable (Attribute a) where
   a@(Attribute sty meta sug _) === val = do
-    -- Check style
     case (val ! "style", sty) of
       ("Inner", Inner) -> pure ()
       ("Outer", Outer) -> pure ()
       _ -> diff "attribute style is different" a val
 
-    -- Check meta item
-    let meta' = val ! "value"
---  diffMetaItem meta meta'
-
-    -- Check sugared doc
-    when (val ! "is_sugared_doc" /= Data.Aeson.Bool sug) $
-      diff "attribute is supposed to be sugared doc" a val
+    sug === (val ! "is_sugared_doc")
+    if sug
+      then case (sty, meta) of
+             (Inner, NameValue "doc" (Str str Cooked Unsuffixed x) y) -> NameValue "doc" (Str ("/*!" <> str <> "*/") Cooked Unsuffixed x) y === (val ! "value")
+             (Outer, NameValue "doc" (Str str Cooked Unsuffixed x) y) -> NameValue "doc" (Str ("///" <> str)         Cooked Unsuffixed x) y === (val ! "value")
+             _ -> diff "invalid doc comment" a val
+      else meta === (val ! "value")
 
 instance Show a => Diffable (MetaItem a) where
   meta === val = do
     -- Check that the names match
-    when (fromString (name meta) /= val ! "name") $
-      diff "meta item has different name" meta val
+    case meta of
+      Word i _        -> i === (val ! "name")
+      List i _ _      -> i === (val ! "name")
+      NameValue i _ _ -> i === (val ! "name")
   
     case (val ! "node", meta)  of
       ("Word", Word{}) -> pure()
-  
       (val',          _) ->
         case (val' ! "variant", meta) of
           ("NameValue", NameValue _ lit _) -> lit === (val' ! "fields" ! 0) 
           ("List",      List _ args _) -> args === (val' ! "fields" ! 0)
-    where 
-      name :: MetaItem a -> String
-      name (Word (Ident i _) _) = i
-      name (List (Ident i _) _ _) = i
-      name (NameValue (Ident i _) _ _) = i
-
+          _ -> diff "metaitem is different" meta val
+    
 instance Show a => Diffable (NestedMetaItem a) where
   n === val =  do
     let val' = val ! "node"
@@ -432,12 +413,12 @@ instance Show a => Diffable (NestedMetaItem a) where
       _ -> diff "differing nested-metaitem" n val
 
 instance Show a => Diffable (Pat a) where
-  p === val = do
+  p' === val = do
     let val' = val ! "node"
-    case (val', p) of
+    case (val', p') of
       ("Wild", WildP _) -> pure ()
       (Data.Aeson.Object{}, _) ->
-        case (val' ! "variant", p) of
+        case (val' ! "variant", p') of
           ("Box", BoxP p _) -> p === (val' ! "fields" ! 0)
           ("Lit", LitP e _) -> e === (val' ! "fields" ! 0)
           ("Mac", MacP m _) -> m === (val' ! "fields" ! 0)
@@ -469,28 +450,28 @@ instance Show a => Diffable (Pat a) where
           ("Path", PathP q p _) -> do
             q === (val' ! "fields" ! 0)
             p === (val' ! "fields" ! 1)
-          _ -> diff "differing patterns" p val
-      _ -> diff "differing patterns" p val
+          _ -> diff "differing patterns" p' val
+      _ -> diff "differing patterns" p' val
 
 instance Show a => Diffable (Mac a) where
-  m@(Mac p tts _) === val = do
+  Mac p tt _ === val = do
     p === (val ! "node" ! "path")
-    tts === (val ! "node" ! "tts")
+    tt === (val ! "node" ! "tts")
 
 instance Diffable TokenTree where
   tt === val = 
     case (val ! "variant", tt) of
       ("Token", Token _ t) -> t === (val ! "fields" ! 1)
-      ("Delimited", Delimited _ d _ tts _) -> do
+      ("Delimited", Delimited _ d _ tt' _) -> do
         d === (val ! "fields" ! 1 ! "delim")
-        tts === (val ! "fields" ! 1 ! "tts")
+        tt' === (val ! "fields" ! 1 ! "tts")
       _ -> diff "different token trees" tt val
 
 instance Diffable Delim where
   Paren   === "Paren"   = pure ()
   Bracket === "Bracket" = pure ()
   Brace   === "Brace"   = pure ()
-  delim   === json      = diff "different delimiters" delim json
+  del     === val      = diff "different delimiters" del val
 
 instance Diffable Token where
   Comma === "Comma" = pure ()
@@ -521,7 +502,14 @@ instance Diffable Token where
   AmpersandAmpersand === "AndAnd" = pure ()
   t === val@Object{} =
     case (val ! "variant", t) of
-      ("BinOp", b) ->
+      ("Ident", IdentTok i) -> i === (val ! "fields" ! 0)
+      ("Lifetime", LifetimeTok l) -> ("'" <> l) === (val ! "fields" ! 0)
+      ("DocComment", Doc s InnerDoc) -> ("/*!" <> mkIdent s <> "*/") === (val ! "fields" ! 0)
+      ("DocComment", Doc s OuterDoc) -> ("///" <> mkIdent s) === (val ! "fields" ! 0)
+      ("Literal", LiteralTok l s) -> do
+        l === (val ! "fields" ! 0)
+        fmap mkIdent s === (val ! "fields" ! 1)
+      ("BinOp", _) ->
         case (val ! "fields" ! 0, t) of
           ("Star", Star) -> pure ()
           ("Plus", Plus) -> pure ()
@@ -534,7 +522,7 @@ instance Diffable Token where
           ("Shr", GreaterGreater) -> pure ()
           ("Shl", LessLess) -> pure ()
           _ -> diff "differing binary operator tokens" t val
-      ("BinOpEq", b) ->
+      ("BinOpEq", _) ->
         case (val ! "fields" ! 0, t) of
           ("Shr", GreaterGreaterEqual) -> pure ()
           ("Shl", LessLessEqual) -> pure ()
@@ -549,13 +537,6 @@ instance Diffable Token where
           ("Caret", CaretEqual) -> pure ()
           ("Percent", PercentEqual) -> pure ()
           _ -> diff "differing binary-equal operator tokens" t val
-      ("Ident", IdentTok i) -> i === (val ! "fields" ! 0)
-      ("Lifetime", LifetimeTok l) -> ("'" <> l) === (val ! "fields" ! 0)
-      -- TODO: compare contents of doc comment
-      ("DocComment", Doc s _) -> pure () 
-      ("Literal", LiteralTok l s) -> do
-        l === (val ! "fields" ! 0)
-        fmap mkIdent s === (val ! "fields" ! 1)
       _ -> diff "differing tokens" t val
   t === val = diff "differing tokens" t val
 
@@ -575,28 +556,24 @@ instance Diffable LitTok where
 instance Show a => Diffable (FieldPat a) where
   f@(FieldPat mi p _) === val = do 
     -- Extract the identifier and whether the pattern is shorthand
-    let (Ident i _, s) = case (mi,p) of
-                           (Nothing, IdentP _ i Nothing _) -> (i, True)
-                           (Just i', p) -> (i', False)
-    
-    when (String (fromString i) /= val ! "node" ! "ident") $
-      diff "differing field pat identifier" f val
-    when (Data.Aeson.Bool s /= val ! "node" ! "is_shorthand") $
-      diff "differing shorthand" f val
+    (i, s) <- case (mi,p) of
+                (Nothing, IdentP _ i' Nothing _) -> pure (i', True)
+                (Nothing, _) -> diff "shorthand field pattern needs to be identifier" f val
+                (Just i', _) -> pure (i', False)
+   
+    i === (val ! "node" ! "ident")
+    s === (val ! "node" ! "is_shorthand")
     p === (val ! "node" ! "pat")
 
 instance Show a => Diffable (Field a) where
-  f@(Field i me _) === val = do 
-    -- Extract the expression and whether the pattern is shorthand
-    case (me, val ! "is_shorthand") of
-      (Nothing, Data.Aeson.Bool True) -> pure ()
-      (Just e, Data.Aeson.Bool False) -> e === (val ! "expr")
-    
+  Field i me _ === val = do 
+    isNothing me === (val ! "is_shorthand")
     i === (val ! "ident" ! "node")
+    me === (val ! "expr")
 
 instance Diffable Ident where
   Ident i _ === String s | fromString i == s = pure ()
-  ident     === val = diff "identifiers are different" ident val
+  ident'    === val = diff "identifiers are different" ident' val
 
 instance Diffable BindingMode where
   bm === val =
@@ -611,13 +588,13 @@ instance Diffable Mutability where
   m         === val = diff "differing mutability" m val
 
 instance Show a => Diffable (Ty a) where
-  t === val = do
+  t' === val = do
     let n = val ! "node"
-    case (n, t) of
+    case (n, t') of
       ("Never", Never _) -> pure ()
       ("Infer", Infer _) -> pure ()
       (Data.Aeson.Object{}, _) ->
-        case (n ! "variant", t) of
+        case (n ! "variant", t') of
           ("Path", PathTy q p _) -> do
             q === (n ! "fields" ! 0)
             p === (n ! "fields" ! 1)
@@ -644,8 +621,8 @@ instance Show a => Diffable (Ty a) where
           ("Typeof", Typeof e _) -> e ===(n ! "fields" ! 0)
           ("Mac", MacTy m _) -> m === (n ! "fields" ! 0)
           ("ImplTrait", ImplTrait bds _) -> bds === (n ! "fields" ! 0)
-          _ -> diff "differing types" t val
-      _ -> diff "differing types" t val
+          _ -> diff "differing types" t' val
+      _ -> diff "differing types" t' val
 
 
 instance Show a => Diffable (TyParamBound a) where
@@ -658,7 +635,7 @@ instance Show a => Diffable (TyParamBound a) where
                  _ -> diff "different type parameter bounds" bd val
 
 instance Show a => Diffable (PolyTraitRef a) where
-  p@(PolyTraitRef lts tr _) === val = do
+  PolyTraitRef lts tr _ === val = do
     lts === (val ! "bound_lifetimes")
     tr === (val ! "trait_ref")
 
@@ -684,14 +661,15 @@ instance Show a => Diffable (QSelf a) where
 instance Show a => Diffable (Path a) where
   Path g segs _ === val = do
     let segs' = if g then ("{{root}}", NoParameters undefined) <| segs else segs
-    liftDiff diffPathPair segs' (val ! "segments")
-    where
-      diffPathPair :: Show a => (Ident, PathParameters a) -> Value -> Diff
-      diffPathPair (i, pp) val = do
+    fmap PathPair segs' === (val ! "segments")
+
+newtype PathPair a = PathPair (Ident, PathParameters a) deriving (Show)
+instance Show a => Diffable (PathPair a) where
+  PathPair (i, pp) === val = do
       --  i === (val ! "identifier")
-        when (fromString (show i) /= val ! "identifier") $
-          diff "path segment has different name" (i,pp) val
-        pp === (val ! "parameters")
+      when (fromString (show i) /= val ! "identifier") $
+        diff "path segment has different name" (i,pp) val
+      pp === (val ! "parameters")
 
 instance Show a => Diffable (PathParameters a) where
   n@(NoParameters _) === val = when (val /= Data.Aeson.Null) (diff "expected no parameters" n val) 
@@ -700,141 +678,177 @@ instance Show a => Diffable (PathParameters a) where
       ("AngleBracketed", AngleBracketed lts tys bds _) -> do
         lts === (val ! "fields" ! 0 ! "lifetimes")
         tys === (val ! "fields" ! 0 ! "types")
-        liftDiff diffBinding bds (val ! "fields" ! 0 ! "bindings")
+        map Binding bds === (val ! "fields" ! 0 ! "bindings")
       ("Parenthesized", Parenthesized is o _) -> do
         is === (val ! "fields" ! 0 ! "inputs")
         o  === (val ! "fields" ! 0 ! "output")
       _ -> diff "different path parameters" p val
-    where
-    diffBinding :: Show a => (Ident, Ty a) -> Value -> Diff
-    diffBinding (i,t) v = do
-      i === (v ! "ident")
-      t === (v ! "ty")
 
--- TODO: attribtues
+newtype Binding a = Binding (Ident, Ty a) deriving (Show)
+instance Show a => Diffable (Binding a) where
+  Binding (i,t) === v = do
+    i === (v ! "ident")
+    t === (v ! "ty")
+
 instance Show a => Diffable (Expr a) where
-  e === val =
-    case (n ! "variant", e) of
-      ("Lit", Lit as l _) ->
-      --  liftDiff diffAttribute as (val ! "attrs") TODO: this is funky
+  ex === val =
+    case (n ! "variant", ex) of
+      ("Lit", Lit as l _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         l === (n ! "fields" ! 0)
-      ("Tup", TupExpr as es _) ->
+      ("Tup", TupExpr as es _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         es === (n ! "fields" ! 0)
       ("Match", Match as e arms _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
         arms === (n ! "fields" ! 1)
-      ("Box", Box as e _) ->
+      ("Box", Box as e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
       ("InPlace", InPlace as e1 e2 _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e1 === (n ! "fields" ! 0)
         e2 === (n ! "fields" ! 1)
       ("Path", PathExpr as q p _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         q === (n ! "fields" ! 0)
         p === (n ! "fields" ! 1)
-      ("Array", Vec as es _) -> 
+      ("Array", Vec as es _) -> do 
+        NullList as === (val ! "attrs" ! "_field0")
         es === (n ! "fields" ! 0)
       ("Call", Call as f es _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         f === (n ! "fields" ! 0)
         es === (n ! "fields" ! 1)
       ("MethodCall", MethodCall as o i tys es _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         i === (n ! "fields" ! 0 ! "node")
         fromMaybe [] tys === (n ! "fields" ! 1)
         (o : es) === (n ! "fields" ! 2) 
       ("Binary", Binary as o e1 e2 _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         o === (n ! "fields" ! 0)
         e1 === (n ! "fields" ! 1) 
         e2 === (n ! "fields" ! 2) 
       ("Unary", Unary as o e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         o === (n ! "fields" ! 0)
         e === (n ! "fields" ! 1)
       ("Cast", Cast as e t _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
         t === (n ! "fields" ! 1)
       ("Type", TypeAscription as e t _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
         t === (n ! "fields" ! 1)
-      ("Block", BlockExpr as b _) ->
+      ("Block", BlockExpr as b _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         b === (n ! "fields" ! 0)
       ("If", If as e tb ee _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
         tb === (n ! "fields" ! 1)
         ee === (n ! "fields" ! 2)
       ("IfLet", IfLet as p e tb ee _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         p === (n ! "fields" ! 0)
         e === (n ! "fields" ! 1)
         tb === (n ! "fields" ! 2)
         ee === (n ! "fields" ! 3)
       ("While", While as e b l _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
         b === (n ! "fields" ! 1)
-        maybeDiff diffLbl l (n ! "fields" ! 2)
+        fmap Lbl l === (n ! "fields" ! 2)
       ("WhileLet", WhileLet as p e b l _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         p === (n ! "fields" ! 0)
         e === (n ! "fields" ! 1)
         b === (n ! "fields" ! 2)
-        maybeDiff diffLbl l (n ! "fields" ! 3)
-      ("Continue", Continue as l _) ->
-        maybeDiff diffLbl l (n ! "fields" ! 0)
+        fmap Lbl l === (n ! "fields" ! 3)
+      ("Continue", Continue as l _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
+        fmap Lbl l === (n ! "fields" ! 0)
       ("Break", Break as l e _) -> do
-        maybeDiff diffLbl l (n ! "fields" ! 0)
+        NullList as === (val ! "attrs" ! "_field0")
+        fmap Lbl l === (n ! "fields" ! 0)
         e === (n ! "fields" ! 1)
       ("ForLoop", ForLoop as p e b l _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         p === (n ! "fields" ! 0)
         e === (n ! "fields" ! 1)
         b === (n ! "fields" ! 2)
-        maybeDiff diffLbl l (n ! "fields" ! 3)
+        fmap Lbl l === (n ! "fields" ! 3)
       ("Loop", Loop as b l _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         b === (n ! "fields" ! 0)
-        maybeDiff diffLbl l (n ! "fields" ! 1)
+        fmap Lbl l === (n ! "fields" ! 1)
       ("Range", Range as l h rl _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         l === (n ! "fields" ! 0)
         h === (n ! "fields" ! 1)
         rl === (n ! "fields" ! 2) 
       ("Closure", Closure as c decl e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         c === (n ! "fields" ! 0)
         decl === (n ! "fields" ! 1)
         e === (n ! "fields" ! 2)
       ("Assign", Assign as l r _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         l === (n ! "fields" ! 0)
         r === (n ! "fields" ! 1)
       ("AssignOp", AssignOp as o l r _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         o === (n ! "fields" ! 0)
         l === (n ! "fields" ! 1)
         r === (n ! "fields" ! 2)
       ("Field", FieldAccess as e i _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
         i === (n ! "fields" ! 1 ! "node")
       ("TupField", TupField as e i _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
         i === (n ! "fields" ! 1 ! "node")
       ("Index", Language.Rust.Syntax.Index as e1 e2 _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e1 === (n ! "fields" ! 0)
         e2 === (n ! "fields" ! 1)
       ("AddrOf", AddrOf as m e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         m === (n ! "fields" ! 0)
         e === (n ! "fields" ! 1)
-      ("Ret", Ret as e _) ->
+      ("Ret", Ret as e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
-      ("Mac", MacExpr as m _) ->
+      ("Mac", MacExpr as m _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         m === (n ! "fields" ! 0)
       ("Struct", Struct as p f e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
         p === (n ! "fields" ! 0)
         f === (n ! "fields" ! 1)
         e === (n ! "fields" ! 2)
       ("Repeat", Repeat as e1 e2 _) -> do
-        e1 ===(n ! "fields" ! 0)
-        e2 ===(n ! "fields" ! 1)
-      ("Paren", ParenExpr as e _) ->
-        e ===(n ! "fields" ! 0)
-      ("Try", Try as e _) ->
-        e ===(n ! "fields" ! 0) 
-      _ -> diff "differing expressions:" e val
+        NullList as === (val ! "attrs" ! "_field0")
+        e1 === (n ! "fields" ! 0)
+        e2 === (n ! "fields" ! 1)
+      ("Paren", ParenExpr as e' _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
+        e' === (n ! "fields" ! 0)
+      ("Try", Try as e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
+        e === (n ! "fields" ! 0) 
+      _ -> diff "differing expressions:" ex val
     where
     n = val ! "node"
-    
-    diffLbl :: Show a => Lifetime a -> Value -> Diff
-    diffLbl l@(Lifetime n _) val = when (String (fromString ("'" ++ n)) /= val ! "node") $
-                                     diff "labels are different" l val
+
+newtype Lbl a = Lbl (Lifetime a) deriving (Show)
+instance Show a => Diffable (Lbl a) where
+  Lbl l@(Lifetime n _) === val = when (String (fromString ("'" ++ n)) /= val ! "node") $
+                                   diff "labels are different" l val
 
 instance Diffable CaptureBy where
   Value === "Value" = pure ()
@@ -874,7 +888,7 @@ instance Diffable UnOp where
   Deref === "Deref" = pure ()
   Not   === "Not"   = pure ()
   Neg   === "Neg"   = pure ()
-  u     === json    = diff "different unary operator" u json
+  u     === val     = diff "different unary operator" u val
 
 instance Show a => Diffable (Arm a) where
   Arm as ps g b _ === val = do
@@ -905,7 +919,7 @@ instance Show a => Diffable (Lit a) where
           diff "character literal has two different values" l val
       ("Byte", Byte b Unsuffixed _) ->
         b === (n ! "fields" ! 0)
-      ("ByteStr", ByteStr s sty Unsuffixed _) ->
+      ("ByteStr", ByteStr s _ Unsuffixed _) ->
         s === (n ! "fields" ! 0)
       ("Bool", Language.Rust.Syntax.Bool b Unsuffixed _) ->
         when (Data.Aeson.Bool b /= n ! "fields" ! 0) $

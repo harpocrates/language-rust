@@ -6,11 +6,9 @@ import qualified Data.Aeson as Aeson
 import qualified Data.HashMap.Lazy as HM
 import qualified Data.Vector as V
 import qualified Data.List.NonEmpty as N
-import Language.Rust.Syntax (Ident(..))
 import Control.Monad
 import Data.String
 import Data.ByteString.Lazy.Char8 (unpack)
-import Debug.Trace
 import Control.Exception
 import Data.Typeable
 import Data.Foldable
@@ -24,8 +22,8 @@ instance IsString AesonKey where fromString = Key
 
 -- | Accessor method for JSON with helpful error messages.
 (!) :: Aeson.Value -> AesonKey -> Aeson.Value
-val@(Aeson.Object map) ! Key key =
-  case HM.lookup (fromString key) map of
+val@(Aeson.Object hashmap) ! Key key =
+  case HM.lookup (fromString key) hashmap of
     Nothing -> error $ "No key `" ++ key ++ "' on JSON object `" ++ showAeson val ++ "'"
     Just v -> v
 val ! Key key = error $ "Cannot lookup key `" ++ key ++ "' on non-object JSON `" ++ showAeson val ++ "'"
@@ -41,8 +39,8 @@ showAeson = unpack . Aeson.encode
 
 -- | Accessor method for JSON which fails with 'Nothing'
 (!?) :: Aeson.Value -> AesonKey -> Maybe Aeson.Value
-val@(Aeson.Object map) !? Key key = HM.lookup (fromString key) map
-val@(Aeson.Array vect) !? Index key = vect V.!? key
+Aeson.Object hashmap !? Key key = HM.lookup (fromString key) hashmap
+Aeson.Array vect !? Index key = vect V.!? key
 _ !? _ = Nothing
 
 -- | This lets us do whatever we want while comparing @rustc@ with our parser
@@ -67,6 +65,11 @@ instance Diffable a => Diffable [a] where
       diff "arrays have different lengths" xs json
     sequence_ (zipWith (===) xs xs')
   xs === json = diff "comparing array to non-array" xs json
+
+-- | Solely for an instance of 'Diffable [a]' where the empty list == null
+newtype NullList a = NullList [a] deriving (Show)
+instance Diffable a => Diffable (NullList a) where
+  NullList xs === val = (if null xs then Nothing else Just xs) === val
 
 -- | a comparision to accept 'null' as 'Nothing'
 instance Diffable a => Diffable (Maybe a) where

@@ -29,6 +29,8 @@ mod bar {
   struct Foo<A> { x: A }
   union Foo<A, B> { x: A, y: B }
   
+  pub(super) struct Point { x: i32 }
+
   trait Foo { }
   trait Foo<T> {
     const ID1: i32;

@@ -17,7 +17,6 @@ import Language.Rust.Syntax
 import Language.Rust.Data.Position
 import Language.Rust.Data.InputStream
 
-import qualified Text.PrettyPrint.Annotated.WL as WL
 import Control.Monad
 import Data.Maybe (catMaybes)
 
@@ -39,23 +38,23 @@ parserSuite = testGroup "parser suite"
 testP :: forall f. 
          (Parse (f Span), Pretty (f ()), Resolve (f ()), Functor f, Show (f ()), Eq (f ()), Data (f Span)) =>
          TestName -> f () -> Test
-testP inp x = testCase inp $ do
+testP inp y = testCase inp $ do
     -- parse test
-    Right x @=? parseNoSpans parser inps
+    Right y @=? parseNoSpans parser inps
   
     -- resolve test
-    Right x @=? resolve x
+    Right y @=? resolve y
   
     -- re-parse the result of printing resolve
-    Right x @=? case resolve x of
+    Right y @=? case resolve y of
                   Left msg -> Left (NoPosition, msg)
-                  Right x' -> do
-                    let inp' = show (pretty x')
+                  Right y' -> do
+                    let inp' = show (pretty y')
                     parseNoSpans parser (inputStreamFromString inp')
   
     -- check that the sub-spans re-parse correctly
-    let Right x = parse @(f Span) inps
-    checkSubterms inps x
+    let Right y' = parse @(f Span) inps
+    checkSubterms inps y'
   where
   inps = inputStreamFromString inp
 
@@ -67,15 +66,15 @@ testP inp x = testCase inp $ do
 -- NOTE: statements are a problem since the last statement in a block can be an expression which, by
 -- itself, is not a statement.
 checkTerm :: Typeable a => InputStream -> a -> IO ()
-checkTerm inp x = sequence_ $ catMaybes tests
+checkTerm inp y = sequence_ $ catMaybes tests
   where
-  tests = [ checkTerm' @Lit inp <$> cast x
-          , checkTerm' @Attribute inp <$> cast x
-          , checkTerm' @Ty inp <$> cast x
-          , checkTerm' @Pat inp <$> cast x
-          , checkTerm' @Expr inp <$> cast x
-       -- , checkTerm' @Stmt inp <$> cast x  
-          , checkTerm' @Item inp <$> cast x
+  tests = [ checkTerm' @Lit inp <$> cast y
+          , checkTerm' @Attribute inp <$> cast y
+          , checkTerm' @Ty inp <$> cast y
+          , checkTerm' @Pat inp <$> cast y
+          , checkTerm' @Expr inp <$> cast y
+       -- , checkTerm' @Stmt inp <$> cast y  
+          , checkTerm' @Item inp <$> cast y
           ]
 
   -- | Check that a given term slice re-parses properly
@@ -83,9 +82,9 @@ checkTerm inp x = sequence_ $ catMaybes tests
                 , Show (f ()), Eq (f ())
                 , Pretty (f Span), Parse (f Span), Located (f Span)
                 ) => InputStream -> f Span -> IO ()
-  checkTerm' inp x = case slice (spanOf x) (inputStreamToString inp) of
-                      Nothing -> pure ()
-                      Just inp' -> Right (void x) @=? parseNoSpans parser (inputStreamFromString inp')
+  checkTerm' inp' y' = case slice (spanOf y') (inputStreamToString inp') of
+                         Nothing -> pure ()
+                         Just inp'' -> Right (void y') @=? parseNoSpans parser (inputStreamFromString inp'')
 
   -- | Take a sub-slice of an input string
   slice :: Span -> String -> Maybe String
@@ -94,12 +93,12 @@ checkTerm inp x = sequence_ $ catMaybes tests
 
  
 checkSubterms :: Data a => InputStream -> a -> IO ()
-checkSubterms inp x = checkTerm inp x *> gmapQl (*>) (pure ()) (checkSubterms inp) x
+checkSubterms inp y = checkTerm inp y *> gmapQl (*>) (pure ()) (checkSubterms inp) y
  
 
 -- | Turn an InputStream into either an error or a parse.
 parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either (Position,String) (f ())
-parseNoSpans parser inp = void <$> execParser parser inp initPos
+parseNoSpans p inp = void <$> execParser p inp initPos
 
 
 -- | Test parsing of literals.
@@ -452,6 +451,8 @@ parserExpressions = testGroup "parsing expressions"
   , testP "{ 1; 2; }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ()) ())
   , testP "{ }" (BlockExpr [] (Block [] Normal ()) ())
   , testP "unsafe { 1; 2; }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Unsafe ()) ())
+  , testP "{ ;;; }" (BlockExpr [] (Block [] Normal ()) ())
+  , testP "{ 1;; 2;; }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ()) ())
   , testP "return" (Ret [] Nothing ())
   , testP "return 1" (Ret [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) ())
   , testP "continue" (Continue [] Nothing ())
@@ -715,15 +716,13 @@ parserItems = testGroup "parsing items"
   , testP "unsafe trait Trace: Debug { }" (Item "Trace" [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()] []) InheritedV ()) 
   ] 
 
-
+-- TODO these need to pass
 toFix :: Test
 toFix = testGroup "should pass, but don't block tests for now"
   [ testP "impl Debug for i32 { foo!(x); }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
   , testP "impl Debug for i32 { foo!{x} }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
   , testP "foo!(x)"                 (MacP (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 5 6 1) (Position 6 7 1)) (IdentTok "x")]  ()) ())
   , testP "foo![x]"                 (MacTy (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 5 6 1) (Position 6 7 1)) (IdentTok "x")]  ()) ())
-  , testP "{ ;;; }" (BlockExpr [] (Block [] Normal ()) ())
-  , testP "{ 1;; 2;; }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ()) ())
   ]
 
 

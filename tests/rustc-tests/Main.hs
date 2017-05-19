@@ -1,12 +1,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Main where
 
-import Diff
+import Diff ()
 import DiffUtils
 
 import Control.Monad (filterM)
-import Control.Exception (catch, evaluate, SomeException)
-import Control.Monad.Trans.Writer (execWriter, Writer)
+import Control.Exception (catch, SomeException)
 
 import Data.ByteString.Lazy (hGetContents)
 import Data.ByteString.Lazy.Char8 (unpack)

@@ -76,6 +76,7 @@ library
 
 test-suite unit-tests
   hs-source-dirs:      tests/unit-tests
+  ghc-options:         -Wall
   main-is:             Main.hs
   other-modules:       LexerTest
                        ParserTest
@@ -94,6 +95,7 @@ test-suite unit-tests
 
 test-suite rustc-tests
   hs-source-dirs:      tests/rustc-tests
+  ghc-options:         -Wall
   main-is:             Main.hs
   other-modules:       Diff
                        DiffUtils

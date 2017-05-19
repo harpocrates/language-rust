@@ -1,5 +1,6 @@
 fn main() {
   // Local
+  #[d = 2]
   let x = 1;
 
   // Item

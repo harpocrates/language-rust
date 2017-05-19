@@ -5,7 +5,8 @@ token!{
   [= < > & | ! ~ + - * / % ^]
   (>= >>= && || << >> == != <= <<= -= &= |= += *= /= ^= %=)
   {@ . .. ... , ; : :: -> <- => # $ ?}
-  ( ) [ ] { } 1.0foo x _ 'lt /*! doc comment */ #! $x
+  ( ) [ ] { } 1.0foo x _ 'lt #! $x
+  /*! inner doc comment */  /// outer doc comment
 }
 
 // Check new way of tokenization
