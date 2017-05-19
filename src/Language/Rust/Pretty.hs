@@ -26,13 +26,14 @@ module Language.Rust.Pretty (
   PrettyAnnotated(..), Pretty(..), Resolve(..), Doc
 ) where
 
+import Language.Rust.Data.Position
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 import Language.Rust.Pretty.Internal
 import Language.Rust.Pretty.Resolve
 
-import Text.PrettyPrint.Annotated.WL (Doc, noAnnotate)
+import Text.PrettyPrint.Annotated.WL (Doc, noAnnotate, text)
 
 -- | Class of things that can be pretty printed (without any annotations). The is very similar to
 -- the class defined in 'wl-pprint-annotated' itself. However, in order to avoid having orphan
@@ -86,7 +87,8 @@ instance Pretty (ViewPath a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Visibility a) where pretty = noAnnotate . prettyAnn
 instance Pretty (WhereClause a) where pretty = noAnnotate . prettyAnn
 instance Pretty (WherePredicate a) where pretty = noAnnotate . prettyAnn
-
+instance Pretty Position where pretty = text . prettyPosition
+instance Pretty Span where pretty = text . prettySpan
 
 -- | Similar to 'Pretty', but for types which are parametrized over an annotation type.
 class PrettyAnnotated p where

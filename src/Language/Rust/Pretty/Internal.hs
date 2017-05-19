@@ -17,13 +17,14 @@ documented.
 
 module Language.Rust.Pretty.Internal where
 
+import Language.Rust.Data.Position
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
 import Text.PrettyPrint.Annotated.WL (
     hcat, punctuate, group, angles, flatten, align, fillSep, text, vcat, char, annotate, 
-    noAnnotate, flatAlt, parens, brackets, (<>), Doc
+    noAnnotate, flatAlt, parens, brackets, (<>), (<##>), Doc
   )
 import qualified Text.PrettyPrint.Annotated.WL as WL
 
@@ -75,10 +76,6 @@ hsep = foldr (<+>) mempty
 (<#>) :: Doc a -> Doc a -> Doc a
 (<#>) = liftOp (WL.<#>)
 
--- | Lifted version of Wadler's @<##>@
-(<##>) :: Doc a -> Doc a -> Doc a
-(<##>) = liftOp (WL.<##>)
-
 -- | Lifted version of Wadler's @vsep@
 vsep :: Foldable f => f (Doc a) -> Doc a
 vsep = foldr (<#>) mempty
@@ -107,6 +104,11 @@ perhaps = maybe mempty
 -- | Indent the given 'Doc', but only if multi-line
 indent :: Int -> Doc a -> Doc a
 indent n doc = flatAlt (WL.indent n doc) (WL.flatten doc)
+
+-- | Undo what group does. This function is pretty dangerous...
+ungroup :: Doc a -> Doc a
+ungroup (WL.Union _ x) = x
+ungroup y = y
 
 -- | This is the most general function for printing blocks. It operates with any delimiter, any
 -- seperator, an optional leading attribute doc (which isn't followed by a seperator), and wraps a
@@ -190,13 +192,28 @@ printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
 -- | Print a macro (@print_mac@)
 printMac :: Mac a -> Delim -> Doc a
 printMac (Mac path tts x) d = annotate x (printPath path False <> "!" <> body)
-  where body = block d True mempty mempty [ fillSep (printTt <$> tts) ]
- 
+  where body = block d True mempty mempty [ printTts tts ]
+
+
+-- | Given two positions, find out how to print appropriate amounts of space between them
+printSpaceBetween :: Span -> Span -> Doc a
+printSpaceBetween (Span _ (Position _ y1 x1)) (Span (Position _ y2 x2) _)
+  | y2 == y1 = hcat (replicate (x2 - x1) WL.space)
+  | y2 > y1  = hcat (replicate (y2 - y1) WL.line) <> WL.column (\x1' -> hcat (replicate (x2 - x1') WL.space))
+  | otherwise = WL.space 
+printSpaceBetween _ _ = WL.space
+
+-- | Print a list of token-trees, with the right amount of space between successive elements
+printTts :: [TokenTree] -> Doc a
+printTts [] = mempty
+printTts [tt] = printTt tt
+printTts (tt1:tt2:tts) = printTt tt1 <> sp <> printTts (tt2:tts)
+  where sp = printSpaceBetween (spanOf tt1) (spanOf tt2)
 
 -- | Print a token tree (@print_tt@)
 printTt :: TokenTree -> Doc a
 printTt (Token _ t) = printToken t 
-printTt (Delimited _ d _ tts _) = block d True mempty mempty [ fillSep (printTt <$> tts) ]
+printTt (Delimited _ d tts) = block d True mempty mempty [ printTts tts ] 
 
 -- | Print a token (@token_to_string@)
 -- Single character expression-operator symbols.
@@ -749,7 +766,7 @@ printTraitItem (TraitItem ident attrs node x) = annotate x $ printOuterAttrs att
 -- TODO: follow up on <https://github.com/rust-lang-nursery/fmt-rfcs/issues/80>
 printBounds :: Doc a -> [TyParamBound a] -> Doc a
 printBounds _ [] = mempty
-printBounds prefix bs = group (prefix <#> block NoDelim False " +" mempty (printBound `map` bs))
+printBounds prefix bs = group (prefix <#> ungroup (block NoDelim False " +" mempty (printBound `map` bs)))
 
 -- | Print a type parameter bound
 printBound :: TyParamBound a -> Doc a
@@ -977,7 +994,7 @@ printGenerics (Generics lifetimes tyParams _ x)
   | null lifetimes && null tyParams = mempty
   | otherwise =  let lifetimes' = [ printOuterAttrs as <+> printLifetimeBounds lt bds | LifetimeDef as lt bds _ <- lifetimes ]
                      bounds' = [ printTyParam param | param<-tyParams ]
-                 in annotate x (group ("<" <##> block NoDelim True "," mempty (lifetimes' ++ bounds') <##> ">"))
+                 in annotate x (group ("<" <##> ungroup (block NoDelim True "," mempty (lifetimes' ++ bounds')) <##> ">"))
 
 -- | Print a poly-trait ref (@print_poly_trait_ref@)
 printPolyTraitRef :: PolyTraitRef a -> Doc a

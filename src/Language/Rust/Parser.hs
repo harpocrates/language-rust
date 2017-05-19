@@ -34,7 +34,7 @@ module Language.Rust.Parser (
 
 import Language.Rust.Syntax.AST
 import Language.Rust.Data.InputStream (InputStream, readInputStream, inputStreamToString, inputStreamFromString)
-import Language.Rust.Data.Position (Position, Span, initPos)
+import Language.Rust.Data.Position (Position, Span, initPos, prettyPosition)
 import Language.Rust.Parser.Internal
 import Language.Rust.Parser.Lexer (lexToken, lexNonSpace, lexTokens, lexicalError)
 import Language.Rust.Parser.Literals (translateLit)
@@ -59,7 +59,7 @@ parse' is = case execParser parser is initPos of
 data ParseFail = ParseFail Position String deriving (Eq, Typeable)
 
 instance Show ParseFail where
-  show (ParseFail pos msg) = unwords [ "parse failure at", show pos, "(" ++ msg ++ ")" ]
+  show (ParseFail pos msg) = unwords [ "parse failure at", prettyPosition pos, "(" ++ msg ++ ")" ]
 
 instance Exception ParseFail
   

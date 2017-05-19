@@ -1367,9 +1367,9 @@ mod_mac :: { Mac Span }
 token_tree :: { TokenTree }
   : ntTT                                       { $1 }
   -- # Delimited
-  | '(' many(token_tree) ')'                   { Delimited mempty Paren mempty $2 mempty }
-  | '{' many(token_tree) '}'                   { Delimited mempty Brace mempty $2 mempty }
-  | '[' many(token_tree) ']'                   { Delimited mempty Bracket mempty $2 mempty } 
+  | '(' many(token_tree) ')'                   { Delimited ($1 # $3) Paren $2 }
+  | '{' many(token_tree) '}'                   { Delimited ($1 # $3) Brace $2 }
+  | '[' many(token_tree) ']'                   { Delimited ($1 # $3) Bracket $2 } 
   -- # Token
   | token                                      { let Spanned t s = $1 in Token s t }
 

@@ -13,9 +13,9 @@ Everything to do with describing a position or a contiguous region in a file.
 
 module Language.Rust.Data.Position (
   -- * Positions in files
-  Position(..), maxPos, minPos, initPos, incPos, retPos, incOffset,
+  Position(..), prettyPosition, maxPos, minPos, initPos, incPos, retPos, incOffset,
   -- * Spans in files
-  Span(..), subsetOf, (#), Spanned(..), Located(..),
+  Span(..), prettySpan, subsetOf, (#), Spanned(..), Located(..),
 ) where
 
 import GHC.Generics (Generic)
@@ -37,11 +37,12 @@ data Position = Position {
     col :: {-# UNPACK #-} !Int             -- ^ column in the source file.
   }
   | NoPosition
-  deriving (Eq, Data, Typeable, Generic)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
-instance Show Position where
-  show NoPosition = "$"
-  show (Position _ r c) = show r ++ ":" ++ show c
+-- | Pretty print a 'Position'
+prettyPosition :: Position -> String
+prettyPosition NoPosition = "$"
+prettyPosition (Position _ r c) = show r ++ ":" ++ show c
 
 -- | Maximum of two positions, bias for actual positions.
 --
@@ -97,7 +98,7 @@ data Span = Span {
 #else
     lo, hi ::                !Position
 #endif
-  } deriving (Eq, Data, Typeable, Generic)
+  } deriving (Eq, Show, Data, Typeable, Generic)
 
 -- | Check if a span is a subset of another span
 subsetOf :: Span -> Span -> Bool
@@ -115,8 +116,9 @@ instance Monoid Span where
   mempty = Span NoPosition NoPosition
   mappend = (<>) 
 
-instance Show Span where
-  show (Span lo' hi') = show lo' ++ " - " ++ show hi'
+-- | Pretty print a 'Span'
+prettySpan :: Span -> String
+prettySpan (Span lo' hi') = show lo' ++ " - " ++ show hi'
 
 -- | A "tagging" of something with a 'Span' that describes its extent.
 data Spanned a = Spanned { unspan :: a, span :: {-# UNPACK #-} !Span } deriving (Data, Typeable, Generic)

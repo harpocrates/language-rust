@@ -1175,7 +1175,7 @@ resolveTt :: TokenTree -> Either String TokenTree
 resolveTt (Token _ (OpenDelim _)) = Left "open delimiter is not allowed as a token in a token tree"
 resolveTt (Token _ (CloseDelim _)) = Left "close delimiter is not allowed as a token in a token tree"
 resolveTt t@Token{} = pure t
-resolveTt (Delimited s d s' tt s'') = Delimited s d s' <$> sequence (resolveTt <$> tt) <*> pure s''
+resolveTt (Delimited s d tt) = Delimited s d <$> sequence (resolveTt <$> tt)
 
 instance Resolve TokenTree where resolve = resolveTt
 

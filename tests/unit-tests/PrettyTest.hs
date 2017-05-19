@@ -5,6 +5,7 @@ import Test.Framework (testGroup, Test)
 import Test.Framework.Providers.HUnit
 import Test.HUnit hiding (Test)
 
+import Language.Rust.Data.Position
 import Language.Rust.Syntax
 import Language.Rust.Pretty.Internal
 
@@ -187,18 +188,32 @@ prettyTypes = testGroup "printing types"
   , testFlatten "_" (printType (Infer ()))
   , testFlatten "HList![ & str , bool , Vec < i32 > ]"
                 (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ())
-                                       [ Delimited mempty NoDelim mempty [ Token mempty Ampersand, Token mempty (IdentTok (mkIdent "str")) ] mempty 
+                                       [ Delimited mempty NoDelim [ Token mempty Ampersand, Token mempty (IdentTok (mkIdent "str")) ] 
                                        , Token mempty Comma
                                        , Token mempty (IdentTok (mkIdent "bool"))
                                        , Token mempty Comma
-                                       , Delimited mempty NoDelim mempty [ Token mempty (IdentTok (mkIdent "Vec"))
-                                                                         , Token mempty Less
-                                                                         , Token mempty (IdentTok (mkIdent "i32"))
-                                                                         , Token mempty Greater
-                                                                         ] mempty
+                                       , Delimited mempty NoDelim [ Token mempty (IdentTok (mkIdent "Vec"))
+                                                                  , Token mempty Less
+                                                                  , Token mempty (IdentTok (mkIdent "i32"))
+                                                                  , Token mempty Greater
+                                                                  ]
                                        ]
                                        ())
                            ()))
+  , testFlatten "HList![ &str, bool, Vec<i32> ]"
+                (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ())
+                                       [ Token (Span (Position 8 1 8) (Position 9 1 9)) Ampersand
+                                       , Token (Span (Position 9 1 9) (Position 12 1 12)) (IdentTok "str")
+                                       , Token (Span (Position 12 1 12) (Position 13 1 13)) Comma
+                                       , Token (Span (Position 14 1 14) (Position 18 1 18)) (IdentTok "bool")
+                                       , Token (Span (Position 18 1 18) (Position 19 1 19)) Comma
+                                       , Token (Span (Position 20 1 20) (Position 23 1 23)) (IdentTok "Vec")
+                                       , Token (Span (Position 23 1 23) (Position 24 1 24)) Less
+                                       , Token (Span (Position 24 1 24) (Position 27 1 27)) (IdentTok "i32")
+                                       , Token (Span (Position 27 1 27) (Position 28 1 28)) Greater
+                                       ]
+                                       ())
+                           ()))               
   , testFlatten "fn(i32) -> i32"
                 (printType (BareFn Normal Rust [] (FnDecl [Arg Nothing i32 ()] (Just i32) False ()) ()))
   , testFlatten "unsafe extern \"C\" fn(i32) -> i32"

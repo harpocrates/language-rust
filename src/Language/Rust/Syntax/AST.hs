@@ -962,17 +962,15 @@ data TokenTree
   -- | A delimited sequence of token trees (@syntax::tokenstream::Delimited@)
   -- Example: @{ [-\>+\<] }@ in @brainfuck!{ [-\>+\<] };@
   | Delimited
-      { span :: Span 
+      { span :: Span
       , delim :: Delim             -- ^ type of delimiter
-      , openSpan :: Span           -- ^ span covering the opening delimiter
       , tts :: [TokenTree]         -- ^ delimited sequence of token trees
-      , closeSpan :: Span          -- ^ span covering the closing delimiter
       }
   deriving (Eq, Show, Typeable, Data, Generic)
 
 instance Located TokenTree where
   spanOf (Token s _) = s
-  spanOf (Delimited s _ _ _ _) = s
+  spanOf (Delimited s _ _) = s
 
 -- | modifier on a bound, currently this is only used for @?Sized@, where the modifier is @Maybe@. Negative
 -- bounds should also be handled here.

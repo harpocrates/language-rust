@@ -344,6 +344,7 @@ parserTypes = testGroup "parsing types"
   , testP "Fn() -> &(Object+Send)"
            (PathTy Nothing (Path False [("Fn", Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Object",NoParameters ())] ())) ()) None ()
              , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None ()] ()) ()) ())) ())] ()) ())
+  , testP "foo![ x ]" (MacTy (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 6 1 6) (Position 7 1 7)) (IdentTok "x")]  ()) ())
   ]
 
 
@@ -421,6 +422,7 @@ parserPatterns = testGroup "parsing patterns"
   , testP "[x,]"                    (SliceP [ x ] Nothing [] ())
   , testP "[x..]"                   (SliceP [] (Just x) [] ())
   , testP "[..]"                    (SliceP [] (Just (WildP ())) [] ())
+  , testP "foo!(x)"                 (MacP (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 5 1 5) (Position 6 1 6)) (IdentTok "x")]  ()) ())
   ]
 
   
@@ -713,18 +715,8 @@ parserItems = testGroup "parsing items"
   , testP "trait Trace { }" (Item "Trace" [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) [] []) InheritedV ()) 
   , testP "unsafe trait Trace { }" (Item "Trace" [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [] []) InheritedV ()) 
   , testP "trait Trace: Debug { }" (Item "Trace" [] (Trait Normal (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()] []) InheritedV ()) 
-  , testP "unsafe trait Trace: Debug { }" (Item "Trace" [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()] []) InheritedV ()) 
+  , testP "unsafe trait Trace: Debug { }" (Item "Trace" [] (Trait Unsafe (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Debug",NoParameters ())] ())) ()) None ()] []) InheritedV ())
   ] 
-
--- TODO these need to pass
-toFix :: Test
-toFix = testGroup "should pass, but don't block tests for now"
-  [ testP "impl Debug for i32 { foo!(x); }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
-  , testP "impl Debug for i32 { foo!{x} }" (Item "" [] (Impl Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [("Debug",NoParameters ())] ()))) i32 [ImplItem "" InheritedV Final [] (MacroI (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 25 26 1) (Position 26 27 1)) (IdentTok "x")]  ())) ()]) InheritedV ())
-  , testP "foo!(x)"                 (MacP (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 5 6 1) (Position 6 7 1)) (IdentTok "x")]  ()) ())
-  , testP "foo![x]"                 (MacTy (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 5 6 1) (Position 6 7 1)) (IdentTok "x")]  ()) ())
-  ]
-
 
 -- Just a common pattern to make the tests above more straightforward
 x :: Pat ()

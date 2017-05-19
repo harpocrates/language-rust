@@ -18,20 +18,14 @@ import DiffUtils
 
 instance Show a => Diffable (SourceFile a) where
   SourceFile _ as is === val = do
-    -- Check attributes
     as === (val ! "attrs")
-   
-    -- Check items
     is === (val ! "module" ! "items")
 
 instance Show a => Diffable (Item a) where
   item@(Item i as n v _) === val = do
-    -- Check name of item
-    when (fromString (show i) /= val ! "ident") $
-      diff "item has different name" item val
-   
-    -- Check attributes
+    i === (val ! "ident")
     as === (val ! "attrs")
+    v === (val ! "vis")
     
     -- Check node
     let n' = val ! "node"
@@ -44,9 +38,8 @@ instance Show a => Diffable (Item a) where
         gen  === (n' ! "fields" ! 4)
         bod  === (n' ! "fields" ! 5)
       ("ExternCrate", ExternCrate Nothing) -> pure ()
-      ("ExternCrate", ExternCrate (Just (Ident i' _))) -> 
-        when (n' ! "fields" ! 0 /= String (fromString i')) $
-          diff "different crate import" item val
+      ("ExternCrate", ExternCrate (Just i')) ->
+        i' === (n' ! "fields" ! 0)
       ("Use", Use v') ->
         v' === (n' ! "fields" ! 0)
       ("Static", Static t m e) -> do
@@ -90,16 +83,12 @@ instance Show a => Diffable (Item a) where
         is === (n' ! "fields" ! 5)
       ("Mac", MacItem m) ->
         m === (n' ! "fields" ! 0)
-      
       _ -> diff "different items" item val
   
-    -- Check visibility
-    v === (val ! "vis")
-
 instance Diffable ImplPolarity where
   Positive === "Positive" = pure ()
   Negative === "Negative" = pure ()
-  p        === val = diff "different polarity" p val
+  p        === val        = diff "different polarity" p val
 
 instance Show a => Diffable (TraitItem a) where
   item@(TraitItem i as n _) === val = do
@@ -182,6 +171,7 @@ instance Show a => Diffable (ForeignItem a) where
     i === (val ! "ident")
     as === (val ! "attrs")
     v === (val ! "vis")
+    
     let n' = val ! "node"
     case (n' ! "variant", n) of
       ("Fn", ForeignFn d g) -> do
@@ -237,7 +227,7 @@ instance Show a => Diffable (PathListItem a) where
     r === (val ! "node" ! "rename")
 
 instance Show a => Diffable (FnDecl a) where
-  decl@(FnDecl as out v _) === val = do
+  FnDecl as out v _ === val = do
     -- Check inputs
     as === (val ! "inputs")
   
@@ -249,9 +239,7 @@ instance Show a => Diffable (FnDecl a) where
       _ -> diff "different output types" out outTy
   
     -- Check variadic
-    let v' = val ! "variadic"
-    when (Data.Aeson.Bool v /= v') $
-      diff "different variadicity" decl val
+    v === (val ! "variadic")
 
 instance Show a => Diffable (Arg a) where
   SelfRegion _ _ x === val =
@@ -432,7 +420,7 @@ instance Show a => Diffable (Pat a) where
           ("Struct", StructP p fp d _) -> do
             p ===  (val' ! "fields" ! 0)
             fp === (val' ! "fields" ! 1)
-            when (Data.Aeson.Bool d /= (val' ! "fields" ! 2)) $ diff "differing `..'" p val
+            d === (val' ! "fields" ! 2)
           ("TupleStruct", TupleStructP p fp mi _) -> do
             p  === (val' ! "fields" ! 0)
             fp === (val' ! "fields" ! 1)
@@ -462,7 +450,7 @@ instance Diffable TokenTree where
   tt === val = 
     case (val ! "variant", tt) of
       ("Token", Token _ t) -> t === (val ! "fields" ! 1)
-      ("Delimited", Delimited _ d _ tt' _) -> do
+      ("Delimited", Delimited _ d tt') -> do
         d === (val ! "fields" ! 1 ! "delim")
         tt' === (val ! "fields" ! 1 ! "tts")
       _ -> diff "different token trees" tt val
@@ -653,10 +641,9 @@ instance Show a => Diffable (Lifetime a) where
     | otherwise = pure ()
 
 instance Show a => Diffable (QSelf a) where
-  q@(QSelf t p) === val = do
+  QSelf t p === val = do
     t === (val ! "ty")
-    when (Number (fromIntegral p) /= (val ! "position")) $
-      diff "differing position in QSelf" q val
+    p === (val ! "position")
 
 instance Show a => Diffable (Path a) where
   Path g segs _ === val = do
@@ -666,9 +653,7 @@ instance Show a => Diffable (Path a) where
 newtype PathPair a = PathPair (Ident, PathParameters a) deriving (Show)
 instance Show a => Diffable (PathPair a) where
   PathPair (i, pp) === val = do
-      --  i === (val ! "identifier")
-      when (fromString (show i) /= val ! "identifier") $
-        diff "path segment has different name" (i,pp) val
+      i === (val ! "identifier")
       pp === (val ! "parameters")
 
 instance Show a => Diffable (PathParameters a) where
@@ -847,8 +832,7 @@ instance Show a => Diffable (Expr a) where
 
 newtype Lbl a = Lbl (Lifetime a) deriving (Show)
 instance Show a => Diffable (Lbl a) where
-  Lbl l@(Lifetime n _) === val = when (String (fromString ("'" ++ n)) /= val ! "node") $
-                                   diff "labels are different" l val
+  Lbl (Lifetime n _) === val = ("'" <> mkIdent n) === (val ! "node")
 
 instance Diffable CaptureBy where
   Value === "Value" = pure ()

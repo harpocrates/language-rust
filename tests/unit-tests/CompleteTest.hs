@@ -174,7 +174,16 @@ generics = testGroup "generics"
     \) {\n\
     \  return;\n\
     \}"
-  , testComplete "break generics"
+  , testComplete "break one generic"
+    "fn ridiculously_long_name_1<\n\
+    \  AnotherExcessivelyLongGenericName,\n\
+    \>(\n\
+    \  x: Vec<ExcessivelyLongGenericName>,\n\
+    \  y: Vec<AnotherExcessivelyLongGenericName>,\n\
+    \) -> ReturnType {\n\
+    \  return;\n\
+    \}"
+  , testComplete "break two generics"
     "fn ridiculously_long_name_1<\n\
     \  ExcessivelyLongGenericName,\n\
     \  AnotherExcessivelyLongGenericName,\n\
