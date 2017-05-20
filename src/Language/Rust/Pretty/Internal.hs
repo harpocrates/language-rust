@@ -751,7 +751,7 @@ printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs a
                             WL.Empty -> leading <+> lagging
                             _ -> leading <#> wc <#> lagging
   MacItem m         -> printMac m Paren <> ";" 
-
+  MacroDef tts      -> "macro_rules" <> "!" <+> printIdent ident <+> block Brace True mempty mempty [ printTts tts ]
 
 -- | Print a trait item (@print_trait_item@)
 printTraitItem :: TraitItem a -> Doc a

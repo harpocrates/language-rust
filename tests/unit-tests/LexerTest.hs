@@ -11,8 +11,6 @@ import Language.Rust.Syntax
 import Language.Rust.Data.Position
 import Language.Rust.Data.InputStream
 
-import Control.Monad
-
 lexerSuite :: Test
 lexerSuite = testGroup "lexer suite" [ commonCode, literals ]
 

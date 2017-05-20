@@ -955,6 +955,7 @@ resolveItemKind (Impl u p g mt t is) = do
 resolveItemKind (DefaultImpl u t) = DefaultImpl u <$> resolveTraitRef t
 resolveItemKind (Trait u g bds is) = Trait u <$> resolveGenerics g <*> sequence (resolveTyParamBound NoneBound <$> bds) <*> sequence (resolveTraitItem <$> is)
 resolveItemKind (MacItem m) = MacItem <$> resolveMac ExprPath m
+resolveItemKind (MacroDef tt) = MacroDef <$> sequence (resolveTt <$> tt)
 resolveItemKind (Use v) = Use <$> resolveViewPath v
 
 instance Monoid a => Resolve (ItemKind a) where resolve = resolveItemKind

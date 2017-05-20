@@ -864,6 +864,7 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   : ntExpr                           { $1 }
   | lit_expr                         { $1 }
   | '[' sep_byT(expr,',') ']'        { Vec [] $2 ($1 # $>) }
+  | '[' inner_attrs sep_byT(expr,',') ']' { Vec (toList $2) $3 ($1 # $>) }
   | '[' expr ';' expr ']'            { Repeat [] $2 $4 ($1 # $>) }
   | expr_mac                         { MacExpr [] $1 (spanOf $1) }
   | expr_path            %prec PATH  { PathExpr [] Nothing $1 (spanOf $1) }
@@ -1000,24 +1001,26 @@ lit_expr :: { Expr Span }
 -- one to omit the separating ';' after 'if', 'match', 'loop', 'for', 'while'"
 block_expr :: { Expr Span }
   : block_like_expr                                     { $1 }
-  | block                                               { BlockExpr [] $1 (spanOf $1) }
+  | inner_attrs_block                                   { let (as,b) = $1 in BlockExpr as b (spanOf b) }
 
 -- Any expression ending in a '{ ... }' block except a block itself.
 block_like_expr :: { Expr Span }
   : if_expr                                             { $1 }
-  |              loop                            block  { Loop [] $2 Nothing ($1 # $>) }
-  | lifetime ':' loop                            block  { Loop [] $4 (Just $1) ($1 # $>) }
-  |              for pat in nostruct_expr        block  { ForLoop [] $2 $4 $5 Nothing ($1 # $>) }
-  | lifetime ':' for pat in nostruct_expr        block  { ForLoop [] $4 $6 $7 (Just $1) ($1 # $>) }
-  |              while             nostruct_expr block  { While [] $2 $3 Nothing ($1 # $>) }
-  | lifetime ':' while             nostruct_expr block  { While [] $4 $5 (Just $1) ($1 # $>) }
-  |              while let pat '=' nostruct_expr block  { WhileLet [] $3 $5 $6 Nothing ($1 # $>) }
-  | lifetime ':' while let pat '=' nostruct_expr block  { WhileLet [] $5 $7 $8 (Just $1) ($1 # $>) }
-  | match nostruct_expr '{' '}'                         { Match [] $2 [] ($1 # $>) }
-  | match nostruct_expr '{' arms '}'                    { Match [] $2 $4 ($1 # $>) }
+  |              loop                            inner_attrs_block  { let (as,b) = $> in Loop as b Nothing ($1 # b) }
+  | lifetime ':' loop                            inner_attrs_block  { let (as,b) = $> in Loop as b (Just $1) ($1 # b) }
+  |              for pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $2 $4 b Nothing ($1 # b) }
+  | lifetime ':' for pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $4 $6 b (Just $1) ($1 # b) }
+  |              while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $2 b Nothing ($1 # b) }
+  | lifetime ':' while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $4 b (Just $1) ($1 # b) }
+  |              while let pat '=' nostruct_expr inner_attrs_block  { let (as,b) = $> in WhileLet as $3 $5 b Nothing ($1 # b) }
+  | lifetime ':' while let pat '=' nostruct_expr inner_attrs_block  { let (as,b) = $> in WhileLet as $5 $7 b (Just $1) ($1 # b) }
+  | match nostruct_expr '{'                  '}'                    { Match [] $2 [] ($1 # $>) }
+  | match nostruct_expr '{' inner_attrs      '}'                    { Match (toList $4) $2 [] ($1 # $>) }
+  | match nostruct_expr '{'             arms '}'                    { Match [] $2 $4 ($1 # $>) }
+  | match nostruct_expr '{' inner_attrs arms '}'                    { Match (toList $4) $2 $5 ($1 # $>) }
   | expr_path '!' '{' many(token_tree) '}'              { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
-  | unsafe block                                        { BlockExpr [] $2{ rules = Unsafe } ($1 # $>) }
-  | do catch block                                      { Catch [] $3 ($1 # $>) }
+  | unsafe inner_attrs_block                                        { let (as,b) = $> in BlockExpr as b{ rules = Unsafe } ($1 # b) }
+  | do catch inner_attrs_block                                      { let (as,b) = $> in Catch as b ($1 # b) }
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }
@@ -1053,18 +1056,21 @@ expr_arms :: { (Expr Span, [Arm Span]) }
   | paren_expr                              comma_arms  { ($1, $2) }
   | struct_expr                             comma_arms  { ($1, $2) }
   | block_like_expr                         comma_arms  { ($1, $2) }
-  | block                                   comma_arms  { (BlockExpr [] $1 (spanOf $1), $2) }
-  | block                                         arms  { (BlockExpr [] $1 (spanOf $1), $2) }
+  | inner_attrs_block                       comma_arms  { let (as,b) = $1 in (BlockExpr as b (spanOf b), $2) }
+  | inner_attrs_block                             arms  { let (as,b) = $1 in (BlockExpr as b (spanOf b), $2) }
 
 
 -- As per https://github.com/rust-lang/rust/issues/15701 (as of March 10 2017), the only way to have
 -- attributes on expressions should be with inner attributes on a paren expression.
 paren_expr :: { Expr Span }
-  : '(' ')'                                             { TupExpr [] [] ($1 # $2) }
-  | '(' expr ')'                                        { ParenExpr [] $2 ($1 # $3) }
-  | '(' inner_attrs expr ')'                            { ParenExpr (toList $2) $3 ($1 # $4) }
-  | '(' expr ',' ')'                                    { TupExpr [] [$2] ($1 # $4) }
-  | '(' expr ',' sep_by1T(expr,',') ')'                 { TupExpr [] ($2 : toList $4) ($1 # $5) }
+  : '(' ')'                                             { TupExpr [] [] ($1 # $>) }
+  | '(' inner_attrs ')'                                 { TupExpr (toList $2) [] ($1 # $>) }
+  | '('             expr ')'                            { ParenExpr [] $2 ($1 # $>) }
+  | '(' inner_attrs expr ')'                            { ParenExpr (toList $2) $3 ($1 # $>) }
+  | '('             expr ',' ')'                        { TupExpr [] [$2] ($1 # $>) }
+  | '(' inner_attrs expr ',' ')'                        { TupExpr (toList $2) [$3] ($1 # $>) }
+  | '('             expr ',' sep_by1T(expr,',') ')'     { TupExpr [] ($2 : toList $4) ($1 # $>) }
+  | '(' inner_attrs expr ',' sep_by1T(expr,',') ')'     { TupExpr (toList $2) ($3 : toList $5) ($1 # $>) }
 
 
 -- Closure ending in blocks
@@ -1087,9 +1093,12 @@ arg :: { Arg Span }
 
 -- Struct expression literal
 struct_expr :: { Expr Span }
-  : expr_path '{'                        '..' expr '}'  { Struct [] $1 [] (Just $4) ($1 # $>) }
-  | expr_path '{' sep_by1(field,',') ',' '..' expr '}'  { Struct [] $1 (toList $3) (Just $6) ($1 # $>) }
-  | expr_path '{' sep_byT(field,',')               '}'  { Struct [] $1 $3 Nothing ($1 # $>) }
+  : expr_path '{'                                    '..' expr '}'  { Struct [] $1 [] (Just $4) ($1 # $>) }
+  | expr_path '{' inner_attrs                        '..' expr '}'  { Struct (toList $3) $1 [] (Just $5) ($1 # $>) }
+  | expr_path '{'             sep_by1(field,',') ',' '..' expr '}'  { Struct [] $1 (toList $3) (Just $6) ($1 # $>) }
+  | expr_path '{' inner_attrs sep_by1(field,',') ',' '..' expr '}'  { Struct (toList $3) $1 (toList $4) (Just $7) ($1 # $>) }
+  | expr_path '{'             sep_byT(field,',')               '}'  { Struct [] $1 $3 Nothing ($1 # $>) }
+  | expr_path '{' inner_attrs sep_byT(field,',')               '}'  { Struct (toList $3) $1 $4 Nothing ($1 # $>) }
 
 field :: { Field Span }
   : ident ':' expr  { Field (unspan $1) (Just $3) ($1 # $3) }
@@ -1126,14 +1135,14 @@ initializer :: { Maybe (Expr Span) }
 
 
 block :: { Block Span }
-  : ntBlock                                      { $1 }
-  | '{' '}'                            { Block [] Normal ($1 # $>) }
-  | '{' stmts_possibly_no_semi '}'     { Block [ s | Just s <- $2 ] Normal ($1 # $>) }
+  : ntBlock                                            { $1 }
+  | '{' '}'                                            { Block [] Normal ($1 # $>) }
+  | '{' stmts_possibly_no_semi '}'                     { Block [ s | Just s <- $2 ] Normal ($1 # $>) }
 
 inner_attrs_block :: { ([Attribute Span], Block Span) }
-  : block                                                  { ([], $1) }
-  | '{' inner_attrs '}'                          { (toList $2, Block [] Normal ($1 # $>)) }
-  | '{' inner_attrs stmts_possibly_no_semi '}'   { (toList $2, Block [ s | Just s <- $3 ] Normal ($1 # $>)) }
+  : block                                              { ([], $1) }
+  | '{' inner_attrs '}'                                { (toList $2, Block [] Normal ($1 # $>)) }
+  | '{' inner_attrs stmts_possibly_no_semi '}'         { (toList $2, Block [ s | Just s <- $3 ] Normal ($1 # $>)) }
 
 
 -----------
@@ -1143,12 +1152,20 @@ inner_attrs_block :: { ([Attribute Span], Block Span) }
 item :: { Item Span }
   : ntItem                                             { $1 }
   | stmt_item                                          { $1 }
-  | expr_path '!' ident '[' many(token_tree) ']' ';'   { Item (unspan $3) [] (MacItem (Mac $1 $5 ($1 # $>))) InheritedV ($1 # $>) }
+  | expr_path '!' ident '[' many(token_tree) ']' ';'   { macroItem (unspan $3) (Mac $1 $5 ($1 # $>)) ($1 # $>) }
+  | expr_path '!'       '[' many(token_tree) ']' ';'   { macroItem ""          (Mac $1 $4 ($1 # $>)) ($1 # $>) }
+  | expr_path '!' ident '(' many(token_tree) ')' ';'   { macroItem (unspan $3) (Mac $1 $5 ($1 # $>)) ($1 # $>) }
+  | expr_path '!'       '(' many(token_tree) ')' ';'   { macroItem ""          (Mac $1 $4 ($1 # $>)) ($1 # $>) }
+  | expr_path '!' ident '{' many(token_tree) '}'       { macroItem (unspan $3) (Mac $1 $5 ($1 # $>)) ($1 # $>) }
+  | expr_path '!'       '{' many(token_tree) '}'       { macroItem ""          (Mac $1 $4 ($1 # $>)) ($1 # $>) }
+ 
+ {- | expr_path '!' ident '[' many(token_tree) ']' ';'   { Item (unspan $3) [] (MacItem (Mac $1 $5 ($1 # $>))) InheritedV ($1 # $>) }
   | expr_path '!'       '[' many(token_tree) ']' ';'   { Item "" [] (MacItem (Mac $1 $4 ($1 # $>))) InheritedV ($1 # $>) }
   | expr_path '!' ident '(' many(token_tree) ')' ';'   { Item (unspan $3) [] (MacItem (Mac $1 $5 ($1 # $>))) InheritedV ($1 # $>) }
   | expr_path '!'       '(' many(token_tree) ')' ';'   { Item "" [] (MacItem (Mac $1 $4 ($1 # $>))) InheritedV ($1 # $>) }
   | expr_path '!' ident '{' many(token_tree) '}'       { Item (unspan $3) [] (MacItem (Mac $1 $5 ($1 # $>))) InheritedV ($1 # $>) }
   | expr_path '!'       '{' many(token_tree) '}'       { Item "" [] (MacItem (Mac $1 $4 ($1 # $>))) InheritedV ($1 # $>) }
+-}
 
 mod_item :: { Item Span }
   : many(outer_attribute) vis item                     { let Item i a n _ _ = $3 in Item i ($1 ++ a) n (unspan $2) ($1 # $2 # $3) }
@@ -1487,6 +1504,7 @@ token :: { Spanned Token }
   -- Weak keywords, have special meaning only in specific contexts.
   | default    { $1 }
   | union      { $1 }
+  | catch      { $1 }
   -- Comments
   | outerDoc   { $1 }
   | innerDoc   { $1 }
@@ -1543,6 +1561,11 @@ toStmt (MacExpr a m s) hasSemi isBlock | hasSemi = MacStmt m SemicolonMac a
                                        | isBlock = MacStmt m BracesMac a
 toStmt e hasSemi _ = (if hasSemi then Semi else NoSemi) e
 
+-- | Make a macro item, which may be a 'MacroDef'
+macroItem :: Ident -> Mac Span -> Span -> Item Span
+macroItem i (Mac (Path False (("macro_rules", NoParameters _) :| []) _) tts _) x = Item i [] (MacroDef tts) InheritedV x
+macroItem i mac x = Item i [] (MacItem mac) InheritedV x
+
 -- | Add attributes to an expression
 addAttrs :: [Attribute Span] -> Expr Span -> Expr Span
 addAttrs as (Box as' e s)            = Box (as ++ as') e s
@@ -1565,6 +1588,7 @@ addAttrs as (Loop as' b l s)         = Loop (as ++ as') b l s
 addAttrs as (Match as' e a s)        = Match (as ++ as') e a s
 addAttrs as (Closure as' c f e s)    = Closure (as ++ as') c f e s
 addAttrs as (BlockExpr as' b s)      = BlockExpr (as ++ as') b s
+addAttrs as (Catch as' b s)          = Catch (as ++ as') b s
 addAttrs as (Assign as' e1 e2 s)     = Assign (as ++ as') e1 e2 s
 addAttrs as (AssignOp as' b e1 e2 s) = AssignOp (as ++ as') b e1 e2 s
 addAttrs as (FieldAccess as' e i s)  = FieldAccess (as ++ as') e i s
@@ -1573,7 +1597,7 @@ addAttrs as (Index as' e1 e2 s)      = Index (as ++ as') e1 e2 s
 addAttrs as (Range as' e1 e2 r s)    = Range (as ++ as') e1 e2 r s
 addAttrs as (PathExpr as' q p s)     = PathExpr (as ++ as') q p s
 addAttrs as (AddrOf as' m e s)       = AddrOf (as ++ as') m e s
-addAttrs as (Break as' l e s)          = Break (as ++ as') l e s
+addAttrs as (Break as' l e s)        = Break (as ++ as') l e s
 addAttrs as (Continue as' l s)       = Continue (as ++ as') l s
 addAttrs as (Ret as' e s)            = Ret (as ++ as') e s
 addAttrs as (InlineAsmExpr as' a s)  = InlineAsmExpr (as ++ as') a s

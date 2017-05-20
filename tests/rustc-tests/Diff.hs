@@ -83,6 +83,8 @@ instance Show a => Diffable (Item a) where
         is === (n' ! "fields" ! 5)
       ("Mac", MacItem m) ->
         m === (n' ! "fields" ! 0)
+      ("MacroDef", MacroDef tt) ->
+        tt === (n' ! "fields" ! 0)
       _ -> diff "different items" item val
   
 instance Diffable ImplPolarity where

@@ -583,8 +583,11 @@ data ItemKind a
   -- Example: @impl\<A\> Foo\<A\> { .. }@ or @impl\<A\> Trait for Foo\<A\> { .. }@
   | Impl Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a]
   -- | generated from a call to a macro 
-  -- Example: @macro_rules! foo { .. }@ or @foo!(..)@
+  -- Example: @foo!{ .. }@
   | MacItem (Mac a)
+  -- | definition of a macro via @macro_rules@
+  -- Example: @macro_rules! foo { .. }@
+  | MacroDef [TokenTree]
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 -- | A Kleene-style repetition operator for token sequences (@syntax::ast::KleeneOp@). This refers
@@ -709,9 +712,6 @@ data IntRep = Bin | Oct | Dec | Hex deriving (Eq, Show, Enum, Bounded, Typeable,
 
 -- | Represents a macro invocation (@syntax::ast::Mac@). The 'Path' indicates which macro is being
 -- invoked, and the 'TokenTree's contains the source of the macro invocation.
---
--- Quoted from the source "NB: the additional ident for a macro_rules-style macro is actually
--- stored in the enclosing item. Oog."
 data Mac a = Mac (Path a) [TokenTree] a deriving (Eq, Functor, Show, Typeable, Data, Generic)
 
 instance Located a => Located (Mac a) where spanOf (Mac _ _ s) = spanOf s

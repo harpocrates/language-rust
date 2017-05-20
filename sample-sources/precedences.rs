@@ -37,6 +37,7 @@ fn range_expressions() {
   // general expression
   let _ = ..Point { x: 1 };
   let _ = ..{};
+  let _ = |x| { 1 };
   
   // non-block expression 
   ..Point { x: 1 };
@@ -44,6 +45,7 @@ fn range_expressions() {
   - { 1 };
   return |x: i32| x + 1;
   box 1 + 2;
+  |x| { 1 };
 
   // no struct expression
   for x in 1.. { }
@@ -51,11 +53,13 @@ fn range_expressions() {
   for x in ..Point{} { }
   for x in .. { }
   for x in {}.. { }
+  for x in |x| { 1 } { }
 
   // no struct/block expression (to the right of '..')
   for x in ..1 { }
   for x in ..1 + 1 { }
   for x in ..1 + { 2 } { }
+  for x in ..|x| { 1 } { }
 
   // precedences of ranges in general
   fn general_ranges() {
