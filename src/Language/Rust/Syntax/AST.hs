@@ -39,7 +39,7 @@ module Language.Rust.Syntax.AST (
   -- ** Blocks
   Block(..),
   -- ** Token trees
-  TokenTree(..), Nonterminal(..), KleeneOp(..), Mac(..), MacStmtStyle(..),
+  TokenTree(..), Nonterminal(..), Mac(..), MacStmtStyle(..),
 ) where
 
 import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)
@@ -563,7 +563,7 @@ data ItemKind a
   -- Example: @type Foo = Bar\<u8\>;@
   | TyAlias (Ty a) (Generics a)
   -- | enum definition (@enum@ or @pub enum@) (@syntax::ast::EnumDef@).
-  -- Example: @enum Foo\<A, B\> { C\<A\>, D\<B\> }@
+  -- Example: @enum Foo\<A, B\> { C(A), D(B) }@
   | Enum [Variant a] (Generics a)
   -- | struct definition (@struct@ or @pub struct@).
   -- Example: @struct Foo\<A\> { x: A }@
@@ -589,12 +589,6 @@ data ItemKind a
   -- Example: @macro_rules! foo { .. }@
   | MacroDef [TokenTree]
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
-
--- | A Kleene-style repetition operator for token sequences (@syntax::ast::KleeneOp@). This refers
--- to the @*@ or @+@ suffix on a 'Sequence' token tree. 
---
--- Examples: @+@ as in @$($inits:expr),+@
-data KleeneOp = ZeroOrMore | OneOrMore deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
 -- | A lifetime is a name for a scope in a program (@syntax::ast::Lifetime@). One of the novel
 -- features of Rust is that code can be parametrized over lifetimes. Syntactically, they are like

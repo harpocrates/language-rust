@@ -117,3 +117,92 @@ fn expressions() {
 
 }
 
+fn foreign_items() {
+  extern "C" {
+    #[static_outer]
+    static ext: u8;
+
+    #[fn_outer]
+    fn foo(x: i32, ...);
+  }
+}
+
+#[trait_outer]
+trait Trait {
+
+  #[const_outer]
+  const x: i32;
+
+  #[method_outer]
+  fn area(&self) -> f64;
+
+  #[type_outer]
+  type N;
+
+  #[macro_outer]
+  foo!();
+}
+
+
+#[impl_outer]
+impl Impls {
+  #![impl_inner]
+
+  #[const_outer]
+  const x: i32 = 1;
+
+  #[method_outer]
+  fn area(&self) -> f64 {
+    #![method_inner]
+    1f64
+  }
+  
+  #[type_outer]
+  type N = i32;
+
+  #[macro_outer]
+  foo!();
+}
+
+fn items() {
+  #[use_outer]
+  use foo::bar as FooBar;
+ 
+  #[static_outer]
+  static FOO: i32 = 42;
+  
+  #[const_outer]
+  const FOO: i32 = 42;
+ 
+  #[fn_outer]
+  fn foo(bar: usize) -> usize {
+    #![fn_inner]
+    1
+  }
+ 
+  #[mod_outer]
+  mod foo { #![mod_inner]  }
+ 
+  #[type_outer]
+  type Foo = Bar<u8>;
+  
+  #[enum_outer]
+  enum Foo<A, B> { #[variant_outer] C(A), D(B) }
+  
+  #[struct_outer]
+  struct Foo<A> { #[field_outer] x: A }
+  
+  #[union_outer]
+  union Foo<A, B> { x: A, y: B }
+
+  #[macro_outer]
+  foo!{ .. }
+  
+//  #[macrodef_outer]
+//  macro_rules! foo { .. }
+
+}
+
+fn foo<
+  #[lifetimedef_outer] 'a: 'b,
+>() { } 

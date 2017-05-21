@@ -269,10 +269,9 @@ import Text.Read (readMaybe)
 --  * 'FIELD' for field access expressions (which bind less tightly than '.' for method calls)
 --  * 'VIS' for adjusting the precedence of 'pub' compared to other visbility modifiers (see 'vis')
 --  * 'PATH' boosts the precedences of paths in types and expressions
---  * 'DOLLAR' is for a single '$' token not in sequence expression
 --  * 'WHERE' is for non-empty where clauses
 --
-%nonassoc FIELD VIS PATH DOLLAR WHERE
+%nonassoc FIELD VIS PATH WHERE
 
 -- These are postfix operators.
 %nonassoc '?' '.'
@@ -1190,10 +1189,14 @@ generics :: { Generics Span }
 
 -- TODO: Attributes? The AST has them, so the parser should produce them
 ty_param :: { TyParam Span }
-  : ident                                              { TyParam [] (unspan $1) [] Nothing (spanOf $1) }
-  | ident ':' sep_by1T(ty_param_bound_mod,'+')         { TyParam [] (unspan $1) (toList $3) Nothing ($1 # $3) }
-  | ident                                      '=' ty  { TyParam [] (unspan $1) [] (Just $>) (spanOf $1) }
-  | ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty  { TyParam [] (unspan $1) (toList $3) (Just $>) ($1 # $>) }
+  :             ident                                              { TyParam [] (unspan $1) [] Nothing (spanOf $1) }
+  | inner_attrs ident                                              { TyParam (toList $1) (unspan $2) [] Nothing ($1 # $>) }
+  |             ident ':' sep_by1T(ty_param_bound_mod,'+')         { TyParam [] (unspan $1) (toList $3) Nothing ($1 # $>) }
+  | inner_attrs ident ':' sep_by1T(ty_param_bound_mod,'+')         { TyParam (toList $1) (unspan $2) (toList $4) Nothing ($1 # $>) }
+  |             ident                                      '=' ty  { TyParam [] (unspan $1) [] (Just $>) (spanOf $1) }
+  | inner_attrs ident                                      '=' ty  { TyParam (toList $1) (unspan $2) [] (Just $>) ($1 # $>) }
+  |             ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty  { TyParam [] (unspan $1) (toList $3) (Just $>) ($1 # $>) }
+  | inner_attrs ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty  { TyParam (toList $1) (unspan $2) (toList $4) (Just $>) ($1 # $>) }
 
 stmt_item :: { Item Span }
   : static     ident ':' ty '=' expr ';'               { Item (unspan $2) [] (Static $4 Immutable $6) InheritedV ($1 # $>) }
@@ -1203,10 +1206,10 @@ stmt_item :: { Item Span }
   | use view_path ';'                                  { Item "" [] (Use $2) InheritedV ($1 # $>) }
   | extern crate ident ';'                             { Item (unspan $3) [] (ExternCrate Nothing) InheritedV ($1 # $>) }
   | extern crate ident as ident ';'                    { Item (unspan $5) [] (ExternCrate (Just (unspan $3))) InheritedV ($1 # $>) }
-  | const safety   fn ident generics fn_decl where_clause inner_attrs_block
-    { Item (unspan $4) (fst $>) (Fn $6 $2 Const Rust $5{ whereClause = $7 } (snd $>)) InheritedV ($1 # snd $>) }
+  | const safety  fn ident generics fn_decl where_clause inner_attrs_block
+    { Item (unspan $4) (fst $>) (Fn $6 (unspan $2) Const Rust $5{ whereClause = $7 } (snd $>)) InheritedV ($1 # snd $>) }
   | unsafe ext_abi fn ident generics fn_decl where_clause inner_attrs_block
-    { Item (unspan $4) (fst $>) (Fn $6 Unsafe NotConst $2 $5{ whereClause = $7 } (snd $>)) InheritedV ($1 # snd $>) }
+    { Item (unspan $4) (fst $>) (Fn $6 Unsafe NotConst (unspan $2) $5{ whereClause = $7 } (snd $>)) InheritedV ($1 # snd $>) }
   | extern     abi fn ident generics fn_decl where_clause inner_attrs_block
     { Item (unspan $4) (fst $>) (Fn $6 Normal NotConst $2 $5{ whereClause = $7 } (snd $>)) InheritedV ($1 # snd $>) }
   |                fn ident generics fn_decl where_clause inner_attrs_block
@@ -1224,14 +1227,10 @@ stmt_item :: { Item Span }
   | item_trait                                           { $1 }
 
 item_trait :: { Item Span }
-  : safety_trait ident generics ':' sep_by1T(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
-     { Item (unspan $2) [] (Trait (unspan $1) $3{ whereClause = $6 } (toList $5) $8) InheritedV ($1 # $>) }
-  | safety_trait ident generics where_clause '{' many(trait_item) '}'
-     { Item (unspan $2) [] (Trait (unspan $1) $3{ whereClause = $4 } [] $6) InheritedV ($1 # $>) }
-
-safety_trait :: { Spanned Unsafety }
-  :        trait   { Spanned Normal (spanOf $1) }
-  | unsafe trait   { Spanned Unsafe ($1 # $2) }
+  : safety trait ident generics ':' sep_by1T(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
+     { Item (unspan $3) [] (Trait (unspan $1) $4{ whereClause = $7 } (toList $6) $9) InheritedV ($1 # $2 # $>) }
+  | safety trait ident generics where_clause '{' many(trait_item) '}'
+     { Item (unspan $3) [] (Trait (unspan $1) $4{ whereClause = $5 } [] $7) InheritedV ($1 # $2 # $>) }
 
 struct_decl_args :: { (WhereClause Span, VariantData Span) }
   : where_clause ';'                                         { ($1, UnitD ($1 # $>)) }
@@ -1268,23 +1267,19 @@ where_predicate :: { WherePredicate Span }
 
 
 item_impl :: { Item Span }
-  : safety_impl generics ty_prim              where_clause '{' impl_items '}'
-    { Item (mkIdent "") (fst $6) (Impl (unspan $1) Positive $2{ whereClause = $4 } Nothing $3 (snd $6)) InheritedV ($1 # $>) }
-  | safety_impl generics '(' ty_no_plus ')'   where_clause '{' impl_items '}'
-    { Item (mkIdent "") (fst $8) (Impl (unspan $1) Positive $2{ whereClause = $6 } Nothing (ParenTy $4 ($3 # $5)) (snd $8)) InheritedV ($1 # $>) }
-  | safety_impl generics '!' trait_ref for ty where_clause '{' impl_items '}'
-    { Item (mkIdent "") (fst $9) (Impl (unspan $1) Negative $2{ whereClause = $7 } (Just $4) $6 (snd $9)) InheritedV ($1 # $>) }
-  | safety_impl generics     trait_ref for ty where_clause '{' impl_items '}'
-    { Item (mkIdent "") (fst $8) (Impl (unspan $1) Positive $2{ whereClause = $6 } (Just $3) $5 (snd $8)) InheritedV ($1 # $>) }
-  | safety_impl generics     trait_ref for '..'            '{'            '}'
-    {% case $2 of
-         Generics [] [] _ _ -> pure $ Item (mkIdent "") [] (DefaultImpl (unspan $1) $3) InheritedV ($1 # $>)
+  : safety impl generics ty_prim              where_clause '{' impl_items '}'
+    { Item (mkIdent "") (fst $7) (Impl (unspan $1) Positive $3{ whereClause = $5 } Nothing $4 (snd $7)) InheritedV ($1 # $2 # $>) }
+  | safety impl generics '(' ty_no_plus ')'   where_clause '{' impl_items '}'
+    { Item (mkIdent "") (fst $9) (Impl (unspan $1) Positive $3{ whereClause = $7 } Nothing (ParenTy $5 ($4 # $6)) (snd $9)) InheritedV ($1 # $2 # $>) }
+  | safety impl generics '!' trait_ref for ty where_clause '{' impl_items '}'
+    { Item (mkIdent "") (fst $10) (Impl (unspan $1) Negative $3{ whereClause = $8 } (Just $5) $7 (snd $10)) InheritedV ($1 # $2 # $>) }
+  | safety impl generics     trait_ref for ty where_clause '{' impl_items '}'
+    { Item (mkIdent "") (fst $9) (Impl (unspan $1) Positive $3{ whereClause = $7 } (Just $4) $6 (snd $9)) InheritedV ($1 # $2 # $>) }
+  | safety impl generics     trait_ref for '..'            '{'            '}'
+    {% case $3 of
+         Generics [] [] _ _ -> pure $ Item (mkIdent "") [] (DefaultImpl (unspan $1) $4) InheritedV ($1 # $2 # $>)
          _ -> fail "non-empty generics are no allowed on default implementations"
     }
-
-safety_impl :: { Spanned Unsafety }
-  :        impl   { Spanned Normal (spanOf $1) }
-  | unsafe impl   { Spanned Unsafe ($1 # $2) }
 
 impl_items :: { ([Attribute Span], [ImplItem Span]) }
   :             many(impl_item)  { ([], $1) }
@@ -1292,38 +1287,30 @@ impl_items :: { ([Attribute Span], [ImplItem Span]) }
 
 impl_item :: { ImplItem Span }
   : ntImplItem                                          { $1 }
-  | many(outer_attribute) vis def type ident '=' ty ';'           { ImplItem (unspan $5) (unspan $2) $3 $1 (TypeI $7) ($1 # $2 # $>) }
-  | many(outer_attribute) vis def const ident ':' ty '=' expr ';' { ImplItem (unspan $5) (unspan $2) $3 $1 (ConstI $7 $9) ($1 # $2 # $>) }
-  | many(outer_attribute) vis def mod_mac                         { ImplItem (mkIdent "") (unspan $2) $3 $1 (MacroI $4) ($1 # $2 # $>) }
+  | many(outer_attribute) vis def type ident '=' ty ';'           { ImplItem (unspan $5) (unspan $2) (unspan $3) $1 (TypeI $7) ($1 # $2 # $>) }
+  | many(outer_attribute) vis def const ident ':' ty '=' expr ';' { ImplItem (unspan $5) (unspan $2) (unspan $3) $1 (ConstI $7 $9) ($1 # $2 # $>) }
+  | many(outer_attribute) vis def mod_mac                         { ImplItem (mkIdent "") (unspan $2) (unspan $3) $1 (MacroI $4) ($1 # $2 # $>) }
   | many(outer_attribute) vis def const safety fn ident generics fn_decl_with_self where_clause inner_attrs_block
-     { ImplItem (unspan $7) (unspan $2) $3 ($1 ++ fst $>) (MethodI (MethodSig $5 Const Rust $9 $8{ whereClause = $10 }) (snd $>)) ($1 # $2 # snd $>) }
+     { ImplItem (unspan $7) (unspan $2) (unspan $3) ($1 ++ fst $>) (MethodI (MethodSig (unspan $5) Const Rust $9 $8{ whereClause = $10 }) (snd $>)) ($1 # $2 # snd $>) }
   | many(outer_attribute) vis def safety ext_abi fn ident generics fn_decl_with_self where_clause inner_attrs_block
-     { ImplItem (unspan $7) (unspan $2) $3 ($1 ++ fst $>) (MethodI (MethodSig $4 NotConst $5 $9 $8{ whereClause = $10 }) (snd $>)) ($1 # $2 # snd $>) }
+     { ImplItem (unspan $7) (unspan $2) (unspan $3) ($1 ++ fst $>) (MethodI (MethodSig (unspan $4) NotConst (unspan $5) $9 $8{ whereClause = $10 }) (snd $>)) ($1 # $2 # snd $>) }
 
 trait_item :: { TraitItem Span }
   : ntTraitItem                                    { $1 }
   | many(outer_attribute) const ident ':' ty initializer ';' { TraitItem (unspan $3) $1 (ConstT $5 $6) ($1 # $2 # $>) }
   | many(outer_attribute) mod_mac                            { TraitItem (mkIdent "") $1 (MacroT $2) ($1 # $>) }
   | many(outer_attribute) type ty_param ';'                  { let TyParam _ i b d _ = $3 in TraitItem i $1 (TypeT b d) ($1 # $2 # $>) }
-  | many(outer_attribute) safetyS ext_abiS fn ident generics fn_decl_with_self where_clause ';'
+  | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self where_clause ';'
      { TraitItem (unspan $5) $1 (MethodT (MethodSig (unspan $2) NotConst (unspan $3) $7 $6{ whereClause = $8 }) Nothing) ($1 # $2 # $3 # $4 # $>)  }
-  | many(outer_attribute) safetyS ext_abiS fn ident generics fn_decl_with_self where_clause block
+  | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self where_clause block
      { TraitItem (unspan $5) $1 (MethodT (MethodSig (unspan $2) NotConst (unspan $3) $7 $6{ whereClause = $8 }) (Just $>)) ($1 # $2 # $3 # $4 # $>) }
 
 
-safety :: { Unsafety }
-  : {- empty -}     { Normal }
-  | unsafe          { Unsafe }
-
-ext_abi :: { Abi }
-  : {- empty -}     { Rust }
-  | extern abi      { $2 }
-
-safetyS :: { Spanned Unsafety }
+safety :: { Spanned Unsafety }
   : {- empty -}     { pure Normal }
   | unsafe          { Spanned Unsafe (spanOf $1) }
 
-ext_abiS :: { Spanned Abi }
+ext_abi :: { Spanned Abi }
   : {- empty -}     { pure Rust }
   | extern abi      { Spanned $2 (spanOf $1) }
 
@@ -1333,9 +1320,9 @@ vis :: { Spanned (Visibility Span) }
   | pub '(' crate ')'    { Spanned CrateV ($1 # $4) }
   | pub '(' mod_path ')' { Spanned (RestrictedV $3) ($1 # $4) }
 
-def :: { Defaultness }
-  : {- empty -}      %prec mut { Final }
-  | default                    { Default }
+def :: { Spanned Defaultness }
+  : {- empty -}      %prec mut { pure Final }
+  | default                    { Spanned Default (spanOf $1) }
 
 view_path :: { ViewPath Span }
   : '::' sep_by1(self_or_ident,'::')                                 { let n = fmap unspan $2 in ViewPathSimple True (N.init n) (PathListItem (N.last n) Nothing mempty) ($1 # $>) }
@@ -1435,7 +1422,7 @@ token :: { Spanned Token }
   | '<-'       { $1 }
   | '=>'       { $1 }
   | '#'        { $1 }
-  | '$' %prec DOLLAR  { $1 }
+  | '$'        { $1 }
   | '?'        { $1 }
   | '#!'       { $1 }
   -- Literals.
