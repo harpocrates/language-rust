@@ -29,7 +29,7 @@ To get information about transition states and such, run
 module Language.Rust.Parser.Internal (
   parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseSourceFile,
   parseBlock, parseImplItem, parseTraitItem, parseTt, parseTyParamBound, parseTyParam,
-  parseGenerics, parseWhereClause, parseLifetimeDef
+  parseGenerics, parseWhereClause, parseLifetimeDef, parseArg
 ) where
 
 import Language.Rust.Syntax
@@ -49,11 +49,12 @@ import Text.Read (readMaybe)
 %name parseAttr attribute
 %name parseTy ty_general
 %name parsePat pat
+%name parseArg export_arg
 %name parseStmt stmt
 %name parseExpr expr
 %name parseItem mod_item
 %name parseSourceFileContents source_file
-%name parseBlock block
+%name parseBlock export_block
 %name parseImplItem impl_item
 %name parseTraitItem trait_item
 %name parseTt token_tree
@@ -704,7 +705,8 @@ ty_param_bound_mod :: { TyParamBound Span }
 -- parse_arg_general(false) -- does not require name
 -- NOT ALL PATTERNS ARE ACCEPTED: <https://github.com/rust-lang/rust/issues/35203>
 arg_general :: { Arg Span }
-  :               ty  { Arg Nothing $1 (spanOf $1) }
+  : ntArg             { $1 }
+  |               ty  { Arg Nothing $1 (spanOf $1) }
   |     ident ':' ty  { Arg (Just (IdentP (ByValue Immutable) (unspan $1) Nothing (spanOf $1))) $3 ($1 # $3) }
   | mut ident ':' ty  { Arg (Just (IdentP (ByValue Mutable) (unspan $2) Nothing ($1 # $2))) $4 ($1 # $4) }
   |     '_'   ':' ty  { Arg (Just (WildP (spanOf $1))) $3 ($1 # $3) }
@@ -991,7 +993,8 @@ nonstructblock_expr :: { Expr Span }
   : gen_expression(nonstructblock_expr,nostruct_expr,nonstructblock_expr)     { $1 }
   | paren_expr                                                                { $1 }
   | block_like_expr                                                           { $1 }
-  | unsafe inner_attrs_block                                        { let (as,b) = $> in BlockExpr as b{ rules = Unsafe } ($1 # b) }
+  | unsafe inner_attrs_block
+    { let (as, Block ss r x) = $> in BlockExpr as (Block ss Unsafe ($1 # x)) ($1 # x) }
 
 nonblock_expr :: { Expr Span }
   : gen_expression(nonblock_expr,expr,expr)                                   { $1 }
@@ -1010,8 +1013,9 @@ lit_expr :: { Expr Span }
 -- one to omit the separating ';' after 'if', 'match', 'loop', 'for', 'while'"
 block_expr :: { Expr Span }
   : block_like_expr                                     { $1 }
-  | unsafe inner_attrs_block                            { let (as,b) = $> in BlockExpr as b{ rules = Unsafe } ($1 # b) }
   | inner_attrs_block                                   { let (as,b) = $1 in BlockExpr as b (spanOf b) }
+  | unsafe inner_attrs_block
+    { let (as, Block ss r x) = $> in BlockExpr as (Block ss Unsafe ($1 # x)) ($1 # x) }
 
 -- Any expression ending in a '{ ... }' block except a block itself.
 block_like_expr :: { Expr Span }
@@ -1065,9 +1069,10 @@ expr_arms :: { (Expr Span, [Arm Span]) }
   | paren_expr                              comma_arms  { ($1, $2) }
   | struct_expr                             comma_arms  { ($1, $2) }
   | block_like_expr                         comma_arms  { ($1, $2) }
-  | unsafe inner_attrs_block                comma_arms  { let (as,b) = $2 in (BlockExpr as b{ rules = Unsafe } ($1 # b), $3) }
   | inner_attrs_block                       comma_arms  { let (as,b) = $1 in (BlockExpr as b (spanOf b), $2) }
   | inner_attrs_block                             arms  { let (as,b) = $1 in (BlockExpr as b (spanOf b), $2) }
+  | unsafe inner_attrs_block                comma_arms
+    { let (as, Block ss r x) = $2 in (BlockExpr as (Block ss Unsafe ($1 # x)) ($1 # x), $3) }
 
 
 -- As per https://github.com/rust-lang/rust/issues/15701 (as of March 10 2017), the only way to have
@@ -1127,14 +1132,14 @@ stmt :: { Stmt Span }
   | many(outer_attribute) block_like_expr ';'              { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
   | many(outer_attribute) block_like_expr    %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
   | many(outer_attribute) pub_or_inherited safety inner_attrs_block ';' {%
-       let (as,b) = $4 
-           e = BlockExpr ($1 ++ as) b{ rules = unspan $3 } ($3 # b)
-       in noVis $2 (toStmt e True True ($1 # $3 # $>))
+       let (as, Block ss r x) = $4 
+           e = BlockExpr ($1 ++ as) (Block ss (unspan $3) ($3 # x)) ($3 # x)
+       in noVis $2 (toStmt e True True ($1 # e # $>))
     }
   | many(outer_attribute) pub_or_inherited safety inner_attrs_block %prec NOSEMI {%
-       let (as,b) = $4 
-           e = BlockExpr ($1 ++ as) b{ rules = unspan $3 } ($3 # b)
-       in noVis $2 (toStmt e False True ($1 # $3 # e))
+       let (as, Block ss r x) = $4 
+           e = BlockExpr ($1 ++ as) (Block ss (unspan $3) ($3 # x)) ($3 # x)
+       in noVis $2 (toStmt e False True ($1 # e))
     }
   | gen_item(pub_or_inherited)                             { ItemStmt $1 (spanOf $1) }
   | many(outer_attribute) expr_path '!' ident '[' many(token_tree) ']' ';'
@@ -1161,7 +1166,6 @@ stmts_possibly_no_semi :: { [Maybe (Stmt Span)] }
 initializer :: { Maybe (Expr Span) }
   : '=' expr                                               { Just $2 }
   | {- empty -}                                            { Nothing }
-
 
 block :: { Block Span }
   : ntBlock                                                { $1 }
@@ -1549,12 +1553,32 @@ token :: { Spanned Token }
   | LIFETIME   { $1 }
 
 
+---------------------
+-- Just for export --
+---------------------
+
+-- These rules aren't used anywhere in the grammar above, they just provide a more general parsers.
+
+-- Complete blocks
+export_block :: { Block Span }
+  : ntBlock                                                { $1 }
+  | safety '{' '}'                                         { Block [] (unspan $1) ($1 # $2 # $>) }
+  | safety '{' stmts_possibly_no_semi '}'                  { Block [ s | Just s <- $3 ] (unspan $1) ($1 # $2 # $>) }
+
+-- Complete args
+export_arg :: { Arg Span }
+  : arg_general                                            { $1 }
+  | arg_self                                               { $1 }
+
 {
 -- | Parser for literals.
 parseLit :: P (Lit Span)
 
 -- | Parser for attributes.
 parseAttr :: P (Attribute Span)
+
+-- | Parser for arguments.
+parseArg :: P (Arg Span)
 
 -- | Parser for types.
 parseTy :: P (Ty Span)

@@ -6,6 +6,7 @@ module Language.Rust.Syntax.Token where
 import GHC.Generics (Generic)
 import Data.Data (Data)
 -- import Data.Typeable (Typeable)
+import Control.DeepSeq (NFData)
 
 data LitTok
 
@@ -15,6 +16,7 @@ instance Show Token
 instance Data Token
 -- instance Typeable Token
 instance Generic Token
+instance NFData Token
 
 data Delim
 instance Eq Delim
@@ -22,7 +24,11 @@ instance Data Delim
 -- instance Typeable Delim
 instance Generic Delim
 instance Show Delim
+instance NFData Delim
 
 data DocType
+instance NFData DocType
+
 data Space
+instance NFData Space
 

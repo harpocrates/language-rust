@@ -16,7 +16,7 @@ mod bar {
 
   extern { }
   extern "C" {
-    fn foo(x: int) -> int;
+    fn foo<T>(x: int) -> int;
     static x: int;
     static mut x: *mut int;
   }

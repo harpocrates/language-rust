@@ -950,6 +950,10 @@ printArg (SelfExplicit ty mut x) _ = annotate x (printMutability mut <+> "self" 
 printLifetime :: Lifetime a -> Doc a
 printLifetime (Lifetime n x) = annotate x ("'" <> printName n)
 
+-- | Print a lifetime definition
+printLifetimeDef :: LifetimeDef a -> Doc a
+printLifetimeDef (LifetimeDef as lt bds x) = annotate x (printOuterAttrs as <+> printLifetimeBounds lt bds)
+
 -- | Print mutability (@print_mutability@)
 printMutability :: Mutability -> Doc a
 printMutability Mutable = "mut"
@@ -1026,7 +1030,7 @@ printForeignMod items attrs = block Brace False mempty (printInnerAttrs attrs) (
 printGenerics :: Generics a -> Doc a
 printGenerics (Generics lifetimes tyParams _ x)
   | null lifetimes && null tyParams = mempty
-  | otherwise =  let lifetimes' = [ printOuterAttrs as <+> printLifetimeBounds lt bds | LifetimeDef as lt bds _ <- lifetimes ]
+  | otherwise =  let lifetimes' = printLifetimeDef `map` lifetimes
                      bounds' = [ printTyParam param | param<-tyParams ]
                  in annotate x (group ("<" <##> ungroup (block NoDelim True "," mempty (lifetimes' ++ bounds')) <##> ">"))
 

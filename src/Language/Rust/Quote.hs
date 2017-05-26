@@ -32,7 +32,7 @@ For now, however, you cannot use '$x' or '$x:ty' meta variables.
 {-# LANGUAGE TemplateHaskellQuotes #-}
 
 module Language.Rust.Quote (
-  lit, attr, ty, pat, stmt, expr, item, sourceFile, implItem, traitItem, tokenTree, block,
+  lit, attr, ty, pat, stmt, expr, item, sourceFile, implItem, traitItem, tokenTree, block, arg
 ) where
 
 
@@ -65,7 +65,6 @@ quoter p = QuasiQuoter
       Right x -> func x
 
 
-
 -- | Quasiquoter for literals (see 'Language.Rust.Syntax.Lit')
 lit :: QuasiQuoter
 lit = quoter parseLit
@@ -73,6 +72,10 @@ lit = quoter parseLit
 -- | Quasiquoter for attributes (see 'Language.Rust.Syntax.Attribute')
 attr :: QuasiQuoter
 attr = quoter parseAttr
+
+-- | Quasiquoter for attributes (see 'Language.Rust.Syntax.Arg')
+arg :: QuasiQuoter
+arg = quoter parseArg
 
 -- | Quasiquoter for types (see 'Language.Rust.Syntax.Ty')
 ty :: QuasiQuoter

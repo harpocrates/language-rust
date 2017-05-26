@@ -47,7 +47,7 @@ getJsonAST fileName = do
   jsonContents <- hGetContents hOut
   case decode' jsonContents of
     Just value -> pure value
-    Nothing -> error (unpack jsonContents)
+    Nothing -> error ("Failed to get `rustc' JSON\n" ++ unpack jsonContents)
 
 
 -- * Difference tests
