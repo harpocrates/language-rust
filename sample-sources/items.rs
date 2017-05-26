@@ -1,4 +1,3 @@
-
 extern crate foo;
 extern crate foo_bar as foo;
 

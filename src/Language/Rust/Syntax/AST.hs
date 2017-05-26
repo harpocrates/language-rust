@@ -33,9 +33,9 @@ module Language.Rust.Syntax.AST (
   -- ** Statements
   Stmt(..),
   -- ** Items
-  Item(..), ItemKind(..), ForeignItem(..), ForeignItemKind(..), ImplItem(..), ImplItemKind(..),
-  Defaultness(..), ImplPolarity(..), StructField(..), TraitItem(..), TraitItemKind(..), Variant(..),
-  VariantData(..), ViewPath(..), Visibility(..), Constness(..), MethodSig(..),
+  Item(..), ForeignItem(..), ImplItem(..), TraitItem(..), Defaultness(..), ImplPolarity(..),
+  StructField(..), Variant(..), VariantData(..), ViewPath(..), Visibility(..), Constness(..),
+  MethodSig(..),
   -- ** Blocks
   Block(..),
   -- ** Token trees
@@ -417,25 +417,24 @@ data FnDecl a
 
 instance Located a => Located (FnDecl a) where spanOf (FnDecl _ _ _ s) = spanOf s
 
--- | An item within an extern block (@syntax::ast::ForeignItem@).
+-- | An item within an extern block (@syntax::ast::ForeignItem@ with @syntax::ast::ForeignItemKind@
+-- inlined).
 --
 -- Example: @static ext: u8@ in @extern "C" { static ext: u8 }@
 data ForeignItem a
-  = ForeignItem
-      { ident :: Ident            -- ^ name of the item
-      , attrs :: [Attribute a]    -- ^ attributes attached to it
-      , node :: ForeignItemKind a -- ^ actual item
-      , vis :: Visibility a       -- ^ visibility
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
-
-instance Located a => Located (ForeignItem a) where spanOf (ForeignItem _ _ _ _ s) = spanOf s
-
--- | The kind of things that go in a 'ForeignItem' (@syntax::ast::ForeignItemKind@).
-data ForeignItemKind a
-  = ForeignFn (FnDecl a) (Generics a) -- ^ foreign function
-  | ForeignStatic (Ty a) Bool         -- ^ foreign static variable optionally mutable (as indicated by the 'Bool')
+  -- | Foreign function
+  --
+  -- Example: @fn foo(x: i32);@ in @extern "C" { fn foo(x: i32); }@
+  = ForeignFn [Attribute a] (Visibility a) Ident (FnDecl a) (Generics a) a
+  -- | Foreign static variable, optionally mutable
+  --
+  -- Example: @static mut bar: i32;@ in @extern "C" { static mut bar: i32; }@
+  | ForeignStatic [Attribute a] (Visibility a) Ident (Ty a) Mutability a 
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
+
+instance Located a => Located (ForeignItem a) where
+  spanOf (ForeignFn _ _ _ _ _ s) = spanOf s
+  spanOf (ForeignStatic _ _ _ _ _ s) = spanOf s
 
 -- | Represents lifetimes and type parameters attached to a declaration of a functions, enums,
 -- traits, etc. (@syntax::ast::Generics@). Note that lifetime definitions are always required to be
@@ -463,28 +462,31 @@ instance Located a => Located (Generics a) where spanOf (Generics _ _ _ s) = spa
 pattern NoGenerics :: a -> a -> Generics a
 pattern NoGenerics x y = Generics [] [] (WhereClause [] x) y
 
--- | An item within an impl (@syntax::ast::ImplItem@).
+-- | An item within an impl (@syntax::ast::ImplItem@ with @syntax::ast::ImplItemKind@ inlined).
 --
 -- Example: @const x: i32 = 1;@ in @impl MyTrait { const x: i32 = 1; }@
 data ImplItem a
-  = ImplItem
-      { ident :: Ident             -- ^ name of the item
-      , vis :: Visibility a        -- ^ visibility
-      , defaultness :: Defaultness -- ^ whether it is marked @default@ or not
-      , attrs :: [Attribute a]     -- ^ attributes attached to it
-      , node :: ImplItemKind a     -- ^ actual item
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
-
-instance Located a => Located (ImplItem a) where spanOf (ImplItem _ _ _ _ _ s) = spanOf s
-
--- | The kind of things that go in an 'ImplItem' (@syntax::ast::ImplItemKind@).
-data ImplItemKind a
-  = ConstI (Ty a) (Expr a)          -- ^ associated constants (example: @const ID: i32 = 1;@)
-  | MethodI (MethodSig a) (Block a) -- ^ methods (example: @fn area(&self) -> f64 { 1f64 }@)
-  | TypeI (Ty a)                    -- ^ associated types (example: @type N = i32@)
-  | MacroI (Mac a)                  -- ^ call to a macro
+  -- | Associated constants
+  --
+  -- Example: @const ID: i32 = 1;@
+  = ConstI [Attribute a] (Visibility a) Defaultness Ident (Ty a) (Expr a) a
+  -- | Methods
+  --
+  -- Example: @fn area(&self) -> f64 { 1f64 }@
+  | MethodI [Attribute a] (Visibility a) Defaultness Ident (MethodSig a) (Block a) a
+  -- | Associated types
+  --
+  -- Example: @type N = i32@
+  | TypeI [Attribute a] (Visibility a) Defaultness Ident (Ty a) a
+  -- | Call to a macro
+  | MacroI [Attribute a] Defaultness (Mac a) a
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
+
+instance Located a => Located (ImplItem a) where
+  spanOf (ConstI _ _ _ _ _ _ s) = spanOf s
+  spanOf (MethodI _ _ _ _ _ _ s) = spanOf s
+  spanOf (TypeI _ _ _ _ _ s) = spanOf s
+  spanOf (MacroI _ _ _ s) = spanOf s
 
 -- | For traits with a default impl, one can "opt out" of that impl with a negative impl, by adding
 -- @!@ mark before the trait name. [RFC on builtin
@@ -522,73 +524,80 @@ data InlineAsmOutput a
 
 instance Located a => Located (InlineAsm a) where spanOf (InlineAsm _ _ _ _ _ _ _ _ s) = spanOf s
 
-
--- | A top-level item, possibly in a 'Mod' or a 'ItemStmt' (@syntax::ast::Item@). Note that the name
--- may be a dummy name.
+-- | A top-level item, possibly in a 'Mod' or a 'ItemStmt' (@syntax::ast::Item@ with
+-- @syntax::ast::ItemKind@ inlined).
+--
+-- Example: @fn main() { return; }@
 data Item a
-  = Item
-      { ident :: Ident         -- ^ name of the item
-      , attrs :: [Attribute a] -- ^ attributes attached to it
-      , node :: ItemKind a     -- ^ actual item
-      , vis :: Visibility a    -- ^ visibility
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
-
-instance Located a => Located (Item a) where spanOf (Item _ _ _ _ s) = spanOf s
-
--- | Kinds of things that can go into items (@syntax::ast::ItemKind@).
-data ItemKind a
   -- | extern crate item, with optional original crate name.
   -- Examples: @extern crate foo@ or @extern crate foo_bar as foo@
-  = ExternCrate (Maybe Ident)
+  = ExternCrate [Attribute a] (Visibility a) Ident (Maybe Ident) a
   -- | use declaration (@use@ or @pub use@) item.
   -- Examples: @use foo;@, @use foo::bar;@, or @use foo::bar as FooBar;@
-  | Use (ViewPath a)
+  | Use [Attribute a] (Visibility a) (ViewPath a) a
   -- | static item (@static@ or @pub static@).
   -- Examples: @static FOO: i32 = 42;@ or @static FOO: &'static str = "bar";@
-  | Static (Ty a) Mutability (Expr a)
+  | Static [Attribute a] (Visibility a) Ident (Ty a) Mutability (Expr a) a
   -- | constant item (@const@ or @pub const@).
   -- Example: @const FOO: i32 = 42;@
-  | ConstItem (Ty a) (Expr a)
+  | ConstItem [Attribute a] (Visibility a) Ident (Ty a) (Expr a) a
   -- | function declaration (@fn@ or @pub fn@).
   -- Example: @fn foo(bar: usize) -\> usize { .. }@
-  | Fn (FnDecl a) Unsafety Constness Abi (Generics a) (Block a)
+  | Fn [Attribute a] (Visibility a) Ident (FnDecl a) Unsafety Constness Abi (Generics a) (Block a) a
   -- | module declaration (@mod@ or @pub mod@) (@syntax::ast::Mod@).
   -- Example: @mod foo;@ or @mod foo { .. }@
-  | Mod { items :: [Item a] }
+  | Mod [Attribute a] (Visibility a) Ident [Item a] a
   -- | external module (@extern@ or @pub extern@) (@syntax::ast::ForeignMod@).
   -- Example: @extern { .. }@ or @extern \"C\" { .. }@
-  | ForeignMod { abi :: Abi, foreignItems :: [ForeignItem a] }
+  | ForeignMod [Attribute a] (Visibility a) Abi [ForeignItem a] a
   -- | type alias (@type@ or @pub type@).
   -- Example: @type Foo = Bar\<u8\>;@
-  | TyAlias (Ty a) (Generics a)
+  | TyAlias [Attribute a] (Visibility a) Ident (Ty a) (Generics a) a
   -- | enum definition (@enum@ or @pub enum@) (@syntax::ast::EnumDef@).
   -- Example: @enum Foo\<A, B\> { C(A), D(B) }@
-  | Enum [Variant a] (Generics a)
+  | Enum [Attribute a] (Visibility a) Ident [Variant a] (Generics a) a
   -- | struct definition (@struct@ or @pub struct@).
   -- Example: @struct Foo\<A\> { x: A }@
-  | StructItem (VariantData a) (Generics a)
+  | StructItem [Attribute a] (Visibility a) Ident (VariantData a) (Generics a) a
   -- | union definition (@union@ or @pub union@).
   -- Example: @union Foo\<A, B\> { x: A, y: B }@
-  | Union (VariantData a) (Generics a)
+  | Union [Attribute a] (Visibility a) Ident (VariantData a) (Generics a) a
   -- | trait declaration (@trait@ or @pub trait@).
   -- Example: @trait Foo { .. }@ or @trait Foo\<T\> { .. }@
-  | Trait Unsafety (Generics a) [TyParamBound a] [TraitItem a]
+  | Trait [Attribute a] (Visibility a) Ident Unsafety (Generics a) [TyParamBound a] [TraitItem a] a
   -- | default implementation
   -- [(RFC for impl
   -- specialization)](https://github.com/rust-lang/rfcs/blob/master/text/1210-impl-specialization.md)
   -- Examples: @impl Trait for .. {}@ or @impl\<T\> Trait\<T\> for .. {}@
-  | DefaultImpl Unsafety (TraitRef a)
+  | DefaultImpl [Attribute a] (Visibility a) Unsafety (TraitRef a) a
   -- | implementation
   -- Example: @impl\<A\> Foo\<A\> { .. }@ or @impl\<A\> Trait for Foo\<A\> { .. }@
-  | Impl Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a]
+  | Impl [Attribute a] (Visibility a) Defaultness Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a] a
   -- | generated from a call to a macro 
   -- Example: @foo!{ .. }@
-  | MacItem (Mac a)
+  | MacItem [Attribute a] (Maybe Ident) (Mac a) a
   -- | definition of a macro via @macro_rules@
   -- Example: @macro_rules! foo { .. }@
-  | MacroDef [TokenTree]
+  | MacroDef [Attribute a] Ident [TokenTree] a
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
+
+instance Located a => Located (Item a) where
+  spanOf (ExternCrate _ _ _ _ s) = spanOf s
+  spanOf (Use _ _ _ s) = spanOf s
+  spanOf (Static _ _ _ _ _ _ s) = spanOf s
+  spanOf (ConstItem _ _ _ _ _ s) = spanOf s
+  spanOf (Fn _ _ _ _ _ _ _ _ _ s) = spanOf s
+  spanOf (Mod _ _ _ _ s) = spanOf s
+  spanOf (ForeignMod _ _ _ _ s) = spanOf s
+  spanOf (TyAlias _ _ _ _ _ s) = spanOf s
+  spanOf (Enum _ _ _ _ _ s) = spanOf s
+  spanOf (StructItem _ _ _ _ _ s) = spanOf s
+  spanOf (Union _ _ _ _ _ s) = spanOf s
+  spanOf (Trait _ _ _ _ _ _ _ s) = spanOf s
+  spanOf (DefaultImpl _ _ _ _ s) = spanOf s
+  spanOf (Impl _ _ _ _ _ _ _ _ _ s) = spanOf s
+  spanOf (MacItem _ _ _ s) = spanOf s
+  spanOf (MacroDef _ _ _ s) = spanOf s
 
 -- | A lifetime is a name for a scope in a program (@syntax::ast::Lifetime@). One of the novel
 -- features of Rust is that code can be parametrized over lifetimes. Syntactically, they are like
@@ -966,30 +975,36 @@ instance Located TokenTree where
   spanOf (Token s _) = s
   spanOf (Delimited s _ _) = s
 
--- | modifier on a bound, currently this is only used for @?Sized@, where the modifier is @Maybe@. Negative
--- bounds should also be handled here.
+-- | Modifier on a bound, currently this is only used for @?Sized@, where the modifier is @Maybe@.
+-- Negative bounds should also be handled here.
 data TraitBoundModifier = None | Maybe deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic)
 
--- | item declaration within a trait declaration (@syntax::ast::TraitItem@), possibly including a default
--- implementation. A trait item is either required (meaning it doesn't have an implementation, just a
--- signature) or provided (meaning it has a default implementation).
+-- | Item declaration within a trait declaration (@syntax::ast::TraitItem@ with
+-- @syntax::ast::TraitItemKind@ inlined), possibly including a default implementation. A trait item
+-- is either required (meaning it doesn't have an implementation, just a signature) or provided
+-- (meaning it has a default implementation).
 data TraitItem a
-  = TraitItem
-      { ident :: Ident             -- ^ name of the item
-      , attrs :: [Attribute a]     -- ^ attributes attached to it
-      , node :: TraitItemKind a    -- ^ actual item
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic)
-
-instance Located a => Located (TraitItem a) where spanOf (TraitItem _ _ _ s) = spanOf s
-
--- | Kinds of items that can go into traits (@syntax::ast::TraitItemKind@).
-data TraitItemKind a
-  = ConstT (Ty a) (Maybe (Expr a))           -- ^ associated constants (example: @const ID: i32 = 1;@)
-  | MethodT (MethodSig a) (Maybe (Block a))  -- ^ method with optional body (example: @fn area(&self) -> f64;@)
-  | TypeT [TyParamBound a] (Maybe (Ty a))    -- ^ associated types (example: @type N: fmt::Display;@)
-  | MacroT (Mac a)                           -- ^ call to a macro
+  -- | Associated constants
+  --
+  -- Example: @const ID: i32 = 1;@
+  = ConstT [Attribute a] Ident (Ty a) (Maybe (Expr a)) a
+  -- | Method with optional body
+  --
+  -- Example: @fn area(&self) -> f64;@
+  | MethodT [Attribute a] Ident (MethodSig a) (Maybe (Block a)) a
+  -- | Associated types
+  --
+  -- Example: @type N: fmt::Display;@
+  | TypeT [Attribute a] Ident [TyParamBound a] (Maybe (Ty a)) a
+  -- | Call to a macro
+  | MacroT [Attribute a] (Mac a) a
   deriving (Eq, Functor, Show, Typeable, Data, Generic)
+
+instance Located a => Located (TraitItem a) where
+  spanOf (ConstT _ _ _ _ s) = spanOf s
+  spanOf (MethodT _ _ _ _ s) = spanOf s
+  spanOf (TypeT _ _ _ _ s) = spanOf s
+  spanOf (MacroT _ _ s) = spanOf s
 
 -- | A 'TraitRef' is a path which identifies a trait (@syntax::ast::TraitRef@).
 newtype TraitRef a = TraitRef (Path a) deriving (Eq, Functor, Show, Typeable, Data, Generic)

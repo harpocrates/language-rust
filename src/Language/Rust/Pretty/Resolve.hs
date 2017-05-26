@@ -143,8 +143,8 @@ data AttrType
 
 -- | An attribute is invalid if it claims to be a doc comment but lacks the accompanying structure.
 resolveAttr :: AttrType -> Attribute a -> Either String (Attribute a)
-resolveAttr OuterAttr (Attribute Inner _ _ _) = Left "only outer attributes are allowed"
-resolveAttr InnerAttr (Attribute Outer _ _ _) = Left "only inner attributes are allowed"
+resolveAttr OuterAttr (Attribute Inner met b x) = resolveAttr OuterAttr (Attribute Outer met b x)
+resolveAttr InnerAttr (Attribute Outer met b x) = resolveAttr InnerAttr (Attribute Inner met b x)
 resolveAttr _         (Attribute sty met False x) = Attribute sty <$> resolveMetaItem met <*> pure False <*> pure x 
 resolveAttr _       a@(Attribute _ (NameValue (Ident "doc" _) (Str _ Cooked Unsuffixed _) _) True _) = pure a
 resolveAttr _          _ = Left "attribute cannot be doc comment"
@@ -875,6 +875,7 @@ resolveStmt _ (Local p t i as x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   pure (Local p' t' i' as' x)
 resolveStmt _ (ItemStmt i x) = ItemStmt <$> resolveItem StmtItem i <*> pure x
+resolveStmt _ (Semi e x) | isBlockLike e = Semi <$> resolveExpr AnyExpr e <*> pure x
 resolveStmt _ (Semi e x) = Semi <$> resolveExpr NonBlockExpr e <*> pure x
 resolveStmt _ (NoSemi e x) | isBlockLike e = NoSemi <$> resolveExpr AnyExpr e <*> pure x
 resolveStmt AnyStmt  (NoSemi e x) = NoSemi <$> resolveExpr NonBlockExpr e <*> pure x
@@ -906,6 +907,12 @@ data ItemType
   = StmtItem   -- ^ Corresponds to 'stmt_item' - basically limited visbility and no macros
   | ModItem    -- ^ General item
 
+resolveVisibility' :: ItemType -> Visibility a -> Either String (Visibility a)
+resolveVisibility' StmtItem PublicV = pure PublicV
+resolveVisibility' StmtItem InheritedV = pure InheritedV
+resolveVisibility' StmtItem _ = Left "statement items can only have public or inherited visibility"
+resolveVisibility' ModItem v = pure v
+
 -- | An item can be invalid if
 --
 --   * it is a macro but has 'StmtItem' restriction
@@ -913,70 +920,145 @@ data ItemType
 --   * an underlying component is invalid
 --
 resolveItem :: Monoid a => ItemType -> Item a -> Either String (Item a)
-resolveItem t (Item i as n v x) = do
-  i' <- case (i,n) of
-          (Ident "" _, MacItem{})     -> pure i 
-          (Ident "" _, Use{})         -> pure i
-          (Ident "" _, ForeignMod{})  -> pure i
-          (Ident "" _, Impl{})        -> pure i
-          (Ident "" _, DefaultImpl{}) -> pure i
-          _ -> resolveIdent i
+resolveItem t (ExternCrate as v i r x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  n' <- case (t,n) of
-          (StmtItem, MacItem{}) -> Left "macro items cannot be in statement items"
-          _ -> resolveItemKind n
-  v' <- case (t,v) of
-          (StmtItem, PublicV)    -> pure PublicV
-          (StmtItem, InheritedV) -> pure InheritedV
-          (StmtItem, _)          -> Left "statement items can only have public or inherited visibility"
-          _ -> resolveVisibility v
-  pure (Item i' as' n' v' x)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  r' <- sequence (resolveIdent <$> r)
+  pure (ExternCrate as' v' i' r' x)
+
+resolveItem t (Use as v p x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility' t v
+  p' <- resolveViewPath p
+  pure (Use as' v' p' x)
+
+resolveItem t (Static as v i t' m e x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  t'' <- resolveTy AnyType t'
+  e' <- resolveExpr AnyExpr e
+  pure (Static as' v' i' t'' m e' x)
+
+resolveItem t (ConstItem as v i t' e x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  t'' <- resolveTy AnyType t'
+  e' <- resolveExpr AnyExpr e
+  pure (ConstItem as' v' i' t'' e' x)
+
+resolveItem t (Fn as v i d u c a g b x) = do
+  as' <- sequence (resolveAttr EitherAttr <$> as)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  d' <- resolveFnDecl NoSelf d
+  g' <- resolveGenerics g
+  b' <- resolveBlock b
+  pure (Fn as' v' i' d' u c a g' b' x)
+
+resolveItem t (Mod as v i is x) = do
+  as' <- sequence (resolveAttr EitherAttr <$> as)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  is' <- sequence (resolveItem ModItem <$> is)
+  pure (Mod as' v' i' is' x)
+
+resolveItem t (ForeignMod as v a is x) = do
+  as' <- sequence (resolveAttr EitherAttr <$> as)
+  v' <- resolveVisibility' t v
+  is' <- sequence (resolveForeignItem a <$> is)
+  pure (ForeignMod as' v' a is' x)
+
+resolveItem t (TyAlias as v i t' g x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  t'' <- resolveTy AnyType t'
+  g' <- resolveGenerics g
+  pure (TyAlias as' v' i' t'' g' x)
+
+resolveItem t (Enum as v i vs g x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  vs' <- sequence (resolveVariant <$> vs)
+  g' <- resolveGenerics g
+  pure (Enum as' v' i' vs' g' x)
+  
+resolveItem t (StructItem as v i vd g x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  vd' <- resolveVariantData vd
+  g' <- resolveGenerics g
+  pure (StructItem as' v' i' vd' g' x)
+
+resolveItem t (Union as v i vd g x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  vd' <- resolveVariantData vd
+  g' <- resolveGenerics g
+  pure (Union as' v' i' vd' g' x)
+
+resolveItem t (Trait as v i u g bd is x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  g' <- resolveGenerics g
+  bd' <- sequence (resolveTyParamBound NoneBound <$> bd)
+  is' <- sequence (resolveTraitItem <$> is)
+  pure (Trait as' v' i' u g' bd' is' x)
+
+resolveItem t (DefaultImpl as v u t' x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility' t v
+  t'' <- resolveTraitRef t'
+  pure (DefaultImpl as' v' u t'' x)
+
+resolveItem t (Impl as v d u i g mt t' is x) = do
+  as' <- sequence (resolveAttr EitherAttr <$> as)
+  v' <- resolveVisibility' t v
+  g' <- resolveGenerics g
+  mt' <- sequence (resolveTraitRef <$> mt)
+  t'' <- resolveTy PrimParenType t'
+  is' <- sequence (resolveImplItem <$> is)
+  pure (Impl as' v' d u i g' mt' t'' is' x)
+
+resolveItem StmtItem MacItem{} = Left "macro items cannot be in statement items"
+resolveItem _ (MacItem as i m x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  i' <- sequence (resolveIdent <$> i)
+  m' <- resolveMac ExprPath m
+  pure (MacItem as' i' m' x)
+
+resolveItem _ (MacroDef as i ts x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  i' <- resolveIdent i
+  ts' <- sequence (resolveTt <$> ts)
+  pure (MacroDef as' i' ts' x)
 
 instance Monoid a => Resolve (Item a) where resolve = resolveItem ModItem
 
--- | An item kind is invalid only if any of its underlying constituents are 
-resolveItemKind :: Monoid a => ItemKind a -> Either String (ItemKind a)
-resolveItemKind (Static t m e) = Static <$> resolveTy AnyType t <*> pure m <*> resolveExpr AnyExpr e
-resolveItemKind (ConstItem t e) = ConstItem <$> resolveTy AnyType t <*> resolveExpr AnyExpr e
-resolveItemKind (TyAlias t g) = TyAlias <$> resolveTy AnyType t <*> resolveGenerics g
-resolveItemKind (ExternCrate i) = ExternCrate <$> sequence (resolveIdent <$> i)
-resolveItemKind (Fn f u c a g b) = Fn <$> resolveFnDecl NoSelf f <*> pure u <*> pure c <*> pure a <*> resolveGenerics g <*> resolveBlock b
-resolveItemKind (Mod is) = Mod <$> sequence (resolveItem ModItem <$> is) 
-resolveItemKind (ForeignMod a fs) = ForeignMod a <$> sequence (resolveForeignItem <$> fs)
-resolveItemKind (StructItem v g) = StructItem <$> resolveVariantData v <*> resolveGenerics g 
-resolveItemKind (Union v g) = Union <$> resolveVariantData v <*> resolveGenerics g
-resolveItemKind (Enum vs g) = Enum <$> sequence (resolveVariant <$> vs) <*> resolveGenerics g
-resolveItemKind (Impl u p g mt t is) = do
-  g' <- resolveGenerics g
-  mt' <- sequence (resolveTraitRef <$> mt)
-  t' <- resolveTy PrimParenType t
-  is' <- sequence (resolveImplItem <$> is)
-  pure (Impl u p g' mt' t' is')
-resolveItemKind (DefaultImpl u t) = DefaultImpl u <$> resolveTraitRef t
-resolveItemKind (Trait u g bds is) = Trait u <$> resolveGenerics g <*> sequence (resolveTyParamBound NoneBound <$> bds) <*> sequence (resolveTraitItem <$> is)
-resolveItemKind (MacItem m) = MacItem <$> resolveMac ExprPath m
-resolveItemKind (MacroDef tt) = MacroDef <$> sequence (resolveTt <$> tt)
-resolveItemKind (Use v) = Use <$> resolveViewPath v
-
-instance Monoid a => Resolve (ItemKind a) where resolve = resolveItemKind
-
 -- | A foreign item is invalid only if any of its underlying constituents are 
-resolveForeignItem :: Monoid a => ForeignItem a -> Either String (ForeignItem a)
-resolveForeignItem (ForeignItem i as n v x) = do
-  i' <- resolveIdent i
+resolveForeignItem :: Monoid a => Abi -> ForeignItem a -> Either String (ForeignItem a)
+resolveForeignItem a (ForeignFn as v i fn g x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  n' <- resolveForeignItemKind n
   v' <- resolveVisibility v
-  pure (ForeignItem i' as' n' v' x)
+  i' <- resolveIdent i
+  fn' <- resolveFnDecl (case a of { C -> VarNoSelf; _ -> NoSelf }) fn
+  g' <- resolveGenerics g
+  pure (ForeignFn as' v' i' fn' g' x)
+resolveForeignItem _ (ForeignStatic as v i t m x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility v
+  i' <- resolveIdent i
+  t' <- resolveTy AnyType t
+  pure (ForeignStatic as' v' i' t' m x)
 
-instance Monoid a => Resolve (ForeignItem a) where resolve = resolveForeignItem
-
--- | A foreign item kind is invalid only if any of its underlying constituents are 
-resolveForeignItemKind :: Monoid a => ForeignItemKind a -> Either String (ForeignItemKind a)
-resolveForeignItemKind (ForeignFn fn g) = ForeignFn <$> resolveFnDecl NoSelf fn <*> resolveGenerics g
-resolveForeignItemKind (ForeignStatic t b) = ForeignStatic <$> resolveTy AnyType t <*> pure b
-
-instance Monoid a => Resolve (ForeignItemKind a) where resolve = resolveForeignItemKind
+instance Monoid a => Resolve (ForeignItem a) where resolve = resolveForeignItem C
 
 -- | A where clause is valid only if the underlying predicates are
 resolveWhereClause :: Monoid a => WhereClause a -> Either String (WhereClause a)
@@ -1069,44 +1151,59 @@ instance Monoid a => Resolve (WherePredicate a) where resolve = resolveWherePred
 
 -- | A trait item is valid if the underlying components are
 resolveTraitItem :: Monoid a => TraitItem a -> Either String (TraitItem a)
-resolveTraitItem (TraitItem i as n x) = do
-  (i',n') <- case (i,n) of
-               (Ident "" _, MacroT{}) -> (,) i <$> resolveTraitItemKind n
-               _ -> (,) <$> resolveIdent i <*> resolveTraitItemKind n
+resolveTraitItem (ConstT as i t e x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  pure (TraitItem i' as' n' x)
+  i' <- resolveIdent i
+  t' <- resolveTy AnyType t
+  e' <- sequence (resolveExpr AnyExpr <$> e)
+  pure (ConstT as' i' t' e' x)
+resolveTraitItem (MethodT as i m b x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  i' <- resolveIdent i
+  m' <- resolveMethodSig m 
+  b' <- sequence (resolveBlock <$> b)
+  pure (MethodT as' i' m' b' x)
+resolveTraitItem (TypeT as i bd t x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  i' <- resolveIdent i
+  bd' <- sequence (resolveTyParamBound NoneBound <$> bd)
+  t' <- sequence (resolveTy AnyType <$> t)
+  pure (TypeT as' i' bd' t' x)
+resolveTraitItem (MacroT as m x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  m' <- resolveMac ModPath m
+  pure (MacroT as' m' x)
 
 instance Monoid a => Resolve (TraitItem a) where resolve = resolveTraitItem
 
--- | A trait item kind is valid if the underlying components are
-resolveTraitItemKind :: Monoid a => TraitItemKind a -> Either String (TraitItemKind a)
-resolveTraitItemKind (ConstT t e) = ConstT <$> resolveTy AnyType t <*> sequence (resolveExpr AnyExpr <$> e)
-resolveTraitItemKind (MethodT m b) = MethodT <$> resolveMethodSig m <*> sequence (resolveBlock <$> b)
-resolveTraitItemKind (TypeT bds t) = TypeT <$> sequence (resolveTyParamBound ModBound <$> bds) <*> sequence (resolveTy AnyType <$> t)
-resolveTraitItemKind (MacroT m) = MacroT <$> resolveMac ModPath m
-
-instance Monoid a => Resolve (TraitItemKind a) where resolve = resolveTraitItemKind
-
 -- | An impl item is valid if the underlying components are
 resolveImplItem :: Monoid a => ImplItem a -> Either String (ImplItem a)
-resolveImplItem (ImplItem i v d as n x) = do
-  (i',n') <- case (i,n) of
-               (Ident "" _, MacroI{}) -> (,) i <$> resolveImplItemKind n
-               _ -> (,) <$> resolveIdent i <*> resolveImplItemKind n
-  v' <- resolveVisibility v
+resolveImplItem (ConstI as v d i t e x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
-  pure (ImplItem i' v' d as' n' x)
+  v' <- resolveVisibility v
+  i' <- resolveIdent i
+  t' <- resolveTy AnyType t
+  e' <- resolveExpr AnyExpr e
+  pure (ConstI as' v' d i' t' e' x)
+resolveImplItem (MethodI as v d i m b x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility v
+  i' <- resolveIdent i
+  m' <- resolveMethodSig m 
+  b' <- resolveBlock b
+  pure (MethodI as' v' d i' m' b' x)
+resolveImplItem (TypeI as v d i t x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility v
+  i' <- resolveIdent i
+  t' <- resolveTy AnyType t
+  pure (TypeI as' v' d i' t' x)
+resolveImplItem (MacroI as d m x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  m' <- resolveMac ModPath m
+  pure (MacroI as' d m' x)
 
 instance Monoid a => Resolve (ImplItem a) where resolve = resolveImplItem
-
--- | An impl item kind is valid if the underlying components are
-resolveImplItemKind :: Monoid a => ImplItemKind a -> Either String (ImplItemKind a)
-resolveImplItemKind (ConstI t e) = ConstI <$> resolveTy AnyType t <*> resolveExpr AnyExpr e
-resolveImplItemKind (MethodI m b) = MethodI <$> resolveMethodSig m <*> resolveBlock b
-resolveImplItemKind (TypeI t) = TypeI <$> resolveTy AnyType t
-resolveImplItemKind (MacroI m) = MacroI <$> resolveMac ModPath m
-
-instance Monoid a => Resolve (ImplItemKind a) where resolve = resolveImplItemKind
 
 -- | The 'Monoid' constraint is theoretically not necessary - restricted visibility paths are mod paths,
 -- so they should never have generics.

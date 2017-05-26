@@ -80,4 +80,9 @@ instance Parse TokenTree where parser = parseTt
 instance Parse (Block Span) where parser = parseBlock
 instance Parse (ImplItem Span) where parser = parseImplItem 
 instance Parse (TraitItem Span) where parser = parseTraitItem
+instance Parse (TyParamBound Span) where parser = parseTyParamBound
+instance Parse (TyParam Span) where parser = parseTyParam
+instance Parse (LifetimeDef Span) where parser = parseLifetimeDef
+instance Parse (Generics Span) where parser = parseGenerics
+instance Parse (WhereClause Span) where parser = parseWhereClause
 

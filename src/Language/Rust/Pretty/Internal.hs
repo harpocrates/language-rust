@@ -713,54 +713,84 @@ printCookedIdent ident@(Ident str _)
   | '-' `elem` str = printStr Cooked str
   | otherwise = printIdent ident 
 
+
 -- | Print an item (@print_item@)
 printItem :: Item a -> Doc a
-printItem (Item ident attrs node vis x) = annotate x $ align $ printOuterAttrs attrs <#> case node of
-  ExternCrate p     -> hsep [ printVis vis, "extern", "crate", perhaps (\p' -> printCookedIdent p' <+> "as") p, printIdent ident <> ";" ]
-  Use vp            -> hsep [ printVis vis, "use", printViewPath vp <> ";" ]
-  Static ty m e     -> hsep [ printVis vis, "static", printMutability m, printIdent ident <> ":", printType ty, "=", printExpr e <> ";" ]
-  ConstItem t e     -> hsep [ printVis vis, "const", printIdent ident <> ":", printType t, "=", printExpr e <> ";" ]
-  Fn d s c a t b    -> printFn d s c a (Just ident) t vis (Just (b, attrs))
-  Mod items         -> hsep [ printVis vis, "mod", printIdent ident, printMod items attrs ]
-  ForeignMod a i    -> hsep [ printAbi a, printForeignMod i attrs ]
-  TyAlias ty ps     -> let wc = printWhereClause True (whereClause ps)
-                           leading = printVis vis <+> "type" <+> printIdent ident <> printGenerics ps
-                       in case wc of
-                            WL.Empty -> group (leading <+> "=" <#> indent n (printType ty <> ";"))
-                            _ -> leading <#> wc <#> "=" <+> printType ty <> ";"
-  Enum vars ps      -> printEnumDef vars ps ident vis
-  StructItem s g    -> hsep [ printVis vis, "struct", printStruct s g ident True True ]
-  Union s g         -> hsep [ printVis vis, "union", printStruct s g ident True True ]
-  DefaultImpl u t   -> hsep [ printVis vis, printUnsafety u, "impl", printTraitRef t, "for", "..", "{ }" ]
-  Impl u p g t ty i -> let generics = case g of { Generics [] [] _ _ -> mempty; _ -> printGenerics g }
-                           traitref = perhaps (\t' -> printPolarity p <> printTraitRef t' <+> "for") t
-                           leading = hsep [ printVis vis, printUnsafety u
-                                          , "impl" <> generics, traitref, printType ty
-                                          ]
-                           lagging = block Brace False mempty (printInnerAttrs attrs) (printImplItem `map` i)
-                           wc = printWhereClause True (whereClause g)
-                       in case wc of
-                            WL.Empty -> leading <+> lagging
-                            _ -> leading <#> wc <#> lagging
-  Trait u g tys i   -> let leading = hsep [ printVis vis, printUnsafety u, "trait"
-                                          , printIdent ident <> printGenerics g <> printBounds ":" tys
-                                          ]
-                           lagging = block Brace False mempty (printInnerAttrs attrs) (printTraitItem `map` i)
-                           wc = printWhereClause True (whereClause g)
-                       in case wc of
-                            WL.Empty -> leading <+> lagging
-                            _ -> leading <#> wc <#> lagging
-  MacItem m         -> printMac m Paren <> ";" 
-  MacroDef tts      -> "macro_rules" <> "!" <+> printIdent ident <+> block Brace True mempty mempty [ printTts tts ]
+printItem (ExternCrate as vis ident p x) = annotate x $ align $ printOuterAttrs as <#>
+  hsep [ printVis vis, "extern", "crate", perhaps (\p' -> printCookedIdent p' <+> "as") p, printIdent ident <> ";" ]
+
+printItem (Use as vis vp x) = annotate x $ align $ printOuterAttrs as <#>
+  hsep [ printVis vis, "use", printViewPath vp <> ";" ]
+
+printItem (Static as vis ident ty m e x) = annotate x $ align $ printOuterAttrs as <#>
+  hsep [ printVis vis, "static", printMutability m, printIdent ident <> ":", printType ty, "=", printExpr e <> ";" ]
+
+printItem (ConstItem as vis ident t e x) = annotate x $ align $ printOuterAttrs as <#>
+  hsep [ printVis vis, "const", printIdent ident <> ":", printType t, "=", printExpr e <> ";" ]
+
+printItem (Fn as vis ident d s c a t b x) = annotate x $ align $ printOuterAttrs as <#>
+  printFn d s c a (Just ident) t vis (Just (b, as))
+
+printItem (Mod as vis ident items x) = annotate x $ align $ printOuterAttrs as <#>
+  hsep [ printVis vis, "mod", printIdent ident, printMod items as ]
+
+printItem (ForeignMod as vis a i x) = annotate x $ align $ printOuterAttrs as <#>
+  hsep [ printVis vis, printAbi a, printForeignMod i as ]
+
+printItem (TyAlias as vis ident ty ps x) = annotate x $ align $ printOuterAttrs as <#>
+  let wc = printWhereClause True (whereClause ps)
+      leading = printVis vis <+> "type" <+> printIdent ident <> printGenerics ps
+  in case wc of
+       WL.Empty -> group (leading <+> "=" <#> indent n (printType ty <> ";"))
+       _ -> leading <#> wc <#> "=" <+> printType ty <> ";"
+
+printItem (Enum as vis ident vars ps x) = annotate x $ align $ printOuterAttrs as <#>
+  printEnumDef vars ps ident vis
+
+printItem (StructItem as vis ident s g x) = annotate x $ align $ printOuterAttrs as <#>
+  hsep [ printVis vis, "struct", printStruct s g ident True True ]
+
+printItem (Union as vis ident s g x) = annotate x $ align $ printOuterAttrs as <#>
+  hsep [ printVis vis, "union", printStruct s g ident True True ]
+
+printItem (Trait as vis ident u g tys i x) = annotate x $ align $ printOuterAttrs as <#> 
+  let leading = hsep [ printVis vis, printUnsafety u, "trait"
+                     , printIdent ident <> printGenerics g <> printBounds ":" tys
+                     ]
+      lagging = block Brace False mempty (printInnerAttrs as) (printTraitItem `map` i)
+      wc = printWhereClause True (whereClause g)
+  in case wc of
+       WL.Empty -> leading <+> lagging
+       _ -> leading <#> wc <#> lagging
+
+printItem (DefaultImpl as vis u t x) = annotate x $ align $ printOuterAttrs as <#> 
+  hsep [ printVis vis, printUnsafety u, "impl", printTraitRef t, "for", "..", "{ }" ]
+
+printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs as <#> 
+  let generics = case g of { Generics [] [] _ _ -> mempty; _ -> printGenerics g }
+      traitref = perhaps (\t' -> printPolarity p <> printTraitRef t' <+> "for") t
+      leading = hsep [ printVis vis, printDef d, printUnsafety u
+                     , "impl" <> generics, traitref, printType ty
+                     ]
+      lagging = block Brace False mempty (printInnerAttrs as) (printImplItem `map` i)
+      wc = printWhereClause True (whereClause g)
+  in case wc of
+       WL.Empty -> leading <+> lagging
+       _ -> leading <#> wc <#> lagging
+
+printItem (MacItem as i (Mac p tts y) x) = annotate x $ annotate y $ align $ printOuterAttrs as <#>
+  (printPath p True <> "!" <+> perhaps printIdent i <+> block Brace True mempty mempty [ printTts tts ])
+
+printItem (MacroDef as i tts x) = annotate x $ align $ printOuterAttrs as <#>
+  ("macro_rules" <> "!" <+> printIdent i <+> block Brace True mempty mempty [ printTts tts ])
+
 
 -- | Print a trait item (@print_trait_item@)
 printTraitItem :: TraitItem a -> Doc a
-printTraitItem (TraitItem ident attrs node x) = annotate x $ printOuterAttrs attrs <#>
-  case node of
-    ConstT ty default_m -> printAssociatedConst ident ty default_m InheritedV
-    MethodT sig block_m -> printMethodSig ident sig InheritedV (fmap (\b -> (b, attrs)) block_m)
-    TypeT bounds default_m -> printAssociatedType ident (Just bounds) default_m
-    MacroT m -> printMac m Paren <> ";"
+printTraitItem (ConstT as ident ty expr x) = annotate x $ printOuterAttrs as <#> printAssociatedConst ident ty expr InheritedV
+printTraitItem (MethodT as ident sig body x) = annotate x $ printOuterAttrs as <#> printMethodSig ident sig InheritedV (fmap (\b -> (b, as)) body)
+printTraitItem (TypeT as ident bounds ty x) = annotate x $ printOuterAttrs as <#> printAssociatedType ident (Just bounds) ty
+printTraitItem (MacroT as m x) = annotate x $ printOuterAttrs as <#> printMac m Paren <> ";"
 
 -- | Print type parameter bounds with the given prefix, but only if there are any bounds (@print_bounds@)
 -- TODO: follow up on <https://github.com/rust-lang-nursery/fmt-rfcs/issues/80>
@@ -781,14 +811,19 @@ printFormalLifetimeList defs = "for" <> angles (align (fillSep (punctuate "," (p
 
 -- | Print an impl item (@print_impl_item@)
 printImplItem :: ImplItem a -> Doc a
-printImplItem (ImplItem ident vis defaultness attrs node x) = annotate x $ printOuterAttrs attrs <#> hsep
-  [ printVis vis, when (defaultness == Default) "default"
-  , case node of
-      ConstI ty expr -> printAssociatedConst ident ty (Just expr) InheritedV
-      MethodI sig body -> printMethodSig ident sig InheritedV (Just (body, attrs))
-      TypeI ty -> printAssociatedType ident Nothing (Just ty) 
-      MacroI m -> printMac m Paren <> ";" 
-  ]
+printImplItem (ConstI as vis def ident ty expr x) = annotate x $ printOuterAttrs as <#>
+  (printVis vis <+> printDef def <+> printAssociatedConst ident ty (Just expr) InheritedV)
+printImplItem (MethodI as vis def ident sig body x) = annotate x $ printOuterAttrs as <#>
+  (printVis vis <+> printDef def <+> printMethodSig ident sig InheritedV (Just (body, as)))
+printImplItem (TypeI as vis def ident ty x) = annotate x $ printOuterAttrs as <#>
+  (printVis vis <+> printDef def <+> printAssociatedType ident Nothing (Just ty))
+printImplItem (MacroI as def mac x) = annotate x $ printOuterAttrs as <#>
+  (printDef def <+> printMac mac Paren <> ";")
+
+-- | Print defaultness (@Defaultness@)
+printDef :: Defaultness -> Doc a
+printDef Default = "default"
+printDef Final = mempty 
 
 -- | Print an associated type (@printAssociatedType@)
 printAssociatedType :: Ident ->  Maybe [TyParamBound a] -> Maybe (Ty a) -> Doc a
@@ -823,11 +858,10 @@ printVis InheritedV = mempty
 
 -- | Print a foreign item (@print_foreign_item@)
 printForeignItem :: ForeignItem a -> Doc a
-printForeignItem (ForeignItem ident attrs node vis x) = annotate x $ printOuterAttrs attrs <+>
-  case node of
-    ForeignFn decl generics -> printFn decl Normal NotConst Rust (Just ident) generics vis Nothing
-    ForeignStatic ty mut -> printVis vis <+> "static" <+> when mut "mut" <+> printIdent ident <> ":" <+> printType ty <> ";"
-
+printForeignItem (ForeignFn attrs vis ident decl generics x) = annotate x $
+  printOuterAttrs attrs <+> printFn decl Normal NotConst Rust (Just ident) generics vis Nothing
+printForeignItem (ForeignStatic attrs vis ident ty mut x) = annotate x $
+  printOuterAttrs attrs <+> printVis vis <+> "static" <+> printMutability mut <+> printIdent ident <> ":" <+> printType ty <> ";"
 
 -- | Print a struct definition (@print_struct@)
 printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a

@@ -22,68 +22,112 @@ instance Show a => Diffable (SourceFile a) where
     is === (val ! "module" ! "items")
 
 instance Show a => Diffable (Item a) where
-  item@(Item i as n v _) === val = do
-    i === (val ! "ident")
-    as === (val ! "attrs")
-    v === (val ! "vis")
-    
-    -- Check node
+  item === val = do
     let n' = val ! "node"
-    case (n' ! "variant", n) of
-      ("Fn", Fn decl u c a gen bod) -> do
+        inheritedV = InheritedV :: Visibility ()
+    case (n' ! "variant", item) of
+      ("Fn", Fn as v i decl u c a gen bod _) -> do
+        as   === (val ! "attrs")
+        v    === (val ! "vis")
+        i    === (val ! "ident")
         decl === (n' ! "fields" ! 0)
         u    === (n' ! "fields" ! 1)
         c    === (n' ! "fields" ! 2)
         a    === (n' ! "fields" ! 3)
         gen  === (n' ! "fields" ! 4)
         bod  === (n' ! "fields" ! 5)
-      ("ExternCrate", ExternCrate Nothing) -> pure ()
-      ("ExternCrate", ExternCrate (Just i')) ->
-        i' === (n' ! "fields" ! 0)
-      ("Use", Use v') ->
+      ("ExternCrate", ExternCrate as v i i' _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
+        maybe (pure ()) (=== (n' ! "fields" ! 0)) i'
+      ("Use", Use as v v' _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        mkIdent "" === (val ! "ident")
         v' === (n' ! "fields" ! 0)
-      ("Static", Static t m e) -> do
+      ("Static", Static as v i t m e _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
         t === (n' ! "fields" ! 0)
         m === (n' ! "fields" ! 1)
         e === (n' ! "fields" ! 2)
-      ("Const", ConstItem t e) -> do
+      ("Const", ConstItem as v i t e _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
         t === (n' ! "fields" ! 0)
         e === (n' ! "fields" ! 1)
-      ("Mod", Mod is) ->
+      ("Mod", Mod as v i is _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
         is === (n' ! "fields" ! 0 ! "items")
-      ("ForeignMod", ForeignMod a is) -> do
+      ("ForeignMod", ForeignMod as v a is _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        mkIdent "" === (val ! "ident")
         a === (n' ! "fields" ! 0 ! "abi")
         is === (n' ! "fields" ! 0 ! "items")
-      ("Ty", TyAlias t g) -> do
+      ("Ty", TyAlias as v i t g _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
         t === (n' ! "fields" ! 0)
         g === (n' ! "fields" ! 1)
-      ("Enum", Enum vs g) -> do
+      ("Enum", Enum as v i vs g _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
         vs === (n' ! "fields" ! 0 ! "variants") 
         g === (n' ! "fields" ! 1)
-      ("Struct", StructItem v' g) ->  do
+      ("Struct", StructItem as v i v' g _) ->  do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
         v' === (n' ! "fields" ! 0)
         g === (n' ! "fields" ! 1)
-      ("Union", Union v' g) ->  do
+      ("Union", Union as v i v' g _) ->  do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
         v' === (n' ! "fields" ! 0)
         g === (n' ! "fields" ! 1)
-      ("Trait", Trait u g bd is) -> do
+      ("Trait", Trait as v i u g bd is _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
         u === (n' ! "fields" ! 0)
         g === (n' ! "fields" ! 1)
         bd === (n' ! "fields" ! 2)
         is === (n' ! "fields" ! 3)
-      ("DefaultImpl", DefaultImpl u tr) -> do
+      ("DefaultImpl", DefaultImpl as v u tr _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        mkIdent "" === (val ! "ident")
         u === (n' ! "fields" ! 0)
         tr === (n' ! "fields" ! 1)
-      ("Impl", Impl u p g mtr t is) -> do 
+      -- TODO: do something with 'd' once we get 'rustc' running on latest nightly
+      ("Impl", Impl as v d u p g mtr t is _) -> do 
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        mkIdent "" === (val ! "ident")
         u === (n' ! "fields" ! 0)
         p === (n' ! "fields" ! 1)
         g === (n' ! "fields" ! 2)
         mtr === (n' ! "fields" ! 3)
         t === (n' ! "fields" ! 4)
         is === (n' ! "fields" ! 5)
-      ("Mac", MacItem m) ->
+      ("Mac", MacItem as i m _) -> do
+        as === (val ! "attrs")
+        inheritedV === (val ! "vis")
+        fromMaybe "" i === (val ! "ident")
         m === (n' ! "fields" ! 0)
-      ("MacroDef", MacroDef tt) ->
+      ("MacroDef", MacroDef as i tt _) -> do
+        as === (val ! "attrs")
+        inheritedV === (val ! "vis")
+        i === (val ! "ident")
         tt === (n' ! "fields" ! 0)
       _ -> diff "different items" item val
   
@@ -93,43 +137,56 @@ instance Diffable ImplPolarity where
   p        === val        = diff "different polarity" p val
 
 instance Show a => Diffable (TraitItem a) where
-  item@(TraitItem i as n _) === val = do
-    as === (val ! "attrs")
-    i === (val ! "ident")
-    
+  item === val = do
     let n' = val ! "node"
-    case (n' ! "variant", n) of
-      ("Const", ConstT t me) -> do
+    case (n' ! "variant", item) of
+      ("Const", ConstT as i t me _) -> do
+        as === (val ! "attrs")
+        i === (val ! "ident")
         t === (n' ! "fields" ! 0)
         me ===(n' ! "fields" ! 1)
-      ("Method", MethodT m mb) -> do
+      ("Method", MethodT as i m mb _) -> do
+        as === (val ! "attrs")
+        i === (val ! "ident")
         m === (n' ! "fields" ! 0)
         mb === (n' ! "fields" ! 1)
-      ("Type", TypeT bd mt) -> do
+      ("Type", TypeT as i bd mt _) -> do
+        as === (val ! "attrs")
+        i === (val ! "ident")
         bd === (n' ! "fields" ! 0)
         mt === (n' ! "fields" ! 1)
-      ("Macro", MacroT m) ->
+      ("Macro", MacroT as m _) -> do
+        as === (val ! "attrs")
         m === (n' ! "fields" ! 0)
-      _ -> diff "different trait item" item val
+      _ -> diff "different trait item" item val 
 
 instance Show a => Diffable (ImplItem a) where
-  item@(ImplItem i v d as n _) === val = do
-    as === (val ! "attrs")
-    i === (val ! "ident")
-    v === (val ! "vis")
-    d === (val ! "defaultness")
-    
+  item === val = do 
     let n' = val ! "node"
-    case (n' ! "variant", n) of
-      ("Const", ConstI t e) -> do
+    case (n' ! "variant", item) of
+      ("Const", ConstI as v d i t e _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        d === (val ! "defaultness")
+        i === (val ! "ident")
         t === (n' ! "fields" ! 0)
         e ===(n' ! "fields" ! 1)
-      ("Method", MethodI m b) -> do
+      ("Method", MethodI as v d i m b _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        d === (val ! "defaultness")
+        i === (val ! "ident")
         m === (n' ! "fields" ! 0)
         b === (n' ! "fields" ! 1)
-      ("Type", TypeI t) ->
+      ("Type", TypeI as v d i t _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        d === (val ! "defaultness")
+        i === (val ! "ident")
         t === (n' ! "fields" ! 0)
-      ("Macro", MacroI m) ->
+      ("Macro", MacroI as d m _) -> do
+        as === (val ! "attrs")
+        d === (val ! "defaultness")
         m === (n' ! "fields" ! 0)
       _ -> diff "different impl item" item val
       
@@ -169,19 +226,21 @@ instance Show a => Diffable (StructField a) where
     as === (val ! "attrs")
 
 instance Show a => Diffable (ForeignItem a) where
-  f@(ForeignItem i as n v _) === val = do
-    i === (val ! "ident")
-    as === (val ! "attrs")
-    v === (val ! "vis")
-    
+  f === val = do
     let n' = val ! "node"
-    case (n' ! "variant", n) of
-      ("Fn", ForeignFn d g) -> do
+    case (n' ! "variant", f) of
+      ("Fn", ForeignFn as v i d g _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
         d === (n' ! "fields" ! 0) 
         g === (n' ! "fields" ! 1)
-      ("Static", ForeignStatic t m) -> do
+      ("Static", ForeignStatic as v i t m _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
         t === (n' ! "fields" ! 0)
-        m === (n' ! "fields" ! 1)
+        (m == Mutable) === (n' ! "fields" ! 1)
       _ -> diff "different foreign item" f val
 
 instance Show a => Diffable (ViewPath a) where

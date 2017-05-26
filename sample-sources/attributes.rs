@@ -118,7 +118,10 @@ fn expressions() {
 }
 
 fn foreign_items() {
+  #[foreign_outer]
   extern "C" {
+    #![foreign_inner]
+
     #[static_outer]
     static ext: u8;
 
@@ -142,6 +145,9 @@ trait Trait {
   #[macro_outer]
   foo!();
 }
+
+#[defaultimpl_outer]
+impl Trait for .. { }
 
 
 #[impl_outer]
@@ -198,11 +204,12 @@ fn items() {
   #[macro_outer]
   foo!{ .. }
   
-//  #[macrodef_outer]
-//  macro_rules! foo { .. }
+  #[macrodef_outer]
+  macro_rules! foo { () => ( .. ) }
 
 }
 
 fn foo<
   #[lifetimedef_outer] 'a: 'b,
+  #[typaram_outer] T
 >() { } 
