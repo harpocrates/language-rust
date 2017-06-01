@@ -1,14 +1,16 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TypeApplications #-}
 
 import Criterion
-import Criterion.Types (anMean, reportAnalysis)
+import Criterion.Main (defaultConfig)
+import Criterion.Types (anMean, reportAnalysis, timeLimit, anOutlierVar, ovEffect, OutlierEffect(Severe))
 import Statistics.Resampling.Bootstrap (Estimate(..))
 
 import Control.Monad (filterM)
 import Data.Traversable (for)
 import GHC.Exts (fromString)
 
-import Language.Rust.Parser (parseSourceFile')
+import Language.Rust.Syntax (SourceFile)
+import Language.Rust.Parser (readInputStream, Span, parse')
 
 import System.Directory (getCurrentDirectory, listDirectory, createDirectoryIfMissing, doesFileExist)
 import System.FilePath ((</>), (<.>), takeFileName)
@@ -35,7 +37,8 @@ main = do
   reports <- for files $ \f -> do
     let name = takeFileName f
     putStrLn name
-    bnch <- benchmark' (nfIO (parseSourceFile' f))
+    is <- readInputStream f
+    bnch <- benchmarkWith' defaultConfig{ timeLimit = 15 } (nf (parse' @(SourceFile Span)) is)
     pure (name, bnch)
   let results = object [ fromString name .= object [ "mean" .= m
                                                    , "lower bound" .= l
@@ -43,10 +46,12 @@ main = do
                                                    ]
                        | (name,report) <- reports
                        , let Estimate m l u _ = anMean (reportAnalysis report)
+                       , ovEffect (anOutlierVar (reportAnalysis report)) /= Severe
                        ]
 
   -- Save the output to JSON
   createDirectoryIfMissing False (workingDirectory </> "timings")
   let logFile = workingDirectory </> "timings" </> logFileName <.> "json"
+  putStrLn $ "writing results to: " ++ logFile
   logFile `BL.writeFile` encode results
 

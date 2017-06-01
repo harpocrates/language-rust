@@ -1,12 +1,14 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TypeApplications #-}
 
 import Weigh
 
 import Control.Monad (filterM)
-import Data.Foldable (traverse_)
+import Data.Foldable (for_)
+import Data.Traversable (for)
 import GHC.Exts (fromString)
 
-import Language.Rust.Parser (parseSourceFile')
+import Language.Rust.Syntax (SourceFile)
+import Language.Rust.Parser (readInputStream, Span, parse')
 
 import System.Directory (getCurrentDirectory, listDirectory, createDirectoryIfMissing, doesFileExist)
 import System.FilePath ((</>), (<.>), takeFileName)
@@ -33,7 +35,9 @@ main = do
   files <- filterM doesFileExist entries
 
   -- Run 'weigh' tests
-  let weigh = setColumns [ Case, Max, Allocated, GCs, Live ] >> traverse_ (\f -> io (takeFileName f) parseSourceFile' f) files
+  fileStreams <- for files $ \file -> do { is <- readInputStream file; pure (takeFileName file, is) }
+  let weigh = do setColumns [ Case, Max, Allocated, GCs, Live ]
+                 for_ fileStreams $ \(file,is) -> func file (parse' @(SourceFile Span)) is
   mainWith weigh
   (wr, _) <- weighResults weigh
   let results = object [ case maybeErr of
@@ -50,5 +54,6 @@ main = do
   -- Save the output to JSON
   createDirectoryIfMissing False (workingDirectory </> "allocations")
   let logFile = workingDirectory </> "allocations" </> logFileName <.> "json"
+  putStrLn $ "writing results to: " ++ logFile
   logFile `BL.writeFile` encode results
 

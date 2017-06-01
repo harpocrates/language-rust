@@ -18,9 +18,21 @@ fn main() {
 
   // Strings
   "hello world";
+  "hello
+  world";
+  "hello\
+  world";
   r"hello world";
+  r"hello
+  world";
+  r"hello\
+  world";
   r#"hello " world"#;
   b"hello world";
+  b"hello
+  world";
+  b"hello\
+  world";
   br"hello world";
   br#"hello " world"#;
  

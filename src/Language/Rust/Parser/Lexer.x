@@ -956,7 +956,7 @@ $hexit             = [0-9a-fA-F]
 @lit_float         = ( 0 @decimal_suffix | ( [1-9][0-9_]* | 0[0-9_]+ ) @decimal_suffix? ) @exponent_suffix?
 @lit_float2        = [0-9][0-9_]* \.
 
-@lit_str           = \" (\\\n | \\\r\n | \\ @char_escape | [^\"])* \"
+@lit_str           = \" (\\\n | \\\r\n | \\ @char_escape | [^\\\"] | \n | \r)* \"
 @lit_byte_str      = b @lit_str
 
 @lit_raw_str       = r \#* \"

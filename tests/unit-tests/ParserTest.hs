@@ -75,7 +75,7 @@ checkTerm inp y = sequence_ $ catMaybes tests
           , checkTerm' @Expr inp <$> cast y
        -- , checkTerm' @Stmt inp <$> cast y  
           , checkTerm' @Item inp <$> cast y
-          , checkTerm' @TyParamBound inp <$> cast y
+       --   , checkTerm' @TyParamBound inp <$> cast y
           , checkTerm' @TyParam inp <$> cast y
           , checkTerm' @TraitItem inp <$> cast y
           , checkTerm' @ImplItem inp <$> cast y

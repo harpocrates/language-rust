@@ -28,7 +28,7 @@ To get information about transition states and such, run
 
 module Language.Rust.Parser.Internal (
   parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseSourceFile,
-  parseBlock, parseImplItem, parseTraitItem, parseTt, parseTyParamBound, parseTyParam,
+  parseBlock, parseImplItem, parseTraitItem, parseTt, parseTyParam,
   parseGenerics, parseWhereClause, parseLifetimeDef, parseArg
 ) where
 
@@ -48,7 +48,7 @@ import Text.Read (readMaybe)
 %name parseLit lit
 %name parseAttr attribute
 %name parseTy ty_general
-%name parsePat pat
+%name parsePat export_pat
 %name parseArg export_arg
 %name parseStmt stmt
 %name parseExpr expr
@@ -58,7 +58,6 @@ import Text.Read (readMaybe)
 %name parseImplItem impl_item
 %name parseTraitItem trait_item
 %name parseTt token_tree
-%name parseTyParamBound ty_param_bound_mod
 %name parseTyParam ty_param
 %name parseLifetimeDef lifetime_def
 %name parseWhereClause where_clause
@@ -1065,15 +1064,12 @@ comma_arms :: { [Arm Span] }
 
 -- An expression followed by match arms. If there is a comma needed, it is added
 expr_arms :: { (Expr Span, [Arm Span]) }
-  : gen_expression(nonblock_expr,expr,expr) comma_arms  { ($1, $2) }
-  | paren_expr                              comma_arms  { ($1, $2) }
-  | struct_expr                             comma_arms  { ($1, $2) }
+  : nonblock_expr                           comma_arms  { ($1, $2) }
+  | postfix_block_expr                      comma_arms  { ($1, $2) }
+  | vis_safety_block                        comma_arms  { ($1, $2) }
+  | vis_safety_block                              arms  { ($1, $2) }
   | block_like_expr                         comma_arms  { ($1, $2) }
-  | inner_attrs_block                       comma_arms  { let (as,b) = $1 in (BlockExpr as b (spanOf b), $2) }
-  | inner_attrs_block                             arms  { let (as,b) = $1 in (BlockExpr as b (spanOf b), $2) }
-  | unsafe inner_attrs_block                comma_arms
-    { let (as, Block ss r x) = $2 in (BlockExpr as (Block ss Unsafe ($1 # x)) ($1 # x), $3) }
-
+  | block_like_expr                               arms  { ($1, $2) }
 
 -- As per https://github.com/rust-lang/rust/issues/15701 (as of March 10 2017), the only way to have
 -- attributes on expressions should be with inner attributes on a paren expression.
@@ -1123,6 +1119,93 @@ field :: { Field Span }
 ----------------
 -- Statements --
 ----------------
+-- Postfix expressions that can come after an expression block, in a 'stmt'
+--
+--  * `{ 1 }[0]` isn't here because it is treated as `{ 1 }; [0]`
+--  * `{ 1 }(0)` isn't here because it is treated as `{ 1 }; (0)`
+--
+postfix_block(lhs) :: { Expr Span }
+  -- postfix expressions
+  : lhs '?'                          { Try [] $1 ($1 # $>) }
+  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
+  | lhs '.' ident '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
+  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
+  | lhs '.' int                      {%
+      case lit $3 of
+        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
+        _ -> parseError $3
+    }
+
+gen_expression_block(lhs,rhs,rhs2) :: { Expr Span }
+  : lhs '?'                          { Try [] $1 ($1 # $>) }
+  | lhs '[' expr ']'                 { Index [] $1 $3 ($1 # $>) }
+  | lhs '(' sep_byT(expr,',') ')'    { Call [] $1 $3 ($1 # $>) }
+  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
+  | lhs '.' ident '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
+  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
+  | lhs '.' int                      {%
+      case lit $3 of
+        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
+        _ -> parseError $3
+    }
+  -- unary expressions
+  | lhs ':' ty_no_plus               { TypeAscription [] $1 $3 ($1 # $>) }
+  | lhs as ty_no_plus                { Cast [] $1 $3 ($1 # $>) }
+  -- binary expressions
+  | lhs '*' rhs                      { Binary [] MulOp $1 $3 ($1 # $>) }
+  | lhs '/' rhs                      { Binary [] DivOp $1 $3 ($1 # $>) }
+  | lhs '%' rhs                      { Binary [] RemOp $1 $3 ($1 # $>) }
+  | lhs '+' rhs                      { Binary [] AddOp $1 $3 ($1 # $>) }
+  | lhs '-' rhs                      { Binary [] SubOp $1 $3 ($1 # $>) }
+  | lhs '<<' rhs                     { Binary [] ShlOp $1 $3 ($1 # $>) }
+  | lhs '>>' rhs                     { Binary [] ShrOp $1 $3 ($1 # $>) }
+  | lhs '&' rhs                      { Binary [] BitAndOp $1 $3 ($1 # $>) }
+  | lhs '^' rhs                      { Binary [] BitXorOp $1 $3 ($1 # $>) }
+  | lhs '|' rhs                      { Binary [] BitOrOp $1 $3 ($1 # $>) }
+  | lhs '==' rhs                     { Binary [] EqOp $1 $3 ($1 # $>) }
+  | lhs '!=' rhs                     { Binary [] NeOp $1 $3 ($1 # $>) }
+  | lhs '<'  rhs                     { Binary [] LtOp $1 $3 ($1 # $>) }
+  | lhs '>'  rhs                     { Binary [] GtOp $1 $3 ($1 # $>) }
+  | lhs '<=' rhs                     { Binary [] LeOp $1 $3 ($1 # $>) }
+  | lhs '>=' rhs                     { Binary [] GeOp $1 $3 ($1 # $>) }
+  | lhs '&&' rhs                     { Binary [] AndOp $1 $3 ($1 # $>) }
+  | lhs '||' rhs                     { Binary [] OrOp $1 $3 ($1 # $>) }
+  -- range expressions
+  | lhs '..'        %prec POSTFIXRNG { Range [] (Just $1) Nothing HalfOpen ($1 # $>) }
+  | lhs '...'       %prec POSTFIXRNG { Range [] (Just $1) Nothing Closed ($1 # $>) }
+  | lhs '..'  rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) HalfOpen ($1 # $>) }
+  | lhs '...' rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
+  -- assignment expressions
+  | lhs '<-' rhs                     { InPlace [] $1 $3 ($1 # $>) }
+  | lhs '=' rhs                      { Assign [] $1 $3 ($1 # $>) }
+  | lhs '>>=' rhs                    { AssignOp [] ShrOp $1 $3 ($1 # $>) }
+  | lhs '<<=' rhs                    { AssignOp [] ShlOp $1 $3 ($1 # $>) }
+  | lhs '-=' rhs                     { AssignOp [] SubOp $1 $3 ($1 # $>) }
+  | lhs '+=' rhs                     { AssignOp [] AddOp $1 $3 ($1 # $>) }
+  | lhs '*=' rhs                     { AssignOp [] MulOp $1 $3 ($1 # $>) }
+  | lhs '/=' rhs                     { AssignOp [] DivOp $1 $3 ($1 # $>) }
+  | lhs '^=' rhs                     { AssignOp [] BitXorOp $1 $3 ($1 # $>) }
+  | lhs '|=' rhs                     { AssignOp [] BitOrOp $1 $3 ($1 # $>) }
+  | lhs '&=' rhs                     { AssignOp [] BitAndOp $1 $3 ($1 # $>) }
+  | lhs '%=' rhs                     { AssignOp [] RemOp $1 $3 ($1 # $>) }
+
+
+postfix_block_expr :: { Expr Span }
+  : postfix_block(block_like_expr)                         { $1 }
+  | postfix_block(vis_safety_block)                        { $1 }
+  | gen_expression_block(postfix_block_expr,expr,expr)     { $1 } 
+
+vis_safety_block :: { Expr Span }
+  : pub_or_inherited safety inner_attrs_block {%
+       let (as, Block ss r x) = $3
+           e = BlockExpr as (Block ss (unspan $2) ($2 # x)) ($2 # x)
+       in noVis $1 e
+    }
+
 
 stmt :: { Stmt Span }
   : ntStmt                                                 { $1 }
@@ -1130,17 +1213,10 @@ stmt :: { Stmt Span }
   | many(outer_attribute) let pat        initializer ';'   { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
   | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
   | many(outer_attribute) block_like_expr ';'              { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
+  | many(outer_attribute) postfix_block_expr ';'           { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
   | many(outer_attribute) block_like_expr    %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
-  | many(outer_attribute) pub_or_inherited safety inner_attrs_block ';' {%
-       let (as, Block ss r x) = $4 
-           e = BlockExpr ($1 ++ as) (Block ss (unspan $3) ($3 # x)) ($3 # x)
-       in noVis $2 (toStmt e True True ($1 # e # $>))
-    }
-  | many(outer_attribute) pub_or_inherited safety inner_attrs_block %prec NOSEMI {%
-       let (as, Block ss r x) = $4 
-           e = BlockExpr ($1 ++ as) (Block ss (unspan $3) ($3 # x)) ($3 # x)
-       in noVis $2 (toStmt e False True ($1 # e))
-    }
+  | many(outer_attribute) vis_safety_block ';'             { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
+  | many(outer_attribute) vis_safety_block   %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }
   | gen_item(pub_or_inherited)                             { ItemStmt $1 (spanOf $1) }
   | many(outer_attribute) expr_path '!' ident '[' many(token_tree) ']' ';'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
@@ -1162,6 +1238,7 @@ stmts_possibly_no_semi :: { [Maybe (Stmt Span)] }
   : stmtOrSemi stmts_possibly_no_semi                      { $1 : $2 }
   | stmtOrSemi                                             { [$1] }
   | many(outer_attribute) nonblock_expr                    { [Just (toStmt ($1 `addAttrs` $2) False False ($1 # $2))] }
+  | many(outer_attribute) postfix_block_expr               { [Just (toStmt ($1 `addAttrs` $2) False True  ($1 # $2))] }
 
 initializer :: { Maybe (Expr Span) }
   : '=' expr                                               { Just $2 }
@@ -1570,6 +1647,10 @@ export_arg :: { Arg Span }
   : arg_general                                            { $1 }
   | arg_self                                               { $1 }
 
+-- Exporting 'pat' directly screws up expressions like 'x && y()'
+export_pat :: { Pat Span }
+  : pat                                                    { $1 }
+
 {
 -- | Parser for literals.
 parseLit :: P (Lit Span)
@@ -1609,9 +1690,6 @@ parseTt :: P TokenTree
 
 -- | Parser for lifetime definitions
 parseLifetimeDef :: P (LifetimeDef Span)
-
--- | Parser for type parameter bound
-parseTyParamBound :: P (TyParamBound Span)
 
 -- | Parser for a type parameter
 parseTyParam :: P (TyParam Span)

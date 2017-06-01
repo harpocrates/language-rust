@@ -46,6 +46,14 @@ fn range_expressions() {
   return |x: i32| x + 1;
   box 1 + 2;
   |x| { 1 };
+  x || y();
+  x && y();
+
+  // block expression / starting with block statement
+  { 1 }?.0 + 1;
+  if true { 1 } else { 2 }.toString();
+  if true { 1 }.toString();
+  { x }[2]?.foo * { 3 };
 
   // no struct expression
   for x in 1.. { }

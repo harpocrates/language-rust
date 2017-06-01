@@ -17,6 +17,7 @@ instruction manual, the benefits of this are that:
 
 In our case, this shared information is held in 'PState'.
 -}
+{-# LANGUAGE RankNTypes, BangPatterns #-}
 
 module Language.Rust.Parser.ParseMonad (
   -- * Parsing monad
@@ -32,16 +33,14 @@ import Language.Rust.Data.Position (Spanned, Position, initPos)
 import Language.Rust.Syntax.Token (Token)
 
 import Data.Maybe (listToMaybe)
-import Control.Monad (liftM, ap)
 
 -- | Parsing and lexing monad. A value of type @'P' a@ represents a parser that can be run (using
 -- 'execParser') to possibly produce a value of type @a@.
-newtype P a = P { runParser :: PState -> ParseResult a }
-
--- | The result of running a parser
-data ParseResult a
-  = Ok a !PState             -- ^ successful output
-  | Failed String Position   -- ^ the error message and position
+newtype P a = P { unParser :: forall r. PState                       -- State being passed along
+                                     -> (a -> PState -> r)           -- Successful parse continuation
+                                     -> (String -> Position -> r)    -- Failed parse continuation
+                                     -> r                            -- Final output
+                }
 
 -- | State that the lexer and parser share
 data PState = PState
@@ -53,21 +52,24 @@ data PState = PState
   }
 
 instance Functor P where
-  fmap  = liftM
+  fmap f m = P $ \ !s pOk pFailed -> unParser m s (pOk . f) pFailed
 
 instance Applicative P where
-  pure a = P (Ok a)
+  pure x = P $ \ !s pOk _ -> pOk x s
 
-  (<*>) = ap
+  m <*> k = P $ \ !s pOk pFailed ->
+    let pOk' x s' = unParser k s' (pOk . x) pFailed
+    in unParser m s pOk' pFailed
 
 instance Monad P where
   return = pure
 
-  P m >>= k = P $ \s -> case m s of
-                          Ok a s'        -> runParser (k a) s'
-                          Failed err pos -> Failed err pos
+  m >>= k = P $ \ !s pOk pFailed ->
+    let pOk' x s' = unParser (k x) s' pOk pFailed
+    in unParser m s pOk' pFailed
 
-  fail msg = do { pos <- getPosition; P (\_ -> Failed msg pos) }
+
+  fail msg = P $ \ !s _ pFailed -> pFailed msg (curPos s)
 
 -- | Execute the given parser on the supplied input stream at the given start position, returning
 -- either the position of an error and the error message, or the value parsed.
@@ -77,10 +79,10 @@ execParser p input pos = execParser' p input pos id
 -- | Generalized version of 'execParser' that expects an extra argument that lets you hot-swap a
 -- token that was just lexed before it gets passed to the parser.
 execParser' :: P a -> InputStream -> Position -> (Token -> Token) -> Either (Position,String) a
-execParser' (P parser) input pos swap =
-  case parser initialState of
-    Failed message errPos -> Left (errPos, message)
-    Ok result _ -> Right result
+execParser' parser input pos swap = unParser parser
+                                     initialState
+                                     (\result _ -> Right result)
+                                     (\message errPos -> Left (errPos, message))
   where initialState = PState
           { curPos = pos
           , curInput = input
@@ -91,42 +93,46 @@ execParser' (P parser) input pos swap =
 
 -- | Swap a token using the swap function
 swapToken :: Token -> P Token
-swapToken t = P $ \s@PState{ swapFunction = f } -> Ok (f t) s
+swapToken t = P $ \ !s@PState{ swapFunction = f } pOk _ -> pOk (f $! t) s
 
 -- | Extract the state stored in the parser.
 getPState :: P PState
-getPState = P $ \s -> Ok s s
+getPState = P $ \ !s pOk _ -> pOk s s 
 
 -- | Update the state stored in the parser.
 setPState :: PState -> P ()
-setPState s = P $ \_ -> Ok () s 
+setPState s = P $ \_ pOk _ -> pOk () s 
+
+-- | Modify the state stored in the parser.
+modifyPState :: (PState -> PState) -> P ()
+modifyPState f = P $ \ !s pOk _ -> pOk () (f $! s) 
 
 -- | Retrieve the current position of the parser.
 getPosition :: P Position
-getPosition = P $ \s@PState{ curPos = pos } -> Ok pos s
+getPosition = curPos <$> getPState
 
 -- | Update the current position of the parser.
 setPosition :: Position -> P ()
-setPosition pos = P $ \s -> Ok () s{ curPos = pos }
+setPosition pos = modifyPState $ \s -> s{ curPos = pos }
 
 -- | Retrieve the current 'InputStream' of the parser
 getInput :: P InputStream
-getInput = P $ \s@PState{ curInput = i } -> Ok i s
+getInput = curInput <$> getPState 
 
 -- | Update the current 'InputStream' of the parser
 setInput :: InputStream -> P ()
-setInput i = P $ \s -> Ok () s{ curInput = i }
+setInput i = modifyPState $ \s -> s{ curInput = i }
 
 -- | Manually push a @'Spanned' 'Token'@. This turns out to be useful when parsing tokens that need
 -- to be broken up. For example, when seeing a 'GreaterEqual' token but only expecting a 'Greater'
 -- token, one can consume the 'GreaterEqual' token and push back a 'Equal' token.
 pushToken :: Spanned Token -> P ()
-pushToken tok = P $ \s@PState{ pushedTokens = toks } -> Ok () s{ pushedTokens = tok : toks }
+pushToken tok = modifyPState $ \s@PState{ pushedTokens = toks } -> s{ pushedTokens = tok : toks }
 
 -- | Manually pop a @'Spanned' 'Token'@ (if there are no tokens to pop, returns 'Nothing'). See
 -- 'pushToken' for more details.
 popToken :: P (Maybe (Spanned Token))
-popToken = P $ \s@PState{ pushedTokens = toks } -> Ok (listToMaybe toks) s{ pushedTokens = drop 1 toks }
+popToken = P $ \ !s@PState{ pushedTokens = toks } pOk _ -> pOk (listToMaybe toks) s{ pushedTokens = drop 1 toks }
 
 -- | Signal a syntax error.
 parseError :: Show b => b -> P a

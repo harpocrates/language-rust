@@ -43,6 +43,11 @@ fn main() {
   let x = foo()?;
   return 0;
   return;
+
+  match true {
+    true => move | | { 1 },
+    false => | | { 2}
+  }
 }
 
 fn precedences() {

@@ -231,7 +231,7 @@ data Block a
       { stmts :: [Stmt a]  -- ^ Statements in the block. Note that the last statement in the block
                            -- can always be a 'NoSemi' expression.
       , rules :: Unsafety  -- ^ Distinguishes between regular (safe) blocks and unsafe blocks such
-                           -- as  @unsafe { x += 1 }@.
+                           -- as @unsafe { x += 1 }@.
       , nodeInfo :: a
       } deriving (Eq, Show, Functor, Typeable, Data, Generic, NFData)
 
@@ -396,7 +396,7 @@ instance Located a => Located (Field a) where spanOf (Field _ _ s) = spanOf s
 -- Example: @x@ in @Point{ x, y }@
 data FieldPat a
   = FieldPat
-      { ident :: Maybe Ident -- ^ the field name 
+      { ident :: Maybe Ident -- ^ the field name
       , pat :: Pat a         -- ^ the pattern the field is destructured to - must be 'IdentP'
                              -- when the @ident@ field is 'Nothing'
       , nodeInfo :: a
