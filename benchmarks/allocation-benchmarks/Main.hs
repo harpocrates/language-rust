@@ -3,6 +3,7 @@
 import Weigh
 
 import Control.Monad (filterM)
+import Control.Exception (catch, throwIO)
 import Data.Foldable (for_)
 import Data.Traversable (for)
 import GHC.Exts (fromString)
@@ -10,9 +11,10 @@ import GHC.Exts (fromString)
 import Language.Rust.Syntax (SourceFile)
 import Language.Rust.Parser (readInputStream, Span, parse')
 
-import System.Directory (getCurrentDirectory, listDirectory, createDirectoryIfMissing, doesFileExist)
+import System.Directory (getCurrentDirectory, listDirectory, createDirectoryIfMissing, doesFileExist, removeFile)
 import System.FilePath ((</>), (<.>), takeFileName)
 import System.Process (proc, readCreateProcess)
+import System.IO.Error (isDoesNotExistError)
 
 import Data.Aeson
 import qualified Data.ByteString.Lazy as BL
@@ -33,6 +35,10 @@ main = do
   let sampleSources = workingDirectory </> "sample-sources"
   entries <- map (sampleSources </>) <$> listDirectory sampleSources
   files <- filterM doesFileExist entries
+
+  -- Clear out previous WIP (if there is one)
+  catch (removeFile (workingDirectory </> "allocations" </> "WIP" <.> "json"))
+        (\e -> if isDoesNotExistError e then pure () else throwIO e)
 
   -- Run 'weigh' tests
   fileStreams <- for files $ \file -> do { is <- readInputStream file; pure (takeFileName file, is) }

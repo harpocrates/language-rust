@@ -37,8 +37,10 @@ import Language.Rust.Data.Position
 import Language.Rust.Parser.Lexer (lexNonSpace, lexShebangLine)
 import Language.Rust.Parser.ParseMonad (pushToken, getPosition, P, parseError)
 import Language.Rust.Parser.Literals (translateLit)
+import Language.Rust.Parser.Reversed
 
-import Data.List.NonEmpty (NonEmpty(..), (<|), toList)
+import Data.Foldable (toList)
+import Data.List.NonEmpty (NonEmpty(..), (<|))
 import qualified Data.List.NonEmpty as N
 import Data.Semigroup ((<>))
 import Text.Read (readMaybe)
@@ -323,8 +325,8 @@ gt :: { () }
 -------------
 
 -- | One or more occurences of 'p'
-some(p) :: { NonEmpty a }
-  : some(p) p          { $1 |> $2 }
+some(p) :: { Reversed NonEmpty a }
+  : some(p) p          { let Reversed xs = $1 in Reversed ($2 <| xs) }
   | p                  { [$1] }
 
 -- | Zero or more occurences of 'p'
@@ -333,8 +335,8 @@ many(p) :: { [a] }
   | {- empty -}        { [] }
 
 -- | One or more occurences of 'p', seperated by 'sep'
-sep_by1(p,sep) :: { NonEmpty a }
-  : sep_by1(p,sep) sep p  { $1 |> $3 }
+sep_by1(p,sep) :: { Reversed NonEmpty a }
+  : sep_by1(p,sep) sep p  { let Reversed xs = $1 in Reversed ($3 <| xs) }
   | p                     { [$1] }
 
 -- | Zero or more occurrences of 'p', separated by 'sep'
@@ -343,7 +345,7 @@ sep_by(p,sep) :: { [a] }
   | {- empty -}        { [] }
 
 -- | One or more occurrences of 'p', seperated by 'sep', optionally ending in 'sep'
-sep_by1T(p,sep) :: { NonEmpty a }
+sep_by1T(p,sep) :: { Reversed NonEmpty a }
   : sep_by1(p,sep) sep { $1 }
   | sep_by1(p,sep)     { $1 }
 
@@ -540,7 +542,7 @@ ty_qual_path :: { Spanned (QSelf Span, Path Span) }
 
 -- parse_path_segments_without_colons()
 path_segments_without_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
-  : sep_by1(path_segment_without_colons, '::')  { sequence $1 }
+  : sep_by1(path_segment_without_colons, '::')  { sequence (toNonEmpty $1) }
 
 -- No corresponding function - see path_segments_without_colons
 path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
@@ -609,7 +611,7 @@ ty_general :: { Ty Span }
 -- All types, including trait types with plus
 ty :: { Ty Span }
   : ty_no_plus                                                    { $1 }
-  | poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+') { TraitObject ($1 <| $3) ($1 # $3) }
+  | poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+') { TraitObject ($1 <| toNonEmpty $3) ($1 # $3) }
 
 -- parse_ty_no_plus()
 ty_no_plus :: { Ty Span }
@@ -621,7 +623,7 @@ ty_no_plus :: { Ty Span }
 ty_prim :: { Ty Span }
   : no_for_ty_prim                   { $1 }
   | for_ty_no_plus                   { $1 }
-  | poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+') { TraitObject ($1 <| $3) ($1 # $3) }
+  | poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+') { TraitObject ($1 <| toNonEmpty $3) ($1 # $3) }
 
 -- All (non-sum) types not starting with a 'for'
 no_for_ty :: { Ty Span }
@@ -665,7 +667,7 @@ for_ty_no_plus :: { Ty Span }
     }
 
 impl_ty :: { Ty Span }
-  : impl sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait $2 ($1 # $2) }
+  : impl sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait (toNonEmpty $2) ($1 # $2) }
 
 -- An optional lifetime followed by an optional mutability
 lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
@@ -810,8 +812,8 @@ pat_tup :: { ([Pat Span], Maybe Int, Bool) }
 pat_slice :: { ([Pat Span], Maybe (Pat Span), [Pat Span]) }
   : sep_by1(pat,',') ',' '..' ',' sep_by1T(pat,',')    { (toList $1, Just (WildP mempty), toList $5) }
   | sep_by1(pat,',') ',' '..'                          { (toList $1, Just (WildP mempty), []) }
-  | sep_by1(pat,',')     '..' ',' sep_by1T(pat,',')    { (N.init $1, Just (N.last $1),    toList $4) }
-  | sep_by1(pat,',')     '..'                          { (N.init $1, Just (N.last $1),    []) }
+  | sep_by1(pat,',')     '..' ',' sep_by1T(pat,',')    { let (xs, x) = unsnoc $1 in (toList xs, Just x,    toList $4) }
+  | sep_by1(pat,',')     '..'                          { let (xs, x) = unsnoc $1 in (toList xs, Just x,    []) }
   |                               sep_by1T(pat,',')    { (toList $1, Nothing,             []) }
   |                      '..' ',' sep_by1T(pat,',')    { ([],        Just (WildP mempty), toList $3) }
   |                      '..'                          { ([],        Just (WildP mempty), []) }
@@ -1050,7 +1052,7 @@ arms :: { [Arm Span] }
   : ntArm                                               { [$1] }
   | ntArm arms                                          { $1 : $2 }
   | many(outer_attribute) sep_by1(pat,'|') arm_guard '=>' expr_arms
-    { let (e,as) = $> in (Arm $1 $2 $3 e ($1 # $2 # e) : as) }
+    { let (e,as) = $> in (Arm $1 (toNonEmpty $2) $3 e ($1 # $2 # e) : as) }
 
 arm_guard :: { Maybe (Expr Span) }
   : {- empty -}  { Nothing }
@@ -1453,14 +1455,14 @@ def :: { Spanned Defaultness }
   | default              { Spanned Default (spanOf $1) }
 
 view_path :: { ViewPath Span }
-  : '::' sep_by1(self_or_ident,'::')                                 { let n = fmap unspan $2 in ViewPathSimple True (N.init n) (PathListItem (N.last n) Nothing mempty) ($1 # $>) }
-  | '::' sep_by1(self_or_ident,'::') as ident                        { let n = fmap unspan $2 in ViewPathSimple True (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty) ($1 # $>) }
+  : '::' sep_by1(self_or_ident,'::')                                 { let (ns,n) = unsnoc (fmap unspan $2) in ViewPathSimple True (toList ns) (PathListItem n Nothing mempty) ($1 # $>) }
+  | '::' sep_by1(self_or_ident,'::') as ident                        { let (ns,n) = unsnoc (fmap unspan $2) in ViewPathSimple True (toList ns) (PathListItem n (Just (unspan $>)) mempty) ($1 # $>) }
   | '::'                                  '*'                        { ViewPathGlob True [] ($1 # $2) }
   | '::' sep_by1(self_or_ident,'::') '::' '*'                        { ViewPathGlob True (fmap unspan (toList $2)) ($1 # $>) }
   | '::' sep_by1(self_or_ident,'::') '::' '{' sep_byT(plist,',') '}' { ViewPathList True (map unspan (toList $2)) $5 ($1 # $>) }
   | '::'                                  '{' sep_byT(plist,',') '}' { ViewPathList True [] $3 ($1 # $>) }
-  |      sep_by1(self_or_ident,'::')                                 { let n = fmap unspan $1 in ViewPathSimple False (N.init n) (PathListItem (N.last n) Nothing mempty) ($1 # $>) }
-  |      sep_by1(self_or_ident,'::') as ident                        { let n = fmap unspan $1 in ViewPathSimple False (N.init n) (PathListItem (N.last n) (Just (unspan $>)) mempty) ($1 # $>) }
+  |      sep_by1(self_or_ident,'::')                                 { let (ns,n) = unsnoc (fmap unspan $1) in ViewPathSimple False (toList ns) (PathListItem n Nothing mempty) ($1 # $>) }
+  |      sep_by1(self_or_ident,'::') as ident                        { let (ns,n) = unsnoc (fmap unspan $1) in ViewPathSimple False (toList ns) (PathListItem n (Just (unspan $>)) mempty) ($1 # $>) }
   |                                       '*'                        { ViewPathGlob False [] (spanOf $1) }
   |      sep_by1(self_or_ident,'::') '::' '*'                        { ViewPathGlob False (fmap unspan (toList $1)) ($1 # $>) }
   |      sep_by1(self_or_ident,'::') '::' '{' sep_byT(plist,',') '}' { ViewPathList False (map unspan (toList $1)) $4 ($1 # $>) }
