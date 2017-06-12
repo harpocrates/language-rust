@@ -21,22 +21,28 @@ tokentrees!{
 
 // literals
 literals!{
-  b'a' b'\n' b'a'suffix
-  'a' '\n' 'a'suffix
-  
-  123 123i32
-  0b1100_1101 0b1100_1101isize
-  0o3170 0o3170i64
-  0xAFAC 0xAFACu32
-  
-  123.1 123.1f32 
-  123.f32          // Gets parsed as [integer token "123", ".", ident token "f32"]
-  123.0f32
-  0e+10            // Gets parsed as [integer token "0" with suffix "e", "+", integer token "10"]
-  00e+10
-  9e+10
-  123e-9f32
- 
+  characters_bytes!{
+    b'a' b'\n' b'a'suffix
+    'a' '\n' 'a'suffix
+  }
+
+  integral_numbers!{
+    123 123i32
+    0b1100_1101 0b1100_1101isize
+    0o3170 0o3170i64
+    0xAFAC 0xAFACu32
+  }
+
+  float_numbers!{
+    123.1 123.1f32 
+    123.f32          // Gets parsed as [integer token "123", ".", ident token "f32"]
+    123.0f32
+    0e+10
+    00e+10
+    9e+10
+    123e-9f32
+  }
+
   strings!{
     "hello \n world!"
     
@@ -77,11 +83,11 @@ fn main() {
   print!("{}\n", 001e+1);
   print!("{}\n", 123.);
   print!("{}\n", 123.0f32);
+  print!("{}\n", 0e+1);
   print!("{}\n", 123.0__9);
   print!("{}\n", 123e-4f32);
 
   // Not what they look like, see above
-  print!("{}\n", 0e+1);
   print!("{}\n", 123.f32);
 }
 

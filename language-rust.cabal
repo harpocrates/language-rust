@@ -48,6 +48,7 @@ library
                        Language.Rust.Parser.Literals
                        Language.Rust.Parser.Reversed
                        Language.Rust.Pretty.Resolve
+                       Language.Rust.Pretty.Literals
                        Language.Rust.Syntax.AST
                        Language.Rust.Syntax.Ident
                        Language.Rust.Syntax.Token

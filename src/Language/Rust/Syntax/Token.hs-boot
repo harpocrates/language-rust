@@ -26,9 +26,6 @@ instance Generic Delim
 instance Show Delim
 instance NFData Delim
 
-data DocType
-instance NFData DocType
-
 data Space
 instance NFData Space
 

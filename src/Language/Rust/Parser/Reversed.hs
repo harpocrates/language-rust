@@ -57,7 +57,7 @@ instance Located (f a) => Located (Reversed f a) where
 toNonEmpty :: Reversed N.NonEmpty a -> N.NonEmpty a
 toNonEmpty (Reversed xs) = N.reverse xs
 
--- TODO
+-- | Remove an element from the end of a non-empty reversed sequence
 {-# INLINE unsnoc #-}
 unsnoc :: Reversed N.NonEmpty a -> (Reversed [] a, a)
 unsnoc (Reversed (x N.:| xs)) = (Reversed xs, x)

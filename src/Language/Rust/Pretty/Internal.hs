@@ -15,7 +15,18 @@ documented.
 {-# OPTIONS_HADDOCK hide, not-home #-}
 {-# LANGUAGE OverloadedStrings  #-}
 
-module Language.Rust.Pretty.Internal where
+module Language.Rust.Pretty.Internal (
+  printLit, printTraitItem, printTraitRef, printType, printTyParam, printBound, printVariant,
+  printViewPath, printVis, printWhereClause, printLifetime, printLifetimeDef,
+  printNonterminal, printPat, printPath, printStmt, printStructField,
+  printWherePredicate, printExpr, printField, printFieldPat, printFnArgsAndRet, printForeignItem,
+  printGenerics, printImplItem, printInlineAsm, printInlineAsmOutput, printPolyTraitRef,
+  printMutability, printRangeLimits, printToken, printTt, printUnOp,
+  printUnsafety, printAttr, printBinOp, printItem, printSourceFile, printBlock, printTokenStream,
+  printLitTok, printIdent, printBindingMode, printAbi, printPolarity
+) where
+
+import Language.Rust.Pretty.Literals
 
 import Language.Rust.Data.Position
 import Language.Rust.Syntax.AST
@@ -23,15 +34,12 @@ import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
 import Text.PrettyPrint.Annotated.WL (
-    hcat, punctuate, group, angles, flatten, align, fillSep, text, vcat, char, annotate, 
-    noAnnotate, flatAlt, parens, brackets, (<>), (<##>), Doc
+    hcat, punctuate, group, angles, flatten, align, fillSep, text, vcat, annotate,  noAnnotate,
+    flatAlt, parens, brackets, (<>), (<##>), Doc
   )
 import qualified Text.PrettyPrint.Annotated.WL as WL
 
-import Data.Char (intToDigit, ord, chr)
 import Data.Maybe (listToMaybe, maybeToList)
-import Data.Word (Word8)
-
 import Data.Foldable (toList)
 import Data.List (mapAccumL)
 import Data.List.NonEmpty (NonEmpty(..))
@@ -79,10 +87,6 @@ hsep = foldr (<+>) mempty
 -- | Lifted version of Wadler's @vsep@
 vsep :: Foldable f => f (Doc a) -> Doc a
 vsep = foldr (<#>) mempty
-
--- | Lifted version of Wadler's @sep@
-sep :: Foldable f => f (Doc a) -> Doc a
-sep = group . vsep
 
 -- | Lifted version of Wadler's @</>@
 (</>) :: Doc a -> Doc a -> Doc a
@@ -191,9 +195,8 @@ printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
 
 -- | Print a macro (@print_mac@)
 printMac :: Mac a -> Delim -> Doc a
-printMac (Mac path tts x) d = annotate x (printPath path False <> "!" <> body)
-  where body = block d True mempty mempty [ printTts tts ]
-
+printMac (Mac path ts x) d = annotate x (printPath path False <> "!" <> body)
+  where body = block d True mempty mempty [ printTokenStream ts ]
 
 -- | Given two positions, find out how to print appropriate amounts of space between them
 printSpaceBetween :: Span -> Span -> Doc a
@@ -203,17 +206,29 @@ printSpaceBetween (Span _ (Position _ y1 x1)) (Span (Position _ y2 x2) _)
   | otherwise = WL.space 
 printSpaceBetween _ _ = WL.space
 
--- | Print a list of token-trees, with the right amount of space between successive elements
-printTts :: [TokenTree] -> Doc a
-printTts [] = mempty
-printTts [tt] = printTt tt
-printTts (tt1:tt2:tts) = printTt tt1 <> sp <> printTts (tt2:tts)
-  where sp = printSpaceBetween (spanOf tt1) (spanOf tt2)
-
 -- | Print a token tree (@print_tt@)
 printTt :: TokenTree -> Doc a
 printTt (Token _ t) = printToken t 
-printTt (Delimited _ d tts) = block d True mempty mempty [ printTts tts ] 
+printTt (Delimited _ d ts) = block d True mempty mempty [ printTokenStream ts ] 
+
+-- | Print a list of token streams, with the right amount of space between successive elements
+printTokenStreams :: [TokenStream] -> Doc a
+printTokenStreams [] = mempty
+printTokenStreams [ts] = printTokenStream ts
+printTokenStreams (ts1:ts2:tss) = printTokenStream ts1 <> sp <> printTokenStreams (ts2:tss)
+  where sp = printSpaceBetween (spanOf ts1) (spanOf ts2)
+
+-- | Print the space between a token stream and the mod-path before it
+printTokenStreamSp :: TokenStream -> Doc a
+printTokenStreamSp (Tree Token{}) = WL.space
+printTokenStreamSp (Tree Delimited{}) = mempty
+printTokenStreamSp (Stream []) = mempty
+printTokenStreamSp (Stream (t:_)) = printTokenStreamSp t
+
+-- | Print a token stream
+printTokenStream :: TokenStream -> Doc a
+printTokenStream (Tree tt) = printTt tt
+printTokenStream (Stream ts) = printTokenStreams ts
 
 -- | Print a token (@token_to_string@)
 -- Single character expression-operator symbols.
@@ -282,8 +297,10 @@ printToken Underscore = "_"
 printToken (LifetimeTok i) = "'" <> printIdent i
 printToken (Space Whitespace _) = " "
 printToken (Space Comment n) = "/*" <> printName n <> " */"
-printToken (Doc d InnerDoc) = "/*!" <> text d <> "*/"
-printToken (Doc d OuterDoc) = "/**" <> text d <> "*/"
+printToken (Doc d Inner True) = "/*!" <> printName d <> "*/"
+printToken (Doc d Outer True) = "/**" <> printName d <> "*/"
+printToken (Doc d Inner False) = "//!" <> printName d
+printToken (Doc d Outer False) = "///" <> printName d
 printToken Shebang = "#!"
 -- Macro related 
 printToken (Interpolated n) = noAnnotate (printNonterminal n)
@@ -311,7 +328,6 @@ printNonterminal (NtPat pat) = printPat pat
 printNonterminal (NtExpr expr) = printExpr expr
 printNonterminal (NtTy ty) = printType ty
 printNonterminal (NtIdent ident) = printIdent ident
-printNonterminal (NtMeta meta) = printMetaItem meta
 printNonterminal (NtPath path) = printPath path False
 printNonterminal (NtTT tt) = printTt tt
 printNonterminal (NtArm arm) = printArm arm
@@ -579,87 +595,8 @@ printUnOp Deref = "*"
 printUnOp Not = "!"
 printUnOp Neg = "-" 
 
--- | Print a literal (@print_literal@)
-printLit :: Lit a -> Doc a
-printLit lit = case lit of
-    (Str     str Cooked  s x) -> annotate x (hcat [ "\"", foldMap escapeChar str, "\"", suffix s ])
-    (Str     str (Raw n) s x) -> annotate x (hcat [ "r", pad n, "\"", text str, "\"", pad n, suffix s ])
-    (ByteStr str Cooked  s x) -> annotate x (hcat [ "b\"", foldMap escapeByte str, "\"", suffix s ])
-    (ByteStr str (Raw n) s x) -> annotate x (hcat [ "br", pad n, "\"", text (map byte2Char str), "\"", pad n, suffix s ])
-    (Char c s x)              -> annotate x (hcat [ "'",  escapeChar c, "'", suffix s ])
-    (Byte b s x)              -> annotate x (hcat [ "b'", escapeByte b, "'", suffix s ])
-    (Int b i s x)             -> annotate x (hcat [ printIntLit i b, suffix s ])
-    (Float d s x)             -> annotate x (hcat [ WL.pretty d,  suffix s ])
-    (Bool True s x)           -> annotate x (hcat [ "true",  suffix s ])
-    (Bool False s x)          -> annotate x (hcat [ "false", suffix s ])
-  where
-  pad :: Int -> Doc a
-  pad n = text (replicate n '#')
-
-  suffix :: Suffix -> Doc a
-  suffix = text . show
-  
--- | Print an integer literal
-printIntLit :: Integer -> IntRep -> Doc a
-printIntLit i r | i < 0     = "-" <> baseRep r <> toNBase (abs i) (baseVal r)
-                | i == 0    =        baseRep r <> "0"
-                | otherwise =        baseRep r <> toNBase (abs i) (baseVal r)
-  where
-  baseRep :: IntRep -> Doc a
-  baseRep Bin = "0b"
-  baseRep Oct = "0o"
-  baseRep Dec = mempty
-  baseRep Hex = "0x"
-
-  baseVal :: IntRep -> Integer
-  baseVal Bin = 2
-  baseVal Oct = 8
-  baseVal Dec = 10
-  baseVal Hex = 16
-
-  toDigit :: Integer -> Char
-  toDigit i = "0123456789ABCDEF" !! fromIntegral i
-
-  toNBase :: Integer -> Integer -> Doc a
-  i `toNBase` b | i < b = char (toDigit i)
-                | otherwise = let ~(d,r) = i `quotRem` b in toNBase d b <> char (toDigit r)
-
-
--- | Extend a byte into a unicode character
-byte2Char :: Word8 -> Char
-byte2Char = chr . fromIntegral 
-  
--- | Constrain a unicode character to a byte
--- This assumes the character is in the right range already
-char2Byte :: Char -> Word8
-char2Byte = fromIntegral . ord
-
--- | Escape a byte. Based on @std::ascii::escape_default@
-escapeByte :: Word8 -> Doc a
-escapeByte w8 = case byte2Char w8 of
-  '\t' -> "\\t" 
-  '\r' -> "\\r"
-  '\n' -> "\\n"
-  '\\' -> "\\\\" 
-  '\'' -> "\\'"
-  '"'  -> "\\\""
-  c | 0x20 <= w8 && w8 <= 0x7e -> char c
-  _ -> "\\x" <> padHex 2 w8
-
--- | Escape a unicode character. Based on @std::ascii::escape_default@
-escapeChar :: Char -> Doc a
-escapeChar c | c <= '\xff'   = escapeByte (char2Byte c)
-             | c <= '\xffff' = "\\u" <> padHex 4 (ord c)
-             | otherwise     = "\\U" <> padHex 8 (ord c)
- 
--- | Convert a number to its padded hexadecimal form
-padHex :: Integral a => Int -> a -> Doc b
-padHex n 0 = text (replicate n '0')
-padHex n m = let (m',r) = m `divMod` 0x10
-             in padHex (n-1) m' <> char (intToDigit (fromIntegral r))
-
 -- | Print inner attributes (@print_inner_attributes@ or @print_inner_attributes_inline@
--- or @print_inner_attributes_no_trailing_hardbreak@ - distinction has to be made at callsite
+-- or @print_inner_attributes_nodbreak@ - distinction has to be made at callsite
 -- whether to force newline)
 printInnerAttrs :: [Attribute a] -> Doc a
 printInnerAttrs attrs = printEitherAttrs attrs Inner False
@@ -676,36 +613,12 @@ printEitherAttrs attrs kind inline = unless (null attrs') (glue attrs')
 
 -- | Print an attribute (@print_attribute_inline@ or @print_attribute@)
 printAttr :: Attribute a -> Bool -> Doc a
-printAttr a@(Attribute Inner value isSugaredDoc x) inline
-  | isSugaredDoc && inline = annotate x ("/*!" <+> perhaps text (valueStr a) <+> "*/")
-  | isSugaredDoc           = annotate x (flatAlt ("//!" <+> perhaps text (valueStr a))
-                                                 (printAttr a True))
-  | otherwise              = annotate x ("#![" <> printMetaItem value <> "]")
-printAttr a@(Attribute Outer value isSugaredDoc x) inline
-  | isSugaredDoc && inline = annotate x ("/**" <+> perhaps text (valueStr a) <+> "*/")
-  | isSugaredDoc           = annotate x (flatAlt ("///" <+> perhaps text (valueStr a))
-                                                 (printAttr a True))
-  | otherwise              = annotate x ("#[" <> printMetaItem value <> "]")
-
--- | Try to extract a string from an attribute
-valueStr :: Attribute a -> Maybe String
-valueStr (Attribute _ (NameValue _  (Str s _ _ _) _) _ _) = Just s
-valueStr _ = Nothing
-
--- | Print a nested meta item (@print_meta_list_item@)
-printMetaListItem :: NestedMetaItem a -> Doc a
-printMetaListItem (MetaItem item x) = annotate x (printMetaItem item)
-printMetaListItem (Literal lit x) = annotate x (printLit lit)
-
--- | Print a meta item (@print_meta_item@)
-printMetaItem :: MetaItem a -> Doc a
-printMetaItem (Word name x) = annotate x (printIdent name)
-printMetaItem (NameValue name lit x) = annotate x (printIdent name <+> "=" <+> printLit lit)
-printMetaItem (List name items x) = annotate x (printIdent name <> "(" <> commas items printMetaListItem <> ")")
-
--- | Synthesizes a comment that was not textually present in the original source file (@synth_comment@)
-synthComment :: String -> Doc a
-synthComment com = "/*" <+> text com <+> "*/"
+printAttr   (Attribute Inner p ts x) _     = annotate x ("#![" <> printPath p True <> printTokenStreamSp ts <> printTokenStream ts <> "]")
+printAttr   (Attribute Outer p ts x) _     = annotate x ("#[" <> printPath p True <> printTokenStreamSp ts <> printTokenStream ts <> "]")
+printAttr   (SugaredDoc Inner _ c x) True  = annotate x ("/*!" <> text c <> "*/")
+printAttr   (SugaredDoc Outer _ c x) True  = annotate x ("/**" <> text c <> "*/")
+printAttr a@(SugaredDoc Inner _ c x) False = annotate x (flatAlt ("//!" <+> text c) (printAttr a True))
+printAttr a@(SugaredDoc Outer _ c x) False = annotate x (flatAlt ("///" <+> text c) (printAttr a True))
 
 -- | Print an identifier as is, or as cooked string if containing a hyphen
 printCookedIdent :: Ident -> Doc a
@@ -778,11 +691,11 @@ printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs 
        WL.Empty -> leading <+> lagging
        _ -> leading <#> wc <#> lagging
 
-printItem (MacItem as i (Mac p tts y) x) = annotate x $ annotate y $ align $ printOuterAttrs as <#>
-  (printPath p True <> "!" <+> perhaps printIdent i <+> block Brace True mempty mempty [ printTts tts ])
+printItem (MacItem as i (Mac p ts y) x) = annotate x $ annotate y $ align $ printOuterAttrs as <#>
+  (printPath p True <> "!" <+> perhaps printIdent i <+> block Brace True mempty mempty [ printTokenStream ts ])
 
-printItem (MacroDef as i tts x) = annotate x $ align $ printOuterAttrs as <#>
-  ("macro_rules" <> "!" <+> printIdent i <+> block Brace True mempty mempty [ printTts tts ])
+printItem (MacroDef as i ts x) = annotate x $ align $ printOuterAttrs as <#>
+  ("macro_rules" <> "!" <+> printIdent i <+> block Brace True mempty mempty [ printTokenStream ts ])
 
 
 -- | Print a trait item (@print_trait_item@)

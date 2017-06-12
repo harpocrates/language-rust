@@ -1,0 +1,104 @@
+{-|
+Module      : Language.Rust.Pretty.Literals
+Description : Parsing literals
+Copyright   : (c) Alec Theriault, 2017
+License     : BSD-style
+Maintainer  : alec.theriault@gmail.com
+Stability   : experimental
+Portability : portable
+
+Functions for pretty-printing literals.
+-}
+{-# OPTIONS_HADDOCK hide, not-home #-}
+{-# LANGUAGE OverloadedStrings  #-}
+
+module Language.Rust.Pretty.Literals (
+  printLit
+) where
+
+import Language.Rust.Syntax.AST
+
+import Text.PrettyPrint.Annotated.WL (hcat, text, char, annotate, (<>), Doc, pretty)
+
+import Data.Char (intToDigit, ord, chr)
+import Data.Word (Word8)
+
+-- | Print a literal (@print_literal@)
+printLit :: Lit a -> Doc a
+printLit lit = case lit of
+    (Str     str Cooked  s x) -> annotate x (hcat [ "\"", foldMap escapeChar str, "\"", suf s ])
+    (Str     str (Raw n) s x) -> annotate x (hcat [ "r", pad n, "\"", text str, "\"", pad n, suf s ])
+    (ByteStr str Cooked  s x) -> annotate x (hcat [ "b\"", foldMap escapeByte str, "\"", suf s ])
+    (ByteStr str (Raw n) s x) -> annotate x (hcat [ "br", pad n, "\"", text (map byte2Char str), "\"", pad n, suf s ])
+    (Char c s x)              -> annotate x (hcat [ "'",  escapeChar c, "'", suf s ])
+    (Byte b s x)              -> annotate x (hcat [ "b'", escapeByte b, "'", suf s ])
+    (Int b i s x)             -> annotate x (hcat [ printIntLit i b, suf s ])
+    (Float d s x)             -> annotate x (hcat [ pretty d,  suf s ])
+    (Bool True s x)           -> annotate x (hcat [ "true",  suf s ])
+    (Bool False s x)          -> annotate x (hcat [ "false", suf s ])
+  where
+  pad :: Int -> Doc a
+  pad n = text (replicate n '#')
+
+  suf :: Suffix -> Doc a
+  suf = text . show
+
+-- | Print an integer literal
+printIntLit :: Integer -> IntRep -> Doc a
+printIntLit i r | i < 0     = "-" <> baseRep r <> toNBase (abs i) (baseVal r)
+                | i == 0    =        baseRep r <> "0"
+                | otherwise =        baseRep r <> toNBase (abs i) (baseVal r)
+  where
+  baseRep :: IntRep -> Doc a
+  baseRep Bin = "0b"
+  baseRep Oct = "0o"
+  baseRep Dec = mempty
+  baseRep Hex = "0x"
+
+  baseVal :: IntRep -> Integer
+  baseVal Bin = 2
+  baseVal Oct = 8
+  baseVal Dec = 10
+  baseVal Hex = 16
+
+  toDigit :: Integer -> Char
+  toDigit l = "0123456789ABCDEF" !! fromIntegral l
+
+  toNBase :: Integer -> Integer -> Doc a
+  l `toNBase` b | l < b = char (toDigit l)
+                | otherwise = let ~(d,e) = l `quotRem` b in toNBase d b <> char (toDigit e)
+
+
+-- | Extend a byte into a unicode character
+byte2Char :: Word8 -> Char
+byte2Char = chr . fromIntegral 
+  
+-- | Constrain a unicode character to a byte
+-- This assumes the character is in the right range already
+char2Byte :: Char -> Word8
+char2Byte = fromIntegral . ord
+
+-- | Escape a byte. Based on @std::ascii::escape_default@
+escapeByte :: Word8 -> Doc a
+escapeByte w8 = case byte2Char w8 of
+  '\t' -> "\\t" 
+  '\r' -> "\\r"
+  '\n' -> "\\n"
+  '\\' -> "\\\\" 
+  '\'' -> "\\'"
+  '"'  -> "\\\""
+  c | 0x20 <= w8 && w8 <= 0x7e -> char c
+  _ -> "\\x" <> padHex 2 w8
+
+-- | Escape a unicode character. Based on @std::ascii::escape_default@
+escapeChar :: Char -> Doc a
+escapeChar c | c <= '\xff'   = escapeByte (char2Byte c)
+             | c <= '\xffff' = "\\u" <> padHex 4 (ord c)
+             | otherwise     = "\\U" <> padHex 8 (ord c)
+ 
+-- | Convert a number to its padded hexadecimal form
+padHex :: Integral a => Int -> a -> Doc b
+padHex n 0 = text (replicate n '0')
+padHex n m = let (m',r) = m `divMod` 0x10
+             in padHex (n-1) m' <> char (intToDigit (fromIntegral r))
+

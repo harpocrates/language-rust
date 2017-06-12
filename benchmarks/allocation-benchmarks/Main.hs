@@ -19,8 +19,7 @@ import System.IO.Error (isDoesNotExistError)
 import Data.Aeson
 import qualified Data.ByteString.Lazy as BL
 
--- TODO:
--- Only allocation and GCs seem to be really reproducible. Live and max sometimes are 0.
+-- TODO: only allocation and GCs seem to be really reproducible. Live and max sometimes are 0.
 
 main :: IO ()
 main = do

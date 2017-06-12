@@ -4,6 +4,7 @@ module Diff where
 
 import Data.Aeson
 import Language.Rust.Syntax
+import Language.Rust.Parser
 
 import Control.Monad (when)
 
@@ -15,6 +16,8 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 
 import DiffUtils
+
+-- TODO: Check spans too
 
 instance Show a => Diffable (SourceFile a) where
   SourceFile _ as is === val = do
@@ -108,17 +111,17 @@ instance Show a => Diffable (Item a) where
         mkIdent "" === (val ! "ident")
         u === (n' ! "fields" ! 0)
         tr === (n' ! "fields" ! 1)
-      -- TODO: do something with 'd' once we get 'rustc' running on latest nightly
-      ("Impl", Impl as v d u p g mtr t is _) -> do 
+      ("Impl", Impl as v d u p g mtr t is _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
         mkIdent "" === (val ! "ident")
         u === (n' ! "fields" ! 0)
         p === (n' ! "fields" ! 1)
-        g === (n' ! "fields" ! 2)
-        mtr === (n' ! "fields" ! 3)
-        t === (n' ! "fields" ! 4)
-        is === (n' ! "fields" ! 5)
+        d === (n' ! "fields" ! 2)
+        g === (n' ! "fields" ! 3)
+        mtr === (n' ! "fields" ! 4)
+        t === (n' ! "fields" ! 5)
+        is === (n' ! "fields" ! 6)
       ("Mac", MacItem as i m _) -> do
         as === (val ! "attrs")
         inheritedV === (val ! "vis")
@@ -128,7 +131,7 @@ instance Show a => Diffable (Item a) where
         as === (val ! "attrs")
         inheritedV === (val ! "vis")
         i === (val ! "ident")
-        tt === (n' ! "fields" ! 0)
+        tt === (n' ! "fields" ! 0 ! "tokens")
       _ -> diff "different items" item val
   
 instance Diffable ImplPolarity where
@@ -423,43 +426,36 @@ instance Show a => Diffable (Visibility a) where
   v === val = diff "different visibilities" v val
 
 instance Show a => Diffable (Attribute a) where
-  a@(Attribute sty meta sug _) === val = do
-    case (val ! "style", sty) of
-      ("Inner", Inner) -> pure ()
-      ("Outer", Outer) -> pure ()
-      _ -> diff "attribute style is different" a val
-
-    sug === (val ! "is_sugared_doc")
-    if sug
-      then case (sty, meta) of
-             (Inner, NameValue "doc" (Str str Cooked Unsuffixed x) y) -> NameValue "doc" (Str ("/*!" <> str <> "*/") Cooked Unsuffixed x) y === (val ! "value")
-             (Outer, NameValue "doc" (Str str Cooked Unsuffixed x) y) -> NameValue "doc" (Str ("///" <> str)         Cooked Unsuffixed x) y === (val ! "value")
-             _ -> diff "invalid doc comment" a val
-      else meta === (val ! "value")
-
-instance Show a => Diffable (MetaItem a) where
-  meta === val = do
-    -- Check that the names match
-    case meta of
-      Word i _        -> i === (val ! "name")
-      List i _ _      -> i === (val ! "name")
-      NameValue i _ _ -> i === (val ! "name")
-  
-    case (val ! "node", meta)  of
-      ("Word", Word{}) -> pure()
-      (val',          _) ->
-        case (val' ! "variant", meta) of
-          ("NameValue", NameValue _ lit _) -> lit === (val' ! "fields" ! 0) 
-          ("List",      List _ args _) -> args === (val' ! "fields" ! 0)
-          _ -> diff "metaitem is different" meta val
-    
-instance Show a => Diffable (NestedMetaItem a) where
-  n === val =  do
-    let val' = val ! "node"
-    case (val' ! "variant", n) of
-      ("Literal", Literal l _) -> l === (val' ! "fields" ! 0)
-      ("MetaItem", MetaItem a _) -> a === (val' ! "fields" ! 0)
-      _ -> diff "differing nested-metaitem" n val
+  a === val =
+    case (a, val ! "is_sugared_doc") of
+      (SugaredDoc sty inl n _, Data.Aeson.Bool True) -> do
+        case (val ! "style", sty) of
+          ("Inner", Inner) -> pure ()
+          ("Outer", Outer) -> pure ()
+          _ -> diff "doc attributes have different styles" a val
+        -- Content
+        let toks = val ! "tokens"
+        Token mempty Equal === (toks ! 0)
+        let str = toks ! 1
+        mkIdent "Literal" === (str ! "fields" ! 1 ! "variant")
+        mkIdent "Str_" === (str ! "fields" ! 1 ! "fields" ! 0 ! "variant")
+        let Data.Aeson.String n' = str ! "fields" ! 1 ! "fields" ! 0 ! "fields" ! 0
+            Str n'' Cooked Unsuffixed () = translateLit (StrTok (T.unpack n')) Unsuffixed ()
+        -- Style
+        case (val ! "style", sty, inl) of
+          ("Inner", Inner, False) | ("//!" <> n)         == n'' -> pure ()
+          ("Inner", Inner, True)  | ("/*!" <> n <> "*/") == n'' -> pure ()
+          ("Outer", Outer, False) | ("///" <> n)         == n'' -> pure ()
+          ("Outer", Outer, True)  | ("/**" <> n <> "*/") == n'' -> pure ()
+          _ -> diff "doc attributes are different" a val
+      (Attribute sty p ts _, Data.Aeson.Bool False) -> do
+        case (val ! "style", sty) of
+          ("Inner", Inner) -> pure ()
+          ("Outer", Outer) -> pure ()
+          _ -> diff "attribute style is different" a val
+        p === (val ! "path")
+        ts === (val ! "tokens")
+      _ -> diff "attribute is not sugared doc" a val
 
 instance Show a => Diffable (Pat a) where
   p' === val = do
@@ -516,6 +512,12 @@ instance Diffable TokenTree where
         tt' === (val ! "fields" ! 1 ! "tts")
       _ -> diff "different token trees" tt val
 
+instance Diffable TokenStream where
+  ts === val = flatten ts === val 
+    where 
+    flatten (Tree t) = [t]
+    flatten (Stream s) = concatMap flatten s
+
 instance Diffable Delim where
   Paren   === "Paren"   = pure ()
   Bracket === "Bracket" = pure ()
@@ -553,8 +555,10 @@ instance Diffable Token where
     case (val ! "variant", t) of
       ("Ident", IdentTok i) -> i === (val ! "fields" ! 0)
       ("Lifetime", LifetimeTok l) -> ("'" <> l) === (val ! "fields" ! 0)
-      ("DocComment", Doc s InnerDoc) -> ("/*!" <> mkIdent s <> "*/") === (val ! "fields" ! 0)
-      ("DocComment", Doc s OuterDoc) -> ("///" <> mkIdent s) === (val ! "fields" ! 0)
+      ("DocComment", Doc s Inner False) -> ("//!" <> mkIdent s) === (val ! "fields" ! 0)
+      ("DocComment", Doc s Outer False) -> ("///" <> mkIdent s) === (val ! "fields" ! 0)
+      ("DocComment", Doc s Inner True) -> ("/*!" <> mkIdent s <> "*/") === (val ! "fields" ! 0)
+      ("DocComment", Doc s Outer True) -> ("/**" <> mkIdent s <> "*/") === (val ! "fields" ! 0)
       ("Literal", LiteralTok l s) -> do
         l === (val ! "fields" ! 0)
         fmap mkIdent s === (val ! "fields" ! 1)
@@ -698,7 +702,7 @@ instance Diffable TraitBoundModifier where
 
 instance Show a => Diffable (Lifetime a) where
   l@(Lifetime n _) === val
-    | fromString ("'" ++ n) /= val ! "name" = diff "lifetime is different" l val
+    | fromString ("'" ++ n) /= val ! "ident" = diff "lifetime is different" l val
     | otherwise = pure ()
 
 instance Show a => Diffable (QSelf a) where
@@ -886,7 +890,10 @@ instance Show a => Diffable (Expr a) where
         e' === (n ! "fields" ! 0)
       ("Try", Try as e _) -> do
         NullList as === (val ! "attrs" ! "_field0")
-        e === (n ! "fields" ! 0) 
+        e === (n ! "fields" ! 0)
+      ("Catch", Catch as e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
+        e === (n ! "fields" ! 0)
       _ -> diff "differing expressions:" ex val
     where
     n = val ! "node"

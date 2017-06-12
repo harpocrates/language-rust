@@ -28,7 +28,7 @@ To get information about transition states and such, run
 
 module Language.Rust.Parser.Internal (
   parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseSourceFile,
-  parseBlock, parseImplItem, parseTraitItem, parseTt, parseTyParam,
+  parseBlock, parseImplItem, parseTraitItem, parseTt, parseTokenStream, parseTyParam,
   parseGenerics, parseWhereClause, parseLifetimeDef, parseArg
 ) where
 
@@ -48,8 +48,8 @@ import Text.Read (readMaybe)
 
 -- in order to document the parsers, we have to alias them
 %name parseLit lit
-%name parseAttr attribute
-%name parseTy ty_general
+%name parseAttr export_attribute
+%name parseTy export_general
 %name parsePat export_pat
 %name parseArg export_arg
 %name parseStmt stmt
@@ -60,6 +60,7 @@ import Text.Read (readMaybe)
 %name parseImplItem impl_item
 %name parseTraitItem trait_item
 %name parseTt token_tree
+%name parseTokenStream token_stream
 %name parseTyParam ty_param
 %name parseLifetimeDef lifetime_def
 %name parseWhereClause where_clause
@@ -210,8 +211,8 @@ import Text.Read (readMaybe)
   catch          { Spanned (IdentTok "catch") _ }
 
   -- Comments
-  outerDoc       { Spanned (Doc _ OuterDoc) _ }
-  innerDoc       { Spanned (Doc _ InnerDoc) _ }
+  outerDoc       { Spanned (Doc _ Outer _) _ }
+  innerDoc       { Spanned (Doc _ Inner _) _ }
 
   -- Identifiers.
   IDENT          { Spanned IdentTok{} _ }
@@ -228,7 +229,6 @@ import Text.Read (readMaybe)
   ntExpr         { Spanned (Interpolated (NtExpr $$)) _ }
   ntTy           { Spanned (Interpolated (NtTy $$)) _ }
   ntIdent        { Spanned (Interpolated (NtIdent _)) _ }
-  ntMeta         { Spanned (Interpolated (NtMeta $$)) _ }
   ntPath         { Spanned (Interpolated (NtPath $$)) _ }
   ntTT           { Spanned (Interpolated (NtTT $$)) _ }
   ntArm          { Spanned (Interpolated (NtArm $$)) _ }
@@ -248,7 +248,9 @@ import Text.Read (readMaybe)
 --
 -- 'EQ' is for differentiating the 'where ty' from 'where ty = ty' case in where clause
 -- predicates, since the former needs to _not_ be taken when there is a '=' token available.
-%nonassoc mut DEF EQ
+--
+-- '::' is so that the remainder of mod paths in attributes are not gobbled as just raw tokens
+%nonassoc mut DEF EQ '::'
 
 -- These are all identifiers of sorts ('union' and 'default' are "weak" keywords)
 %nonassoc IDENT ntIdent default union catch 
@@ -370,90 +372,19 @@ source_file :: { ([Attribute a],[Item a]) }
 -- Attributes
 --------------------------
 
-attribute :: { Attribute Span }
-  : inner_attribute { $1 }
-  | outer_attribute { $1 }
-
 outer_attribute :: { Attribute Span }
-  : '#' '[' meta_item ']'        { Attribute Outer $3 False ($1 # $>) }
-  | outerDoc                     { mkDocAttribute $1 }
+  : '#' '[' mod_path token_stream ']'         { Attribute Outer $3 $4 ($1 # $>) }
+  | outerDoc                                  { let Spanned (Doc str _ l) x = $1 in SugaredDoc Outer l str x }
 
 inner_attribute :: { Attribute Span }
-  : '#' '!' '[' meta_item ']'    { Attribute Inner $4 False ($1 # $>) }
-  | '#!'    '[' meta_item ']'    { Attribute Inner $3 False ($1 # $>) }
-  | innerDoc                     { mkDocAttribute $1 }
+  : '#' '!' '[' mod_path token_stream ']'     { Attribute Inner $4 $5 ($1 # $>) }
+  | '#!'    '[' mod_path token_stream ']'     { Attribute Inner $3 $4 ($1 # $>) }
+  | innerDoc                                  { let Spanned (Doc str _ l) x = $1 in SugaredDoc Inner l str x }
 
 -- TODO: for some precedence related reason, using 'some' here doesn't work
 inner_attrs :: { NonEmpty (Attribute Span) }
   : inner_attrs inner_attribute  { $1 |> $2 }
   | inner_attribute              { [$1] }
-
-
--- parse_meta_item()
-meta_item :: { MetaItem Span }
-  : ntMeta                                         { $1 }
-  | any_ident                                      { Word (unspan $1) (spanOf $1) }
-  | any_ident '=' unsuffixed                       { NameValue (unspan $1) $3 ($1 # $>) }
-  | any_ident '(' sep_byT(meta_item_inner,',') ')' { List (unspan $1) $3 ($1 # $>) }
-
--- parse_meta_item_inner()
-meta_item_inner :: { NestedMetaItem Span }
-  : unsuffixed                                     { Literal $1 (spanOf $1) }
-  | meta_item                                      { MetaItem $1 (spanOf $1) }
-
--- All identifiers should be accepted in meta items, even those that are keywords
-any_ident :: { Spanned Ident }
-  : ident                  { $1 }
-  | as         %prec IDENT { toIdent $1 } 
-  | box        %prec IDENT { toIdent $1 }
-  | break      %prec IDENT { toIdent $1 }
-  | const      %prec IDENT { toIdent $1 }
-  | continue   %prec IDENT { toIdent $1 }
-  | crate      %prec IDENT { toIdent $1 }
-  | else       %prec IDENT { toIdent $1 }
-  | enum       %prec IDENT { toIdent $1 }
-  | extern     %prec IDENT { toIdent $1 }
-  | fn         %prec IDENT { toIdent $1 }
-  | for        %prec IDENT { toIdent $1 }
-  | if         %prec IDENT { toIdent $1 }
-  | impl       %prec IDENT { toIdent $1 }
-  | in         %prec IDENT { toIdent $1 }
-  | let        %prec IDENT { toIdent $1 }
-  | loop       %prec IDENT { toIdent $1 }
-  | match      %prec IDENT { toIdent $1 }
-  | mod        %prec IDENT { toIdent $1 }
-  | move       %prec IDENT { toIdent $1 }
-  | mut        %prec IDENT { toIdent $1 }
-  | pub        %prec IDENT { toIdent $1 }
-  | ref        %prec IDENT { toIdent $1 }
-  | return     %prec IDENT { toIdent $1 }
-  | Self       %prec IDENT { toIdent $1 }
-  | self       %prec IDENT { toIdent $1 }
-  | static     %prec IDENT { toIdent $1 }
-  | struct     %prec IDENT { toIdent $1 }
-  | super      %prec IDENT { toIdent $1 }
-  | trait      %prec IDENT { toIdent $1 }
-  | type       %prec IDENT { toIdent $1 }
-  | unsafe     %prec IDENT { toIdent $1 }
-  | use        %prec IDENT { toIdent $1 }
-  | where      %prec IDENT { toIdent $1 }
-  | while      %prec IDENT { toIdent $1 }
-  | abstract   %prec IDENT { toIdent $1 }
-  | alignof    %prec IDENT { toIdent $1 }
-  | become     %prec IDENT { toIdent $1 }
-  | do         %prec IDENT { toIdent $1 }
-  | final      %prec IDENT { toIdent $1 }
-  | macro      %prec IDENT { toIdent $1 }
-  | offsetof   %prec IDENT { toIdent $1 }
-  | override   %prec IDENT { toIdent $1 }
-  | priv       %prec IDENT { toIdent $1 }
-  | proc       %prec IDENT { toIdent $1 }
-  | pure       %prec IDENT { toIdent $1 }
-  | sizeof     %prec IDENT { toIdent $1 }
-  | typeof     %prec IDENT { toIdent $1 }
-  | unsized    %prec IDENT { toIdent $1 }
-  | virtual    %prec IDENT { toIdent $1 }
-  | yield      %prec IDENT { toIdent $1 }
 
 
 --------------
@@ -475,13 +406,6 @@ string :: { Lit Span }
   | rawStr            { lit $1 }
   | byteStr           { lit $1 }
   | rawByteStr        { lit $1 }
-
-unsuffixed :: { Lit Span }
-  : lit               {%
-      case suffix $1 of
-        Unsuffixed -> pure $1
-        _ -> parseError $1      {-  "expected unsuffixed literal" -}
-    }
 
 
 -----------
@@ -600,11 +524,6 @@ lifetime :: { Lifetime Span }
 -- parse_trait_ref()
 trait_ref :: { TraitRef Span }
   : ty_path                          { TraitRef $1 }
-
--- All types, including trait types with plus and impl trait types
-ty_general :: { Ty Span }
-  : ty                               { $1 }
-  | impl_ty                          { $1 }
 
 -- parse_ty()
 -- See https://github.com/rust-lang/rfcs/blob/master/text/0438-precedence-of-plus.md
@@ -1033,7 +952,7 @@ block_like_expr :: { Expr Span }
   | match nostruct_expr '{' inner_attrs      '}'                    { Match (toList $4) $2 [] ($1 # $>) }
   | match nostruct_expr '{'             arms '}'                    { Match [] $2 $4 ($1 # $>) }
   | match nostruct_expr '{' inner_attrs arms '}'                    { Match (toList $4) $2 $5 ($1 # $>) }
-  | expr_path '!' '{' many(token_tree) '}'                          { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
+  | expr_path '!' '{' token_stream '}'                              { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
   | do catch inner_attrs_block                                      { let (as,b) = $> in Catch as b ($1 # b) }
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
@@ -1220,11 +1139,11 @@ stmt :: { Stmt Span }
   | many(outer_attribute) vis_safety_block ';'             { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
   | many(outer_attribute) vis_safety_block   %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }
   | gen_item(pub_or_inherited)                             { ItemStmt $1 (spanOf $1) }
-  | many(outer_attribute) expr_path '!' ident '[' many(token_tree) ']' ';'
+  | many(outer_attribute) expr_path '!' ident '[' token_stream ']' ';'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!' ident '(' many(token_tree) ')' ';'
+  | many(outer_attribute) expr_path '!' ident '(' token_stream ')' ';'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!' ident '{' many(token_tree) '}'
+  | many(outer_attribute) expr_path '!' ident '{' token_stream '}'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
 
 pub_or_inherited :: { Spanned (Visibility Span) }
@@ -1332,17 +1251,17 @@ gen_item(vis) :: { Item Span }
 mod_item :: { Item Span }
   : ntItem                                             { $1 }
   | gen_item(vis)                                      { $1 }
-  | many(outer_attribute) expr_path '!' ident '[' many(token_tree) ']' ';'
+  | many(outer_attribute) expr_path '!' ident '[' token_stream ']' ';'
     { macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!'       '[' many(token_tree) ']' ';'
+  | many(outer_attribute) expr_path '!'       '[' token_stream ']' ';'
     { macroItem $1 Nothing            (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!' ident '(' many(token_tree) ')' ';'
+  | many(outer_attribute) expr_path '!' ident '(' token_stream ')' ';'
     { macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!'       '(' many(token_tree) ')' ';'
+  | many(outer_attribute) expr_path '!'       '(' token_stream ')' ';'
     { macroItem $1 Nothing            (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!' ident '{' many(token_tree) '}'
+  | many(outer_attribute) expr_path '!' ident '{' token_stream '}'
     { macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!'       '{' many(token_tree) '}'
+  | many(outer_attribute) expr_path '!'       '{' token_stream '}'
     { macroItem $1 Nothing            (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
 
 foreign_item :: { ForeignItem Span }
@@ -1485,25 +1404,33 @@ plist :: { PathListItem Span }
 -------------------
 
 expr_mac :: { Mac Span }
-  : expr_path '!' '[' many(token_tree) ']'     { Mac $1 $4 ($1 # $>) }
-  | expr_path '!' '(' many(token_tree) ')'     { Mac $1 $4 ($1 # $>) }
+  : expr_path '!' '[' token_stream ']'     { Mac $1 $4 ($1 # $>) }
+  | expr_path '!' '(' token_stream ')'     { Mac $1 $4 ($1 # $>) }
 
 ty_mac :: { Mac Span }
-  : ty_path '!' '[' many(token_tree) ']'       { Mac $1 $4 ($1 # $>) }
-  | ty_path '!' '{' many(token_tree) '}'       { Mac $1 $4 ($1 # $>) }
-  | ty_path '!' '(' many(token_tree) ')'       { Mac $1 $4 ($1 # $>) }
+  : ty_path '!' '[' token_stream ']'       { Mac $1 $4 ($1 # $>) }
+  | ty_path '!' '{' token_stream '}'       { Mac $1 $4 ($1 # $>) }
+  | ty_path '!' '(' token_stream ')'       { Mac $1 $4 ($1 # $>) }
 
 mod_mac :: { Mac Span }
-  : mod_path '!' '[' many(token_tree) ']' ';'  { Mac $1 $4 ($1 # $>) }
-  | mod_path '!' '{' many(token_tree) '}'      { Mac $1 $4 ($1 # $>) }
-  | mod_path '!' '(' many(token_tree) ')' ';'  { Mac $1 $4 ($1 # $>) }
+  : mod_path '!' '[' token_stream ']' ';'  { Mac $1 $4 ($1 # $>) }
+  | mod_path '!' '{' token_stream '}'      { Mac $1 $4 ($1 # $>) }
+  | mod_path '!' '(' token_stream ')' ';'  { Mac $1 $4 ($1 # $>) }
+
+token_stream :: { TokenStream }
+  : {- empty -}                                { Stream [] }
+  | some(token_tree)                           {
+      case $1 of
+        [tt] -> Tree tt
+        tts -> Stream [ Tree tt | tt <- toList tts ]
+    }
 
 token_tree :: { TokenTree }
   : ntTT                                       { $1 }
   -- # Delimited
-  | '(' many(token_tree) ')'                   { Delimited ($1 # $3) Paren $2 }
-  | '{' many(token_tree) '}'                   { Delimited ($1 # $3) Brace $2 }
-  | '[' many(token_tree) ']'                   { Delimited ($1 # $3) Bracket $2 } 
+  | '(' token_stream ')'                       { Delimited ($1 # $3) Paren $2 }
+  | '{' token_stream '}'                       { Delimited ($1 # $3) Brace $2 }
+  | '[' token_stream ']'                       { Delimited ($1 # $3) Bracket $2 } 
   -- # Token
   | token                                      { let Spanned t s = $1 in Token s t }
 
@@ -1638,6 +1565,11 @@ token :: { Spanned Token }
 
 -- These rules aren't used anywhere in the grammar above, they just provide a more general parsers.
 
+-- Any attribute
+export_attribute :: { Attribute Span }
+  : inner_attribute { $1 }
+  | outer_attribute { $1 }
+
 -- Complete blocks
 export_block :: { Block Span }
   : ntBlock                                                { $1 }
@@ -1652,6 +1584,12 @@ export_arg :: { Arg Span }
 -- Exporting 'pat' directly screws up expressions like 'x && y()'
 export_pat :: { Pat Span }
   : pat                                                    { $1 }
+
+-- Any type, including trait types with plus and impl trait types
+export_general :: { Ty Span }
+  : ty                               { $1 }
+  | impl_ty                          { $1 }
+
 
 {
 -- | Parser for literals.
@@ -1689,6 +1627,9 @@ parseTraitItem :: P (TraitItem Span)
 
 -- | Parser for token trees.
 parseTt :: P TokenTree
+
+-- | Parser for token streams
+parseTokenStream :: P TokenStream
 
 -- | Parser for lifetime definitions
 parseLifetimeDef :: P (LifetimeDef Span)
@@ -1770,16 +1711,6 @@ addAttrs as (Repeat as' e1 e2 s)     = Repeat (as ++ as') e1 e2 s
 addAttrs as (ParenExpr as' e s)      = ParenExpr (as ++ as') e s
 addAttrs as (Try as' e s)            = Try (as ++ as') e s
 
-
--- | Given a 'Doc' token, convert it into an attribute
-mkDocAttribute :: Spanned Token -> Attribute Span
-mkDocAttribute (Spanned (Doc docStr sty) s) = Attribute sty' doc True s
-  where
-    str = Str docStr Cooked Unsuffixed mempty
-    doc = NameValue "doc" str mempty
-    sty' = case sty of
-             OuterDoc -> Outer
-             InnerDoc -> Inner
 
 -- | Given a 'LitTok' token that is expected to result in a valid literal, construct the associated
 -- literal. Note that this should _never_ fail on a token produced by the lexer.

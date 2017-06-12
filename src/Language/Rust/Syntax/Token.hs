@@ -11,7 +11,7 @@ Portability : portable
 
 module Language.Rust.Syntax.Token (
   -- Contains roughly the same stuff as @syntax::parse::token@ - data definitions for tokens.
-  Token(..), DocType(..), Space(..), Delim(..), LitTok(..)
+  Token(..), Space(..), Delim(..), LitTok(..), AttrStyle(..)
 ) where
 
 import GHC.Generics (Generic)
@@ -22,7 +22,7 @@ import Control.DeepSeq (NFData)
 
 import Language.Rust.Syntax.Ident (Ident, Name)
 import Language.Rust.Data.Position (Span)
-import Language.Rust.Syntax.AST (Nonterminal)
+import Language.Rust.Syntax.AST (Nonterminal, AttrStyle(..))
 
 -- | A general token (based on @syntax::parse::token::Token@).
 --
@@ -92,7 +92,8 @@ data Token
   | Underscore            -- ^ @_@ token
   | LifetimeTok Ident     -- ^ a lifetime (something like @\'a@ or @\'static@)
   | Space Space Name      -- ^ whitespace
-  | Doc String !DocType   -- ^ doc comment with its contents and whether it is outer/inner
+  -- ^ doc comment with its contents, whether it is outer/inner, and whether it is inline or not
+  | Doc String !AttrStyle !Bool
   | Shebang               -- ^ @#!@ shebang token
   | Eof                   -- ^ end of file token
   
@@ -100,26 +101,11 @@ data Token
   | Interpolated (Nonterminal Span) -- ^ can be expanded into several tokens in macro-expansion
   deriving (Eq, Data, Typeable, Generic, NFData)
 
-
--- | Possible styles of doc comments:
---
--- @
--- /// Full line outer doc comment
--- //! Full line inner doc comment
--- \/** Inline outer doc comment *\/
--- \/*! Inline inner doc comment *\/
--- @
---
-data DocType
-  = OuterDoc -- ^ comment refers to element that follows immediately after
-  | InnerDoc -- ^ comment refers to the closest enclosing element
-  deriving (Eq, Show, Enum, Bounded, Data, Typeable, Generic, NFData)
-
 -- | Rust is whitespace independent. Short of providing space between tokens, whitespace is all the
 -- same to the parser.
 data Space
   = Whitespace  -- ^ usual white space: @[\\ \\t\\n\\f\\v\\r]+@
-  | Comment     -- ^ comment (either inline or not, see 'DocType')
+  | Comment     -- ^ comment (either inline or not)
   deriving (Eq, Show, Enum, Bounded, Data, Typeable, Generic, NFData)
 
 -- | A delimiter token (@syntax::parse::token::DelimToken@)
@@ -127,7 +113,7 @@ data Delim
   = Paren   -- ^ round parenthesis: @(@ or @)@
   | Bracket -- ^ square bracket: @[@ or @]@
   | Brace   -- ^ curly brace: @{@ or @}@
-  | NoDelim -- ^ empty delimiter
+  | NoDelim -- ^ empty delimiter             -- TODO: BANISH! (or rather: distinguish DelimToken from Delim, as rustc does)
   deriving (Eq, Enum, Bounded, Show, Data, Typeable, Generic, NFData)
 
 -- | A literal token (@syntax::parse::token::Lit@)
@@ -217,8 +203,10 @@ instance Show Token where
   show (LifetimeTok l) = "'" ++ show l
   show (Space Whitespace _) = "<whitespace>"
   show (Space Comment n) = "/*" ++ show n ++ " */"
-  show (Doc d InnerDoc) = "/*!" ++ d ++ "*/"
-  show (Doc d OuterDoc) = "/**" ++ d ++ "*/"
+  show (Doc d Inner True) = "/*!" ++ d ++ "*/"
+  show (Doc d Outer True) = "/**" ++ d ++ "*/"
+  show (Doc d Inner False) = "//!" ++ d
+  show (Doc d Outer False) = "///" ++ d
   show Shebang = "#!"
   show Eof = "<EOF>"
   -- Macro related 

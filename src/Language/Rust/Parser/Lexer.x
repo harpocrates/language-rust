@@ -953,7 +953,7 @@ $hexit             = [0-9a-fA-F]
 @decimal_suffix    = \. [0-9][0-9_]*
 @exponent_suffix   = [eE] [\-\+]? [0-9][0-9_]*
 
-@lit_float         = ( 0 @decimal_suffix | ( [1-9][0-9_]* | 0[0-9_]+ ) @decimal_suffix? ) @exponent_suffix?
+@lit_float         = [0-9][0-9_]* @decimal_suffix? @exponent_suffix?
 @lit_float2        = [0-9][0-9_]* \.
 
 @lit_str           = \" (\\\n | \\\r\n | \\ @char_escape | [^\\\"] | \n | \r)* \"
@@ -1069,11 +1069,11 @@ $white+         { \s -> pure (Space Whitespace s)  }
 @lifetime       { \s -> (pure (LifetimeTok (mkIdent (tail s))) :: P Token) }
 
 
-@outer_doc_line   { \c -> pure (Doc (drop 3 c) OuterDoc) } 
-@outer_doc_inline { \_ -> Doc <$> nestedComment <*> pure OuterDoc }
+@outer_doc_line   { \c -> pure (Doc (drop 3 c) Outer False) } 
+@outer_doc_inline { \_ -> Doc <$> nestedComment <*> pure Outer <*> pure True }
 
-@inner_doc_line   { \c -> pure (Doc (drop 3 c) InnerDoc) }
-@inner_doc_inline { \_ -> Doc <$> nestedComment <*> pure InnerDoc }
+@inner_doc_line   { \c -> pure (Doc (drop 3 c) Inner False) }
+@inner_doc_inline { \_ -> Doc <$> nestedComment <*> pure Inner <*> pure True }
 
 @line_comment     { \c -> pure (Space Comment (drop 2 c)) }
 @inline_comment   { \_ -> Space Comment <$> nestedComment }

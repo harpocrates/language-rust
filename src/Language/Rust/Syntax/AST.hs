@@ -18,7 +18,7 @@ module Language.Rust.Syntax.AST (
   -- ** Paths
   Path(..), PathListItem(..), PathParameters(..), QSelf(..),
   -- ** Attributes
-  Attribute(..), AttrStyle(..), MetaItem(..), NestedMetaItem(..),
+  Attribute(..), AttrStyle(..),
   -- ** Literals
   Lit(..), byteStr, Suffix(..), suffix, IntRep(..), StrStyle(..),
   -- ** Expressions
@@ -39,7 +39,7 @@ module Language.Rust.Syntax.AST (
   -- ** Blocks
   Block(..),
   -- ** Token trees
-  TokenTree(..), Nonterminal(..), Mac(..), MacStmtStyle(..),
+  TokenTree(..), TokenStream(..), Nonterminal(..), Mac(..), MacStmtStyle(..),
 ) where
 
 import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)
@@ -168,19 +168,28 @@ instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
 -- Example: @"intel"@ as in @asm!("mov eax, 2" : "={eax}"(result) : : : "intel")@
 data AsmDialect = Att | Intel deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
--- | 'MetaItem's are annotations for other AST nodes (@syntax::ast::Attribute@). Note that
--- doc-comments are promoted to attributes that have @isSugaredDoc = True@.
+-- | 'Attribute's are annotations for other AST nodes (@syntax::ast::Attribute@). Note that
+-- doc-comments are promoted to attributes.
 --
 -- Example: @#[repr(C)]@ in @#[derive(Clone, Copy)] struct Complex { re: f32, im: f32 }@
 data Attribute a
   = Attribute
       { style :: AttrStyle   -- ^ whether attribute is inner or outer
-      , value :: MetaItem a  -- ^ actual content of attribute
-      , isSugaredDoc :: Bool -- ^ whether the attribute was initially a doc-comment
+      , path :: Path a       -- ^ all attributes start with a path
+      , value :: TokenStream -- ^ actual content of attribute
       , nodeInfo :: a
-      } deriving (Eq, Show, Functor, Typeable, Data, Generic, NFData)
+      }
+  | SugaredDoc
+      { style :: AttrStyle   -- ^ whether attribute is inner or outer
+      , inline :: Bool       -- ^ whether attribute is inline or not
+      , contents :: Name     -- ^ what is in the doc comment
+      , nodeInfo :: a
+      }
+ deriving (Eq, Show, Functor, Typeable, Data, Generic, NFData)
 
-instance Located a => Located (Attribute a) where spanOf (Attribute _ _ _ s) = spanOf s
+instance Located a => Located (Attribute a) where
+  spanOf (Attribute _ _ _ s) = spanOf s
+  spanOf (SugaredDoc _ _ _ s) = spanOf s
 
 -- | Distinguishes between attributes that decorate what follows them and attributes that are
 -- describe the node that contains them (@syntax::ast::AttrStyle@). These two cases need to be
@@ -579,7 +588,7 @@ data Item a
   | MacItem [Attribute a] (Maybe Ident) (Mac a) a
   -- | definition of a macro via @macro_rules@
   -- Example: @macro_rules! foo { .. }@
-  | MacroDef [Attribute a] Ident [TokenTree] a
+  | MacroDef [Attribute a] Ident TokenStream a
   deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
 
 instance Located a => Located (Item a) where
@@ -717,8 +726,8 @@ suffix (Bool _ s _) = s
 data IntRep = Bin | Oct | Dec | Hex deriving (Eq, Show, Enum, Bounded, Typeable, Data, Generic, NFData)
 
 -- | Represents a macro invocation (@syntax::ast::Mac@). The 'Path' indicates which macro is being
--- invoked, and the 'TokenTree's contains the source of the macro invocation.
-data Mac a = Mac (Path a) [TokenTree] a deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+-- invoked, and the 'TokenStream' contains the source of the macro invocation.
+data Mac a = Mac (Path a) TokenStream a deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
 
 instance Located a => Located (Mac a) where spanOf (Mac _ _ s) = spanOf s
 
@@ -728,34 +737,11 @@ data MacStmtStyle
   | BracesMac    -- ^ braces (example: @foo! { ... }@)
   deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
--- | Compile-time attribute item (@syntax::ast::MetaItem@)
-data MetaItem a
-  = Word Ident a                    -- ^ @test@ as in @#[test]@
-  | List Ident [NestedMetaItem a] a -- ^ @derive(..)@ as in @#[derive(..)]@
-  | NameValue Ident (Lit a) a       -- ^ @feature = "foo"@ as in @#[feature = "foo"]@
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
-
-instance Located a => Located (MetaItem a) where
-  spanOf (Word _ s) = spanOf s
-  spanOf (List _ _ s) = spanOf s 
-  spanOf (NameValue _ _ s) = spanOf s
-
 -- | Represents a method's signature in a trait declaration, or in an implementation.
 data MethodSig a = MethodSig Unsafety Constness Abi (FnDecl a) (Generics a) deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
 
 -- | Encodes whether something can be updated or changed (@syntax::ast::Mutability@).
 data Mutability = Mutable | Immutable deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
-
--- | Possible values inside of 'MetaItem's. This needs to be seperate from 'MetaItem' in order to
--- disallow literals in (top-level) 'MetaItem's. 
-data NestedMetaItem a
-  = MetaItem (MetaItem a) a -- ^ full 'MetaItem', for recursive meta items.
-  | Literal (Lit a) a       -- ^ literal (example: @\"foo\"@, @64@, @true@)
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
-
-instance Located a => Located (NestedMetaItem a) where
-  spanOf (MetaItem _ s) = spanOf s
-  spanOf (Literal _ s) = spanOf s
 
 -- | For interpolation during macro expansion (@syntax::ast::NonTerminal@).
 data Nonterminal a
@@ -766,7 +752,6 @@ data Nonterminal a
   | NtExpr (Expr a)
   | NtTy (Ty a)
   | NtIdent Ident
-  | NtMeta (MetaItem a)
   | NtPath (Path a)
   | NtTT TokenTree
   | NtArm (Arm a)
@@ -958,6 +943,18 @@ data StructField a
 
 instance Located a => Located (StructField a) where spanOf (StructField _ _ _ _ s) = spanOf s
 
+-- | An abstract sequence of tokens, organized into a sequence (e.g. stream) of 'TokenTree's, which
+-- are themselves a single 'Token' or a 'Delimited' subsequence of tokens.
+data TokenStream
+  = Tree TokenTree              -- ^ a single token or a single set of delimited tokens
+  | Stream [TokenStream]        -- ^ stream of streams of tokens
+  deriving (Eq, Show, Typeable, Data, Generic, NFData)
+
+-- | 'Span' is not stored on 'TokenStream' - it is computed
+instance Located TokenStream where
+  spanOf (Tree t) = spanOf t
+  spanOf (Stream tt) = spanOf tt
+
 -- | When the parser encounters a macro call, it parses what follows as a 'Delimited' token tree.
 -- Basically, token trees let you store raw tokens or 'Sequence' forms inside of balanced
 -- parens or braces or brackets. This is a very loose structure, such that all sorts of different
@@ -965,12 +962,12 @@ instance Located a => Located (StructField a) where spanOf (StructField _ _ _ _ 
 data TokenTree
   -- | A single token
   = Token Span Token
-  -- | A delimited sequence of token trees (@syntax::tokenstream::Delimited@)
+  -- | A delimited sequence of tokens (@syntax::tokenstream::Delimited@)
   -- Example: @{ [-\>+\<] }@ in @brainfuck!{ [-\>+\<] };@
   | Delimited
       { span :: Span
       , delim :: Delim             -- ^ type of delimiter
-      , tts :: [TokenTree]         -- ^ delimited sequence of token trees
+      , tts :: TokenStream         -- ^ delimited sequence of tokens
       }
   deriving (Eq, Show, Typeable, Data, Generic, NFData)
 

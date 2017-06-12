@@ -141,36 +141,17 @@ data AttrType
   | InnerAttr  -- ^ only innner attribute
   | OuterAttr  -- ^ only outer attribute
 
--- | An attribute is invalid if it claims to be a doc comment but lacks the accompanying structure.
-resolveAttr :: AttrType -> Attribute a -> Either String (Attribute a)
-resolveAttr OuterAttr (Attribute Inner met b x) = resolveAttr OuterAttr (Attribute Outer met b x)
-resolveAttr InnerAttr (Attribute Outer met b x) = resolveAttr InnerAttr (Attribute Inner met b x)
-resolveAttr _         (Attribute sty met False x) = Attribute sty <$> resolveMetaItem met <*> pure False <*> pure x 
-resolveAttr _       a@(Attribute _ (NameValue (Ident "doc" _) (Str _ Cooked Unsuffixed _) _) True _) = pure a
-resolveAttr _          _ = Left "attribute cannot be doc comment"
 
-instance Resolve (Attribute a) where resolve = resolveAttr EitherAttr
+-- TODO: Regular attributes cannot start with a '::' token
+-- TODO: One line sugared docs should not contain newlines or carriage returns
+-- | An attribute is invalid if any of the underlying components are. 
+resolveAttr :: Monoid a => AttrType -> Attribute a -> Either String (Attribute a)
+resolveAttr OuterAttr (Attribute Inner p ts x) = resolveAttr OuterAttr (Attribute Outer p ts x)
+resolveAttr InnerAttr (Attribute Outer p ts x) = resolveAttr InnerAttr (Attribute Inner p ts x)
+resolveAttr _         (Attribute sty   p ts x) = Attribute sty <$> resolvePath ModPath p <*> resolveTokenStream ts <*> pure x 
+resolveAttr _         s@SugaredDoc{} = pure s
 
--- | A meta-item is invalid if a literal has a suffix. Note that identifiers here can even be
--- keywords.
-resolveMetaItem :: MetaItem a -> Either String (MetaItem a)
-resolveMetaItem (Word i x) = Word <$> resolveIdent' i <*> pure x
-resolveMetaItem (List i vals x) = List <$> resolveIdent' i <*> sequence (resolveNestedMetaItem <$> vals) <*> pure x 
-resolveMetaItem (NameValue i lit x)
-  | suffix lit /= Unsuffixed = Left "literal in meta-item that is not unsuffixed"
-  | otherwise = NameValue <$> resolveIdent' i <*> resolveLit lit <*> pure x
-
-instance Resolve (MetaItem a) where resolve = resolveMetaItem
-
--- | A nested-meta-item is invalid if a literal has a suffix. Note that identifiers here can even
--- be keywords.
-resolveNestedMetaItem :: NestedMetaItem a -> Either String (NestedMetaItem a)
-resolveNestedMetaItem (MetaItem met x) = MetaItem <$> resolveMetaItem met <*> pure x
-resolveNestedMetaItem (Literal lit x)
-  | suffix lit /= Unsuffixed = Left "literal in nested-meta-item that is not unsuffixed"
-  | otherwise = Literal <$> resolveLit lit <*> pure x
-
-instance Resolve (NestedMetaItem a) where resolve = resolveNestedMetaItem
+instance Monoid a => Resolve (Attribute a) where resolve = resolveAttr EitherAttr
 
 
 --------------
@@ -383,14 +364,14 @@ resolvePolyTraitRef (PolyTraitRef lts t x) = PolyTraitRef <$> sequence (resolveL
 instance Monoid a => Resolve (PolyTraitRef a) where resolve = resolvePolyTraitRef
 
 -- | A lifetime def is invalid if it has non-outer attributes 
-resolveLifetimeDef :: LifetimeDef a -> Either String (LifetimeDef a)
+resolveLifetimeDef :: Monoid a => LifetimeDef a -> Either String (LifetimeDef a)
 resolveLifetimeDef (LifetimeDef as l bds x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   l' <- resolveLifetime l
   bds' <- sequence (resolveLifetime <$> bds)
   pure (LifetimeDef as' l' bds' x)
 
-instance Resolve (LifetimeDef a) where resolve = resolveLifetimeDef
+instance Monoid a => Resolve (LifetimeDef a) where resolve = resolveLifetimeDef
 
 
 --------------
@@ -1037,7 +1018,7 @@ resolveItem _ (MacItem as i m x) = do
 resolveItem _ (MacroDef as i ts x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   i' <- resolveIdent i
-  ts' <- sequence (resolveTt <$> ts)
+  ts' <- resolveTokenStream ts
   pure (MacroDef as' i' ts' x)
 
 instance Monoid a => Resolve (Item a) where resolve = resolveItem ModItem
@@ -1259,10 +1240,10 @@ resolveSelfSuperIdent i = resolveIdent i
 
 -- | A macro call is only invalid if any of the underlying components are
 resolveMac :: Monoid a => PathType -> Mac a -> Either String (Mac a)
-resolveMac t (Mac p tt x) = Mac <$> resolvePath t p <*> sequence (resolveTt <$> tt) <*> pure x
+resolveMac t (Mac p ts x) = Mac <$> resolvePath t p <*> resolveTokenStream ts <*> pure x
 
 instance Monoid a => Resolve (Mac a) where
-  resolve (Mac p tt x) = Mac <$> resolve p <*> sequence (resolveTt <$> tt) <*> pure x 
+  resolve (Mac p ts x) = Mac <$> resolve p <*> resolveTokenStream ts <*> pure x 
 
 -- | A token tree is invalid when
 --
@@ -1273,9 +1254,15 @@ resolveTt :: TokenTree -> Either String TokenTree
 resolveTt (Token _ (OpenDelim _)) = Left "open delimiter is not allowed as a token in a token tree"
 resolveTt (Token _ (CloseDelim _)) = Left "close delimiter is not allowed as a token in a token tree"
 resolveTt t@Token{} = pure t
-resolveTt (Delimited s d tt) = Delimited s d <$> sequence (resolveTt <$> tt)
+resolveTt (Delimited s d ts) = Delimited s d <$> resolveTokenStream ts
 
 instance Resolve TokenTree where resolve = resolveTt
+
+resolveTokenStream :: TokenStream -> Either String TokenStream
+resolveTokenStream (Tree tt) = Tree <$> resolveTt tt
+resolveTokenStream (Stream ts) = Stream <$> mapM resolveTokenStream ts
+
+instance Resolve TokenStream where resolve = resolveTokenStream
 
 resolveInlineAsm :: InlineAsm a -> Either String (InlineAsm a)
 resolveInlineAsm = pure

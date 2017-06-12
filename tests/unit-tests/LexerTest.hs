@@ -113,9 +113,7 @@ commonCode = testGroup "lexing common code fragments"
               , IdentTok (mkIdent "f32")
               ]
   , testCode "0e+10"
-              [ LiteralTok (IntegerTok "0") (Just "e")
-              , Plus
-              , LiteralTok (IntegerTok "10") Nothing
+              [ LiteralTok (FloatTok "0e+10") Nothing
               ]
   , testCode "123.+1"
               [ LiteralTok (FloatTok "123.") Nothing

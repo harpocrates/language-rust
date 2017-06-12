@@ -151,16 +151,48 @@ parserLiterals = testGroup "parsing literals"
 -- | Test parsing of (inner and outer) attributes.
 parserAttributes :: Test
 parserAttributes = testGroup "parsing attributes" 
-  [ testP "#[cfg]" (Attribute Outer (Word (mkIdent "cfg") ())False ())
-  , testP "#![cfg]" (Attribute Inner (Word (mkIdent "cfg") ()) False ())
-  , testP "#[test]" (Attribute Outer (Word (mkIdent "test") ()) False ())
-  , testP "#[inline(always)]" (Attribute Outer (List (mkIdent "inline") [MetaItem (Word (mkIdent "always") ()) ()] ()) False ())
-  , testP "#[inline(always,)]" (Attribute Outer (List (mkIdent "inline") [MetaItem (Word (mkIdent "always") ()) ()] ()) False ())
-  , testP "#[inline()]" (Attribute Outer (List (mkIdent "inline") [] ()) False ())
-  , testP "#[inline(always, sometimes)]" (Attribute Outer (List (mkIdent "inline") [MetaItem (Word (mkIdent "always") ()) (),MetaItem (Word (mkIdent "sometimes") ()) ()] ()) False ())
-  , testP "#[self(if, default)]" (Attribute Outer (List (mkIdent "self") [MetaItem (Word (mkIdent "if") ()) (),MetaItem (Word (mkIdent "default") ()) ()] ()) False ())
-  , testP "#[cfg(target_os = \"macos\")]" (Attribute Outer (List (mkIdent "cfg") [MetaItem (NameValue (mkIdent "target_os") (Str "macos" Cooked Unsuffixed ()) ()) ()] ()) False ())
-  , testP "#[cfg(0, tar = \"mac\")]" (Attribute Outer (List (mkIdent "cfg") [Literal (Int Dec 0 Unsuffixed ()) (), MetaItem (NameValue (mkIdent "tar") (Str "mac" Cooked Unsuffixed ()) ()) ()] ()) False ())
+  [ testP "#![cfgi]" (Attribute Inner (Path False [("cfgi", NoParameters ())] ()) (Stream []) ())
+  , testP "#[cfgo]" (Attribute Outer (Path False [("cfgo", NoParameters ())] ()) (Stream []) ())
+  , testP "#[derive(Eq, Ord, 1)]" (Attribute Outer (Path False [("derive", NoParameters ())] ()) (Tree (Delimited (Span (Position 8 1 8) (Position 20 1 20)) Paren (Stream
+                                                          [ Tree (Token (Span (Position 9 1 9) (Position 11 1 11)) (IdentTok "Eq"))
+                                                          , Tree (Token (Span (Position 11 1 11) (Position 12 1 12)) Comma)
+                                                          , Tree (Token (Span (Position 13 1 13) (Position 16 1 16)) (IdentTok "Ord"))
+                                                          , Tree (Token (Span (Position 16 1 16) (Position 17 1 17)) Comma)
+                                                          , Tree (Token (Span (Position 18 1 18) (Position 19 1 19)) (LiteralTok (IntegerTok "1") Nothing))
+                                                          ]))) ())
+  , testP "#[feature = \"foo\"]" (Attribute Outer (Path False [("feature", NoParameters ())] ()) (Stream
+                                                          [ Tree (Token (Span (Position 10 1 10) (Position 11 1 11)) Equal)
+                                                          , Tree (Token (Span (Position 12 1 12) (Position 17 1 17)) (LiteralTok (StrTok "foo") Nothing))
+                                                          ]) ())
+  , testP "/** some comment */" (SugaredDoc Outer True " some comment " ())
+  , testP "#[test]" (Attribute Outer (Path False [("test", NoParameters ())] ()) (Stream []) ())
+  , testP "#[inline(always)]" (Attribute Outer (Path False [("inline", NoParameters ())] ()) (Tree (Delimited (Span (Position 8 1 8) (Position 16 1 16)) Paren
+                                                          (Tree (Token (Span (Position 9 1 9) (Position 15 1 15)) (IdentTok "always"))
+                                                          ))) ())
+  , testP "#[inline(always,)]" (Attribute Outer (Path False [("inline", NoParameters ())] ()) (Tree (Delimited (Span (Position 8 1 8) (Position 17 1 17)) Paren (Stream
+                                                          [ Tree (Token (Span (Position 9 1 9) (Position 15 1 15)) (IdentTok "always"))
+                                                          , Tree (Token (Span (Position 15 1 15) (Position 16 1 16)) Comma)
+                                                          ]))) ())
+  , testP "#[inline()]" (Attribute Outer (Path False [("inline", NoParameters ())] ()) (Tree (Delimited (Span (Position 8 1 8) (Position 10 1 10)) Paren (Stream
+                                                          [
+                                                          ]))) ())
+  , testP "#[inline(always,sometimes)]" (Attribute Outer (Path False [("inline", NoParameters ())] ()) (Tree (Delimited (Span (Position 8 1 8) (Position 26 1 26)) Paren (Stream
+                                                          [ Tree (Token (Span (Position 9 1 9) (Position 15 1 15)) (IdentTok "always"))
+                                                          , Tree (Token (Span (Position 15 1 15) (Position 16 1 16)) Comma)
+                                                          , Tree (Token (Span (Position 16 1 16) (Position 25 1 25)) (IdentTok "sometimes"))
+                                                          ]))) ())
+  , testP "#[self(if, default)]" (Attribute Outer (Path False [("self", NoParameters ())] ()) (Tree (Delimited (Span (Position 6 1 6) (Position 19 1 19)) Paren (Stream
+                                                          [ Tree (Token (Span (Position 7 1 7) (Position 9 1 9)) (IdentTok "if"))
+                                                          , Tree (Token (Span (Position 9 1 9) (Position 10 1 10)) Comma)
+                                                          , Tree (Token (Span (Position 11 1 11) (Position 18 1 18)) (IdentTok "default"))
+                                                          ]))) ())
+  , testP "#[cfg(target_os = \"mac_os\", 1)]" (Attribute Outer (Path False [("cfg", NoParameters ())] ()) (Tree (Delimited (Span (Position 5 1 5) (Position 30 1 30)) Paren (Stream
+                                                          [ Tree (Token (Span (Position 6 1 6) (Position 15 1 15)) (IdentTok "target_os"))
+                                                          , Tree (Token (Span (Position 16 1 16) (Position 17 1 17)) Equal)
+                                                          , Tree (Token (Span (Position 18 1 18) (Position 26 1 26)) (LiteralTok (StrTok "mac_os") Nothing))
+                                                          , Tree (Token (Span (Position 26 1 26) (Position 27 1 27)) Comma)
+                                                          , Tree (Token (Span (Position 28 1 28) (Position 29 1 29)) (LiteralTok (IntegerTok "1") Nothing))
+                                                          ]))) ())
   ]
 
 
@@ -350,7 +382,7 @@ parserTypes = testGroup "parsing types"
   , testP "Fn() -> &(Object+Send)"
            (PathTy Nothing (Path False [("Fn", Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Object",NoParameters ())] ())) ()) None ()
              , TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Send",NoParameters ())] ())) ()) None ()] ()) ()) ())) ())] ()) ())
-  , testP "foo![ x ]" (MacTy (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 6 1 6) (Position 7 1 7)) (IdentTok "x")]  ()) ())
+  , testP "foo![ x ]" (MacTy (Mac (Path False [("foo", NoParameters ())] ()) (Tree (Token (Span (Position 6 1 6) (Position 7 1 7)) (IdentTok "x")))  ()) ())
   ]
 
 
@@ -428,7 +460,7 @@ parserPatterns = testGroup "parsing patterns"
   , testP "[x,]"                    (SliceP [ x ] Nothing [] ())
   , testP "[x..]"                   (SliceP [] (Just x) [] ())
   , testP "[..]"                    (SliceP [] (Just (WildP ())) [] ())
-  , testP "foo!(x)"                 (MacP (Mac (Path False [("foo", NoParameters ())] ()) [Token (Span (Position 5 1 5) (Position 6 1 6)) (IdentTok "x")]  ()) ())
+  , testP "foo!(x)"                 (MacP (Mac (Path False [("foo", NoParameters ())] ()) (Tree (Token (Span (Position 5 1 5) (Position 6 1 6)) (IdentTok "x")))  ()) ())
   ]
 
   
@@ -528,7 +560,7 @@ parserExpressions = testGroup "parsing expressions"
   , testP "match true { _ => 2, x | x => { 1; }, }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] [x,x] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ()] ())
   , testP "match true { _ => 2, x | x => { 1; }, _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] [x,x] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) (), Arm [] [WildP ()] Nothing (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
   , testP "match true { _ => 2, x | x => { 1; } _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] [x,x] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) (), Arm [] [WildP ()] Nothing (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
-  , testP "println!()" (MacExpr [] (Mac (Path False [("println",NoParameters ())] ()) [] ()) ()) 
+  , testP "println!()" (MacExpr [] (Mac (Path False [("println",NoParameters ())] ()) (Stream []) ()) ()) 
   , testP "1..2" (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) HalfOpen ())
   , testP "1...2" (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) Closed ())
   , testP "1.." (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) Nothing HalfOpen ())

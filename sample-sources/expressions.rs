@@ -41,6 +41,7 @@ fn main() {
   let x = [1; 5];
   let x = 1 * (2 + 3);
   let x = foo()?;
+  let x = do catch { 1 };
   return 0;
   return;
 

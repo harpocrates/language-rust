@@ -27,11 +27,14 @@ module Language.Rust.Pretty (
 ) where
 
 import Language.Rust.Data.Position
+
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
+
 import Language.Rust.Pretty.Internal
 import Language.Rust.Pretty.Resolve
+import Language.Rust.Pretty.Literals
 
 import Text.PrettyPrint.Annotated.WL (Doc, noAnnotate, text)
 
@@ -52,6 +55,7 @@ instance Pretty Mutability where pretty = printMutability
 instance Pretty RangeLimits where pretty = printRangeLimits
 instance Pretty Token where pretty = printToken
 instance Pretty TokenTree where pretty = printTt
+instance Pretty TokenStream where pretty = printTokenStream
 instance Pretty UnOp where pretty = printUnOp
 instance Pretty Unsafety where pretty = printUnsafety
 instance Pretty (Attribute a) where pretty = noAnnotate . prettyAnn
@@ -70,8 +74,6 @@ instance Pretty (Item a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Lifetime a) where pretty = noAnnotate . prettyAnn
 instance Pretty (LifetimeDef a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Lit a) where pretty = noAnnotate . prettyAnn
-instance Pretty (MetaItem a) where pretty = noAnnotate . prettyAnn
-instance Pretty (NestedMetaItem a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Nonterminal a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Pat a) where pretty = noAnnotate . prettyAnn
 instance Pretty (Path a) where pretty = noAnnotate . prettyAnn
@@ -113,8 +115,6 @@ instance PrettyAnnotated Item where prettyAnn = printItem
 instance PrettyAnnotated Lifetime where prettyAnn = printLifetime
 instance PrettyAnnotated LifetimeDef where prettyAnn = printLifetimeDef
 instance PrettyAnnotated Lit where prettyAnn = printLit
-instance PrettyAnnotated MetaItem where prettyAnn = printMetaItem
-instance PrettyAnnotated NestedMetaItem where prettyAnn = printMetaListItem
 instance PrettyAnnotated Nonterminal where prettyAnn = printNonterminal
 instance PrettyAnnotated Pat where prettyAnn = printPat
 instance PrettyAnnotated Path where prettyAnn = flip printPath False

@@ -51,8 +51,9 @@ bar = PathExpr [] Nothing (Path False [("bar", NoParameters ())] ()) ()
 
 -- | Attributes to make tests more straightforward
 cfgI, cfgO :: Attribute ()
-cfgI = Attribute Inner (Word (mkIdent "cfgi") ()) False ()
-cfgO = Attribute Outer (Word (mkIdent "cfgo") ()) False ()
+cfgI = Attribute Inner (Path False [("cfgi", NoParameters ())] ()) (Stream []) ()
+cfgO = Attribute Outer (Path False [("cfgo", NoParameters ())] ()) (Stream []) ()
+
 
 -- | Blocks to make tests more straightforward
 assBlk, retBlk :: Block ()
@@ -158,7 +159,7 @@ prettyPatterns = testGroup "printing patterns"
   , testFlatten "[1, x..]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ] (Just x) [] ()))
 
   , testFlatten "vecPat!(foo)" (printPat (MacP (Mac (Path False [("vecPat", NoParameters ())] ())
-                                                   [ Token mempty (IdentTok (mkIdent "foo")) ] ()) ()))
+                                                   (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) ()))
   ]
 
 -- | Test pretty-printing of types (flattened). 
@@ -187,31 +188,31 @@ prettyTypes = testGroup "printing types"
   , testFlatten "typeof(1i32)" (printType (Typeof (Lit [] (Int Dec 1 I32 ()) ()) ()))
   , testFlatten "_" (printType (Infer ()))
   , testFlatten "HList![ & str , bool , Vec < i32 > ]"
-                (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ())
-                                       [ Delimited mempty NoDelim [ Token mempty Ampersand, Token mempty (IdentTok (mkIdent "str")) ] 
-                                       , Token mempty Comma
-                                       , Token mempty (IdentTok (mkIdent "bool"))
-                                       , Token mempty Comma
-                                       , Delimited mempty NoDelim [ Token mempty (IdentTok (mkIdent "Vec"))
-                                                                  , Token mempty Less
-                                                                  , Token mempty (IdentTok (mkIdent "i32"))
-                                                                  , Token mempty Greater
-                                                                  ]
-                                       ]
+                (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ()) (Stream
+                                       [ Tree (Token mempty Ampersand)
+                                       , Tree (Token mempty (IdentTok (mkIdent "str")))
+                                       , Tree (Token mempty Comma)
+                                       , Tree (Token mempty (IdentTok (mkIdent "bool")))
+                                       , Tree (Token mempty Comma)
+                                       , Tree (Token mempty (IdentTok (mkIdent "Vec")))
+                                       , Tree (Token mempty Less)
+                                       , Tree (Token mempty (IdentTok (mkIdent "i32")))
+                                       , Tree (Token mempty Greater)
+                                       ])
                                        ())
                            ()))
   , testFlatten "HList![ &str, bool, Vec<i32> ]"
-                (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ())
-                                       [ Token (Span (Position 8 1 8) (Position 9 1 9)) Ampersand
-                                       , Token (Span (Position 9 1 9) (Position 12 1 12)) (IdentTok "str")
-                                       , Token (Span (Position 12 1 12) (Position 13 1 13)) Comma
-                                       , Token (Span (Position 14 1 14) (Position 18 1 18)) (IdentTok "bool")
-                                       , Token (Span (Position 18 1 18) (Position 19 1 19)) Comma
-                                       , Token (Span (Position 20 1 20) (Position 23 1 23)) (IdentTok "Vec")
-                                       , Token (Span (Position 23 1 23) (Position 24 1 24)) Less
-                                       , Token (Span (Position 24 1 24) (Position 27 1 27)) (IdentTok "i32")
-                                       , Token (Span (Position 27 1 27) (Position 28 1 28)) Greater
-                                       ]
+                (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ()) (Stream
+                                       [ Tree (Token (Span (Position 8 1 8) (Position 9 1 9)) Ampersand)
+                                       , Tree (Token (Span (Position 9 1 9) (Position 12 1 12)) (IdentTok "str"))
+                                       , Tree (Token (Span (Position 12 1 12) (Position 13 1 13)) Comma)
+                                       , Tree (Token (Span (Position 14 1 14) (Position 18 1 18)) (IdentTok "bool"))
+                                       , Tree (Token (Span (Position 18 1 18) (Position 19 1 19)) Comma)
+                                       , Tree (Token (Span (Position 20 1 20) (Position 23 1 23)) (IdentTok "Vec"))
+                                       , Tree (Token (Span (Position 23 1 23) (Position 24 1 24)) Less)
+                                       , Tree (Token (Span (Position 24 1 24) (Position 27 1 27)) (IdentTok "i32"))
+                                       , Tree (Token (Span (Position 27 1 27) (Position 28 1 28)) Greater)
+                                       ])
                                        ())
                            ()))               
   , testFlatten "fn(i32) -> i32"
@@ -223,15 +224,20 @@ prettyTypes = testGroup "printing types"
 -- | Test pretty-printing of attributes (flattened).
 prettyAttributes :: Test
 prettyAttributes = testGroup "printing attributes"
-  [ testFlatten "#![cgf]" (printAttr (Attribute Inner (Word (mkIdent "cgf") ()) False ()) True)
-  , testFlatten "#[cgf]" (printAttr (Attribute Outer (Word (mkIdent "cgf") ()) False ()) True)
-  , testFlatten "#[derive(Eq, Ord, 1)]" (printAttr (Attribute Outer (List (mkIdent "derive") 
-                                                        [ MetaItem (Word (mkIdent "Eq") ()) ()
-                                                        , MetaItem (Word (mkIdent "Ord") ()) () 
-                                                        , Literal (Int Dec 1 Unsuffixed ()) ()
-                                                        ] ()) False ()) True)
-  , testFlatten "#[feature = \"foo\"]" (printAttr (Attribute Outer (NameValue (mkIdent "feature") (Str "foo" Cooked Unsuffixed ()) ()) False ()) True)
-  , testFlatten "/** some comment */" (printAttr (Attribute Outer (NameValue (mkIdent "") (Str "some comment" Cooked Unsuffixed ()) ()) True ()) True)
+  [ testFlatten "#![cfgi]" (printAttr cfgI True) 
+  , testFlatten "#[cfgo]" (printAttr cfgO True)
+  , testFlatten "#[derive(Eq , Ord , 1)]" (printAttr (Attribute Outer (Path False [("derive", NoParameters ())] ()) (Tree (Delimited mempty Paren (Stream
+                                                          [ Tree (Token mempty (IdentTok "Eq"))
+                                                          , Tree (Token mempty Comma)
+                                                          , Tree (Token mempty (IdentTok "Ord"))
+                                                          , Tree (Token mempty Comma)
+                                                          , Tree (Token mempty (LiteralTok (IntegerTok "1") Nothing))
+                                                          ]))) ()) True)
+  , testFlatten "#[feature = \"foo\"]" (printAttr (Attribute Outer (Path False [("feature", NoParameters ())] ()) (Stream
+                                                          [ Tree (Token mempty Equal)
+                                                          , Tree (Token mempty (LiteralTok (StrTok "foo") Nothing))
+                                                          ]) ()) True)
+  , testFlatten "/** some comment */" (printAttr (SugaredDoc Outer True " some comment " ()) True)
   ]
   
 -- | Test pretty-printing of expressions (flattened). 
@@ -328,7 +334,7 @@ prettyExpressions = testGroup "printing expressions"
                 (printExpr (InlineAsmExpr [] (InlineAsm "mov eax, 2" Cooked [InlineAsmOutput "={eax}" foo False False] []
                                                         [] False False Intel ()) ()))
   , testFlatten "print!(foo)" (printExpr (MacExpr [] (Mac (Path False [("print", NoParameters ())] ())
-                                       [ Token mempty (IdentTok (mkIdent "foo")) ] ()) ()))
+                                       (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) ()))
   , testFlatten "foo { }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [] Nothing ()))
   , testFlatten "foo { x: 1 }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") (Just _1) ()] Nothing ()))
   , testFlatten "#[cfgo] foo { #![cfgi] x: 1 }" (printExpr (Struct [cfgO,cfgI] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") (Just _1) ()] Nothing ()))
@@ -454,9 +460,9 @@ prettyStatements = testGroup "printing statements"
   , testFlatten "{ return 1; };" (printStmt (Semi (BlockExpr [] retBlk ()) ()))
   , testFlatten "foo;" (printStmt (Semi foo ()))
   , testFlatten "1;" (printStmt (Semi _1 ()))
-  , testFlatten "#[cfgo] println!(foo);" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) SemicolonMac [cfgO] ()))
-  , testFlatten "println!(foo);" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) SemicolonMac [] ()))
-  , testFlatten "println!{ foo }" (printStmt (MacStmt (Mac (Path False [println] ()) [ Token mempty (IdentTok (mkIdent "foo")) ] ()) BracesMac [] ()))
+  , testFlatten "#[cfgo] println!(foo);" (printStmt (MacStmt (Mac (Path False [println] ()) (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) SemicolonMac [cfgO] ()))
+  , testFlatten "println!(foo);" (printStmt (MacStmt (Mac (Path False [println] ()) (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) SemicolonMac [] ()))
+  , testFlatten "println!{ foo }" (printStmt (MacStmt (Mac (Path False [println] ()) (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) BracesMac [] ()))
   ]
   
 -- | This tries to make it so that the `Doc` gets rendered onto only one line.

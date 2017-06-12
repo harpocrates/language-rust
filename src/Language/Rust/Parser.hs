@@ -82,6 +82,7 @@ instance Parse (Stmt Span) where parser = parseStmt
 instance Parse (Item Span) where parser = parseItem
 instance Parse (SourceFile Span) where parser = parseSourceFile
 instance Parse TokenTree where parser = parseTt
+instance Parse TokenStream where parser = parseTokenStream
 instance Parse (Block Span) where parser = parseBlock
 instance Parse (ImplItem Span) where parser = parseImplItem 
 instance Parse (TraitItem Span) where parser = parseTraitItem
