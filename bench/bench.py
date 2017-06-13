@@ -58,11 +58,54 @@ def flattenListDict(d, indent=0):
 
 # Currently not used...
 def fmtSize(num):
+    """format a number of bytes on disk into a human readable form"""
     for unit in ['','KB','MB','GB','TB','PB','EB','ZB']:
         if abs(num) < 1024.0:
             return "%3.1f%s" % (num, unit)
         num /= 1024.0
     return "%.1f%s%s" % (num, 'YB', suffix)
+
+def revParse(commit, useAbbreviated=False):
+    """get the hash for a commit"""
+    abbreviated = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", commit],
+        stdout=subprocess.PIPE,
+        check=True
+    ).stdout.decode("utf8").strip()
+
+    other = subprocess.run(
+        ["git", "rev-parse", commit],
+        stdout=subprocess.PIPE,
+        check=True
+    ).stdout.decode("utf8").strip()
+
+    return (useAbbreviated and abbreviated) or other
+
+# Run benchmarks for a commit
+def runBenchmarks(commit):
+    """temporarily check out the given commit to run the benchmarks"""
+
+    print("Running benchmarks for '" + commit + "'")
+    commit = revParse(commit)
+    print('\033[31m' + "Do not make any changes to files!" + '\033[0m')
+    init = revParse("HEAD")
+
+    localChanges = "No local changes to save\n" != subprocess.run(
+        ["git", "status"],
+        stdout=subprocess.PIPE
+    ).stdout
+
+    if localChanges:
+        subprocess.run(["git", "stash"], stdout=subprocess.PIPE)
+
+    subprocess.run(["git", "checkout", commit])
+    subprocess.run(["stack", "bench"])
+    subprocess.run(["git", "checkout", init])
+
+    if localChanges:
+        subprocess.run(["git", "stash", "pop"], stdout=subprocess.PIPE)
+
+    print('\033[32m' + "Back to initial state" + '\033[0m')
 
 
 if __name__ == "__main__":
@@ -84,8 +127,7 @@ if __name__ == "__main__":
     sanitized = ["WIP"]
     for commit in commits[1:]:
         try:
-            c = subprocess.check_output(["git", "rev-parse", commit]).decode("utf-8").strip()
-            sanitized.append(c)
+            sanitized.append(revParse(commit))
         except:
             print('Invalid commit "' + commit + '"')
 

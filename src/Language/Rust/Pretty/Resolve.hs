@@ -74,6 +74,10 @@ import Data.Semigroup ((<>))
 
 {-# ANN module "HLint: ignore Reduce duplication" #-}
 
+-- TODO:
+--  * See where attributes are not allowed
+--  * resolve in a better monad (`type ResolveM a = ReaderT [Doc] (Except ErrorType a)`)
+
 -- | Types that can have underlying invariants which can be checked and possibly corrected. 
 class Resolve a where
   -- | Convert some value to its /resolved/ form. Informally, resolving a value involves checking
@@ -939,12 +943,18 @@ resolveItem t (Fn as v i d u c a g b x) = do
   b' <- resolveBlock b
   pure (Fn as' v' i' d' u c a g' b' x)
 
-resolveItem t (Mod as v i is x) = do
+resolveItem t (Mod as v i (Just is) x) = do
   as' <- sequence (resolveAttr EitherAttr <$> as)
   v' <- resolveVisibility' t v
   i' <- resolveIdent i
   is' <- sequence (resolveItem ModItem <$> is)
-  pure (Mod as' v' i' is' x)
+  pure (Mod as' v' i' (Just is') x)
+
+resolveItem t (Mod as v i Nothing x) = do
+  as' <- sequence (resolveAttr OuterAttr <$> as)
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  pure (Mod as' v' i' Nothing x)
 
 resolveItem t (ForeignMod as v a is x) = do
   as' <- sequence (resolveAttr EitherAttr <$> as)

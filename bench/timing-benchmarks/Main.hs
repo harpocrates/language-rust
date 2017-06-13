@@ -2,11 +2,12 @@
 
 import Criterion
 import Criterion.Main (defaultConfig)
-import Criterion.Types (anMean, reportAnalysis, timeLimit, anOutlierVar, ovEffect, OutlierEffect(Severe))
+import Criterion.Types (anMean, reportAnalysis, timeLimit, anOutlierVar, ovEffect, OutlierEffect(Moderate))
 import Statistics.Resampling.Bootstrap (Estimate(..))
 
 import Control.Monad (filterM)
 import Control.Exception (catch, throwIO)
+import Data.Foldable (for_)
 import Data.Traversable (for)
 import GHC.Exts (fromString)
 
@@ -32,11 +33,16 @@ main = do
   -- Get the test cases
   workingDirectory <- getCurrentDirectory
   let sampleSources = workingDirectory </> "sample-sources"
+      benchIgnore = sampleSources </> ".benchignore"
+  benchIgnoreExists <- doesFileExist benchIgnore
+  ignore <- if benchIgnoreExists
+              then (\f -> map (sampleSources </>) (lines f)) <$> readFile benchIgnore
+              else pure []
   entries <- map (sampleSources </>) <$> listDirectory sampleSources
-  files <- filterM doesFileExist entries
+  files <- filterM doesFileExist (filter (`notElem` ignore) entries)
 
   -- Clear out previous WIP (if there is one)
-  catch (removeFile (workingDirectory </> "timings" </> "WIP" <.> "json"))
+  catch (removeFile (workingDirectory </> "bench" </> "timings" </> "WIP" <.> "json"))
         (\e -> if isDoesNotExistError e then pure () else throwIO e)
 
   -- Run 'criterion' tests
@@ -44,7 +50,7 @@ main = do
     let name = takeFileName f
     putStrLn name
     is <- readInputStream f
-    bnch <- benchmarkWith' defaultConfig{ timeLimit = 15 } (nf (parse' @(SourceFile Span)) is)
+    bnch <- benchmarkWith' defaultConfig{ timeLimit = 20 } (nf (parse' @(SourceFile Span)) is)
     pure (name, bnch)
   let results = object [ fromString name .= object [ "mean" .= m
                                                    , "lower bound" .= l
@@ -52,12 +58,14 @@ main = do
                                                    ]
                        | (name,report) <- reports
                        , let Estimate m l u _ = anMean (reportAnalysis report)
-                       , ovEffect (anOutlierVar (reportAnalysis report)) /= Severe
+                       , ovEffect (anOutlierVar (reportAnalysis report)) < Moderate
                        ]
+  for_ [ name | (name,report) <- reports, ovEffect (anOutlierVar (reportAnalysis report)) >= Moderate ] $ \n ->
+    putStrLn $ "Benchmark for `" ++ n ++ "' will not be considered since it was inflated"
 
   -- Save the output to JSON
-  createDirectoryIfMissing False (workingDirectory </> "timings")
-  let logFile = workingDirectory </> "timings" </> logFileName <.> "json"
+  createDirectoryIfMissing False (workingDirectory </> "bench" </> "timings")
+  let logFile = workingDirectory </> "bench" </> "timings" </> logFileName <.> "json"
   putStrLn $ "writing results to: " ++ logFile
   logFile `BL.writeFile` encode results
 

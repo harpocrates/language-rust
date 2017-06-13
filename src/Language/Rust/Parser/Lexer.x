@@ -965,7 +965,7 @@ $hexit             = [0-9a-fA-F]
 
 -- Comments
 
-@outer_doc_line    = "///" [^\r\n]*
+@outer_doc_line    = "///" ( [^\r\n\/] [^\r\n]* )?
 @outer_doc_inline  = "/**"
 
 @inner_doc_line    = "//!" [^\r\n]*
@@ -1040,7 +1040,7 @@ $white+         { \s -> pure (Space Whitespace s)  }
 
 @lit_integer    { \i -> literal (IntegerTok i) }
 @lit_float      { \f -> literal (FloatTok   f) }
-@lit_float2 / [^\._a-zA-Z]
+@lit_float2 / ( [^\._a-zA-Z] | \r | \n )
                 { \f -> literal (FloatTok   f) }
 @lit_float2 / { \_ _ _ (_,is) -> inputStreamEmpty is }
                 { \f -> literal (FloatTok   f) }
@@ -1070,7 +1070,8 @@ $white+         { \s -> pure (Space Whitespace s)  }
 
 
 @outer_doc_line   { \c -> pure (Doc (drop 3 c) Outer False) } 
-@outer_doc_inline { \_ -> Doc <$> nestedComment <*> pure Outer <*> pure True }
+@outer_doc_inline / ( [^\*] | \r | \n )
+                  { \_ -> Doc <$> nestedComment <*> pure Outer <*> pure True }
 
 @inner_doc_line   { \c -> pure (Doc (drop 3 c) Inner False) }
 @inner_doc_inline { \_ -> Doc <$> nestedComment <*> pure Inner <*> pure True }

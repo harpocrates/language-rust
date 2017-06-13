@@ -645,7 +645,7 @@ printItem (Fn as vis ident d s c a t b x) = annotate x $ align $ printOuterAttrs
   printFn d s c a (Just ident) t vis (Just (b, as))
 
 printItem (Mod as vis ident items x) = annotate x $ align $ printOuterAttrs as <#>
-  hsep [ printVis vis, "mod", printIdent ident, printMod items as ]
+  hsep [ printVis vis, "mod", printMod ident items as ]
 
 printItem (ForeignMod as vis a i x) = annotate x $ align $ printOuterAttrs as <#>
   hsep [ printVis vis, printAbi a, printForeignMod i as ]
@@ -930,8 +930,9 @@ printAbi Rust = mempty
 printAbi abi = "extern" <+> "\"" <> text (show abi) <> "\""
  
 -- | Print the interior of a module given the list of items and attributes in it (@print_mod@)
-printMod :: [Item a] -> [Attribute a] -> Doc a
-printMod items attrs = block Brace False mempty (printInnerAttrs attrs) (punctuate WL.linebreak (printItem `map` items))
+printMod :: Ident -> Maybe [Item a] -> [Attribute a] -> Doc a
+printMod i (Just items) attrs = printIdent i <+> block Brace False mempty (printInnerAttrs attrs) (punctuate WL.linebreak (printItem `map` items))
+printMod i Nothing _ = printIdent i <> ";"
 
 -- | Print the interior of a foreign module given the list of items and attributes in it (@print_mod@)
 printForeignMod :: [ForeignItem a] -> [Attribute a] -> Doc a

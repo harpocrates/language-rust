@@ -4,35 +4,44 @@ module Main where
 import Diff ()
 import DiffUtils
 
-import Control.Monad (filterM)
+import Control.Monad (filterM, when)
 import Control.Exception (catch, SomeException)
 
 import Data.ByteString.Lazy (hGetContents)
 import Data.ByteString.Lazy.Char8 (unpack)
 import Data.Aeson (decode', Value)
 
-import Language.Rust.Parser (parse', readInputStream, Span)
-import Language.Rust.Syntax (SourceFile)
+import Language.Rust.Parser (readSourceFile)
 
 import System.Directory (getCurrentDirectory, listDirectory, doesFileExist)
-import System.Process (createProcess, proc, CreateProcess(..), StdStream(..))
+import System.Process (createProcess, proc, CreateProcess(..), StdStream(..), callProcess, readProcess)
 import System.FilePath ((</>), takeFileName)
+
+import Data.Time.Clock (utctDay, getCurrentTime)
+import Data.Time.Calendar (fromGregorian, showGregorian, diffDays)
 
 import Test.Framework (defaultMain)
 import Test.Framework.Providers.API
 
 main :: IO ()
 main = do
+  -- Check last time `rustc` version was bumped
+  let lastDay = fromGregorian 2017 6 13
+  today <- utctDay <$> getCurrentTime
+  when (diffDays today lastDay > 32) $
+    putStrLn $ "\x1b[33m" ++ "\nThe version of `rustc' the tests will try to use is older than 1 month" ++ "\x1b[0m"
+
+  -- Setting `rustc` version to the right nightly, just in this directory
+  callProcess "rustup" ["override", "set", "nightly-" ++ showGregorian lastDay]
+  version <- readProcess "rustc" ["--version"] ""
+  putStrLn $ "\x1b[32m" ++ "Running tests with " ++ version ++ "\x1b[0m"
+
+  -- Run the tests
   workingDirectory <- getCurrentDirectory
   let folder = workingDirectory </> "sample-sources"
   entries <- map (folder </>) <$> listDirectory folder
-  files <- filterM doesFileExist entries
+  files <- filterM doesFileExist (filter (/= folder </> ".benchignore") entries)
   defaultMain (map (\f -> Test (takeFileName f) (DiffTest f)) files)
-
-
--- | Given a path pointing to a rust source file, read that file and parse it into a 'SourceFile'
-getSourceFile :: FilePath -> IO (SourceFile Span)
-getSourceFile fileName = parse' <$> readInputStream fileName
 
 -- | Given a path pointing to a rust source file, read that file and parse it into JSON
 getJsonAST :: FilePath -> IO Value
@@ -56,14 +65,14 @@ getJsonAST fileName = do
 data DiffTest = DiffTest String
 
 -- | These are the possible pending statuses of a 'DiffTest'
-data DiffRunning = RunningReference
-                 | RunningImplementation
-                 | Diffing
+data DiffRunning = ParsingReference
+                 | ParsingImplementation
+                 | ParsingDiffing
 
 instance Show DiffRunning where
-  show RunningReference = "Running reference implementation"
-  show RunningImplementation = "Running our implementation"
-  show Diffing = "Comparing the two"
+  show ParsingReference = "Parsing using `rustc'"
+  show ParsingImplementation = "Parsing using our parser"
+  show ParsingDiffing = "Comparing the two parsed outputs"
 
 -- | These are the possible final states of a 'DiffTest'
 data DiffResult = Error String
@@ -82,24 +91,27 @@ instance TestResultlike DiffRunning DiffResult where
 instance Testlike DiffRunning DiffResult DiffTest where
   testTypeName _ = "Difference tests"
   runTest TestOptions{ topt_timeout = K timeout } (DiffTest file) = runImprovingIO $ do
-    yieldImprovement RunningReference
+    yieldImprovement ParsingReference
     val'_me <- maybeTimeoutImprovingIO timeout $ liftIO (try' (getJsonAST file))
     case val'_me of
-      Nothing -> pure (Error "Timed out running reference implementation")
+      Nothing -> pure (Error "Timed out parsing using reference implementation")
       Just (Left e) -> pure (Error e)
       Just (Right val') -> do
-        yieldImprovement RunningImplementation
-        val_me <- maybeTimeoutImprovingIO timeout $ liftIO (try' (getSourceFile file))
+        yieldImprovement ParsingImplementation
+        val_me <- maybeTimeoutImprovingIO timeout $ liftIO (try' (readSourceFile file))
         case val_me of
-          Nothing -> pure (Error "Timed out running our implementation")
+          Nothing -> pure (Error "Timed out parsing using our implementation")
           Just (Left e) -> pure (Error e)
           Just (Right val) -> do
-            yieldImprovement Diffing
+            yieldImprovement ParsingDiffing
             diff_m <- maybeTimeoutImprovingIO timeout $ liftIO (try' (val === val'))
             case diff_m of
               Nothing -> pure (Error "Timed out while finding differences")
               Just (Left e) -> pure (Error e)
               Just (Right _) -> pure Done
+                        
+
+                 
 
 -- | Variant of 'try' which separates the error case by just returning 'Left msg' when there is an
 -- exception.

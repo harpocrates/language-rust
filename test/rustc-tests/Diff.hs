@@ -6,8 +6,9 @@ import Data.Aeson
 import Language.Rust.Syntax
 import Language.Rust.Parser
 
-import Control.Monad (when)
+import Control.Monad (when, unless)
 
+import Text.Read (readMaybe)
 import Data.String (fromString)
 import Data.List.NonEmpty ((<|))
 import Data.Maybe (fromMaybe, isNothing)
@@ -66,7 +67,9 @@ instance Show a => Diffable (Item a) where
         as === (val ! "attrs")
         v === (val ! "vis")
         i === (val ! "ident")
-        is === (n' ! "fields" ! 0 ! "items")
+        case is of
+          Nothing -> pure () -- TODO: should look at external files?
+          Just is' -> is' === (n' ! "fields" ! 0 ! "items")
       ("ForeignMod", ForeignMod as v a is _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
@@ -319,6 +322,7 @@ instance Show a => Diffable (Arg a) where
     t === (val ! "ty")
 
 instance Diffable Unsafety where
+  Unsafe === "Unsafe" = pure ()
   Unsafe === val | val ! "variant" == "Unsafe" = pure ()
   Normal === "Normal" = pure ()
   Normal === "Default" = pure ()
@@ -418,6 +422,7 @@ instance Diffable MacStmtStyle where
 
 instance Show a => Diffable (Visibility a) where
   PublicV === "Public" = pure ()
+  CrateV  === val@Object{} = mkIdent "Crate" === (val ! "variant")
   CrateV  === "Crate" = pure ()
   RestrictedV p === val = do
     mkIdent "Restricted" === (val ! "variant")
@@ -622,7 +627,8 @@ instance Show a => Diffable (Field a) where
   Field i me _ === val = do 
     isNothing me === (val ! "is_shorthand")
     i === (val ! "ident" ! "node")
-    me === (val ! "expr")
+    unless (isNothing me) $
+      me === (val ! "expr")
 
 instance Diffable Ident where
   Ident i _ === String s | fromString i == s = pure ()
@@ -957,10 +963,18 @@ instance Show a => Diffable (Lit a) where
         when (Number (fromInteger i) /= n ! "fields" ! 0) $
           diff "int literal has two different values" l val
         suf === (n ! "fields" ! 1)
+      ("FloatUnsuffixed", Float f Unsuffixed _) -> do
+        let String j = n ! "fields" ! 0
+        case readMaybe (T.unpack j) of
+          Nothing -> diff "float literal has un-readable value" l val
+          Just s | s == f -> pure ()
+          _ -> diff "float literal has two different values" l val
       ("Float", Float f suf _) -> do
         let String j = n ! "fields" ! 0
-        when (f /= read (T.unpack j)) $
-          diff "float literal has two different values" l val
+        case readMaybe (T.unpack j) of
+          Nothing -> diff "float literal has un-readable value" l val
+          Just s | s == f -> pure ()
+          _ -> diff "float literal has two different values" l val
         suf === (n ! "fields" ! 1)
       ("Str", Str s sty Unsuffixed _) -> do
         when (String (fromString s) /= n ! "fields" ! 0) $

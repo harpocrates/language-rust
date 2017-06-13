@@ -556,7 +556,7 @@ data Item a
   | Fn [Attribute a] (Visibility a) Ident (FnDecl a) Unsafety Constness Abi (Generics a) (Block a) a
   -- | module declaration (@mod@ or @pub mod@) (@syntax::ast::Mod@).
   -- Example: @mod foo;@ or @mod foo { .. }@
-  | Mod [Attribute a] (Visibility a) Ident [Item a] a
+  | Mod [Attribute a] (Visibility a) Ident (Maybe [Item a]) a
   -- | external module (@extern@ or @pub extern@) (@syntax::ast::ForeignMod@).
   -- Example: @extern { .. }@ or @extern \"C\" { .. }@
   | ForeignMod [Attribute a] (Visibility a) Abi [ForeignItem a] a

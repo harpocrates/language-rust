@@ -212,7 +212,7 @@ generics = testGroup "generics"
 whereClauses :: Test
 whereClauses = testGroup "where clauses"
   [ testComplete "where"
-    "fn function<T, U>(args)\n\
+    "fn function<T, U>(args: i32)\n\
     \where\n\
     \  T: Bound,\n\
     \  U: AnotherBound,\n\

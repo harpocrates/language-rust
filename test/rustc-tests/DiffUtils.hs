@@ -62,7 +62,7 @@ instance Diffable a => Diffable [a] where
   xs === json@(Aeson.Array v) = do
     let xs' = toList v
     when (length xs /= length xs') $
-      diff "arrays have different lengths" xs json
+      diff ("arrays have different lengths " ++ show (length xs) ++ " /= " ++ show (length xs')) xs json
     sequence_ (zipWith (===) xs xs')
   xs === json = diff "comparing array to non-array" xs json
 

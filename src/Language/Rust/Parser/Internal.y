@@ -29,7 +29,7 @@ To get information about transition states and such, run
 module Language.Rust.Parser.Internal (
   parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseSourceFile,
   parseBlock, parseImplItem, parseTraitItem, parseTt, parseTokenStream, parseTyParam,
-  parseGenerics, parseWhereClause, parseLifetimeDef, parseArg
+  parseGenerics, parseWhereClause, parseLifetimeDef
 ) where
 
 import Language.Rust.Syntax
@@ -49,9 +49,8 @@ import Text.Read (readMaybe)
 -- in order to document the parsers, we have to alias them
 %name parseLit lit
 %name parseAttr export_attribute
-%name parseTy export_general
+%name parseTy export_ty
 %name parsePat export_pat
-%name parseArg export_arg
 %name parseStmt stmt
 %name parseExpr expr
 %name parseItem mod_item
@@ -72,10 +71,7 @@ import Text.Read (readMaybe)
 %error { parseError }
 %lexer { lexNonSpace >>= } { Spanned Eof _ }
 
--- Conflicts caused in
---  * (1) around the '::' in path_segments_without_colons
--- However, they are all S/R and seem to be currently doing what they should
-%expect 1
+%expect 0
 
 %token
 
@@ -239,6 +235,8 @@ import Text.Read (readMaybe)
   ntArg          { Spanned (Interpolated (NtArg $$)) _ }
   ntLit          { Spanned (Interpolated (NtLit $$)) _ }
 
+-- 'SEG' needs to be lower than '::' for path segments
+%nonassoc SEG
 
 -- 'mut' needs to be lower precedence than 'IDENT' so that in 'pat', something like "&mut x"
 -- associates the "mut" to a refence pattern and not to the identifier pattern "x".
@@ -253,7 +251,7 @@ import Text.Read (readMaybe)
 %nonassoc mut DEF EQ '::'
 
 -- These are all identifiers of sorts ('union' and 'default' are "weak" keywords)
-%nonassoc IDENT ntIdent default union catch 
+%nonassoc IDENT ntIdent default union catch self 
 
 -- These are all very low precedence unary operators
 %nonassoc box return break continue IMPLTRAIT LAMBDA
@@ -466,12 +464,11 @@ ty_qual_path :: { Spanned (QSelf Span, Path Span) }
 
 -- parse_path_segments_without_colons()
 path_segments_without_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
-  : sep_by1(path_segment_without_colons, '::')  { sequence (toNonEmpty $1) }
+  : sep_by1(path_segment_without_colons, '::') %prec SEG  { sequence (toNonEmpty $1) }
 
 -- No corresponding function - see path_segments_without_colons
 path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
-  : Self path_parameter1                     { Spanned ("Self", $2) ($1 # $>) }
-  | ident path_parameter1                    { Spanned (unspan $1, $2) ($1 # $>) }
+  : self_or_ident path_parameter1                    { Spanned (unspan $1, $2) ($1 # $>) }
 
 path_parameter1 :: { PathParameters Span }
   : generic_values                           { let (lts, tys, bds) = unspan $1 in AngleBracketed lts tys bds (spanOf $1) }
@@ -561,14 +558,20 @@ no_for_ty_prim :: { Ty Span }
   | '*' ty_no_plus                   { Ptr Immutable $2 ($1 # $2) }
   | '*' const ty_no_plus             { Ptr Immutable $3 ($1 # $3) }
   | '*' mut   ty_no_plus             { Ptr Mutable $3 ($1 # $3) }
-  | '&'  lifetime_mut ty_no_plus     { Rptr (fst $2) (snd $2) $3 ($1 # $>) }
-  | '&&' lifetime_mut ty_no_plus     { Rptr Nothing Immutable (Rptr (fst $2) (snd $2) $3 ($1 # $>)) ($1 # $>) }
+  | '&'               ty_no_plus     { Rptr Nothing   Immutable $2 ($1 # $>) }
+  | '&'  lifetime     ty_no_plus     { Rptr (Just $2) Immutable $3 ($1 # $>) }
+  | '&'           mut ty_no_plus     { Rptr Nothing   Mutable   $3 ($1 # $>) }
+  | '&'  lifetime mut ty_no_plus     { Rptr (Just $2) Mutable   $4 ($1 # $>) }
+  | '&&'              ty_no_plus     { Rptr Nothing Immutable (Rptr Nothing   Immutable $2 (nudge 1 0 ($1 # $>))) ($1 # $>) }
+  | '&&' lifetime     ty_no_plus     { Rptr Nothing Immutable (Rptr (Just $2) Immutable $3 (nudge 1 0 ($1 # $>))) ($1 # $>) }
+  | '&&'          mut ty_no_plus     { Rptr Nothing Immutable (Rptr Nothing   Mutable   $3 (nudge 1 0 ($1 # $>))) ($1 # $>) }
+  | '&&' lifetime mut ty_no_plus     { Rptr Nothing Immutable (Rptr (Just $2) Mutable   $4 (nudge 1 0 ($1 # $>))) ($1 # $>) }
   | ty_path               %prec PATH { PathTy Nothing $1 ($1 # $>) }
   | ty_mac                           { MacTy $1 ($1 # $>) }
-  | unsafe extern abi fn fn_decl     { BareFn Unsafe $3 [] $> ($1 # $>) }
-  | unsafe fn fn_decl                { BareFn Unsafe Rust [] $> ($1 # $>) }
-  | extern abi fn fn_decl            { BareFn Normal $2 [] $> ($1 # $>) }
-  | fn fn_decl                       { BareFn Normal Rust [] $> ($1 # $>) }
+  | unsafe extern abi fn fn_decl(arg_general)     { BareFn Unsafe $3 [] $> ($1 # $>) }
+  | unsafe fn fn_decl(arg_general)                { BareFn Unsafe Rust [] $> ($1 # $>) }
+  | extern abi fn fn_decl(arg_general)            { BareFn Normal $2 [] $> ($1 # $>) }
+  | fn fn_decl(arg_general)                       { BareFn Normal Rust [] $> ($1 # $>) }
   | typeof '(' expr ')'              { Typeof $3 ($1 # $>) }
   | '[' ty ';' expr ']'              { Array $2 $4 ($1 # $>) }
   | '?' trait_ref                    { TraitObject [TraitTyParamBound (PolyTraitRef [] $2 (spanOf $2)) Maybe ($1 # $2)] ($1 # $2) }
@@ -576,11 +579,11 @@ no_for_ty_prim :: { Ty Span }
 
 -- All (non-sum) types starting with a 'for'
 for_ty_no_plus :: { Ty Span }
-  : for_lts unsafe extern abi fn fn_decl { BareFn Unsafe $4 (unspan $1) $> ($1 # $>) }
-  | for_lts unsafe fn fn_decl            { BareFn Unsafe Rust (unspan $1) $> ($1 # $>) }
-  | for_lts extern abi fn fn_decl        { BareFn Normal $3 (unspan $1) $> ($1 # $>) }
-  | for_lts fn fn_decl                   { BareFn Normal Rust (unspan $1) $> ($1 # $>) }
-  | for_lts trait_ref                    {
+  : for_lts unsafe extern abi fn fn_decl(arg_general) { BareFn Unsafe $4 (unspan $1) $> ($1 # $>) }
+  | for_lts unsafe fn fn_decl(arg_general)            { BareFn Unsafe Rust (unspan $1) $> ($1 # $>) }
+  | for_lts extern abi fn fn_decl(arg_general)        { BareFn Normal $3 (unspan $1) $> ($1 # $>) }
+  | for_lts fn fn_decl(arg_general)                   { BareFn Normal Rust (unspan $1) $> ($1 # $>) }
+  | for_lts trait_ref                                 {
       let poly = PolyTraitRef (unspan $1) $2 ($1 # $2)
       in TraitObject [TraitTyParamBound poly None ($1 # $2)] ($1 # $2)
     }
@@ -596,15 +599,23 @@ lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
   | {- empty -}   { (Nothing, Immutable) }
 
 -- The argument list and return type in a function
-fn_decl :: { FnDecl Span }
-  : '(' sep_by1(arg_general,',') ',' '...' ')' ret_ty  { FnDecl (toList $2) $> True ($1 # $5 # $6) }
-  | '(' sep_byT(arg_general,',')           ')' ret_ty  { FnDecl $2 $> False ($1 # $3 # $4) }
+fn_decl(arg) :: { FnDecl Span }
+  : '(' sep_by1(arg,',') ',' '...' ')' ret_ty  { FnDecl (toList $2) $> True ($1 # $5 # $6) }
+  | '(' sep_byT(arg,',')           ')' ret_ty  { FnDecl $2 $> False ($1 # $3 # $4) }
 
 -- Like 'fn_decl', but also accepting a self argument
-fn_decl_with_self :: { FnDecl Span }
-  : '(' arg_self ',' sep_byT(arg_general,',') ')' ret_ty  { FnDecl ($2 : $4) $> False ($1 # $5 # $6) }
-  | '(' arg_self                              ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
-  | fn_decl                                               { $1 }
+fn_decl_with_self_general :: { FnDecl Span }
+  : '(' arg_self_general ',' sep_byT(arg_general,',') ')' ret_ty  { FnDecl ($2 : $4) $> False ($1 # $5 # $6) }
+  | '(' arg_self_general                              ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
+  | '('                                               ')' ret_ty  { FnDecl [] $> False ($1 # $2 # $3) }
+
+-- Like 'fn_decl', but also accepting a self argument
+fn_decl_with_self_named :: { FnDecl Span }
+  : '(' arg_self_named ',' sep_by1(arg_named,',') ',' ')' ret_ty  { FnDecl ($2 : toList $4) $> False ($1 # $6 # $7) }
+  | '(' arg_self_named ',' sep_by1(arg_named,',')     ')' ret_ty  { FnDecl ($2 : toList $4) $> False ($1 # $5 # $6) }
+  | '(' arg_self_named ','                            ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
+  | '(' arg_self_named                                ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
+  | fn_decl(arg_named)                                            { $1 }
 
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
@@ -622,19 +633,46 @@ ty_param_bound_mod :: { TyParamBound Span }
   | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe ($1 # $2) }
 
 
--- parse_arg_general(false) -- does not require name
--- NOT ALL PATTERNS ARE ACCEPTED: <https://github.com/rust-lang/rust/issues/35203>
-arg_general :: { Arg Span }
+-- Argument (requires a name / pattern, ie. @parse_arg_general(true)@)
+arg_named :: { Arg Span }
   : ntArg             { $1 }
-  |               ty  { Arg Nothing $1 (spanOf $1) }
-  |     ident ':' ty  { Arg (Just (IdentP (ByValue Immutable) (unspan $1) Nothing (spanOf $1))) $3 ($1 # $3) }
-  | mut ident ':' ty  { Arg (Just (IdentP (ByValue Mutable) (unspan $2) Nothing ($1 # $2))) $4 ($1 # $4) }
-  |     '_'   ':' ty  { Arg (Just (WildP (spanOf $1))) $3 ($1 # $3) }
+  | pat ':' ty        { Arg (Just $1) $3 ($1 # $3) }
 
-arg_self :: { Arg Span }
+-- Argument (does not require a name / pattern, ie. @parse_arg_general(false)@)
+--
+-- Remark: not all patterns are accepted (as per <https://github.com/rust-lang/rust/issues/35203>)
+-- The details for which patterns _should_ be accepted fall into @is_named_argument()@.
+arg_general :: { Arg Span }
+  : ntArg              { $1 }
+  |                ty  { Arg Nothing $1 (spanOf $1) }
+  |      '_'   ':' ty  { Arg (Just (WildP (spanOf $1))) $3 ($1 # $3) }
+  |      ident ':' ty  { Arg (Just (IdentP (ByValue Immutable) (unspan $1) Nothing (spanOf $1))) $3 ($1 # $3) }
+  | mut  ident ':' ty  { Arg (Just (IdentP (ByValue Mutable) (unspan $2) Nothing (spanOf $2))) $4 ($1 # $4) }
+  | '&'  '_'   ':' ty  { Arg (Just (RefP (WildP (spanOf $2)) Immutable ($1 # $2))) $4 ($1 # $4) }
+  | '&'  ident ':' ty  { Arg (Just (RefP (IdentP (ByValue Immutable) (unspan $2) Nothing (spanOf $2)) Immutable ($1 # $2))) $4 ($1 # $4) }
+  | '&&' '_'   ':' ty  { Arg (Just (RefP (RefP (WildP (spanOf $2)) Immutable (nudge 1 0 ($1 # $2))) Immutable ($1 # $2))) $4 ($1 # $4) }
+  | '&&' ident ':' ty  { Arg (Just (RefP (RefP (IdentP (ByValue Immutable) (unspan $2) Nothing (spanOf $2)) Immutable (nudge 1 0 ($1 # $2))) Immutable ($1 # $2))) $4 ($1 # $4) }
+  
+-- Self argument (only allowed in trait function signatures)
+arg_self_general :: { Arg Span }
+  : mut self              { SelfValue Mutable ($1 # $>) }
+  |     self ':' ty       { SelfExplicit $3 Immutable ($1 # $>) }
+  | mut self ':' ty       { SelfExplicit $4 Mutable ($1 # $>) }
+  | arg_general           {
+      case $1 of
+        Arg Nothing (PathTy Nothing (Path False [("self", NoParameters _)] _) _) x -> SelfValue Immutable x
+        Arg Nothing (Rptr l m (PathTy Nothing (Path False [("self", NoParameters _)] _) _) _) x -> SelfRegion l m x
+        _ -> $1
+    }
+
+-- Self argument (only allowed in impl function signatures)
+arg_self_named :: { Arg Span }
   :                  self { SelfValue Immutable ($1 # $>) }
   |              mut self { SelfValue Mutable ($1 # $>) }
-  | '&' lifetime_mut self { SelfRegion (fst $2) (snd $2) ($1 # $>) }
+  | '&'              self { SelfRegion Nothing   Immutable ($1 # $>) }
+  | '&' lifetime     self { SelfRegion (Just $2) Immutable ($1 # $>) }
+  | '&'          mut self { SelfRegion Nothing   Mutable   ($1 # $>) }
+  | '&' lifetime mut self { SelfRegion (Just $2) Mutable   ($1 # $>) }
   |     self ':' ty       { SelfExplicit $3 Immutable ($1 # $>) }
   | mut self ':' ty       { SelfExplicit $4 Mutable ($1 # $>) }
 
@@ -875,9 +913,9 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | break lifetime                   { Break [] (Just $2) Nothing ($1 # $2) }
   | break lifetime rhs   %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
   -- lambda expressions
-  | move args      rhs   %prec LAMBDA
+  | move lambda_args rhs   %prec LAMBDA
     { Closure [] Value (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
-  |      args      rhs   %prec LAMBDA
+  |      lambda_args rhs   %prec LAMBDA
     { Closure [] Ref   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $>) }
 
 
@@ -1007,17 +1045,18 @@ paren_expr :: { Expr Span }
 
 -- Closure ending in blocks
 lambda_expr_block :: { Expr Span }
-  : move args '->' ty_no_plus block
+  : move lambda_args '->' ty_no_plus block
     { Closure [] Value (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |      args '->' ty_no_plus block
+  |      lambda_args '->' ty_no_plus block
     { Closure [] Ref   (FnDecl (unspan $1) (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
 
--- Closure arguments
-args :: { Spanned [Arg Span] }
-  : '||'                          { Spanned [] (spanOf $1) }
-  | '|' sep_byT(arg,',') '|'      { Spanned $2 ($1 # $3) }
+-- Lambda expression arguments block
+lambda_args :: { Spanned [Arg Span] }
+  : '||'                                                { Spanned [] (spanOf $1) }
+  | '|' sep_byT(lambda_arg,',') '|'                     { Spanned $2 ($1 # $3) }
 
-arg :: { Arg Span }
+-- Lambda expression argument
+lambda_arg :: { Arg Span }
   : ntArg                         { $1 }
   | pat ':' ty                    { Arg (Just $1) $3 ($1 # $3) }
   | pat                           { Arg (Just $1) (Infer mempty) (spanOf $1) }
@@ -1199,18 +1238,18 @@ gen_item(vis) :: { Item Span }
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $6) Nothing ($1 # $2 # $4 # $>)) }
   | many(outer_attribute) vis safety extern crate ident as ident ';'
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $8) (Just (unspan $6)) ($1 # $2 # $4 # $>)) }
-  | many(outer_attribute) vis const safety  fn ident generics fn_decl where_clause inner_attrs_block
+  | many(outer_attribute) vis const safety  fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
     { Fn ($1 ++ fst $>) (unspan $2) (unspan $6) $8 (unspan $4) Const Rust $7{ whereClause = $9 } (snd $>) ($1 # $2 # $3 # snd $>) }
-  | many(outer_attribute) vis safety extern abi fn ident generics fn_decl where_clause inner_attrs_block
+  | many(outer_attribute) vis safety extern abi fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
     { Fn ($1 ++ fst $>) (unspan $2) (unspan $7) $9 (unspan $3) NotConst $5 $8{ whereClause = $10 } (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
-  | many(outer_attribute) vis safety            fn ident generics fn_decl where_clause inner_attrs_block
+  | many(outer_attribute) vis safety            fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
     { Fn ($1 ++ fst $>) (unspan $2) (unspan $5) $7 (unspan $3) NotConst Rust $6{ whereClause = $8 } (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
   | many(outer_attribute) vis mod ident ';'
-    { Mod $1 (unspan $2) (unspan $4) [] ($1 # $2 # $3 # $>) }
+    { Mod $1 (unspan $2) (unspan $4) Nothing ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis mod ident '{'             many(mod_item) '}'
-    { Mod $1 (unspan $2) (unspan $4) $6 ($1 # $2 # $3 # $>) }
+    { Mod $1 (unspan $2) (unspan $4) (Just $6) ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis mod ident '{' inner_attrs many(mod_item) '}'
-    { Mod ($1 ++ toList $6) (unspan $2) (unspan $4) $7 ($1 # $2 # $3 # $>) }
+    { Mod ($1 ++ toList $6) (unspan $2) (unspan $4) (Just $7) ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis safety extern abi '{'             many(foreign_item) '}'
     {% noSafety $3 (ForeignMod $1 (unspan $2) $5 $7 ($1 # $2 # $4 # $>)) }
   | many(outer_attribute) vis safety extern abi '{' inner_attrs many(foreign_item) '}'
@@ -1269,7 +1308,7 @@ foreign_item :: { ForeignItem Span }
     { ForeignStatic $1 (unspan $2) (unspan $4) $6 Immutable ($1 # $2 # $>) }
   | many(outer_attribute) vis static mut ident ':' ty ';'
     { ForeignStatic $1 (unspan $2) (unspan $5) $7 Mutable ($1 # $2 # $>) }
-  | many(outer_attribute) vis fn ident generics fn_decl where_clause ';'
+  | many(outer_attribute) vis fn ident generics fn_decl(arg_named) where_clause ';'
     { ForeignFn $1 (unspan $2) (unspan $4) $6 $5{ whereClause = $7 } ($1 # $2 # $>) }
 
 -- parse_generics
@@ -1331,10 +1370,10 @@ impl_item :: { ImplItem Span }
   | many(outer_attribute) vis def type ident '=' ty ';'           { TypeI $1 (unspan $2) (unspan $3) (unspan $5) $7 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute) vis def const ident ':' ty '=' expr ';' { ConstI $1 (unspan $2) (unspan $3) (unspan $5) $7 $9 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute)     def mod_mac                         { MacroI $1 (unspan $2) $3 ($1 # $2 # $>) }
-  | many(outer_attribute) vis def const safety fn ident generics fn_decl_with_self where_clause inner_attrs_block
+  | many(outer_attribute) vis def const safety fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
     { let methodSig = MethodSig (unspan $5) Const Rust $9 $8{ whereClause = $10 }
       in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) methodSig (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
-  | many(outer_attribute) vis def safety ext_abi fn ident generics fn_decl_with_self where_clause inner_attrs_block
+  | many(outer_attribute) vis def safety ext_abi fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
     { let methodSig = MethodSig (unspan $4) NotConst (unspan $5) $9 $8{ whereClause = $10 }
       in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) methodSig (snd $>) ($1 # $2 # $3 # $4 # $5 # $6 # snd $>) }
 
@@ -1348,10 +1387,10 @@ trait_item :: { TraitItem Span }
     { TypeT $1 (unspan $3) (toList $5) Nothing ($1 # $2 # $>) }
   | many(outer_attribute) type ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty ';'
     { TypeT $1 (unspan $3) (toList $5) (Just $7) ($1 # $2 # $>) }
-  | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self where_clause ';'
+  | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self_general where_clause ';'
     { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7 $6{ whereClause = $8 }
       in MethodT $1 (unspan $5) methodSig Nothing ($1 # $2 # $3 # $4 # $>) }
-  | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self where_clause inner_attrs_block
+  | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self_general where_clause inner_attrs_block
     { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7 $6{ whereClause = $8 }
       in MethodT ($1 ++ fst $>) (unspan $5) methodSig (Just (snd $>)) ($1 # $2 # $3 # $4 # snd $>) }
 
@@ -1391,6 +1430,7 @@ view_path :: { ViewPath Span }
 self_or_ident :: { Spanned Ident }
   : ident                   { $1 }
   | self                    { Spanned "self" (spanOf $1) }
+  | Self                    { Spanned "Self" (spanOf $1) }
   | super                   { Spanned "super" (spanOf $1) }
 
 
@@ -1576,17 +1616,12 @@ export_block :: { Block Span }
   | safety '{' '}'                                         { Block [] (unspan $1) ($1 # $2 # $>) }
   | safety '{' stmts_possibly_no_semi '}'                  { Block [ s | Just s <- $3 ] (unspan $1) ($1 # $2 # $>) }
 
--- Complete args
-export_arg :: { Arg Span }
-  : arg_general                                            { $1 }
-  | arg_self                                               { $1 }
-
 -- Exporting 'pat' directly screws up expressions like 'x && y()'
 export_pat :: { Pat Span }
   : pat                                                    { $1 }
 
 -- Any type, including trait types with plus and impl trait types
-export_general :: { Ty Span }
+export_ty :: { Ty Span }
   : ty                               { $1 }
   | impl_ty                          { $1 }
 
@@ -1597,9 +1632,6 @@ parseLit :: P (Lit Span)
 
 -- | Parser for attributes.
 parseAttr :: P (Attribute Span)
-
--- | Parser for arguments.
-parseArg :: P (Arg Span)
 
 -- | Parser for types.
 parseTy :: P (Ty Span)

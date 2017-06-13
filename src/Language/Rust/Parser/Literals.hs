@@ -20,7 +20,10 @@ import Language.Rust.Syntax.AST
 
 import Data.Char (chr, ord, isHexDigit, digitToInt, isSpace)
 import Data.List (unfoldr)
+import Data.Maybe (fromMaybe)
 import Data.Word (Word8)
+
+import Text.Read (readMaybe)
 
 -- | Parse a valid 'LitTok' into a 'Lit'.
 translateLit :: LitTok -> Suffix -> a -> Lit a
@@ -97,8 +100,8 @@ unescapeInteger _ = error "unescape integer: bad decimal literal"
 -- NOTE: this is a bit hacky. Eventually, we might not do this and change the internal
 -- representation of a float to a string (what language-c has opted to do).
 unescapeFloat :: String -> Double
-unescapeFloat cs | last cs == '.' = read (cs ++ "0")
-                 | otherwise = read cs
+unescapeFloat cs = fromMaybe (error $ "unescape float: cannot parse float " ++ cs') (readMaybe cs')
+  where cs' = filter (/= '_') (if last cs == '.' then cs ++ "0" else cs)
 
 -- | Try to read a hexadecimal number of the specified length off of the front of the string
 -- provided. If there are not enough characters to do this, or the characters don't fall in the

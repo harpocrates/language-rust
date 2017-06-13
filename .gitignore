@@ -1,0 +1,22 @@
+# Stack related files
+.stack-work/
+stack.yaml
+
+# Benchmark output folders
+bench/allocations/
+bench/timings/
+
+# Sample source files
+sample-sources/
+!sample-sources/attributes.rs
+!sample-sources/empty.rs
+!sample-sources/expressions.rs
+!sample-sources/items.rs
+!sample-sources/let.rs
+!sample-sources/literals.rs
+!sample-sources/macros.rs
+!sample-sources/patterns.rs
+!sample-sources/precedences.rs
+!sample-sources/statement-expressions.rs
+!sample-sources/statements.rs
+!sample-sources/types.rs

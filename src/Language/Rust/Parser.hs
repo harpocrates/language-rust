@@ -23,7 +23,7 @@ sourceFile :: SourceFile Span
 
 module Language.Rust.Parser (
   -- * Parsing
-  parse, parse', parseSourceFile', Parse(..), P, execParser, initPos, Span,
+  parse, parse', readSourceFile, Parse(..), P, execParser, initPos, Span,
   -- * Lexing
   lexToken, lexNonSpace, lexTokens, translateLit,
   -- * Input stream
@@ -56,8 +56,8 @@ parse' is = case execParser parser is initPos of
               Right x -> x
 
 -- | Given a path pointing to a Rust source file, read that file and parse it into a 'SourceFile'
-parseSourceFile' :: FilePath -> IO (SourceFile Span)
-parseSourceFile' fileName = parse' <$> readInputStream fileName
+readSourceFile :: FilePath -> IO (SourceFile Span)
+readSourceFile fileName = parse' <$> readInputStream fileName
 
 -- | Exceptions that occur during parsing
 data ParseFail = ParseFail Position String deriving (Eq, Typeable)
@@ -74,7 +74,6 @@ class Parse a where
 
 instance Parse (Lit Span) where parser = parseLit
 instance Parse (Attribute Span) where parser = parseAttr
-instance Parse (Arg Span) where parser = parseArg
 instance Parse (Ty Span) where parser = parseTy 
 instance Parse (Pat Span) where parser = parsePat
 instance Parse (Expr Span) where parser = parseExpr

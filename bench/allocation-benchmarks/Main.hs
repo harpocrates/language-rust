@@ -32,11 +32,16 @@ main = do
   -- Get the test cases
   workingDirectory <- getCurrentDirectory
   let sampleSources = workingDirectory </> "sample-sources"
+      benchIgnore = sampleSources </> ".benchignore"
+  benchIgnoreExists <- doesFileExist benchIgnore
+  ignore <- if benchIgnoreExists
+              then (\f -> map (sampleSources </>) (lines f)) <$> readFile benchIgnore
+              else pure []
   entries <- map (sampleSources </>) <$> listDirectory sampleSources
-  files <- filterM doesFileExist entries
+  files <- filterM doesFileExist (filter (`notElem` ignore) entries)
 
   -- Clear out previous WIP (if there is one)
-  catch (removeFile (workingDirectory </> "allocations" </> "WIP" <.> "json"))
+  catch (removeFile (workingDirectory </> "bench" </> "allocations" </> "WIP" <.> "json"))
         (\e -> if isDoesNotExistError e then pure () else throwIO e)
 
   -- Run 'weigh' tests
@@ -57,8 +62,8 @@ main = do
                        ]
 
   -- Save the output to JSON
-  createDirectoryIfMissing False (workingDirectory </> "allocations")
-  let logFile = workingDirectory </> "allocations" </> logFileName <.> "json"
+  createDirectoryIfMissing False (workingDirectory </> "bench" </> "allocations")
+  let logFile = workingDirectory </> "bench" </> "allocations" </> logFileName <.> "json"
   putStrLn $ "writing results to: " ++ logFile
   logFile `BL.writeFile` encode results
 

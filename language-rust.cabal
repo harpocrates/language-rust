@@ -78,7 +78,7 @@ library
 
 
 test-suite unit-tests
-  hs-source-dirs:      tests/unit-tests
+  hs-source-dirs:      test/unit-tests
   ghc-options:         -Wall
   main-is:             Main.hs
   other-modules:       LexerTest
@@ -95,7 +95,7 @@ test-suite unit-tests
                      , language-rust
 
 test-suite rustc-tests
-  hs-source-dirs:      tests/rustc-tests
+  hs-source-dirs:      test/rustc-tests
   ghc-options:         -Wall
   main-is:             Main.hs
   other-modules:       Diff
@@ -113,9 +113,10 @@ test-suite rustc-tests
                      , text >=1.2.0
                      , unordered-containers >= 0.2.7
                      , language-rust
+                     , time >=1.2.0.0
 
 benchmark timing-benchmarks
-  hs-source-dirs:      benchmarks/timing-benchmarks
+  hs-source-dirs:      bench/timing-benchmarks
   ghc-options:         -Wall
   main-is:             Main.hs
   type:                exitcode-stdio-1.0
@@ -131,7 +132,7 @@ benchmark timing-benchmarks
                      , aeson >= 1.0.0.0
 
 benchmark allocation-benchmarks
-  hs-source-dirs:      benchmarks/allocation-benchmarks
+  hs-source-dirs:      bench/allocation-benchmarks
   ghc-options:         -Wall
   main-is:             Main.hs
   type:                exitcode-stdio-1.0

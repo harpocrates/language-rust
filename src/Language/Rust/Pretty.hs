@@ -23,7 +23,7 @@ it :: Doc a
 -}
 
 module Language.Rust.Pretty (
-  PrettyAnnotated(..), Pretty(..), Resolve(..), Doc
+  PrettyAnnotated(..), Pretty(..), Resolve(..), Doc, writeSourceFile
 ) where
 
 import Language.Rust.Data.Position
@@ -34,9 +34,13 @@ import Language.Rust.Syntax.Ident
 
 import Language.Rust.Pretty.Internal
 import Language.Rust.Pretty.Resolve
-import Language.Rust.Pretty.Literals
 
-import Text.PrettyPrint.Annotated.WL (Doc, noAnnotate, text)
+import Text.PrettyPrint.Annotated.WL (Doc, noAnnotate, text, displayIO, renderPretty)
+import System.IO (Handle)
+
+-- | Given a handle, write into it the given 'SourceFile' (with file width will be 100).
+writeSourceFile :: Handle -> SourceFile a -> IO ()
+writeSourceFile hdl = displayIO hdl . renderPretty 1.0 100 . pretty
 
 -- | Class of things that can be pretty printed (without any annotations). The is very similar to
 -- the class defined in 'wl-pprint-annotated' itself. However, in order to avoid having orphan
