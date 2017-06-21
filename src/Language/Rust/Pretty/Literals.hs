@@ -18,7 +18,7 @@ module Language.Rust.Pretty.Literals (
 
 import Language.Rust.Syntax.AST
 
-import Text.PrettyPrint.Annotated.WL (hcat, text, char, annotate, (<>), Doc, pretty)
+import Data.Text.Prettyprint.Doc (hcat, annotate, (<>), Doc, pretty)
 
 import Data.Char (intToDigit, ord, chr)
 import Data.Word (Word8)
@@ -27,9 +27,9 @@ import Data.Word (Word8)
 printLit :: Lit a -> Doc a
 printLit lit = case lit of
     (Str     str Cooked  s x) -> annotate x (hcat [ "\"", foldMap escapeChar str, "\"", suf s ])
-    (Str     str (Raw n) s x) -> annotate x (hcat [ "r", pad n, "\"", text str, "\"", pad n, suf s ])
+    (Str     str (Raw n) s x) -> annotate x (hcat [ "r", pad n, "\"", pretty str, "\"", pad n, suf s ])
     (ByteStr str Cooked  s x) -> annotate x (hcat [ "b\"", foldMap escapeByte str, "\"", suf s ])
-    (ByteStr str (Raw n) s x) -> annotate x (hcat [ "br", pad n, "\"", text (map byte2Char str), "\"", pad n, suf s ])
+    (ByteStr str (Raw n) s x) -> annotate x (hcat [ "br", pad n, "\"", pretty (map byte2Char str), "\"", pad n, suf s ])
     (Char c s x)              -> annotate x (hcat [ "'",  escapeChar c, "'", suf s ])
     (Byte b s x)              -> annotate x (hcat [ "b'", escapeByte b, "'", suf s ])
     (Int b i s x)             -> annotate x (hcat [ printIntLit i b, suf s ])
@@ -38,10 +38,10 @@ printLit lit = case lit of
     (Bool False s x)          -> annotate x (hcat [ "false", suf s ])
   where
   pad :: Int -> Doc a
-  pad n = text (replicate n '#')
+  pad n = pretty (replicate n '#')
 
   suf :: Suffix -> Doc a
-  suf = text . show
+  suf = pretty . show
 
 -- | Print an integer literal
 printIntLit :: Integer -> IntRep -> Doc a
@@ -65,8 +65,8 @@ printIntLit i r | i < 0     = "-" <> baseRep r <> toNBase (abs i) (baseVal r)
   toDigit l = "0123456789ABCDEF" !! fromIntegral l
 
   toNBase :: Integer -> Integer -> Doc a
-  l `toNBase` b | l < b = char (toDigit l)
-                | otherwise = let ~(d,e) = l `quotRem` b in toNBase d b <> char (toDigit e)
+  l `toNBase` b | l < b = pretty (toDigit l)
+                | otherwise = let ~(d,e) = l `quotRem` b in toNBase d b <> pretty (toDigit e)
 
 
 -- | Extend a byte into a unicode character
@@ -87,7 +87,7 @@ escapeByte w8 = case byte2Char w8 of
   '\\' -> "\\\\" 
   '\'' -> "\\'"
   '"'  -> "\\\""
-  c | 0x20 <= w8 && w8 <= 0x7e -> char c
+  c | 0x20 <= w8 && w8 <= 0x7e -> pretty c
   _ -> "\\x" <> padHex 2 w8
 
 -- | Escape a unicode character. Based on @std::ascii::escape_default@
@@ -98,7 +98,7 @@ escapeChar c | c <= '\xff'   = escapeByte (char2Byte c)
  
 -- | Convert a number to its padded hexadecimal form
 padHex :: Integral a => Int -> a -> Doc b
-padHex n 0 = text (replicate n '0')
+padHex n 0 = pretty (replicate n '0')
 padHex n m = let (m',r) = m `divMod` 0x10
-             in padHex (n-1) m' <> char (intToDigit (fromIntegral r))
+             in padHex (n-1) m' <> pretty (intToDigit (fromIntegral r))
 

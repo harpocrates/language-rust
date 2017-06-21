@@ -1736,7 +1736,6 @@ addAttrs as (AddrOf as' m e s)       = AddrOf (as ++ as') m e s
 addAttrs as (Break as' l e s)        = Break (as ++ as') l e s
 addAttrs as (Continue as' l s)       = Continue (as ++ as') l s
 addAttrs as (Ret as' e s)            = Ret (as ++ as') e s
-addAttrs as (InlineAsmExpr as' a s)  = InlineAsmExpr (as ++ as') a s
 addAttrs as (MacExpr as' m s)        = MacExpr (as ++ as') m s
 addAttrs as (Struct as' p f e a)     = Struct (as ++ as') p f e a
 addAttrs as (Repeat as' e1 e2 s)     = Repeat (as ++ as') e1 e2 s

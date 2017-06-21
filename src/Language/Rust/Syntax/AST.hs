@@ -22,8 +22,8 @@ module Language.Rust.Syntax.AST (
   -- ** Literals
   Lit(..), byteStr, Suffix(..), suffix, IntRep(..), StrStyle(..),
   -- ** Expressions
-  Expr(..), Abi(..), Arm(..), AsmDialect(..), UnOp(..), BinOp(..), CaptureBy(..), Field(..),
-  InlineAsm(..), InlineAsmOutput(..), RangeLimits(..),
+  Expr(..), Abi(..), Arm(..), UnOp(..), BinOp(..), CaptureBy(..), Field(..),
+  RangeLimits(..),
   -- ** Types and lifetimes
   Ty(..), Generics(..), pattern NoGenerics, Lifetime(..), LifetimeDef(..), TyParam(..),
   TyParamBound(..), partitionTyParamBounds, WhereClause(..), WherePredicate(..), PolyTraitRef(..),
@@ -137,7 +137,7 @@ instance Read Abi where
 --
 -- Example: @bar: usize@ as in @fn foo(bar: usize)@
 data Arg a
-  = Arg (Maybe (Pat a)) (Ty a) a                   -- ^ @x: i32@
+  = Arg (Maybe (Pat a)) (Ty a) a                   -- ^ @x: i32@, @(&x, &y): (&i32, &i32)@, @i32@
   | SelfValue Mutability a                         -- ^ @self@, @mut self@
   | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ @&'lt self@, @&'lt mut self@
   | SelfExplicit (Ty a) Mutability a               -- ^ @self: i32@, @mut self: i32@
@@ -162,11 +162,6 @@ data Arm a
       } deriving (Eq, Show, Functor, Typeable, Data, Generic, NFData)
 
 instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
-
--- | Inline assembly dialect.
---
--- Example: @"intel"@ as in @asm!("mov eax, 2" : "={eax}"(result) : : : "intel")@
-data AsmDialect = Att | Intel deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | 'Attribute's are annotations for other AST nodes (@syntax::ast::Attribute@). Note that
 -- doc-comments are promoted to attributes.
@@ -334,8 +329,6 @@ data Expr a
   | Continue [Attribute a] (Maybe (Lifetime a)) a
   -- | @return@ with an optional value to be returned (example: @return 1@)
   | Ret [Attribute a] (Maybe (Expr a)) a
-  -- | processed output of the @asm!()@ macro
-  | InlineAsmExpr [Attribute a] (InlineAsm a) a
   -- | macro invocation before expansion
   | MacExpr [Attribute a] (Mac a) a
   -- | struct literal expression (examples: @Foo { x: 1, y: 2 }@ or @Foo { x: 1, ..base }@)
@@ -381,7 +374,6 @@ instance Located a => Located (Expr a) where
   spanOf (Break _ _ _ s) = spanOf s
   spanOf (Continue _ _ s) = spanOf s
   spanOf (Ret _ _ s) = spanOf s
-  spanOf (InlineAsmExpr _ _ s) = spanOf s
   spanOf (MacExpr _ _ s) = spanOf s
   spanOf (Struct _ _ _ _ s) = spanOf s
   spanOf (Repeat _ _ _ s) = spanOf s
@@ -504,35 +496,6 @@ instance Located a => Located (ImplItem a) where
 --
 -- Example: @!@ as in @impl !Trait for Foo { }@
 data ImplPolarity = Positive | Negative deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
-
--- | Expanded inline assembly macro (@syntax::ast::InlineAsm@).
---
--- Example: @asm!(\"NOP\")@
-data InlineAsm a
-  = InlineAsm
-      { asm :: String
-      , asmStrStyle :: StrStyle
-      , outputs :: [InlineAsmOutput a]
-      , inputs :: [(String, Expr a)]
-      , clobbers :: [String]
-      , volatile :: Bool
-      , alignstack :: Bool
-      , dialect :: AsmDialect
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
-
--- | Outputs for inline assembly (@syntax::ast::InlineAsmOutput@)
--- 
--- Example: @"={eax}"(result)@ as in @asm!("mov eax, 2" : "={eax}"(result) : : : "intel")@
-data InlineAsmOutput a
-  = InlineAsmOutput
-      { constraint :: String
-      , expr :: Expr a
-      , isRw :: Bool
-      , isIndirect :: Bool
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
-
-instance Located a => Located (InlineAsm a) where spanOf (InlineAsm _ _ _ _ _ _ _ _ s) = spanOf s
 
 -- | A top-level item, possibly in a 'Mod' or a 'ItemStmt' (@syntax::ast::Item@ with
 -- @syntax::ast::ItemKind@ inlined).

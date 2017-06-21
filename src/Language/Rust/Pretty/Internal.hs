@@ -17,13 +17,12 @@ documented.
 
 module Language.Rust.Pretty.Internal (
   printLit, printTraitItem, printTraitRef, printType, printTyParam, printBound, printVariant,
-  printViewPath, printVis, printWhereClause, printLifetime, printLifetimeDef,
-  printNonterminal, printPat, printPath, printStmt, printStructField,
-  printWherePredicate, printExpr, printField, printFieldPat, printFnArgsAndRet, printForeignItem,
-  printGenerics, printImplItem, printInlineAsm, printInlineAsmOutput, printPolyTraitRef,
-  printMutability, printRangeLimits, printToken, printTt, printUnOp,
+  printViewPath, printVis, printWhereClause, printLifetime, printLifetimeDef, printNonterminal,
+  printPat, printPath, printStmt, printStructField, printWherePredicate, printExpr, printField,
+  printFieldPat, printFnArgsAndRet, printForeignItem, printGenerics, printImplItem,
+  printPolyTraitRef, printMutability, printRangeLimits, printToken, printTt, printUnOp,
   printUnsafety, printAttr, printBinOp, printItem, printSourceFile, printBlock, printTokenStream,
-  printLitTok, printIdent, printBindingMode, printAbi, printPolarity
+  printLitTok, printIdent, printBindingMode, printAbi, printPolarity, flatten
 ) where
 
 import Language.Rust.Pretty.Literals
@@ -33,123 +32,13 @@ import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
-import Text.PrettyPrint.Annotated.WL (
-    hcat, punctuate, group, angles, flatten, align, fillSep, text, vcat, annotate,  noAnnotate,
-    flatAlt, parens, brackets, (<>), (<##>), Doc
-  )
-import qualified Text.PrettyPrint.Annotated.WL as WL
+import Language.Rust.Pretty.Util
+import Data.Text.Prettyprint.Doc hiding ((<+>), hsep, indent, vsep)
 
-import Data.Maybe (listToMaybe, maybeToList)
+import Data.Maybe (maybeToList)
 import Data.Foldable (toList)
-import Data.List (mapAccumL)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
-
--- | indentation level
-n :: Int
-n = 2
-
--- Rust style guide to explore:
--- Useful stuff from based on https://aturon.github.io/README.html
-
--- * Utility functions
--- Wadler's take on pretty-printing is super useful because it allows us to print thinks like blocks
--- much more nicely (see [this](http://stackoverflow.com/a/41424946/3072788)) that Hughes'.
--- Unfortunately, unlike Hughes', Wadler does not have 'mempty' as the identity of @<+>@ - the
--- space between the arguments of @<+>@ does not go away even if either argument is empty. The
--- same problem shows up for @hsep@, @<#>@, @vsep@, @</>@, etc.
---
--- My solution has been to redefine my versions of these functions which _do_ treat 'mempty' as a
--- neutral element for @<+>@, @hsep@, @<#>@, @vsep@, and @</>@.
-
--- | Map the list of items into 'Doc's using the provided function and add comma punctuation
-commas :: [a] -> (a -> Doc b) -> Doc b
-commas xs f = hsep (punctuate "," (map f xs))
-
--- | Take a binary operation on docs and lift it to one that has (left and right) identity 'mempty'
-liftOp :: (Doc a -> Doc a -> Doc a) -> Doc a -> Doc a -> Doc a
-liftOp _ WL.Empty d = d
-liftOp _ d WL.Empty = d
-liftOp (#) d d' = d # d'
-
--- | Lifted version of Wadler's @<+>@
-(<+>) :: Doc a -> Doc a -> Doc a
-(<+>) = liftOp (WL.<+>)
-
--- | Lifted version of Wadler's @hsep@
-hsep :: Foldable f => f (Doc a) -> Doc a
-hsep = foldr (<+>) mempty
-
--- | Lifted version of Wadler's @<#>@
-(<#>) :: Doc a -> Doc a -> Doc a
-(<#>) = liftOp (WL.<#>)
-
--- | Lifted version of Wadler's @vsep@
-vsep :: Foldable f => f (Doc a) -> Doc a
-vsep = foldr (<#>) mempty
-
--- | Lifted version of Wadler's @</>@
-(</>) :: Doc a -> Doc a -> Doc a
-(</>) = liftOp (WL.</>)
-
--- | Unless the condition holds, print the document
-unless :: Bool -> Doc a -> Doc a
-unless b = when (not b)
-
--- | When the condition holds, print the document
-when :: Bool -> Doc a -> Doc a
-when cond d = if cond then d else mempty
-
--- | Apply a printing function to an optional value. If the value is 'Nothing', 'perhaps' returns
--- the empty 'Doc'.
-perhaps :: (a -> Doc b) -> Maybe a -> Doc b
-perhaps = maybe mempty
-
--- | Indent the given 'Doc', but only if multi-line
-indent :: Int -> Doc a -> Doc a
-indent n doc = flatAlt (WL.indent n doc) (WL.flatten doc)
-
--- | Undo what group does. This function is pretty dangerous...
-ungroup :: Doc a -> Doc a
-ungroup (WL.Union _ x) = x
-ungroup y = y
-
--- | This is the most general function for printing blocks. It operates with any delimiter, any
--- seperator, an optional leading attribute doc (which isn't followed by a seperator), and wraps a
--- list of entries. It has been tweaked to look Just Right (TM) for the usual cases.
---
--- Note that this will try to fit things on one line when possible, so if you want a block that is
--- sure /not/ to be condensed on one line (e.g. for a function), you have to construct it manually.
-block :: Delim           -- ^ outer delimiters
-       -> Bool           -- ^ prefer to be on one line (as opposed to multiline)? 
-       -> Doc a          -- ^ seperator
-       -> Doc a          -- ^ attributes doc, after which no seperator will (use 'mempty' to ignore)
-       -> [Doc a]        -- ^ entries
-       -> Doc a
-block delim p s as xs = group' (lDel # vsep (as' ++ ys) # rDel)
-  where
-  group' = if p || null (as' ++ ys) then group else id
-
-  -- left and right delimiter lists
-  (lDel,rDel) = case delim of
-                  Paren ->   ("(", ")")
-                  Bracket -> ("[", "]")
-                  Brace ->   ("{", "}")
-                  NoDelim -> (mempty, mempty)
-
-  -- method of contenating delimiters with the rest of the body
-  (#) = case delim of { Paren -> (<##>); _ -> (<#>) }
-
-  -- attributes
-  as' = case as of
-          WL.Empty -> []
-          as -> [ flatAlt (WL.indent n as) (WL.flatten as) ]
-
-  -- list of entries
-  ys = snd $ mapAccumL (\(x:xs) _ -> (xs, flatAlt (WL.indent n x <> s)
-                                                  (WL.flatten x <> unless (null xs) s)))
-                       xs xs
-  
 
 -- * Pretty printing the AST
 -- As much as possible, these functions should say which function in the @rustc@ printer they are
@@ -158,18 +47,18 @@ block delim p s as xs = group' (lDel # vsep (as' ++ ys) # rDel)
 -- | Print a source file
 printSourceFile :: SourceFile a -> Doc a
 printSourceFile (SourceFile shebang as items) = foldr1 (\x y -> x <#> "" <#> y) ls
-  where ls = concat [ maybeToList ((\s -> "#!" <> text s) <$> shebang)
+  where ls = concat [ maybeToList ((\s -> "#!" <> pretty s) <$> shebang)
                     , [ vcat [ printAttr a False | a <- as ] ]
-                    , punctuate WL.linebreak (printItem `map` items)
+                    , punctuate line' (printItem `map` items)
                     ]
 
 -- | Print a name
 printName :: Name -> Doc a
-printName = text
+printName = pretty
 
 -- | Print an identifier
 printIdent :: Ident -> Doc a
-printIdent (Ident s _) = text s
+printIdent (Ident s _) = pretty s
 
 -- | Print a type (@print_type@ with @print_ty_fn@ inlined)
 -- Types are expected to always be only one line
@@ -201,10 +90,10 @@ printMac (Mac path ts x) d = annotate x (printPath path False <> "!" <> body)
 -- | Given two positions, find out how to print appropriate amounts of space between them
 printSpaceBetween :: Span -> Span -> Doc a
 printSpaceBetween (Span _ (Position _ y1 x1)) (Span (Position _ y2 x2) _)
-  | y2 == y1 = hcat (replicate (x2 - x1) WL.space)
-  | y2 > y1  = hcat (replicate (y2 - y1) WL.line) <> WL.column (\x1' -> hcat (replicate (x2 - x1') WL.space))
-  | otherwise = WL.space 
-printSpaceBetween _ _ = WL.space
+  | y2 == y1 = hcat (replicate (x2 - x1) space)
+  | y2 > y1  = hcat (replicate (y2 - y1) line) <> column (\x1' -> hcat (replicate (x2 - x1') space))
+  | otherwise = space 
+printSpaceBetween _ _ = space
 
 -- | Print a token tree (@print_tt@)
 printTt :: TokenTree -> Doc a
@@ -220,7 +109,7 @@ printTokenStreams (ts1:ts2:tss) = printTokenStream ts1 <> sp <> printTokenStream
 
 -- | Print the space between a token stream and the mod-path before it
 printTokenStreamSp :: TokenStream -> Doc a
-printTokenStreamSp (Tree Token{}) = WL.space
+printTokenStreamSp (Tree Token{}) = space
 printTokenStreamSp (Tree Delimited{}) = mempty
 printTokenStreamSp (Stream []) = mempty
 printTokenStreamSp (Stream (t:_)) = printTokenStreamSp t
@@ -303,7 +192,7 @@ printToken (Doc d Inner False) = "//!" <> printName d
 printToken (Doc d Outer False) = "///" <> printName d
 printToken Shebang = "#!"
 -- Macro related 
-printToken (Interpolated n) = noAnnotate (printNonterminal n)
+printToken (Interpolated n) = unAnnotate (printNonterminal n)
 -- Other
 printToken t = error $ "printToken: " ++ show t
 
@@ -315,9 +204,9 @@ printLitTok (CharTok n)         = "'" <> printName n <> "'"
 printLitTok (IntegerTok n)      = printName n
 printLitTok (FloatTok n)        = printName n
 printLitTok (StrTok n)          = "\"" <> printName n <> "\""
-printLitTok (StrRawTok n m)     = let pad = text (replicate m '#') in "r" <> pad <> "\"" <> printName n <> "\"" <> pad
+printLitTok (StrRawTok n m)     = let pad = pretty (replicate m '#') in "r" <> pad <> "\"" <> printName n <> "\"" <> pad
 printLitTok (ByteStrTok n)      = "b\"" <> printName n <> "\""
-printLitTok (ByteStrRawTok n m) = let pad = text (replicate m '#') in "rb" <> pad <> "\"" <> printName n <> "\"" <> pad
+printLitTok (ByteStrRawTok n m) = let pad = pretty (replicate m '#') in "rb" <> pad <> "\"" <> printName n <> "\"" <> pad
 
 -- | Print a nonterminal
 printNonterminal :: Nonterminal a -> Doc a
@@ -411,7 +300,6 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Break _ brk e x             -> annotate x ("break" <+> perhaps printLifetime brk <+> perhaps printExpr e)
     Continue _ cont x           -> annotate x ("continue" <+> perhaps printLifetime cont)
     Ret _ result x              -> annotate x ("return" <+> perhaps printExpr result)
-    InlineAsmExpr _ inlineAsm x -> annotate x (printInlineAsm inlineAsm)
     MacExpr _ m x               -> annotate x (printMac m Paren)
     Struct as p fs Nothing x    -> annotate x (printPath p True <+> block Brace True "," (printInnerAttrs as) (printField `map` fs))
     Struct as p fs (Just d) x   -> let body = [ printField f <> "," | f <- fs ] ++ [ ".." <> printExpr d ] 
@@ -450,33 +338,12 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
   chainedMethodCalls (Index _ s i x) fdoc
     = chainedMethodCalls s (annotate x . (<> fdoc ("[" <> block NoDelim True mempty mempty [printExpr i] <> "]")))
   chainedMethodCalls (TupField _ s i x) fdoc
-    = chainedMethodCalls s (annotate x . (<> fdoc ("." <> WL.pretty i)))
+    = chainedMethodCalls s (annotate x . (<> fdoc ("." <> pretty i)))
   chainedMethodCalls e fdoc = group (fdoc (printExpr e))
-
-
--- | Print inline assembly
-printInlineAsm :: InlineAsm a -> Doc a
-printInlineAsm (InlineAsm asm asmSty outputs inputs clobbers volatile alignstack dialect x)
-  = annotate x ("asm!" <> align (group (vsep
-      [ "(" <>  printStr asmSty asm
-      , ":" <+> commas outputs printInlineAsmOutput
-      , ":" <+> commas inputs printInlineAsmInput
-      , ":" <+> commas clobbers (printStr Cooked)
-      , ":" <+> commas options (printStr Cooked) <> ")"
-      ])))
-  where printInlineAsmInput (constraint, expr) = printStr Cooked constraint <> parens (printExpr expr)
-        options = [ "volatile" | volatile ] ++ [ "alignstack" | alignstack ] ++ [ "intel" | dialect == Intel ]
 
 -- | Print a string literal
 printStr :: StrStyle -> String -> Doc a
-printStr sty str = noAnnotate (printLit (Str str sty Unsuffixed ()))
-
--- | Print inline asm output clauses
-printInlineAsmOutput :: InlineAsmOutput a -> Doc a
-printInlineAsmOutput (InlineAsmOutput constraint expr isRw _) = printStr Cooked (prefix ++ constraint) <> parens (printExpr expr) 
-  where prefix = case listToMaybe constraint of
-                   Just '=' | isRw -> "+"
-                   _ -> ""
+printStr sty str = unAnnotate (printLit (Str str sty Unsuffixed ()))
 
 -- | Extract from an expression its attributes
 expressionAttrs :: Expr a -> [Attribute a]
@@ -512,7 +379,6 @@ expressionAttrs (AddrOf as _ _ _) = as
 expressionAttrs (Break as _ _ _) = as
 expressionAttrs (Continue as _ _) = as
 expressionAttrs (Ret as _ _) = as
-expressionAttrs (InlineAsmExpr as _ _) = as
 expressionAttrs (MacExpr as _ _) = as
 expressionAttrs (Struct as _ _ _ _) = as
 expressionAttrs (Repeat as _ _ _) = as
@@ -615,10 +481,10 @@ printEitherAttrs attrs kind inline = unless (null attrs') (glue attrs')
 printAttr :: Attribute a -> Bool -> Doc a
 printAttr   (Attribute Inner p ts x) _     = annotate x ("#![" <> printPath p True <> printTokenStreamSp ts <> printTokenStream ts <> "]")
 printAttr   (Attribute Outer p ts x) _     = annotate x ("#[" <> printPath p True <> printTokenStreamSp ts <> printTokenStream ts <> "]")
-printAttr   (SugaredDoc Inner _ c x) True  = annotate x ("/*!" <> text c <> "*/")
-printAttr   (SugaredDoc Outer _ c x) True  = annotate x ("/**" <> text c <> "*/")
-printAttr a@(SugaredDoc Inner _ c x) False = annotate x (flatAlt ("//!" <+> text c) (printAttr a True))
-printAttr a@(SugaredDoc Outer _ c x) False = annotate x (flatAlt ("///" <+> text c) (printAttr a True))
+printAttr   (SugaredDoc Inner _ c x) True  = annotate x ("/*!" <> pretty c <> "*/")
+printAttr   (SugaredDoc Outer _ c x) True  = annotate x ("/**" <> pretty c <> "*/")
+printAttr a@(SugaredDoc Inner _ c x) False = annotate x (flatAlt ("//!" <+> pretty c) (printAttr a True))
+printAttr a@(SugaredDoc Outer _ c x) False = annotate x (flatAlt ("///" <+> pretty c) (printAttr a True))
 
 -- | Print an identifier as is, or as cooked string if containing a hyphen
 printCookedIdent :: Ident -> Doc a
@@ -653,9 +519,9 @@ printItem (ForeignMod as vis a i x) = annotate x $ align $ printOuterAttrs as <#
 printItem (TyAlias as vis ident ty ps x) = annotate x $ align $ printOuterAttrs as <#>
   let wc = printWhereClause True (whereClause ps)
       leading = printVis vis <+> "type" <+> printIdent ident <> printGenerics ps
-  in case wc of
-       WL.Empty -> group (leading <+> "=" <#> indent n (printType ty <> ";"))
-       _ -> leading <#> wc <#> "=" <+> printType ty <> ";"
+  in emptyElim (group (leading <+> "=" <#> indent n (printType ty <> ";")))
+               (\w -> vsep [leading, w, "=" <+> printType ty <> ";"])
+               wc
 
 printItem (Enum as vis ident vars ps x) = annotate x $ align $ printOuterAttrs as <#>
   printEnumDef vars ps ident vis
@@ -672,9 +538,9 @@ printItem (Trait as vis ident u g tys i x) = annotate x $ align $ printOuterAttr
                      ]
       lagging = block Brace False mempty (printInnerAttrs as) (printTraitItem `map` i)
       wc = printWhereClause True (whereClause g)
-  in case wc of
-       WL.Empty -> leading <+> lagging
-       _ -> leading <#> wc <#> lagging
+  in emptyElim (leading <+> lagging)
+               (\w -> vsep [leading, w, lagging])
+               wc
 
 printItem (DefaultImpl as vis u t x) = annotate x $ align $ printOuterAttrs as <#> 
   hsep [ printVis vis, printUnsafety u, "impl", printTraitRef t, "for", "..", "{ }" ]
@@ -687,9 +553,9 @@ printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs 
                      ]
       lagging = block Brace False mempty (printInnerAttrs as) (printImplItem `map` i)
       wc = printWhereClause True (whereClause g)
-  in case wc of
-       WL.Empty -> leading <+> lagging
-       _ -> leading <#> wc <#> lagging
+  in emptyElim (leading <+> lagging)
+               (\w -> vsep [leading, w, lagging])
+               wc
 
 printItem (MacItem as i (Mac p ts y) x) = annotate x $ annotate y $ align $ printOuterAttrs as <#>
   (printPath p True <> "!" <+> perhaps printIdent i <+> block Brace True mempty mempty [ printTokenStream ts ])
@@ -781,13 +647,13 @@ printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a
 printStruct structDef generics ident printFinalizer annotateGenerics =
   printIdent ident <> gen
     <> case (structDef, whereClause generics) of 
-          (StructD fields x, WhereClause [] _) -> annotate x $ WL.space <> block Brace False "," mempty (printStructField `map` fields)
-          (StructD fields x, wc) -> annotate x $ WL.line <> printWhereClause True wc <#> block Brace False "," mempty (printStructField `map` fields)
+          (StructD fields x, WhereClause [] _) -> annotate x $ space <> block Brace False "," mempty (printStructField `map` fields)
+          (StructD fields x, wc) -> annotate x $ line <> printWhereClause True wc <#> block Brace False "," mempty (printStructField `map` fields)
           (TupleD fields x, WhereClause [] _) -> annotate x $ block Paren True "," mempty (printStructField `map` fields) <> when printFinalizer ";" 
           (TupleD fields x, wc) -> annotate x $ block Paren True "," mempty (printStructField `map` fields) <#> printWhereClause (not printFinalizer) wc <> when printFinalizer ";" 
           (UnitD x, WhereClause [] _) -> annotate x $ when printFinalizer ";"
-          (UnitD x, wc) -> annotate x $ WL.line <> printWhereClause (not printFinalizer) wc <> when printFinalizer ";"
-  where gen = if annotateGenerics then printGenerics generics else noAnnotate (printGenerics generics)
+          (UnitD x, wc) -> annotate x $ line <> printWhereClause (not printFinalizer) wc <> when printFinalizer ";"
+  where gen = if annotateGenerics then printGenerics generics else unAnnotate (printGenerics generics)
 
 -- | Print a struct field
 printStructField :: StructField a -> Doc a
@@ -901,7 +767,7 @@ printPat (RangeP lo hi x)               = annotate x (printExpr lo <+> "..." <+>
 printPat (SliceP pb Nothing pa x)       = annotate x ("[" <> commas (pb ++ pa) printPat <> "]")
 printPat (SliceP pb (Just ps) pa x)     = annotate x ("[" <> commas pb printPat <> ps' <+> commas pa printPat <> "]")
   where ps' = hcat [ unless (null pb) ","
-                   , WL.space
+                   , space
                    , case ps of WildP{} -> mempty
                                 _ -> printPat ps
                    , ".."
@@ -927,11 +793,11 @@ printFnHeaderInfo u c a v = hsep [ printVis v, case c of { Const -> "const"; _ -
 -- | Print the ABI
 printAbi :: Abi -> Doc a
 printAbi Rust = mempty
-printAbi abi = "extern" <+> "\"" <> text (show abi) <> "\""
+printAbi abi = "extern" <+> "\"" <> pretty (show abi) <> "\""
  
 -- | Print the interior of a module given the list of items and attributes in it (@print_mod@)
 printMod :: Ident -> Maybe [Item a] -> [Attribute a] -> Doc a
-printMod i (Just items) attrs = printIdent i <+> block Brace False mempty (printInnerAttrs attrs) (punctuate WL.linebreak (printItem `map` items))
+printMod i (Just items) attrs = printIdent i <+> block Brace False mempty (printInnerAttrs attrs) (punctuate line' (printItem `map` items))
 printMod i Nothing _ = printIdent i <> ";"
 
 -- | Print the interior of a foreign module given the list of items and attributes in it (@print_mod@)

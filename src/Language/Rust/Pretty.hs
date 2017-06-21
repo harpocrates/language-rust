@@ -21,9 +21,10 @@ pub fn foo(&self) -> ! { }
 it :: Doc a
 
 -}
+{-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 
 module Language.Rust.Pretty (
-  PrettyAnnotated(..), Pretty(..), Resolve(..), Doc, writeSourceFile
+  Pretty(..), PrettyAnnotated(..), Resolve(..), Doc, writeSourceFile
 ) where
 
 import Language.Rust.Data.Position
@@ -35,19 +36,13 @@ import Language.Rust.Syntax.Ident
 import Language.Rust.Pretty.Internal
 import Language.Rust.Pretty.Resolve
 
-import Text.PrettyPrint.Annotated.WL (Doc, noAnnotate, text, displayIO, renderPretty)
+import Data.Text.Prettyprint.Doc (Doc, Pretty(..), unAnnotate, layoutPretty, LayoutOptions(..), PageWidth(..))
+import Data.Text.Prettyprint.Doc.Render.Text (renderIO)
 import System.IO (Handle)
 
 -- | Given a handle, write into it the given 'SourceFile' (with file width will be 100).
 writeSourceFile :: Handle -> SourceFile a -> IO ()
-writeSourceFile hdl = displayIO hdl . renderPretty 1.0 100 . pretty
-
--- | Class of things that can be pretty printed (without any annotations). The is very similar to
--- the class defined in 'wl-pprint-annotated' itself. However, in order to avoid having orphan
--- instances or extra instance that don't make sense, we are redefining it.
-class Pretty p where
-  -- | Pretty-print the given value without any annotations.
-  pretty :: p -> Doc a
+writeSourceFile hdl = renderIO hdl . layoutPretty (LayoutOptions (AvailablePerLine 100 1.0)) . pretty
 
 instance Pretty Abi where pretty = printAbi
 instance Pretty BindingMode where pretty = printBindingMode
@@ -62,40 +57,38 @@ instance Pretty TokenTree where pretty = printTt
 instance Pretty TokenStream where pretty = printTokenStream
 instance Pretty UnOp where pretty = printUnOp
 instance Pretty Unsafety where pretty = printUnsafety
-instance Pretty (Attribute a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Block a) where pretty = noAnnotate . prettyAnn
-instance Pretty (SourceFile a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Expr a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Field a) where pretty = noAnnotate . prettyAnn
-instance Pretty (FieldPat a) where pretty = noAnnotate . prettyAnn
-instance Pretty (FnDecl a) where pretty = noAnnotate . prettyAnn
-instance Pretty (ForeignItem a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Generics a) where pretty = noAnnotate . prettyAnn
-instance Pretty (ImplItem a) where pretty = noAnnotate . prettyAnn
-instance Pretty (InlineAsm a) where pretty = noAnnotate . prettyAnn
-instance Pretty (InlineAsmOutput a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Item a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Lifetime a) where pretty = noAnnotate . prettyAnn
-instance Pretty (LifetimeDef a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Lit a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Nonterminal a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Pat a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Path a) where pretty = noAnnotate . prettyAnn
-instance Pretty (PolyTraitRef a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Stmt a) where pretty = noAnnotate . prettyAnn
-instance Pretty (StructField a) where pretty = noAnnotate . prettyAnn
-instance Pretty (TraitItem a) where pretty = noAnnotate . prettyAnn
-instance Pretty (TraitRef a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Ty a) where pretty = noAnnotate . prettyAnn
-instance Pretty (TyParam a) where pretty = noAnnotate . prettyAnn
-instance Pretty (TyParamBound a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Variant a) where pretty = noAnnotate . prettyAnn
-instance Pretty (ViewPath a) where pretty = noAnnotate . prettyAnn
-instance Pretty (Visibility a) where pretty = noAnnotate . prettyAnn
-instance Pretty (WhereClause a) where pretty = noAnnotate . prettyAnn
-instance Pretty (WherePredicate a) where pretty = noAnnotate . prettyAnn
-instance Pretty Position where pretty = text . prettyPosition
-instance Pretty Span where pretty = text . prettySpan
+instance Pretty (Attribute a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Block a) where pretty = unAnnotate . prettyAnn
+instance Pretty (SourceFile a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Expr a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Field a) where pretty = unAnnotate . prettyAnn
+instance Pretty (FieldPat a) where pretty = unAnnotate . prettyAnn
+instance Pretty (FnDecl a) where pretty = unAnnotate . prettyAnn
+instance Pretty (ForeignItem a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Generics a) where pretty = unAnnotate . prettyAnn
+instance Pretty (ImplItem a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Item a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Lifetime a) where pretty = unAnnotate . prettyAnn
+instance Pretty (LifetimeDef a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Lit a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Nonterminal a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Pat a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Path a) where pretty = unAnnotate . prettyAnn
+instance Pretty (PolyTraitRef a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Stmt a) where pretty = unAnnotate . prettyAnn
+instance Pretty (StructField a) where pretty = unAnnotate . prettyAnn
+instance Pretty (TraitItem a) where pretty = unAnnotate . prettyAnn
+instance Pretty (TraitRef a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Ty a) where pretty = unAnnotate . prettyAnn
+instance Pretty (TyParam a) where pretty = unAnnotate . prettyAnn
+instance Pretty (TyParamBound a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Variant a) where pretty = unAnnotate . prettyAnn
+instance Pretty (ViewPath a) where pretty = unAnnotate . prettyAnn
+instance Pretty (Visibility a) where pretty = unAnnotate . prettyAnn
+instance Pretty (WhereClause a) where pretty = unAnnotate . prettyAnn
+instance Pretty (WherePredicate a) where pretty = unAnnotate . prettyAnn
+instance Pretty Position where pretty = pretty . prettyPosition
+instance Pretty Span where pretty = pretty . prettySpan
 
 -- | Similar to 'Pretty', but for types which are parametrized over an annotation type.
 class PrettyAnnotated p where
@@ -113,8 +106,6 @@ instance PrettyAnnotated FnDecl where prettyAnn = printFnArgsAndRet
 instance PrettyAnnotated ForeignItem where prettyAnn = printForeignItem
 instance PrettyAnnotated Generics where prettyAnn = printGenerics
 instance PrettyAnnotated ImplItem where prettyAnn = printImplItem
-instance PrettyAnnotated InlineAsm where prettyAnn = printInlineAsm
-instance PrettyAnnotated InlineAsmOutput where prettyAnn = printInlineAsmOutput
 instance PrettyAnnotated Item where prettyAnn = printItem
 instance PrettyAnnotated Lifetime where prettyAnn = printLifetime
 instance PrettyAnnotated LifetimeDef where prettyAnn = printLifetimeDef

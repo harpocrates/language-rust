@@ -9,7 +9,8 @@ import Language.Rust.Syntax (SourceFile)
 import Language.Rust.Parser (parse, Span, inputStreamFromString)
 import Language.Rust.Pretty (pretty)
 
-import Text.PrettyPrint.Annotated.WL (renderPretty, display)
+import Data.Text.Prettyprint.Doc (Doc, layoutPretty, LayoutOptions(..), PageWidth(..))
+import Data.Text.Prettyprint.Doc.Render.ShowS (renderShowS)
 
 -- The following tests render with width 50 and ribbon length 50 too.
 --  |                                                |
@@ -429,7 +430,8 @@ testComplete name inp = testCase name $ do
          Right x -> pure x
 
   -- Pretty-print it
-  let inp' = display $ renderPretty 1.0 50 $ pretty x
-
+  let opts = LayoutOptions (AvailablePerLine 50 1.0)
+      inp' = renderShowS (layoutPretty opts (pretty x)) ""
+  
   -- Assert that the input and output are the same
   inp @=? inp'

@@ -9,7 +9,8 @@ import Language.Rust.Data.Position
 import Language.Rust.Syntax
 import Language.Rust.Pretty.Internal
 
-import Text.PrettyPrint.Annotated.WL (Doc, flatten, renderPretty, display)
+import Data.Text.Prettyprint.Doc (Doc, layoutPretty, LayoutOptions(..), PageWidth(..))
+import Data.Text.Prettyprint.Doc.Render.ShowS (renderShowS)
 
 prettySuite :: Test
 prettySuite = testGroup "pretty suite"
@@ -327,12 +328,6 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "continue 'foo" (printExpr (Continue [] (Just (Lifetime "foo" ())) ()))
   , testFlatten "return" (printExpr (Ret [] Nothing ()))
   , testFlatten "return foo" (printExpr (Ret [] (Just foo) ()))
-  , testFlatten "#[cfgo] asm!(\"mov eax, 2\" : \"={eax}\"(foo) : \"{dx}\"(bar) : \"eax\" : \"volatile\", \"alignstack\")"
-                (printExpr (InlineAsmExpr [cfgO] (InlineAsm "mov eax, 2" Cooked [InlineAsmOutput "={eax}" foo False False]
-                                                            [("{dx}",bar)] ["eax"] True True Att ()) ()))
-  , testFlatten "asm!(\"mov eax, 2\" : \"={eax}\"(foo) : : : \"intel\")"
-                (printExpr (InlineAsmExpr [] (InlineAsm "mov eax, 2" Cooked [InlineAsmOutput "={eax}" foo False False] []
-                                                        [] False False Intel ()) ()))
   , testFlatten "print!(foo)" (printExpr (MacExpr [] (Mac (Path False [("print", NoParameters ())] ())
                                        (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) ()))
   , testFlatten "foo { }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [] Nothing ()))
@@ -468,7 +463,9 @@ prettyStatements = testGroup "printing statements"
   
 -- | This tries to make it so that the `Doc` gets rendered onto only one line.
 testFlatten :: String -> Doc a -> Test
-testFlatten str doc = testCase (escapeNewlines str) $ str @=? display (renderPretty 0.5 1000 (flatten doc))
+testFlatten str doc = testCase (escapeNewlines str) $ str @=? renderShowS (layoutPretty (LayoutOptions Unbounded) (flatten doc)) ""
+
+
 
 -- | Utility function for escaping newlines (and only newlines)
 escapeNewlines :: String -> String

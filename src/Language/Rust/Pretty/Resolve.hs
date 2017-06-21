@@ -709,10 +709,6 @@ resolveExprP _ _ (MacExpr as m x) = do
   as' <- sequence (resolveAttr OuterAttr <$> as)
   m' <- resolveMac ExprPath m
   pure (MacExpr as' m' x)
-resolveExprP _ _ (InlineAsmExpr as i x) = do
-  as' <- sequence (resolveAttr OuterAttr <$> as)
-  i' <- resolveInlineAsm i
-  pure (InlineAsmExpr as' i' x)
 -- Paren expressions
 resolveExprP _ _ (ParenExpr as e x) = do
   as' <- sequence (resolveAttr EitherAttr <$> as)
@@ -1274,5 +1270,3 @@ resolveTokenStream (Stream ts) = Stream <$> mapM resolveTokenStream ts
 
 instance Resolve TokenStream where resolve = resolveTokenStream
 
-resolveInlineAsm :: InlineAsm a -> Either String (InlineAsm a)
-resolveInlineAsm = pure
