@@ -9,7 +9,7 @@ Portability : portable
 
 Everything to do with describing a position or a contiguous region in a file.
 -}
-{-# LANGUAGE DeriveDataTypeable, DeriveGeneric, CPP, DeriveAnyClass #-}
+{-# LANGUAGE DeriveDataTypeable, DeriveGeneric, CPP, UndecidableInstances, PolyKinds, DeriveAnyClass #-}
 
 module Language.Rust.Data.Position (
   -- * Positions in files
@@ -19,6 +19,7 @@ module Language.Rust.Data.Position (
 ) where
 
 import GHC.Generics (Generic)
+
 import Data.Data (Data)
 import Data.Typeable (Typeable)
 import Control.DeepSeq (NFData)
@@ -161,4 +162,5 @@ instance Located a => Located [a] where
 
 instance Located a => Located (NonEmpty a) where
   spanOf = foldMap spanOf
+
 

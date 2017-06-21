@@ -14,12 +14,15 @@ module Language.Rust.Syntax (
   -- * Identifiers
   module Language.Rust.Syntax.Ident, 
   -- * Tokens
-  module Language.Rust.Syntax.Token
+  module Language.Rust.Syntax.Token,
+  -- * Annotations
+  module Language.Rust.Syntax.Annotated
 ) where
 
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Ident 
 import Language.Rust.Syntax.Token 
+import Language.Rust.Syntax.Annotated 
 
 -- Using import/export shortcut screws up Haddock
 {-# ANN module "HLint: ignore Use import/export shortcut" #-}

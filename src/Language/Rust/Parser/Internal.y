@@ -1167,6 +1167,19 @@ vis_safety_block :: { Expr Span }
     }
 
 
+{-
+-- TODO: Just uncommenting these rules (without using them anywhere), causes everything to start failing
+
+vis_union_nonblock_expr :: { Expr Span }
+  : union_expr                                                { $1 }
+  | gen_expression_block(vis_union_nonblock_expr, expr, expr) { $1 }
+
+union_expr :: { Expr Span }
+  : pub_or_inherited union         {%
+      noVis $1 (PathExpr [] Nothing (Path False [("union", NoParameters mempty)] (spanOf $1)) (spanOf $1))
+    }
+-}
+
 stmt :: { Stmt Span }
   : ntStmt                                                 { $1 }
   | many(outer_attribute) let pat ':' ty initializer ';'   { Local $3 (Just $5) $6 $1 ($1 # $2 # $>) }
@@ -1174,6 +1187,7 @@ stmt :: { Stmt Span }
   | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
   | many(outer_attribute) block_like_expr ';'              { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
   | many(outer_attribute) postfix_block_expr ';'           { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
+--  | many(outer_attribute) vis_union_nonblock_expr ';'      { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) } 
   | many(outer_attribute) block_like_expr    %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
   | many(outer_attribute) vis_safety_block ';'             { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
   | many(outer_attribute) vis_safety_block   %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }

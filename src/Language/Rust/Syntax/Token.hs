@@ -11,7 +11,7 @@ Portability : portable
 
 module Language.Rust.Syntax.Token (
   -- Contains roughly the same stuff as @syntax::parse::token@ - data definitions for tokens.
-  Token(..), Space(..), Delim(..), LitTok(..), AttrStyle(..)
+  Token(..), spaceNeeded, Space(..), Delim(..), LitTok(..), AttrStyle(..)
 ) where
 
 import GHC.Generics (Generic)
@@ -127,6 +127,148 @@ data LitTok
   | ByteStrTok Name         -- ^ byte string literal
   | ByteStrRawTok Name !Int -- ^ raw byte string literal and the number of @#@ marks around it
   deriving (Eq, Show, Data, Typeable, Generic, NFData)
+
+
+-- | Check whether a space is needed between two tokens to avoid confusion
+spaceNeeded :: Token -> Token -> Bool
+-- conflicts with 'GreaterEqual'
+spaceNeeded Greater Equal = True
+spaceNeeded Greater EqualEqual = True
+spaceNeeded Greater FatArrow = True
+
+-- conflicts with 'GreaterGreaterEqual'
+spaceNeeded Greater GreaterEqual = True
+spaceNeeded GreaterGreater Equal = True
+spaceNeeded GreaterGreater EqualEqual = True 
+spaceNeeded GreaterGreater FatArrow = True
+
+-- conflicts with 'AmpersandAmpersand'
+spaceNeeded Ampersand Ampersand = True
+spaceNeeded Ampersand AmpersandAmpersand = True
+spaceNeeded Ampersand AmpersandEqual = True
+
+-- conflicts with 'PipePipe'
+spaceNeeded Pipe Pipe = True
+spaceNeeded Pipe PipePipe = True
+spaceNeeded Pipe PipeEqual = True
+
+-- conflicts with 'LessLess'
+spaceNeeded Less Less = True
+spaceNeeded Less LessLess = True
+spaceNeeded Less LessLessEqual = True
+spaceNeeded Less LArrow = True
+
+-- conflicts with 'GreaterGreater'
+spaceNeeded Greater Greater = True
+spaceNeeded Greater GreaterGreater = True
+spaceNeeded Greater GreaterGreaterEqual = True
+
+-- conflicts with 'EqualEqual'
+spaceNeeded Equal Equal = True
+spaceNeeded Equal EqualEqual = True
+spaceNeeded Equal FatArrow = True
+
+-- conflicts with 'NotEqual'
+spaceNeeded Exclamation Equal = True
+spaceNeeded Exclamation EqualEqual = True
+spaceNeeded Exclamation FatArrow = True
+
+-- conflicts with 'LessEqual'
+spaceNeeded Less Equal = True
+spaceNeeded Less EqualEqual = True
+spaceNeeded Less FatArrow = True
+
+-- conflicts with 'LessLessEqual'
+spaceNeeded Less LessEqual = True
+spaceNeeded LessLess Equal = True
+spaceNeeded LessLess EqualEqual = True
+spaceNeeded LessLess FatArrow = True
+
+-- conflicts with 'MinusEqual'
+spaceNeeded Minus Equal = True
+spaceNeeded Minus EqualEqual = True
+spaceNeeded Minus FatArrow = True
+
+-- conflicts with 'AmpersandEqual'
+spaceNeeded Ampersand Equal = True
+spaceNeeded Ampersand EqualEqual = True
+spaceNeeded Ampersand FatArrow = True
+
+-- conflicts with 'PipeEqual'
+spaceNeeded Pipe Equal = True
+spaceNeeded Pipe EqualEqual = True
+spaceNeeded Pipe FatArrow = True
+
+-- conflicts with 'PlusEqual'
+spaceNeeded Plus Equal = True
+spaceNeeded Plus EqualEqual = True
+spaceNeeded Plus FatArrow = True
+
+-- conflicts with 'StarEqual'
+spaceNeeded Star Equal = True
+spaceNeeded Star EqualEqual = True
+spaceNeeded Star FatArrow = True
+
+-- conflicts with 'SlashEqual'
+spaceNeeded Slash Equal = True
+spaceNeeded Slash EqualEqual = True
+spaceNeeded Slash FatArrow = True
+
+-- conflicts with 'CaretEqual'
+spaceNeeded Caret Equal = True
+spaceNeeded Caret EqualEqual = True
+spaceNeeded Caret FatArrow = True
+
+-- conflicts with 'PercentEqual'
+spaceNeeded Percent Equal = True
+spaceNeeded Percent EqualEqual = True
+spaceNeeded Percent FatArrow = True
+
+-- conflicts with 'DotDot'
+spaceNeeded Dot Dot = True
+spaceNeeded Dot DotDot = True
+spaceNeeded Dot DotDotDot = True
+
+-- conflicts with 'DotDotDot'
+spaceNeeded DotDot Dot = True
+spaceNeeded DotDot DotDot = True
+spaceNeeded DotDot DotDotDot = True
+
+-- conflicts with 'ModSep'
+spaceNeeded Colon Colon = True
+spaceNeeded Colon ModSep = True
+
+-- conflicts with 'RArrow'
+spaceNeeded Minus Greater = True
+spaceNeeded Minus GreaterGreater = True
+spaceNeeded Minus GreaterEqual = True
+spaceNeeded Minus GreaterGreaterEqual = True
+
+-- conflicts with 'LArrow'
+spaceNeeded Less Minus = True
+spaceNeeded Less MinusEqual = True
+spaceNeeded Less RArrow = True
+
+-- conflicts with 'FatArrow'
+spaceNeeded Equal Greater = True
+spaceNeeded Equal GreaterGreater = True
+spaceNeeded Equal GreaterEqual = True
+spaceNeeded Equal GreaterGreaterEqual = True
+
+-- conflicts with 'LiteralTok'
+spaceNeeded LiteralTok{} IdentTok{} = True 
+spaceNeeded LiteralTok{} Underscore = True
+
+-- conflicts with 'IdentTok'
+spaceNeeded IdentTok{} IdentTok{} = True
+spaceNeeded IdentTok{} Underscore = True
+
+-- conflicts with 'Shebang'
+spaceNeeded Pound Exclamation = True
+spaceNeeded Pound NotEqual = True
+
+-- there are no other conflicts
+spaceNeeded _ _ = False
 
 
 -- | This instance is only for error messages and debugging purposes.

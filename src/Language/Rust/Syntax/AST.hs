@@ -7,7 +7,7 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 -}
-{-# LANGUAGE DuplicateRecordFields, DeriveFunctor, DeriveDataTypeable, DeriveGeneric, PatternSynonyms, DeriveAnyClass #-}
+{-# LANGUAGE DuplicateRecordFields, DeriveFunctor, DeriveDataTypeable, DeriveGeneric, PatternSynonyms, DeriveAnyClass, StandaloneDeriving #-}
 
 module Language.Rust.Syntax.AST (
   -- $overview
@@ -39,14 +39,15 @@ module Language.Rust.Syntax.AST (
   -- ** Blocks
   Block(..),
   -- ** Token trees
-  TokenTree(..), TokenStream(..), Nonterminal(..), Mac(..), MacStmtStyle(..),
+  TokenTree(..), TokenStream(..), unconsTokenStream, Nonterminal(..), Mac(..), MacStmtStyle(..),
 ) where
 
 import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)
 import Language.Rust.Syntax.Ident (Ident, Name)
+import Language.Rust.Syntax.Annotated
 import Language.Rust.Data.Position
 
-import GHC.Generics (Generic)
+import GHC.Generics (Generic, Generic1)
 import Data.Data (Data)
 import Data.Typeable (Typeable)
 import Control.DeepSeq (NFData)
@@ -141,7 +142,7 @@ data Arg a
   | SelfValue Mutability a                         -- ^ @self@, @mut self@
   | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ @&'lt self@, @&'lt mut self@
   | SelfExplicit (Ty a) Mutability a               -- ^ @self: i32@, @mut self: i32@
-  deriving (Eq, Show, Functor, Typeable, Data, Generic, NFData)
+  deriving (Eq, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Arg a) where
   spanOf (Arg _ _ s) = spanOf s
@@ -159,7 +160,7 @@ data Arm a
       , guard :: Maybe (Expr a)
       , body :: Expr a
       , nodeInfo :: a
-      } deriving (Eq, Show, Functor, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
 
@@ -180,7 +181,7 @@ data Attribute a
       , contents :: Name     -- ^ what is in the doc comment
       , nodeInfo :: a
       }
- deriving (Eq, Show, Functor, Typeable, Data, Generic, NFData)
+ deriving (Eq, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Attribute a) where
   spanOf (Attribute _ _ _ s) = spanOf s
@@ -237,7 +238,7 @@ data Block a
       , rules :: Unsafety  -- ^ Distinguishes between regular (safe) blocks and unsafe blocks such
                            -- as @unsafe { x += 1 }@.
       , nodeInfo :: a
-      } deriving (Eq, Show, Functor, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Block a) where spanOf (Block _ _ s) = spanOf s
  
@@ -339,7 +340,7 @@ data Expr a
   | ParenExpr [Attribute a] (Expr a) a
   -- | sugar for error handling with @Result@ (example: @parsed_result?@)
   | Try [Attribute a] (Expr a) a
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Expr a) where
   spanOf (Box _ _ s) = spanOf s
@@ -388,7 +389,7 @@ data Field a
       { ident :: Ident         -- ^ the field name
       , expr :: Maybe (Expr a) -- ^ value assigned to the field
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Field a) where spanOf (Field _ _ s) = spanOf s
 
@@ -401,7 +402,7 @@ data FieldPat a
       , pat :: Pat a         -- ^ the pattern the field is destructured to - must be 'IdentP'
                              -- when the @ident@ field is 'Nothing'
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (FieldPat a) where spanOf (FieldPat _ _ s) = spanOf s
 
@@ -415,7 +416,7 @@ data FnDecl a
                                -- 'Nothing', functions default to @()@ and closures to inference.
       , variadic :: Bool       -- ^ whether the argument list ends in @...@
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (FnDecl a) where spanOf (FnDecl _ _ _ s) = spanOf s
 
@@ -432,7 +433,7 @@ data ForeignItem a
   --
   -- Example: @static mut bar: i32;@ in @extern "C" { static mut bar: i32; }@
   | ForeignStatic [Attribute a] (Visibility a) Ident (Ty a) Mutability a 
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (ForeignItem a) where
   spanOf (ForeignFn _ _ _ _ _ s) = spanOf s
@@ -454,7 +455,7 @@ data Generics a
       , tyParams :: [TyParam a]       -- ^ type parameters defined (possibly with bounds)
       , whereClause :: WhereClause a  -- ^ constraints on the lifetimes and type parameters
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Generics a) where spanOf (Generics _ _ _ s) = spanOf s
 
@@ -482,7 +483,7 @@ data ImplItem a
   | TypeI [Attribute a] (Visibility a) Defaultness Ident (Ty a) a
   -- | Call to a macro
   | MacroI [Attribute a] Defaultness (Mac a) a
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (ImplItem a) where
   spanOf (ConstI _ _ _ _ _ _ s) = spanOf s
@@ -552,7 +553,7 @@ data Item a
   -- | definition of a macro via @macro_rules@
   -- Example: @macro_rules! foo { .. }@
   | MacroDef [Attribute a] Ident TokenStream a
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Item a) where
   spanOf (ExternCrate _ _ _ _ s) = spanOf s
@@ -581,7 +582,7 @@ data Lifetime a
   = Lifetime
       { name :: Name   -- ^ string that is the actual name part (so omits the tick @\'@)
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Lifetime a) where spanOf (Lifetime _ s) = spanOf s
 
@@ -595,7 +596,7 @@ data LifetimeDef a
       , lifetime :: Lifetime a   -- ^ lifetime being defined (@\'a@ in the example)
       , bounds :: [Lifetime a]   -- ^ other lifetimes which bound it (@\'b+\'c+\'d@ in the example)
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (LifetimeDef a) where spanOf (LifetimeDef _ _ _ s) = spanOf s
 
@@ -615,7 +616,7 @@ instance Located a => Located (LifetimeDef a) where spanOf (LifetimeDef _ _ _ s)
 -- @
 data SourceFile a
   = SourceFile (Maybe Name) [Attribute a] [Item a]
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 -- | The suffix on a literal (unifies @syntax::ast::LitIntType@, @syntax::ast::IntTy@,
 -- @syntax::ast::UintTy@, and @syntax::ast::FloatTy@). As of today, only numeric types can have
@@ -659,7 +660,7 @@ data Lit a
   | Int IntRep Integer Suffix a             -- ^ integer (example: @1i32@)
   | Float Double Suffix a                   -- ^ float (example: @1.12e4@)
   | Bool Bool Suffix a                      -- ^ boolean (example: @true@)
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Lit a) where
   spanOf (Str _ _ _ s) = spanOf s
@@ -690,7 +691,7 @@ data IntRep = Bin | Oct | Dec | Hex deriving (Eq, Show, Enum, Bounded, Typeable,
 
 -- | Represents a macro invocation (@syntax::ast::Mac@). The 'Path' indicates which macro is being
 -- invoked, and the 'TokenStream' contains the source of the macro invocation.
-data Mac a = Mac (Path a) TokenStream a deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+data Mac a = Mac (Path a) TokenStream a deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Mac a) where spanOf (Mac _ _ s) = spanOf s
 
@@ -701,7 +702,7 @@ data MacStmtStyle
   deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | Represents a method's signature in a trait declaration, or in an implementation.
-data MethodSig a = MethodSig Unsafety Constness Abi (FnDecl a) (Generics a) deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+data MethodSig a = MethodSig Unsafety Constness Abi (FnDecl a) (Generics a) deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 -- | Encodes whether something can be updated or changed (@syntax::ast::Mutability@).
 data Mutability = Mutable | Immutable deriving (Eq, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
@@ -724,7 +725,7 @@ data Nonterminal a
   | NtWhereClause (WhereClause a)
   | NtArg (Arg a)
   | NtLit (Lit a)
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 -- | Patterns (@syntax::ast::Pat@).
 data Pat a
@@ -757,7 +758,7 @@ data Pat a
   | SliceP [Pat a] (Maybe (Pat a)) [Pat a] a
   -- | generated from a call to a macro (example: @LinkedList!(1,2,3)@)
   | MacP (Mac a) a
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Pat a) where
   spanOf (WildP s) = spanOf s
@@ -786,7 +787,7 @@ data Path a
       { global :: Bool                                 -- ^ is the path relative or absolute (with respect to the crate root) 
       , segments :: NonEmpty (Ident, PathParameters a) -- ^ segments in the path (the things separated by @::@)
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Path a) where spanOf (Path _ _ s) = spanOf s
 
@@ -796,7 +797,7 @@ data PathListItem a
       { name :: Ident         -- ^ name of element (examples: @foo@)
       , rename :: Maybe Ident -- ^ optional renames (examples: @as bar@)
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (PathListItem a) where spanOf (PathListItem _ _ s) = spanOf s
 
@@ -825,7 +826,7 @@ data PathParameters a
   -- is considered a subcase of 'AngleBracketed'. However, I want to be able to distinguish between
   -- @foo<>@ and @foo@ for faithful pretty-printing purposes.
   | NoParameters a
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (PathParameters a) where
   spanOf (AngleBracketed _ _ _ s) = spanOf s
@@ -840,7 +841,7 @@ data PolyTraitRef a
       { boundLifetimes :: [LifetimeDef a] -- ^ lifetime introduced (@\'a'@ in the example)
       , traitRef :: TraitRef a            -- ^ trait ref using those lifetimes (@Foo\<&\'a T\>@ in the example)
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (PolyTraitRef a) where spanOf (PolyTraitRef _ _ s) = spanOf s 
 
@@ -850,7 +851,7 @@ data QSelf a
   = QSelf
       { ty :: Ty a       -- ^ type given to @Self@
       , position :: Int  -- ^ index of the associated qualified with this @Self@ type
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 -- | Limit types of a 'Range'
 data RangeLimits
@@ -877,7 +878,7 @@ data Stmt a
   | Semi (Expr a) a
   -- | A macro call (example: @println!("hello world")@)
   | MacStmt (Mac a) MacStmtStyle [Attribute a] a
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Stmt a) where
   spanOf (Local _ _ _ _ s) = spanOf s
@@ -902,7 +903,7 @@ data StructField a
       , ty :: Ty a              -- ^ type of the field
       , attrs :: [Attribute a]  -- ^ attributes on the field
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (StructField a) where spanOf (StructField _ _ _ _ s) = spanOf s
 
@@ -912,6 +913,16 @@ data TokenStream
   = Tree TokenTree              -- ^ a single token or a single set of delimited tokens
   | Stream [TokenStream]        -- ^ stream of streams of tokens
   deriving (Eq, Show, Typeable, Data, Generic, NFData)
+
+-- | A 'TokenStream' is at its core just a stream of 'TokenTree'. This function lets you get at that
+-- directly. For example, you can use 'Data.List.unfoldr unconsTokenStream' to convert between a
+-- 'TokenStream' and '[TokenTree]'.
+unconsTokenStream :: TokenStream -> Maybe (TokenTree, TokenStream)
+unconsTokenStream (Tree t) = Just (t, Stream [])
+unconsTokenStream (Stream []) = Nothing
+unconsTokenStream (Stream (ts:tss)) = case unconsTokenStream ts of
+                                        Nothing -> unconsTokenStream (Stream tss)
+                                        Just (t,ts') -> Just (t, Stream (ts':tss))
 
 -- | 'Span' is not stored on 'TokenStream' - it is computed
 instance Located TokenStream where
@@ -961,7 +972,7 @@ data TraitItem a
   | TypeT [Attribute a] Ident [TyParamBound a] (Maybe (Ty a)) a
   -- | Call to a macro
   | MacroT [Attribute a] (Mac a) a
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (TraitItem a) where
   spanOf (ConstT _ _ _ _ s) = spanOf s
@@ -970,7 +981,7 @@ instance Located a => Located (TraitItem a) where
   spanOf (MacroT _ _ s) = spanOf s
 
 -- | A 'TraitRef' is a path which identifies a trait (@syntax::ast::TraitRef@).
-newtype TraitRef a = TraitRef (Path a) deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+newtype TraitRef a = TraitRef (Path a) deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (TraitRef a) where spanOf (TraitRef p) = spanOf p
 
@@ -1006,7 +1017,7 @@ data Ty a
   | Infer a
   -- | generated from a call to a macro (example: @HList![i32,(),u8]@)
   | MacTy (Mac a) a
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Ty a) where
   spanOf (Slice _ s) = spanOf s
@@ -1032,7 +1043,7 @@ data TyParam a
       , bounds :: [TyParamBound a] -- ^ lifetime or trait bounds on the parameter
       , default_ :: Maybe (Ty a)   -- ^ a possible default type
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (TyParam a) where spanOf (TyParam _ _ _ _ s) = spanOf s
 
@@ -1041,7 +1052,7 @@ instance Located a => Located (TyParam a) where spanOf (TyParam _ _ _ _ s) = spa
 data TyParamBound a
   = TraitTyParamBound (PolyTraitRef a) TraitBoundModifier a -- ^ trait bound
   | RegionTyParamBound (Lifetime a) a                       -- ^ lifetime bound
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (TyParamBound a) where
   spanOf (TraitTyParamBound _ _ s) = spanOf s
@@ -1078,7 +1089,7 @@ data Variant a
       , data_ :: VariantData a     -- ^ fields and form of the constructor
       , disrExpr :: Maybe (Expr a) -- ^ explicit discriminant, e.g. Foo = 1
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Variant a) where spanOf (Variant _ _ _ _ s) = spanOf s
 
@@ -1087,7 +1098,7 @@ data VariantData a
   = StructD [StructField a] a -- ^ struct variant (example: @Bar { .. }@ as in @enum Foo { Bar { .. } }@)
   | TupleD [StructField a] a  -- ^ tuple variant (exmaple: @Bar(..)@ as in enum Foo { Bar(..) }@)
   | UnitD a                   -- ^ unit variant (example @Bar@ as in @enum Foo { Bar = .. }@)
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (VariantData a) where
   spanOf (StructD _ s) = spanOf s
@@ -1108,7 +1119,7 @@ data ViewPath a
   --
   -- Example: @foo::bar::{a,b,c as d}@
   | ViewPathList Bool [Ident] [PathListItem a] a
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (ViewPath a) where
   spanOf (ViewPathSimple _ _ _ s) = spanOf s
@@ -1123,7 +1134,7 @@ data Visibility a
   | CrateV                -- ^ @pub(crate)@ is accessible from within the crate
   | RestrictedV (Path a)  -- ^ for some path @p@, @pub(p)@ is visible at that path
   | InheritedV            -- ^ if no visbility is specified, this is the default
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 -- | A @where@ clause in a definition, where one can apply a series of constraints to the types
 -- introduced and used by a 'Generic' clause (@syntax::ast::WhereClause@). In many cases, @where@ 
@@ -1138,7 +1149,7 @@ data WhereClause a
   = WhereClause
       { predicates :: [WherePredicate a]  -- ^ predicates enforced by the clause
       , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (WhereClause a) where spanOf (WhereClause _ s) = spanOf s
 
@@ -1162,7 +1173,7 @@ data WherePredicate a
   -- | equality predicate (@syntax::ast::WhereEqPredicate@) (example: @T=int@). Note that this is
   -- not currently supported.
   | EqPredicate (Ty a) (Ty a) a
-  deriving (Eq, Functor, Show, Typeable, Data, Generic, NFData)
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (WherePredicate a) where
   spanOf (BoundPredicate _ _ _ s) = spanOf s

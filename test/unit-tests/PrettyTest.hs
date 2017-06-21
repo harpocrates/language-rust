@@ -188,7 +188,7 @@ prettyTypes = testGroup "printing types"
   , testFlatten "(i32)" (printType (ParenTy i32 ()))
   , testFlatten "typeof(1i32)" (printType (Typeof (Lit [] (Int Dec 1 I32 ()) ()) ()))
   , testFlatten "_" (printType (Infer ()))
-  , testFlatten "HList![ & str , bool , Vec < i32 > ]"
+  , testFlatten "HList![ &str, bool, Vec<i32> ]"
                 (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ()) (Stream
                                        [ Tree (Token mempty Ampersand)
                                        , Tree (Token mempty (IdentTok (mkIdent "str")))
@@ -227,7 +227,7 @@ prettyAttributes :: Test
 prettyAttributes = testGroup "printing attributes"
   [ testFlatten "#![cfgi]" (printAttr cfgI True) 
   , testFlatten "#[cfgo]" (printAttr cfgO True)
-  , testFlatten "#[derive(Eq , Ord , 1)]" (printAttr (Attribute Outer (Path False [("derive", NoParameters ())] ()) (Tree (Delimited mempty Paren (Stream
+  , testFlatten "#[derive(Eq, Ord, 1)]" (printAttr (Attribute Outer (Path False [("derive", NoParameters ())] ()) (Tree (Delimited mempty Paren (Stream
                                                           [ Tree (Token mempty (IdentTok "Eq"))
                                                           , Tree (Token mempty Comma)
                                                           , Tree (Token mempty (IdentTok "Ord"))

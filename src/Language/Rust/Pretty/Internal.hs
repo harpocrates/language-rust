@@ -35,8 +35,9 @@ import Language.Rust.Syntax.Ident
 import Language.Rust.Pretty.Util
 import Data.Text.Prettyprint.Doc hiding ((<+>), hsep, indent, vsep)
 
-import Data.Maybe (maybeToList)
+import Data.Maybe (maybeToList, fromMaybe)
 import Data.Foldable (toList)
+import Data.List (unfoldr)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
 
@@ -88,24 +89,53 @@ printMac (Mac path ts x) d = annotate x (printPath path False <> "!" <> body)
   where body = block d True mempty mempty [ printTokenStream ts ]
 
 -- | Given two positions, find out how to print appropriate amounts of space between them
-printSpaceBetween :: Span -> Span -> Doc a
-printSpaceBetween (Span _ (Position _ y1 x1)) (Span (Position _ y2 x2) _)
-  | y2 == y1 = hcat (replicate (x2 - x1) space)
-  | y2 > y1  = hcat (replicate (y2 - y1) line) <> column (\x1' -> hcat (replicate (x2 - x1') space))
-  | otherwise = space 
-printSpaceBetween _ _ = space
+printSpaceBetween :: Bool -> Span -> Span -> Maybe (Doc a)
+printSpaceBetween spaceNeeded (Span _ (Position _ y1 x1)) (Span (Position _ y2 x2) _)
+  | y2 == y1 && x2 > x1 = Just $ hcat (replicate (x2 - x1) space)
+  | y2 > y1             = Just $ hcat (replicate (y2 - y1) line) <> column (\x1' -> hcat (replicate (x2 - x1') space))
+  | spaceNeeded         = Just space 
+  | otherwise           = Just mempty
+printSpaceBetween _ _ _ = Nothing 
 
 -- | Print a token tree (@print_tt@)
 printTt :: TokenTree -> Doc a
 printTt (Token _ t) = printToken t 
 printTt (Delimited _ d ts) = block d True mempty mempty [ printTokenStream ts ] 
 
--- | Print a list of token streams, with the right amount of space between successive elements
-printTokenStreams :: [TokenStream] -> Doc a
-printTokenStreams [] = mempty
-printTokenStreams [ts] = printTokenStream ts
-printTokenStreams (ts1:ts2:tss) = printTokenStream ts1 <> sp <> printTokenStreams (ts2:tss)
-  where sp = printSpaceBetween (spanOf ts1) (spanOf ts2)
+-- | Print a list of token trees, with the right amount of space between successive elements
+printTokenTrees :: [TokenTree] -> Doc a
+printTokenTrees [] = mempty
+printTokenTrees [tt] = printTt tt
+printTokenTrees (tt1:tt2:tts) = printTt tt1 <> sp <> printTokenTrees (tt2:tts)
+  where
+  extremities :: TokenTree -> (Token, Token)
+  extremities (Token _ t ) = (t,t)
+  extremities (Delimited _ d _) = (OpenDelim d, CloseDelim d)
+
+  -- extremities in this particular situation
+  (lastTt1, firstTt2) = (snd $ extremities tt1, fst $ extremities tt2)
+  spNeeded = lastTt1 `spaceNeeded` firstTt2
+
+  -- Spacing of tokens, as informed by positional information on tokens
+  spPos = printSpaceBetween spNeeded (spanOf tt1) (spanOf tt2)
+
+  -- Spacing of tokens, as informed by 'spaceNeeded' and special cases
+  spTok = case (snd $ extremities tt1, fst $ extremities tt2) of
+            (Comma, _) -> space
+            (Colon, _) -> space
+            (Semicolon, _) -> space
+            (_, OpenDelim Brace) -> space
+            (CloseDelim Brace, _) -> space
+            (t1, t2) | t1 `elem` toksRequiringSp || t2 `elem` toksRequiringSp -> space 
+                     | otherwise -> if spNeeded then space else mempty
+
+  -- List of tokens that want to have space on either side of them
+  toksRequiringSp = [ Equal, GreaterEqual, GreaterGreaterEqual, EqualEqual, NotEqual, LessEqual,
+                      LessLessEqual, MinusEqual, AmpersandEqual, PipeEqual, PlusEqual, StarEqual,
+                      SlashEqual, CaretEqual, PercentEqual, RArrow, LArrow, FatArrow ]
+  
+  -- Use 'spPos' with 'spTok' as a fallback
+  sp = fromMaybe spTok spPos
 
 -- | Print the space between a token stream and the mod-path before it
 printTokenStreamSp :: TokenStream -> Doc a
@@ -116,8 +146,7 @@ printTokenStreamSp (Stream (t:_)) = printTokenStreamSp t
 
 -- | Print a token stream
 printTokenStream :: TokenStream -> Doc a
-printTokenStream (Tree tt) = printTt tt
-printTokenStream (Stream ts) = printTokenStreams ts
+printTokenStream = printTokenTrees . unfoldr unconsTokenStream
 
 -- | Print a token (@token_to_string@)
 -- Single character expression-operator symbols.
