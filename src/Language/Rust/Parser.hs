@@ -23,7 +23,7 @@ sourceFile :: SourceFile Span
 
 module Language.Rust.Parser (
   -- * Parsing
-  parse, parse', readSourceFile, Parse(..), P, execParser, initPos, Span,
+  parse, parse', readSourceFile, readTokens, Parse(..), P, execParser, initPos, Span,
   -- * Lexing
   lexToken, lexNonSpace, lexTokens, translateLit,
   -- * Input stream
@@ -32,9 +32,9 @@ module Language.Rust.Parser (
   lexicalError, parseError, ParseFail,
 ) where
 
-import Language.Rust.Syntax.AST
+import Language.Rust.Syntax
 import Language.Rust.Data.InputStream (InputStream, readInputStream, inputStreamToString, inputStreamFromString)
-import Language.Rust.Data.Position (Position, Span, initPos, prettyPosition)
+import Language.Rust.Data.Position (Position, Span, Spanned, initPos, prettyPosition)
 import Language.Rust.Parser.Internal
 import Language.Rust.Parser.Lexer (lexToken, lexNonSpace, lexTokens, lexicalError)
 import Language.Rust.Parser.Literals (translateLit)
@@ -58,6 +58,14 @@ parse' is = case execParser parser is initPos of
 -- | Given a path pointing to a Rust source file, read that file and parse it into a 'SourceFile'
 readSourceFile :: FilePath -> IO (SourceFile Span)
 readSourceFile fileName = parse' <$> readInputStream fileName
+
+-- | Given a path pointing to a Rust source file, read that file and lex it (ignoring whitespace)
+readTokens :: FilePath -> IO [Spanned Token]
+readTokens fileName = do
+  inp <- readInputStream fileName
+  case execParser (lexTokens lexNonSpace) inp initPos of
+    Left (pos, msg) -> throw (ParseFail pos msg)
+    Right x -> pure x
 
 -- | Exceptions that occur during parsing
 data ParseFail = ParseFail Position String deriving (Eq, Typeable)

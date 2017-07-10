@@ -9,7 +9,7 @@ import Language.Rust.Syntax (SourceFile)
 import Language.Rust.Parser (parse, Span, inputStreamFromString)
 import Language.Rust.Pretty (pretty)
 
-import Data.Text.Prettyprint.Doc (Doc, layoutPretty, LayoutOptions(..), PageWidth(..))
+import Data.Text.Prettyprint.Doc (layoutPretty, LayoutOptions(..), PageWidth(..))
 import Data.Text.Prettyprint.Doc.Render.ShowS (renderShowS)
 
 -- The following tests render with width 50 and ribbon length 50 too.

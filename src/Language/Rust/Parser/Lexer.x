@@ -917,9 +917,7 @@ $hexit             = [0-9a-fA-F]
 
 @char_escape
   = [nrt\\'"0]
-  | [xX] $hexit $hexit
-  | u $hexit $hexit $hexit $hexit
-  | U $hexit $hexit $hexit $hexit $hexit $hexit $hexit $hexit
+  | [xX] [0-7] $hexit
   | u\{ $hexit \}
   | u\{ $hexit $hexit \}
   | u\{ $hexit $hexit $hexit \}
@@ -927,6 +925,9 @@ $hexit             = [0-9a-fA-F]
   | u\{ $hexit $hexit $hexit $hexit $hexit \}
   | u\{ $hexit $hexit $hexit $hexit $hexit $hexit \}
 
+@byte_escape
+  = [xX] $hexit $hexit
+  | [nrt\\'"0]
 
 -- literals
 
@@ -938,8 +939,7 @@ $hexit             = [0-9a-fA-F]
     \'
 
 @lit_byte
-  = b\' ( \\ ( [xX] $hexit $hexit
-             | [nrt\\'"0] )
+  = b\' ( \\ @byte_escape 
         | [^\\'\n\t\r] [ \udc00-\udfff ]?
         )
     \'
@@ -956,8 +956,8 @@ $hexit             = [0-9a-fA-F]
 @lit_float         = [0-9][0-9_]* @decimal_suffix? @exponent_suffix?
 @lit_float2        = [0-9][0-9_]* \.
 
-@lit_str           = \" (\\\n | \\\r\n | \\ @char_escape | [^\\\"] | \n | \r)* \"
-@lit_byte_str      = b @lit_str
+@lit_str           =   \" (\\\n | \\\r\n | \\ @char_escape | [^\\\"] | \n | \r)* \"
+@lit_byte_str      = b \" (\\\n | \\\r\n | \\ @byte_escape | [^\\\"] | \n | \r)* \"
 
 @lit_raw_str       = r \#* \"
 @lit_raw_bstr      = br \#* \"

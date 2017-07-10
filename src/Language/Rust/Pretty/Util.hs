@@ -26,6 +26,7 @@ module Language.Rust.Pretty.Util where
 
 import Data.Monoid ((<>))
 import Data.List (mapAccumL)
+import Data.String (IsString(..))
 
 import qualified Data.Text.Prettyprint.Doc as PP
 import Data.Text.Prettyprint.Doc.Internal.Type (Doc(..))
@@ -117,7 +118,13 @@ ungroup :: Doc a -> Doc a
 ungroup (Union _ x) = x
 ungroup y = y
 
+-- | Remove all indent
+noIndent :: Doc a -> Doc a
+noIndent d = PP.nesting (\i -> PP.nest (negate i) d)
 
+-- | Translate '\n' in a string using the provided 'Doc' instead of 'line'
+string :: Doc a -> String -> Doc a
+string new = foldMap (\c -> case c of { '\n' -> new; _ -> Char c })
 
 -- | This is the most general function for printing blocks. It operates with any delimiter, any
 -- seperator, an optional leading attribute doc (which isn't followed by a seperator), and wraps a

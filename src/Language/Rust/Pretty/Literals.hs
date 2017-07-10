@@ -17,19 +17,20 @@ module Language.Rust.Pretty.Literals (
 ) where
 
 import Language.Rust.Syntax.AST
+import Language.Rust.Pretty.Util
 
-import Data.Text.Prettyprint.Doc (hcat, annotate, (<>), Doc, pretty)
+import Data.Text.Prettyprint.Doc (hcat, annotate, (<>), Doc, pretty, hardline)
 
 import Data.Char (intToDigit, ord, chr)
 import Data.Word (Word8)
 
 -- | Print a literal (@print_literal@)
 printLit :: Lit a -> Doc a
-printLit lit = case lit of
+printLit lit = noIndent $ case lit of
     (Str     str Cooked  s x) -> annotate x (hcat [ "\"", foldMap escapeChar str, "\"", suf s ])
-    (Str     str (Raw n) s x) -> annotate x (hcat [ "r", pad n, "\"", pretty str, "\"", pad n, suf s ])
+    (Str     str (Raw n) s x) -> annotate x (hcat [ "r", pad n, "\"", string hardline str, "\"", pad n, suf s ])
     (ByteStr str Cooked  s x) -> annotate x (hcat [ "b\"", foldMap escapeByte str, "\"", suf s ])
-    (ByteStr str (Raw n) s x) -> annotate x (hcat [ "br", pad n, "\"", pretty (map byte2Char str), "\"", pad n, suf s ])
+    (ByteStr str (Raw n) s x) -> annotate x (hcat [ "br", pad n, "\"", string hardline (map byte2Char str), "\"", pad n, suf s ])
     (Char c s x)              -> annotate x (hcat [ "'",  escapeChar c, "'", suf s ])
     (Byte b s x)              -> annotate x (hcat [ "b'", escapeByte b, "'", suf s ])
     (Int b i s x)             -> annotate x (hcat [ printIntLit i b, suf s ])
@@ -92,9 +93,9 @@ escapeByte w8 = case byte2Char w8 of
 
 -- | Escape a unicode character. Based on @std::ascii::escape_default@
 escapeChar :: Char -> Doc a
-escapeChar c | c <= '\xff'   = escapeByte (char2Byte c)
-             | c <= '\xffff' = "\\u" <> padHex 4 (ord c)
-             | otherwise     = "\\U" <> padHex 8 (ord c)
+escapeChar c | c <= '\x7f'   = escapeByte (char2Byte c)
+             | c <= '\xffff' = "\\u{" <> padHex 4 (ord c) <> "}"
+             | otherwise     = "\\u{" <> padHex 6 (ord c) <> "}"
  
 -- | Convert a number to its padded hexadecimal form
 padHex :: Integral a => Int -> a -> Doc b

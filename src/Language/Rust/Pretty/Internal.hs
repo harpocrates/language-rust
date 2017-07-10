@@ -208,7 +208,7 @@ printToken (CloseDelim Bracket) = "]"
 printToken (CloseDelim Brace) = "}"
 printToken (CloseDelim NoDelim) = ""
 -- Literals
-printToken (LiteralTok l s) = printLitTok l <> perhaps printName s
+printToken (LiteralTok l s) = noIndent $ printLitTok l <> perhaps printName s
 -- Name components
 printToken (IdentTok i) = printIdent i
 printToken Underscore = "_"
@@ -232,10 +232,11 @@ printLitTok (ByteTok n)         = "b'" <> printName n <> "'"
 printLitTok (CharTok n)         = "'" <> printName n <> "'"
 printLitTok (IntegerTok n)      = printName n
 printLitTok (FloatTok n)        = printName n
-printLitTok (StrTok n)          = "\"" <> printName n <> "\""
-printLitTok (StrRawTok n m)     = let pad = pretty (replicate m '#') in "r" <> pad <> "\"" <> printName n <> "\"" <> pad
-printLitTok (ByteStrTok n)      = "b\"" <> printName n <> "\""
-printLitTok (ByteStrRawTok n m) = let pad = pretty (replicate m '#') in "rb" <> pad <> "\"" <> printName n <> "\"" <> pad
+printLitTok (StrTok n)          = "\"" <> string hardline n <> "\""
+printLitTok (StrRawTok n m)     = let pad = pretty (replicate m '#')
+                                  in "r" <> pad <> "\"" <> string hardline n <> "\"" <> pad
+printLitTok (ByteStrTok n)      = "b\"" <> string hardline n <> "\""
+printLitTok (ByteStrRawTok n m) = let pad = pretty (replicate m '#') in "br" <> pad <> "\"" <> string hardline n <> "\"" <> pad
 
 -- | Print a nonterminal
 printNonterminal :: Nonterminal a -> Doc a
@@ -298,7 +299,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Vec as exprs x              -> annotate x (block Bracket True "," (printInnerAttrs as) (printExpr <$> exprs))
     Call _ func [arg] x         -> annotate x (printExpr func <> parens (printExpr arg))
     Call _ func args x          -> annotate x (printExpr func <> block Paren True "," mempty (printExpr <$> args))
-    MethodCall{}                -> chainedMethodCalls expr id
+    MethodCall{}                -> chainedMethodCalls expr False id
     TupExpr as [e] x            -> annotate x (block Paren True ""  (printInnerAttrs as) [ printExpr e <> "," ])
     TupExpr as es x             -> annotate x (block Paren True "," (printInnerAttrs as) (printExpr <$> es))
     Binary _ op lhs rhs x       -> annotate x (hsep [ printExpr lhs, printBinOp op, printExpr rhs ])
@@ -319,10 +320,10 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Catch attrs blk x           -> annotate x ("do catch" <+> printBlockWithAttrs True blk attrs)
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
     AssignOp _ op lhs rhs x     -> annotate x (hsep [ printExpr lhs, printBinOp op <> "=", printExpr rhs ])
-    FieldAccess{}               -> chainedMethodCalls expr id
-    TupField{}                  -> chainedMethodCalls expr id
-    Index{}                     -> chainedMethodCalls expr id
-    Range _ start end limits x  -> annotate x (hcat [ perhaps printExpr start, printRangeLimits limits, perhaps printExpr end ])
+    FieldAccess{}               -> chainedMethodCalls expr False id
+    TupField{}                  -> chainedMethodCalls expr False id
+    Index{}                     -> chainedMethodCalls expr False id
+    Range _ start end limits x  -> annotate x (perhaps printExpr start <+> printRangeLimits limits <+> perhaps printExpr end)
     PathExpr _ Nothing path x   -> annotate x (printPath path True)
     PathExpr _ (Just qs) path x -> annotate x (printQPath path qs True)
     AddrOf _ mut e x            -> annotate x ("&" <> printMutability mut <+> printExpr e)
@@ -335,7 +336,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
                                    in annotate x (printPath p True <+> block Brace True mempty (printInnerAttrs as) body)
     Repeat attrs e cnt x        -> annotate x (brackets (printInnerAttrs attrs <+> printExpr e <> ";" <+> printExpr cnt))
     ParenExpr attrs e x         -> annotate x (parens (printInnerAttrs attrs <+> printExpr e))
-    Try{}                       -> chainedMethodCalls expr id
+    Try{}                       -> chainedMethodCalls expr False id
   where
   printLbl = perhaps (\i -> printLifetime i <> ":")
   glue = if isInline then (<+>) else (</>)
@@ -352,23 +353,26 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
   --   * try
   --
   chainedMethodCalls :: Expr a            -- ^ expression
+                     -> Bool              -- ^ last expression was a 'TupField' (if we have two
+                                          -- successive 'TupField's, we need a space between them
+                                          -- to prevent them from looking like a float literal)
                      -> (Doc a -> Doc a)  -- ^ suffix to the expression
                      -> Doc a
-  chainedMethodCalls (MethodCall _ s i ts' as x) fdoc
+  chainedMethodCalls (MethodCall _ s i ts' as x) _ fdoc
     = let tys = perhaps (\ts -> "::<" <> commas ts printType <> ">") ts'
           as' = case as of
                   [a] -> parens (printExpr a)
                   _ -> block Paren True "," mempty (printExpr <$> as)
-      in chainedMethodCalls s (annotate x . (<##> fdoc (indent n (hcat [ ".", printIdent i, tys, as' ]))))
-  chainedMethodCalls (FieldAccess _ s i x) fdoc
-    = chainedMethodCalls s (annotate x . (<##> fdoc (indent n (hcat [ ".", printIdent i ]))))
-  chainedMethodCalls (Try _ s x) fdoc
-    = chainedMethodCalls s (annotate x . (<> fdoc "?"))
-  chainedMethodCalls (Index _ s i x) fdoc
-    = chainedMethodCalls s (annotate x . (<> fdoc ("[" <> block NoDelim True mempty mempty [printExpr i] <> "]")))
-  chainedMethodCalls (TupField _ s i x) fdoc
-    = chainedMethodCalls s (annotate x . (<> fdoc ("." <> pretty i)))
-  chainedMethodCalls e fdoc = group (fdoc (printExpr e))
+      in chainedMethodCalls s False (annotate x . (<##> fdoc (indent n (hcat [ ".", printIdent i, tys, as' ]))))
+  chainedMethodCalls (FieldAccess _ s i x) _ fdoc
+    = chainedMethodCalls s False (annotate x . (<##> fdoc (indent n (hcat [ ".", printIdent i ]))))
+  chainedMethodCalls (Try _ s x) _ fdoc
+    = chainedMethodCalls s False (annotate x . (<> fdoc "?"))
+  chainedMethodCalls (Index _ s i x) _ fdoc
+    = chainedMethodCalls s False (annotate x . (<> fdoc ("[" <> block NoDelim True mempty mempty [printExpr i] <> "]")))
+  chainedMethodCalls (TupField _ s i x) t fdoc
+    = chainedMethodCalls s True (annotate x . (<> fdoc ("." <> pretty i <> when t " ")))
+  chainedMethodCalls e _ fdoc = group (fdoc (printExpr e))
 
 -- | Print a string literal
 printStr :: StrStyle -> String -> Doc a
@@ -508,12 +512,12 @@ printEitherAttrs attrs kind inline = unless (null attrs') (glue attrs')
 
 -- | Print an attribute (@print_attribute_inline@ or @print_attribute@)
 printAttr :: Attribute a -> Bool -> Doc a
-printAttr   (Attribute Inner p ts x) _     = annotate x ("#![" <> printPath p True <> printTokenStreamSp ts <> printTokenStream ts <> "]")
-printAttr   (Attribute Outer p ts x) _     = annotate x ("#[" <> printPath p True <> printTokenStreamSp ts <> printTokenStream ts <> "]")
-printAttr   (SugaredDoc Inner _ c x) True  = annotate x ("/*!" <> pretty c <> "*/")
-printAttr   (SugaredDoc Outer _ c x) True  = annotate x ("/**" <> pretty c <> "*/")
-printAttr a@(SugaredDoc Inner _ c x) False = annotate x (flatAlt ("//!" <+> pretty c) (printAttr a True))
-printAttr a@(SugaredDoc Outer _ c x) False = annotate x (flatAlt ("///" <+> pretty c) (printAttr a True))
+printAttr (Attribute Inner p ts x) _     = annotate x ("#![" <> printPath p True <> printTokenStreamSp ts <> printTokenStream ts <> "]")
+printAttr (Attribute Outer p ts x) _     = annotate x ("#[" <> printPath p True <> printTokenStreamSp ts <> printTokenStream ts <> "]")
+printAttr (SugaredDoc Inner True c x)  _ = annotate x (noIndent ("/*!" <> string hardline c <> "*/"))
+printAttr (SugaredDoc Outer True c x)  _ = annotate x (noIndent ("/**" <> string hardline c <> "*/"))
+printAttr (SugaredDoc Inner False c x) _ = annotate x (flatAlt ("//!" <> pretty c) ("/*!" <> pretty c <> "*/"))
+printAttr (SugaredDoc Outer False c x) _ = annotate x (flatAlt ("///" <> pretty c) ("/**" <> pretty c <> "*/"))
 
 -- | Print an identifier as is, or as cooked string if containing a hyphen
 printCookedIdent :: Ident -> Doc a
@@ -667,9 +671,9 @@ printVis InheritedV = mempty
 -- | Print a foreign item (@print_foreign_item@)
 printForeignItem :: ForeignItem a -> Doc a
 printForeignItem (ForeignFn attrs vis ident decl generics x) = annotate x $
-  printOuterAttrs attrs <+> printFn decl Normal NotConst Rust (Just ident) generics vis Nothing
+  printOuterAttrs attrs <#> printFn decl Normal NotConst Rust (Just ident) generics vis Nothing
 printForeignItem (ForeignStatic attrs vis ident ty mut x) = annotate x $
-  printOuterAttrs attrs <+> printVis vis <+> "static" <+> printMutability mut <+> printIdent ident <> ":" <+> printType ty <> ";"
+  printOuterAttrs attrs <#> printVis vis <+> "static" <+> printMutability mut <+> printIdent ident <> ":" <+> printType ty <> ";"
 
 -- | Print a struct definition (@print_struct@)
 printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a
@@ -776,8 +780,8 @@ printFullMutability Immutable = "const"
 printPat :: Pat a -> Doc a
 printPat (WildP x)                      = annotate x "_"
 printPat (IdentP bm p s x)              = annotate x (printBindingMode bm <+> printIdent p <+> perhaps (\p' -> "@" <+> printPat p') s)
-printPat (StructP p fs b x)             = annotate x (printPath p True <+> block Brace True "," mempty body)
-  where body = (printFieldPat `map` fs) ++ [ ".." | b ]
+printPat (StructP p fs False x)         = annotate x (printPath p True <+> block Brace True "," mempty (printFieldPat `map` fs))
+printPat (StructP p fs True x)          = annotate x (printPath p True <+> block Brace True mempty mempty ([ printFieldPat f <> "," | f <- fs ] ++ [ ".." ]))
 printPat (TupleStructP p es Nothing x)  = annotate x (printPath p True <> "(" <> commas es printPat <> ")")
 printPat (TupleStructP p es (Just d) x) = let (before,after) = splitAt d es
   in annotate x (printPath p True <> "(" <> commas before printPat <> when (d /= 0) ","

@@ -5,17 +5,20 @@ import Diff ()
 import DiffUtils
 
 import Control.Monad (filterM, when)
-import Control.Exception (catch, SomeException)
+import Control.Exception (catch, SomeException, evaluate)
 
 import Data.ByteString.Lazy (hGetContents)
 import Data.ByteString.Lazy.Char8 (unpack)
 import Data.Aeson (decode', Value)
 
 import Language.Rust.Parser (readSourceFile)
+import Language.Rust.Pretty (writeSourceFile)
+import Language.Rust.Syntax (SourceFile)
 
-import System.Directory (getCurrentDirectory, listDirectory, doesFileExist)
+import System.Directory (getCurrentDirectory, getTemporaryDirectory, listDirectory, doesFileExist)
 import System.Process (createProcess, proc, CreateProcess(..), StdStream(..), callProcess, readProcess)
 import System.FilePath ((</>), takeFileName)
+import System.IO (withFile, IOMode(WriteMode))
 
 import Data.Time.Clock (utctDay, getCurrentTime)
 import Data.Time.Calendar (fromGregorian, showGregorian, diffDays)
@@ -58,6 +61,14 @@ getJsonAST fileName = do
     Just value -> pure value
     Nothing -> error ("Failed to get `rustc' JSON\n" ++ unpack jsonContents)
 
+-- | Given an AST and a file name, print it into a temporary file and return that path
+prettySourceFile :: FilePath -> SourceFile a -> IO FilePath
+prettySourceFile path ast = do
+  tmp <- getTemporaryDirectory
+  let path' = tmp </> takeFileName path
+  withFile path' WriteMode (`writeSourceFile` ast)
+  pure path'
+
 
 -- * Difference tests
 
@@ -68,48 +79,64 @@ data DiffTest = DiffTest String
 data DiffRunning = ParsingReference
                  | ParsingImplementation
                  | ParsingDiffing
+                 | PrintingParsed
+                 | ReparsingReference
+                 | ReparsingDiffing
+
 
 instance Show DiffRunning where
   show ParsingReference = "Parsing using `rustc'"
   show ParsingImplementation = "Parsing using our parser"
   show ParsingDiffing = "Comparing the two parsed outputs"
+  show PrintingParsed = "Pretty-printing the parsed syntax tree"
+  show ReparsingReference = "Reparsing using `rustc'"
+  show ReparsingDiffing = "Comparing to the reparsed output"
 
 -- | These are the possible final states of a 'DiffTest'
-data DiffResult = Error String
+data DiffResult = Error DiffRunning String
                 | Done
 
 instance Show DiffResult where
-  show (Error message) = "ERROR: " ++ message
+  show (Error improvement message) = "ERROR (" ++ show improvement ++ "): " ++ message
   show Done = "OK"
 
 -- | A test is successful if it finishes and has no diffs
 instance TestResultlike DiffRunning DiffResult where
   testSucceeded Done = True
-  testSucceeded (Error _) = False
+  testSucceeded (Error _ _) = False
 
 -- | With timeouts and catching errors
 instance Testlike DiffRunning DiffResult DiffTest where
   testTypeName _ = "Difference tests"
-  runTest TestOptions{ topt_timeout = K timeout } (DiffTest file) = runImprovingIO $ do
-    yieldImprovement ParsingReference
-    val'_me <- maybeTimeoutImprovingIO timeout $ liftIO (try' (getJsonAST file))
-    case val'_me of
-      Nothing -> pure (Error "Timed out parsing using reference implementation")
-      Just (Left e) -> pure (Error e)
-      Just (Right val') -> do
-        yieldImprovement ParsingImplementation
-        val_me <- maybeTimeoutImprovingIO timeout $ liftIO (try' (readSourceFile file))
-        case val_me of
-          Nothing -> pure (Error "Timed out parsing using our implementation")
-          Just (Left e) -> pure (Error e)
-          Just (Right val) -> do
-            yieldImprovement ParsingDiffing
-            diff_m <- maybeTimeoutImprovingIO timeout $ liftIO (try' (val === val'))
-            case diff_m of
-              Nothing -> pure (Error "Timed out while finding differences")
-              Just (Left e) -> pure (Error e)
-              Just (Right _) -> pure Done
-                        
+
+  runTest TestOptions{ topt_timeout = K timeout } (DiffTest file) = runImprovingIO $
+    step timeout ParsingReference (getJsonAST file) $ \parsedRustc ->
+      step timeout ParsingImplementation (evaluate =<< readSourceFile file) $ \parsedOurs ->
+        step timeout ParsingDiffing (parsedOurs === parsedRustc) $ \_ ->
+          step timeout PrintingParsed (prettySourceFile file parsedOurs) $ \tmpFile ->
+            step timeout ReparsingReference (getJsonAST tmpFile) $ \reparsedRustc ->
+              step timeout ReparsingDiffing (parsedOurs === reparsedRustc) $ \_ ->
+                pure Done
+         -- LATER add step to resolve and check that resolve == original
+         -- add step to pretty-print to file
+         -- add step to reparse file
+         -- add step to check that reparsed == original
+
+
+
+step :: Maybe Int                                              -- ^ timeout for the step
+     -> DiffRunning                                            -- ^ improvement for the step
+     -> IO a                                                   -- ^ content of the step
+     -> (a -> ImprovingIO DiffRunning DiffResult DiffResult)   -- ^ continuation to run afterwards
+     -> ImprovingIO DiffRunning DiffResult DiffResult
+step timeout improvement action continuation = do
+  yieldImprovement improvement
+  val_me <- maybeTimeoutImprovingIO timeout $ liftIO (try' action)
+  case val_me of
+     Nothing -> pure (Error improvement "Timed out")
+     Just (Left e) -> pure (Error improvement e)
+     Just (Right val) -> continuation val
+  
 
                  
 
