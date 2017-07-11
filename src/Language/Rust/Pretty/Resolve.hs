@@ -58,7 +58,7 @@ And now we have generated valid code.
 {-# LANGUAGE ConstraintKinds, TypeOperators, OverloadedLists #-}
 
 module Language.Rust.Pretty.Resolve (
-  Resolve(..), Issue(..), Severity(..), 
+  Resolve(..), Issue(..), Severity(..), runResolve 
 ) where
 
 import Language.Rust.Syntax
@@ -394,7 +394,7 @@ instance (Typeable a, Monoid a) => Resolve (TraitRef a) where resolveM = resolve
 -- | There a a variety of constraints imposed on types, representing different invariants
 data TyType
   = AnyType        -- ^ No restrictions
-  | NoSumType      -- ^ Any type except for 'TraitObject'
+  | NoSumType      -- ^ Any type except for 'TraitObject' with a '+'
   | PrimParenType  -- ^ Types not starting with '<' or '(', or paren types with no sum types inside
   | NoForType      -- ^ Non-sum types not starting with a 'for'
   | ReturnType     -- ^ Type in a return type position
@@ -403,7 +403,7 @@ data TyType
 -- these cases). 
 resolveTy :: (Typeable a, Monoid a) => TyType -> Ty a -> ResolveM (Ty a)
 -- TraitObject
-resolveTy NoSumType     o@TraitObject{} = scope o (correct "added parens around trait object type" *> resolveTy NoSumType (ParenTy o mempty))
+resolveTy NoSumType     o@(TraitObject b _) | length b > 1 = scope o (correct "added parens around trait object type" *> resolveTy NoSumType (ParenTy o mempty))
 resolveTy NoForType     o@TraitObject{} = scope o (correct "added parens around trait object type" *> resolveTy NoForType (ParenTy o mempty))
 resolveTy ReturnType    o@TraitObject{} = scope o (correct "added parens around trait object type" *> resolveTy ReturnType (ParenTy o mempty))
 resolveTy _             o@(TraitObject bds@(TraitTyParamBound{} :| _) x)
@@ -621,17 +621,40 @@ data ExprType
   | LitOrPathExpr     -- ^ A literal, negated literal, expression path, or qualified expression path
   | NoStructExpr      -- ^ No struct literals are allowed
   | NoStructBlockExpr -- ^ No struct literals or block expressions (block-like things like 'if' are fine)
-  | NonBlockExpr      -- ^ Forbids expressions starting with blocks (things like '{ 1 } + 2')
-  | NonBlockPostfixExpr -- ^ Forbids expressions starting with blocks _unless_ the block has a postfix operator on it
+  | SemiExpr          -- ^ Forbids expressions starting with blocks (things like '{ 1 } + 2') unless
+                      -- the leading block has a postfix expression, allows expressions that are
+                      -- just one big block. Forbids '{ 1 }[0]' since it is treated as '{ 1 }; [0]'
+                      -- and '{ 1 }(0)' since it is treated as '{ 1 }; (0)'
+{-
+-- Check if an expression has the form of a "postfix" (if that's the case, then you don't worry
+-- about what is inside).
+--
+-- ie: `if i[0] == j[0] { i } else { j } [1]`
+lhsSemiExpr :: (Typeable a, Monoid a) => Int -> Expr a -> ResolveM (Expr a)
+lhsSemiExpr p t@(Try _ e _) = resolveExprP p AnyExpr  
+                          
+lhsSemiExpr p (FieldAccess _ e _ _) | isBlockLike e = 
+lhsSemiExpr p (Try _ e _)
+lhsSemiExpr p (Try _ e _)
 
--- | Given the type of expression, what type of expression is allowed on the LHS
-lhs :: ExprType -> ExprType
-lhs LitExpr = error "literal expressions never have a left hand side"
-lhs LitOrPathExpr = error "literal or path expressions never have a left hand side"
-lhs AnyExpr = AnyExpr
-lhs NoStructExpr = NoStructExpr
-lhs NoStructBlockExpr = NoStructBlockExpr
-lhs NonBlockExpr = NonBlockExpr
+-}
+
+resolveLhsExprP :: (Typeable a, Monoid a) => Int -> ExprType -> Expr a -> ResolveM (Expr a)
+resolveLhsExprP p SemiExpr l@Try{}         = resolveExprP p AnyExpr l
+resolveLhsExprP p SemiExpr l@FieldAccess{} = resolveExprP p AnyExpr l 
+resolveLhsExprP p SemiExpr l@MethodCall{}  = resolveExprP p AnyExpr l
+resolveLhsExprP p SemiExpr l@TupField{}    = resolveExprP p AnyExpr l
+resolveLhsExprP _ SemiExpr l | isBlockLike l = parenthesize l
+resolveLhsExprP p t l = resolveExprP p (lhs t) l
+  where
+    -- | Given the type of expression, what type of expression is allowed on the LHS
+    lhs :: ExprType -> ExprType
+    lhs LitExpr = error "literal expressions never have a left hand side"
+    lhs LitOrPathExpr = error "literal or path expressions never have a left hand side"
+    lhs AnyExpr = AnyExpr
+    lhs NoStructExpr = NoStructExpr
+    lhs NoStructBlockExpr = NoStructBlockExpr
+    lhs SemiExpr = AnyExpr
 
 -- | Given the type of expression, what type of expression is allowed on the RHS
 rhs :: ExprType -> ExprType
@@ -640,7 +663,7 @@ rhs LitOrPathExpr = error "literal or path expressions never have a right hand s
 rhs AnyExpr = AnyExpr
 rhs NoStructExpr = NoStructExpr
 rhs NoStructBlockExpr = NoStructExpr
-rhs NonBlockExpr = AnyExpr
+rhs SemiExpr = AnyExpr
 
 -- | Given the type of expression, what type of expression is allowed on the RHS (after '..'/'...')
 rhs2 :: ExprType -> ExprType
@@ -649,7 +672,7 @@ rhs2 LitOrPathExpr = error "literal or path expressions never have a right hand 
 rhs2 AnyExpr = AnyExpr
 rhs2 NoStructExpr = NoStructBlockExpr
 rhs2 NoStructBlockExpr = NoStructBlockExpr
-rhs2 NonBlockExpr = AnyExpr
+rhs2 SemiExpr = AnyExpr
 
 -- | Resolve an expression of the given type in a general context
 resolveExpr :: (Typeable a, Monoid a) => ExprType -> Expr a -> ResolveM (Expr a)
@@ -734,23 +757,26 @@ resolveExprP p c e@(Closure as cb fn@(FnDecl _ ret _ _) b x) = scope c $
 
   resolved c' = parenE (p > 0) $ do
     as' <- traverse (resolveAttr OuterAttr) as
-    fn' <- resolveFnDecl NoSelf GeneralArg fn
+    fn' <- resolveFnDecl NoSelf NamedArg fn
     b' <- resolveExprP 0 c' b
     pure (Closure as' cb fn' b' x)
 -- Assignment/in-place expressions
 resolveExprP p c a@(Assign as l r x) = scope a $ parenE (p > 1) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  l' <- resolveExprP 2 (lhs c) l
+  --l' <- resolveExprP 2 (lhs c) l
+  l' <- resolveLhsExprP 2 c l
   r' <- resolveExprP 1 (rhs c) r
   pure (Assign as' l' r' x)
 resolveExprP p c a@(AssignOp as o l r x) = scope a $ parenE (p > 1) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  l' <- resolveExprP 2 (lhs c) l
+  --l' <- resolveExprP 2 (lhs c) l
+  l' <- resolveLhsExprP 2 c l
   r' <- resolveExprP 1 (rhs c) r
   pure (AssignOp as' o l' r' x)
 resolveExprP p c i@(InPlace as l r x) = scope i $ parenE (p > 2) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  l' <- resolveExprP 3 (lhs c) l 
+  --l' <- resolveExprP 3 (lhs c) l 
+  l' <- resolveLhsExprP 3 c l
   r' <- resolveExprP 2 (rhs c) r 
   pure (InPlace as' l' r' x)
 -- Range expressions
@@ -760,12 +786,14 @@ resolveExprP _ _ r@(Range as Nothing Nothing rl x) = scope r $ do
   pure (Range as' Nothing Nothing rl x)
 resolveExprP p c a@(Range as (Just l) (Just r) rl x) = scope a $ parenE (p > 3) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  l' <- resolveExprP 4 (lhs c) l
+ -- l' <- resolveExprP 4 (lhs c) l
+  l' <- resolveLhsExprP 4 c l
   r' <- resolveExprP 4 (rhs2 c) r
   pure (Range as' (Just l') (Just r') rl x)
 resolveExprP p c r@(Range as (Just l) Nothing rl x) = scope r $ parenE (p > 4) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  l' <- resolveExprP 4 (lhs c) l
+  -- l' <- resolveExprP 4 (lhs c) l
+  l' <- resolveLhsExprP 4 c l
   pure (Range as' (Just l') Nothing rl x)
 resolveExprP p c a@(Range as Nothing (Just r) rl x) = scope a $ parenE (p > 5) $ do
   as' <- traverse (resolveAttr OuterAttr) as
@@ -774,7 +802,8 @@ resolveExprP p c a@(Range as Nothing (Just r) rl x) = scope a $ parenE (p > 5) $
 -- Binary expressions
 resolveExprP p c b@(Binary as o l r x) = scope b $ parenE (p > p') $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  l' <- resolveExprP p' (lhs c) l 
+  -- l' <- resolveExprP p' (lhs c) l 
+  l' <- resolveLhsExprP p' c l
   r' <- resolveExprP (p' + 1) (rhs c) r 
   pure (Binary as' o l' r' x)
   where
@@ -802,12 +831,14 @@ resolveExprP p c b@(Binary as o l r x) = scope b $ parenE (p > p') $ do
 -- Cast and type ascriptions expressions
 resolveExprP p c a@(Cast as e t x) = scope a $ parenE (p > 15) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  e' <- resolveExprP 15 (lhs c) e
+  --e' <- resolveExprP 15 (lhs c) e
+  e' <- resolveLhsExprP 15 c e
   t' <- resolveTy NoSumType t
   pure (Cast as' e' t' x)
 resolveExprP p c a@(TypeAscription as e t x) = scope a $ parenE (p > 15) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  e' <- resolveExprP 15 (lhs c) e
+  --e' <- resolveExprP 15 (lhs c) e
+  e' <- resolveLhsExprP 15 c e
   t' <- resolveTy NoSumType t
   pure (TypeAscription as' e' t' x)
 -- Unary expressions
@@ -822,39 +853,49 @@ resolveExprP p c a@(AddrOf as m e x) = scope a $ parenE (p > 16) $ do
 -- Postfix expressions
 resolveExprP p c a@(Index as e i x) = scope a $ parenE (p > 17) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  e' <- resolveExprP 17 (lhs c) e
+  --e' <- resolveExprP 17 (lhs c) e
+  e' <- resolveLhsExprP 17 c e
   i' <- resolveExprP 0 AnyExpr i
   pure (Index as' e' i' x)
+resolveExprP p SemiExpr t@Try{} = resolveExprP p AnyExpr t
 resolveExprP p c t@(Try as e x) = scope t $ parenE (p > 17) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  e' <- resolveExprP 17 (lhs c) e
+  --e' <- resolveExprP 17 (lhs c) e
+  e' <- resolveLhsExprP 17 c e
   pure (Try as' e' x) 
 resolveExprP p c a@(Call as f xs x) = scope a $ parenE (p > 17) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  f' <- resolveExprP 17 (lhs c) f
+  --f' <- resolveExprP 17 (lhs c) f
+  f' <- resolveLhsExprP 17 c f
   xs' <- traverse (resolveExprP 0 AnyExpr) xs
   pure (Call as' f' xs' x)
+resolveExprP p SemiExpr m@MethodCall{} = resolveExprP p AnyExpr m
 resolveExprP p c m@(MethodCall as e i mt es x) = scope m $ parenE (p > 17) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  e' <- resolveExprP 17 (lhs c) e
+  --e' <- resolveExprP 17 (lhs c) e
+  e' <- resolveLhsExprP 17 c e
   i' <- resolveIdent i
   mt' <- case mt of
            Just t -> Just <$> traverse (resolveTy AnyType) t
            Nothing -> pure Nothing
   es' <- traverse (resolveExprP 0 AnyExpr) es
   pure (MethodCall as' e' i' mt' es' x)
+resolveExprP p SemiExpr t@TupField{} = resolveExprP p AnyExpr t
 resolveExprP p c t@(TupField as e i x) = scope t $ parenE (p > 17) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  e' <- resolveExprP 17 (lhs c) e
+  --e' <- resolveExprP 17 (lhs c) e
+  e' <- resolveLhsExprP 17 c e
   pure (TupField as' e' i x)
+resolveExprP p SemiExpr f@FieldAccess{} = resolveExprP p AnyExpr f
 resolveExprP p c f@(FieldAccess as e i x) = scope f $ parenE (p > 17) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  e' <- resolveExprP 17 (lhs c) e
+  --e' <- resolveExprP 17 (lhs c) e
+  e' <- resolveLhsExprP 17 c e
   i' <- resolveIdent i
   pure (FieldAccess as' e' i' x)
 -- Immediate expressions
 resolveExprP _ _ v@(Vec as es x) = scope v $ do
-  as' <- traverse (resolveAttr OuterAttr) as
+  as' <- traverse (resolveAttr EitherAttr) as
   es' <- traverse (resolveExprP 0 AnyExpr) es
   pure (Vec as' es' x) 
 resolveExprP _ _ p@(PathExpr as Nothing p' x) = scope p $ do
@@ -894,12 +935,11 @@ resolveExprP _ _ p@(ParenExpr as e x) = scope p $ do
   e' <- resolveExprP 0 AnyExpr e
   pure (ParenExpr as' e' x)
 resolveExprP _ _ t@(TupExpr as es x) = scope t $ do
-  as' <- traverse (resolveAttr OuterAttr) as
+  as' <- traverse (resolveAttr EitherAttr) as
   es' <- traverse (resolveExprP 0 AnyExpr) es
   pure (TupExpr as' es' x)
 -- Block expressions
 resolveExprP _ NoStructBlockExpr e@BlockExpr{} = parenthesize e
-resolveExprP _ NonBlockExpr e@BlockExpr{} = parenthesize e
 resolveExprP _ _ l@(BlockExpr as b x) = scope l $ do
   as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
@@ -914,7 +954,6 @@ resolveExprP _ _ s@(Struct as p' fs e x) = scope s $ do
   e' <- traverse (resolveExprP 0 AnyExpr) e
   pure (Struct as' p'' fs' e' x)
 -- Block-like expressions
-resolveExprP _ NonBlockExpr e@If{} = parenthesize e
 resolveExprP p c i@(If as e b es x) = scope i $ do
   as' <- traverse (resolveAttr OuterAttr) as
   e' <- resolveExprP 0 NoStructExpr e
@@ -926,7 +965,6 @@ resolveExprP p c i@(If as e b es x) = scope i $ do
            (Just BlockExpr{}) -> traverse (resolveExprP p c) es
            (Just e'') -> Just <$> resolveExprP p c (BlockExpr [] (Block [NoSemi e'' mempty] Normal mempty) mempty)
   pure (If as' e' b' es' x)
-resolveExprP _ NonBlockExpr e@IfLet{} = parenthesize e
 resolveExprP p c i@(IfLet as p' e b es x) = scope i $ do
   as' <- traverse (resolveAttr OuterAttr) as
   p'' <- resolvePat p'
@@ -939,42 +977,36 @@ resolveExprP p c i@(IfLet as p' e b es x) = scope i $ do
            (Just BlockExpr{}) -> traverse (resolveExprP p c) es
            (Just e'') -> Just <$> resolveExprP p c (BlockExpr [] (Block [NoSemi e'' mempty] Normal mempty) mempty)
   pure (IfLet as' p'' e' b' es' x)
-resolveExprP _ NonBlockExpr e@While{} = parenthesize e
 resolveExprP _ _ w@(While as e b l x) = scope w $ do
-  as' <- traverse (resolveAttr OuterAttr) as
+  as' <- traverse (resolveAttr EitherAttr) as
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   l' <- traverse resolveLifetime l
   pure (While as' e' b' l' x)
-resolveExprP _ NonBlockExpr e@WhileLet{} = parenthesize e
 resolveExprP _ _ w@(WhileLet as p' e b l x) = scope w $ do
-  as' <- traverse (resolveAttr OuterAttr) as
+  as' <- traverse (resolveAttr EitherAttr) as
   p'' <- resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   l' <- traverse resolveLifetime l
   pure (WhileLet as' p'' e' b' l' x)
-resolveExprP _ NonBlockExpr e@ForLoop{} = parenthesize e
 resolveExprP _ _ f@(ForLoop as p' e b l x) = scope f $ do
-  as' <- traverse (resolveAttr OuterAttr) as
+  as' <- traverse (resolveAttr EitherAttr) as
   p'' <- resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   l' <- traverse resolveLifetime l
   pure (ForLoop as' p'' e' b' l' x)
-resolveExprP _ NonBlockExpr e@Loop{} = parenthesize e
 resolveExprP _ _ o@(Loop as b l x) = scope o $ do
-  as' <- traverse (resolveAttr OuterAttr) as
+  as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
   l' <- traverse resolveLifetime l
   pure (Loop as' b' l' x)
-resolveExprP _ NonBlockExpr e@Match{} = parenthesize e
 resolveExprP _ _ m@(Match as e ar x) = scope m $ do
-  as' <- traverse (resolveAttr OuterAttr) as
-  e' <- resolveExprP 0 NoStructExpr e
+  as' <- traverse (resolveAttr EitherAttr) as
+  e' <- resolveExprP 0 AnyExpr e
   ar' <- traverse resolveArm ar
   pure (Match as' e' ar' x)
-resolveExprP _ NonBlockExpr e@Catch{} = parenthesize e
 resolveExprP _ _ c@(Catch as b x) = scope c $ do
   as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
@@ -1011,7 +1043,7 @@ resolveArm a@(Arm as ps g b x) = scope a $ do
   as' <- traverse (resolveAttr OuterAttr) as
   ps' <- traverse resolvePat ps
   g' <- traverse (resolveExpr AnyExpr) g
-  b' <- resolveExpr AnyExpr b
+  b' <- resolveExpr SemiExpr b
   pure (Arm as' ps' g' b' x)
 
 instance (Typeable a, Monoid a) => Resolve (Arm a) where resolveM = resolveArm
@@ -1036,9 +1068,9 @@ resolveStmt _ l@(Local p t i as x) = scope l $ do
   pure (Local p' t' i' as' x)
 resolveStmt _ s@(ItemStmt i x) = scope s (ItemStmt <$> resolveItem StmtItem i <*> pure x)
 resolveStmt _ s@(Semi e x) | isBlockLike e = scope s (Semi <$> resolveExpr AnyExpr e <*> pure x)
-resolveStmt _ s@(Semi e x) = scope s (Semi <$> resolveExpr NonBlockExpr e <*> pure x)
+resolveStmt _ s@(Semi e x) = scope s (Semi <$> resolveExpr SemiExpr e <*> pure x)
 resolveStmt _ n@(NoSemi e x) | isBlockLike e = scope n (NoSemi <$> resolveExpr AnyExpr e <*> pure x)
-resolveStmt AnyStmt  n@(NoSemi e x) = scope n (NoSemi <$> resolveExpr NonBlockExpr e <*> pure x)
+resolveStmt AnyStmt  n@(NoSemi e x) = scope n (NoSemi <$> resolveExpr SemiExpr e <*> pure x)
 resolveStmt TermStmt n@(NoSemi e x) = scope n (NoSemi <$> resolveExpr AnyExpr (BlockExpr [] (Block [NoSemi e mempty] Normal mempty) mempty) <*> pure x)
 resolveStmt _ a@(MacStmt m s as x) = scope a $ do
   m' <- resolveMac ExprPath m
@@ -1113,7 +1145,7 @@ resolveItem t f@(Fn as v i d u c a g b x) = scope f $ do
   as' <- traverse (resolveAttr EitherAttr) as
   v' <- resolveVisibility' t v
   i' <- resolveIdent i
-  d' <- resolveFnDecl NoSelf GeneralArg d
+  d' <- resolveFnDecl NoSelf NamedArg d
   g' <- resolveGenerics g
   b' <- resolveBlock b
   pure (Fn as' v' i' d' u c a g' b' x)
@@ -1189,7 +1221,9 @@ resolveItem t i'@(Impl as v d u i g mt t' is x) = scope i' $ do
   v' <- resolveVisibility' t v
   g' <- resolveGenerics g
   mt' <- traverse resolveTraitRef mt
-  t'' <- resolveTy PrimParenType t'
+  t'' <- case mt of
+           Nothing -> resolveTy PrimParenType t'
+           Just _ -> resolveTy AnyType t'
   is' <- traverse resolveImplItem is
   pure (Impl as' v' d u i g' mt' t'' is' x)
 
@@ -1332,7 +1366,7 @@ resolveTraitItem n@(MethodT as i m b x) = scope n $ do
 resolveTraitItem n@(TypeT as i bd t x) = scope n $ do
   as' <- traverse (resolveAttr OuterAttr) as
   i' <- resolveIdent i
-  bd' <- traverse (resolveTyParamBound NoneBound) bd
+  bd' <- traverse (resolveTyParamBound ModBound) bd
   t' <- traverse (resolveTy AnyType) t
   pure (TypeT as' i' bd' t' x)
 resolveTraitItem n@(MacroT as m x) = scope n $ do
@@ -1352,7 +1386,7 @@ resolveImplItem n@(ConstI as v d i t e x) = scope n $ do
   e' <- resolveExpr AnyExpr e
   pure (ConstI as' v' d i' t' e' x)
 resolveImplItem n@(MethodI as v d i m b x) = scope n $ do
-  as' <- traverse (resolveAttr OuterAttr) as
+  as' <- traverse (resolveAttr EitherAttr) as
   v' <- resolveVisibility v
   i' <- resolveIdent i
   m' <- resolveMethodSig NamedArg m 
