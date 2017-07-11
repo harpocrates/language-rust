@@ -944,6 +944,25 @@ postfix_blockexpr(lhs) :: { Expr Span }
         _ -> parseError $3
     }
 
+-- Postfix expressions that can come after an expression block, in a 'stmt'
+--
+--  * `{ 1 }[0]` isn't here because it is treated as `{ 1 }; [0]`
+--  * `{ 1 }(0)` isn't here because it is treated as `{ 1 }; (0)`
+--
+postfix_blockexpr(lhs) :: { Expr Span }
+  : lhs '?'                          { Try [] $1 ($1 # $>) }
+  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
+  | lhs '.' ident '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
+  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
+  | lhs '.' int                      {%
+      case lit $3 of
+        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
+        _ -> parseError $3
+    }
+
+
 
 -- Then, we instantiate this general production into the following families of rules:
 --
