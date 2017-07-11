@@ -918,6 +918,25 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   |      lambda_args rhs   %prec LAMBDA
     { Closure [] Ref   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $>) }
 
+-- Postfix expressions that can come after an expression block, in a 'stmt'
+--
+--  * `{ 1 }[0]` isn't here because it is treated as `{ 1 }; [0]`
+--  * `{ 1 }(0)` isn't here because it is treated as `{ 1 }; (0)`
+--
+postfix_blockexpr(lhs) :: { Expr Span }
+  : lhs '?'                          { Try [] $1 ($1 # $>) }
+  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
+  | lhs '.' ident '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
+  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
+  | lhs '.' int                      {%
+      case lit $3 of
+        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
+        _ -> parseError $3
+    }
+
+
 
 -- Then, we instantiate this general production into the following families of rules:
 --
@@ -1024,7 +1043,7 @@ comma_arms :: { [Arm Span] }
 -- An expression followed by match arms. If there is a comma needed, it is added
 expr_arms :: { (Expr Span, [Arm Span]) }
   : nonblock_expr                           comma_arms  { ($1, $2) }
-  | postfix_block_expr                      comma_arms  { ($1, $2) }
+  | blockpostfix_expr                       comma_arms  { ($1, $2) }
   | vis_safety_block                        comma_arms  { ($1, $2) }
   | vis_safety_block                              arms  { ($1, $2) }
   | block_like_expr                         comma_arms  { ($1, $2) }
@@ -1079,24 +1098,6 @@ field :: { Field Span }
 ----------------
 -- Statements --
 ----------------
--- Postfix expressions that can come after an expression block, in a 'stmt'
---
---  * `{ 1 }[0]` isn't here because it is treated as `{ 1 }; [0]`
---  * `{ 1 }(0)` isn't here because it is treated as `{ 1 }; (0)`
---
-postfix_block(lhs) :: { Expr Span }
-  -- postfix expressions
-  : lhs '?'                          { Try [] $1 ($1 # $>) }
-  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
-  | lhs '.' ident '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
-  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
-  | lhs '.' int                      {%
-      case lit $3 of
-        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
-        _ -> parseError $3
-    }
 
 gen_expression_block(lhs,rhs,rhs2) :: { Expr Span }
   : lhs '?'                          { Try [] $1 ($1 # $>) }
@@ -1153,11 +1154,14 @@ gen_expression_block(lhs,rhs,rhs2) :: { Expr Span }
   | lhs '&=' rhs                     { AssignOp [] BitAndOp $1 $3 ($1 # $>) }
   | lhs '%=' rhs                     { AssignOp [] RemOp $1 $3 ($1 # $>) }
 
-
-postfix_block_expr :: { Expr Span }
-  : postfix_block(block_like_expr)                         { $1 }
-  | postfix_block(vis_safety_block)                        { $1 }
-  | gen_expression_block(postfix_block_expr,expr,expr)     { $1 } 
+--
+--   ['blockpostfix_expr']  Allows expressions starting with blocks (things such as '{ 1 }? + 1')
+--                          but only when the leading block is itself a postfix expression.
+--
+blockpostfix_expr :: { Expr Span }
+  : postfix_blockexpr(block_like_expr)                         { $1 }
+  | postfix_blockexpr(vis_safety_block)                        { $1 }
+  | gen_expression_block(blockpostfix_expr,expr,expr)          { $1 } 
 
 vis_safety_block :: { Expr Span }
   : pub_or_inherited safety inner_attrs_block {%
@@ -1168,7 +1172,8 @@ vis_safety_block :: { Expr Span }
 
 
 {-
--- TODO: Just uncommenting these rules (without using them anywhere), causes everything to start failing
+-- TODO: Just uncommenting these rules (without using them anywhere), causes everything to start
+failing, but moving them to the top of the file causes everything to start working again...
 
 vis_union_nonblock_expr :: { Expr Span }
   : union_expr                                                { $1 }
@@ -1186,7 +1191,7 @@ stmt :: { Stmt Span }
   | many(outer_attribute) let pat        initializer ';'   { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
   | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
   | many(outer_attribute) block_like_expr ';'              { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
-  | many(outer_attribute) postfix_block_expr ';'           { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
+  | many(outer_attribute) blockpostfix_expr ';'            { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
 --  | many(outer_attribute) vis_union_nonblock_expr ';'      { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) } 
   | many(outer_attribute) block_like_expr    %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
   | many(outer_attribute) vis_safety_block ';'             { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
@@ -1212,7 +1217,7 @@ stmts_possibly_no_semi :: { [Maybe (Stmt Span)] }
   : stmtOrSemi stmts_possibly_no_semi                      { $1 : $2 }
   | stmtOrSemi                                             { [$1] }
   | many(outer_attribute) nonblock_expr                    { [Just (toStmt ($1 `addAttrs` $2) False False ($1 # $2))] }
-  | many(outer_attribute) postfix_block_expr               { [Just (toStmt ($1 `addAttrs` $2) False True  ($1 # $2))] }
+  | many(outer_attribute) blockpostfix_expr                { [Just (toStmt ($1 `addAttrs` $2) False True  ($1 # $2))] }
 
 initializer :: { Maybe (Expr Span) }
   : '=' expr                                               { Just $2 }

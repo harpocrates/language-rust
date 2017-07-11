@@ -6,13 +6,14 @@ import DiffUtils
 
 import Control.Monad (filterM, when)
 import Control.Exception (catch, SomeException, evaluate)
+import Data.Typeable (Typeable)
 
 import Data.ByteString.Lazy (hGetContents)
 import Data.ByteString.Lazy.Char8 (unpack)
 import Data.Aeson (decode', Value)
 
 import Language.Rust.Parser (readSourceFile)
-import Language.Rust.Pretty (writeSourceFile)
+import Language.Rust.Pretty (prettyUnresolved, Resolve(..), Issue(..), Severity(Clean), runResolve)
 import Language.Rust.Syntax (SourceFile)
 
 import System.Directory (getCurrentDirectory, getTemporaryDirectory, listDirectory, doesFileExist)
@@ -22,6 +23,9 @@ import System.IO (withFile, IOMode(WriteMode))
 
 import Data.Time.Clock (utctDay, getCurrentTime)
 import Data.Time.Calendar (fromGregorian, showGregorian, diffDays)
+
+import qualified Data.Text.Prettyprint.Doc as PP
+import Data.Text.Prettyprint.Doc.Render.Text (renderIO)
 
 import Test.Framework (defaultMain)
 import Test.Framework.Providers.API
@@ -61,13 +65,21 @@ getJsonAST fileName = do
     Just value -> pure value
     Nothing -> error ("Failed to get `rustc' JSON\n" ++ unpack jsonContents)
 
--- | Given an AST and a file name, print it into a temporary file and return that path
+-- | Given an AST and a file name, print it into a temporary file (without resolving) and return
+-- that path
 prettySourceFile :: FilePath -> SourceFile a -> IO FilePath
 prettySourceFile path ast = do
   tmp <- getTemporaryDirectory
   let path' = tmp </> takeFileName path
-  withFile path' WriteMode (`writeSourceFile` ast)
+      opts = PP.LayoutOptions (PP.AvailablePerLine 100 1.0)
+  withFile path' WriteMode (\hdl -> renderIO hdl (PP.layoutPretty opts (prettyUnresolved ast)))
   pure path'
+
+resolveDiff :: (Monoid a, Typeable a) => SourceFile a -> IO ()
+resolveDiff ast = when (sev /= Clean) $
+                    error ("Resolve thinks there is (are) some " ++ show sev ++ "\n" ++ msgs)
+  where (_, sev, iss) = runResolve (resolveM ast)
+        msgs = unlines [ "  " ++ show sev' ++ " " ++ desc | Issue desc sev' _ <- iss ]
 
 
 -- * Difference tests
@@ -82,6 +94,7 @@ data DiffRunning = ParsingReference
                  | PrintingParsed
                  | ReparsingReference
                  | ReparsingDiffing
+                 | ResolveInvariant
 
 
 instance Show DiffRunning where
@@ -91,6 +104,7 @@ instance Show DiffRunning where
   show PrintingParsed = "Pretty-printing the parsed syntax tree"
   show ReparsingReference = "Reparsing using `rustc'"
   show ReparsingDiffing = "Comparing to the reparsed output"
+  show ResolveInvariant = "Checking that the parsed output is unchanged by `resolve'"
 
 -- | These are the possible final states of a 'DiffTest'
 data DiffResult = Error DiffRunning String
@@ -116,12 +130,8 @@ instance Testlike DiffRunning DiffResult DiffTest where
           step timeout PrintingParsed (prettySourceFile file parsedOurs) $ \tmpFile ->
             step timeout ReparsingReference (getJsonAST tmpFile) $ \reparsedRustc ->
               step timeout ReparsingDiffing (parsedOurs === reparsedRustc) $ \_ ->
-                pure Done
-         -- LATER add step to resolve and check that resolve == original
-         -- add step to pretty-print to file
-         -- add step to reparse file
-         -- add step to check that reparsed == original
-
+                step timeout ResolveInvariant (resolveDiff parsedOurs) $ \_ ->
+                  pure Done
 
 
 step :: Maybe Int                                              -- ^ timeout for the step
