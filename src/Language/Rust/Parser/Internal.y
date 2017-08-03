@@ -24,7 +24,7 @@ To get information about transition states and such, run
   [2]: https://doc.rust-lang.org/grammar.html
 -}
 {-# OPTIONS_HADDOCK hide, not-home #-}
-{-# LANGUAGE OverloadedStrings, OverloadedLists #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLists, PartialTypeSignatures #-}
 
 module Language.Rust.Parser.Internal (
   parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseSourceFile,
@@ -325,33 +325,33 @@ gt :: { () }
 -------------
 
 -- | One or more occurences of 'p'
-some(p) :: { Reversed NonEmpty a }
+some(p) :: { Reversed NonEmpty _ }
   : some(p) p          { let Reversed xs = $1 in Reversed ($2 <| xs) }
   | p                  { [$1] }
 
 -- | Zero or more occurences of 'p'
-many(p) :: { [a] }
+many(p) :: { [_] }
   : some(p)            { toList $1 }
   | {- empty -}        { [] }
 
 -- | One or more occurences of 'p', seperated by 'sep'
-sep_by1(p,sep) :: { Reversed NonEmpty a }
+sep_by1(p,sep) :: { Reversed NonEmpty _ }
   : sep_by1(p,sep) sep p  { let Reversed xs = $1 in Reversed ($3 <| xs) }
   | p                     { [$1] }
 
 -- | Zero or more occurrences of 'p', separated by 'sep'
-sep_by(p,sep) :: { [a] }
+sep_by(p,sep) :: { [ _ ] }
   : sep_by1(p,sep)     { toList $1 }
   | {- empty -}        { [] }
 
 -- | One or more occurrences of 'p', seperated by 'sep', optionally ending in 'sep'
-sep_by1T(p,sep) :: { Reversed NonEmpty a }
+sep_by1T(p,sep) :: { Reversed NonEmpty _ }
   : sep_by1(p,sep) sep { $1 }
   | sep_by1(p,sep)     { $1 }
 
 -- | Zero or more occurences of 'p', seperated by 'sep', optionally ending in 'sep' (only if there
 -- is at least one 'p')
-sep_byT(p,sep) :: { [a] }
+sep_byT(p,sep) :: { [ _ ] }
   : sep_by1T(p,sep)    { toList $1 }
   | {- empty -}        { [] }
 
@@ -361,7 +361,7 @@ sep_byT(p,sep) :: { [a] }
 --------------------------
 
 -- shebang is dealt with at the top level, outside Happy/Alex
-source_file :: { ([Attribute a],[Item a]) }
+source_file :: { ([Attribute Span],[Item Span]) }
   : inner_attrs many(mod_item)   { (toList $1, $2) }
   |             many(mod_item)   { ([],        $1) }
 
@@ -449,7 +449,8 @@ generic_values :: { Spanned ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
   | lt_ty_qual_path                                ',' sep_by1T(binding,',') gt '>' { Spanned ([],            [unspan $1],toList $3) ($1 # $>) }
   | lt_ty_qual_path                                                          gt '>' { Spanned ([],            [unspan $1],[]       ) ($1 # $>) }
 
-binding : ident '=' ty                             { (unspan $1, $3) }
+binding :: { (Ident, Ty Span) }
+  : ident '=' ty                             { (unspan $1, $3) }
 
 
 -- Type related:
