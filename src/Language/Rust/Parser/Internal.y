@@ -963,7 +963,6 @@ postfix_blockexpr(lhs) :: { Expr Span }
     }
 
 
-
 -- Then, we instantiate this general production into the following families of rules:
 --
 --   ['expr']               Most general class of expressions, no restrictions
