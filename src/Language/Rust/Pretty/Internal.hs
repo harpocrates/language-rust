@@ -665,7 +665,9 @@ printPolarity Positive = mempty
 printVis :: Visibility a -> Doc a
 printVis PublicV = "pub"
 printVis CrateV = "pub(crate)"
-printVis (RestrictedV path) = "pub(" <> printPath path False <> ")"
+printVis (RestrictedV path@(Path False (("super", NoParameters _) :| _) _)) = "pub(" <> printPath path False <> ")"
+printVis (RestrictedV path@(Path False (("self", NoParameters _) :| _) _)) = "pub(" <> printPath path False <> ")"
+printVis (RestrictedV path) = "pub(" <> "in" <+> printPath path False <> ")"
 printVis InheritedV = mempty
 
 -- | Print a foreign item (@print_foreign_item@)

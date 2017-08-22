@@ -779,9 +779,12 @@ instance Show a => Diffable (Expr a) where
         es === (n ! "fields" ! 1)
       ("MethodCall", MethodCall as o i tys es _) -> do
         NullList as === (val ! "attrs" ! "_field0")
-        i === (n ! "fields" ! 0 ! "node")
-        fromMaybe [] tys === (n ! "fields" ! 1)
-        (o : es) === (n ! "fields" ! 2) 
+        i === (n ! "fields" ! 0 ! "identifier")
+        let tys' = n ! "fields" ! 0 ! "parameters"
+        tys === if (tys' == Data.Aeson.Null)
+                 then tys'
+                 else tys' ! "fields" ! 0 ! "types"
+        (o : es) === (n ! "fields" ! 1) 
       ("Binary", Binary as o e1 e2 _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         o === (n ! "fields" ! 0)

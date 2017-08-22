@@ -26,7 +26,6 @@ module Language.Rust.Pretty.Util where
 
 import Data.Monoid ((<>))
 import Data.List (mapAccumL)
-import Data.String (IsString(..))
 
 import qualified Data.Text.Prettyprint.Doc as PP
 import Data.Text.Prettyprint.Doc.Internal.Type (Doc(..))

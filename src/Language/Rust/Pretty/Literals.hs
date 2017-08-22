@@ -28,9 +28,9 @@ import Data.Word (Word8)
 printLit :: Lit a -> Doc a
 printLit lit = noIndent $ case lit of
     (Str     str Cooked  s x) -> annotate x (hcat [ "\"", foldMap escapeChar str, "\"", suf s ])
-    (Str     str (Raw n) s x) -> annotate x (hcat [ "r", pad n, "\"", string hardline str, "\"", pad n, suf s ])
+    (Str     str (Raw m) s x) -> annotate x (hcat [ "r", pad m, "\"", string hardline str, "\"", pad m, suf s ])
     (ByteStr str Cooked  s x) -> annotate x (hcat [ "b\"", foldMap escapeByte str, "\"", suf s ])
-    (ByteStr str (Raw n) s x) -> annotate x (hcat [ "br", pad n, "\"", string hardline (map byte2Char str), "\"", pad n, suf s ])
+    (ByteStr str (Raw m) s x) -> annotate x (hcat [ "br", pad m, "\"", string hardline (map byte2Char str), "\"", pad m, suf s ])
     (Char c s x)              -> annotate x (hcat [ "'",  escapeChar c, "'", suf s ])
     (Byte b s x)              -> annotate x (hcat [ "b'", escapeByte b, "'", suf s ])
     (Int b i s x)             -> annotate x (hcat [ printIntLit i b, suf s ])
@@ -39,7 +39,7 @@ printLit lit = noIndent $ case lit of
     (Bool False s x)          -> annotate x (hcat [ "false", suf s ])
   where
   pad :: Int -> Doc a
-  pad n = pretty (replicate n '#')
+  pad m = pretty (replicate m '#')
 
   suf :: Suffix -> Doc a
   suf = pretty . show
@@ -99,7 +99,7 @@ escapeChar c | c <= '\x7f'   = escapeByte (char2Byte c)
  
 -- | Convert a number to its padded hexadecimal form
 padHex :: Integral a => Int -> a -> Doc b
-padHex n 0 = pretty (replicate n '0')
-padHex n m = let (m',r) = m `divMod` 0x10
-             in padHex (n-1) m' <> pretty (intToDigit (fromIntegral r))
+padHex i 0 = pretty (replicate i '0')
+padHex i m = let (m',r) = m `divMod` 0x10
+             in padHex (i-1) m' <> pretty (intToDigit (fromIntegral r))
 

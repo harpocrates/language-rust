@@ -15,7 +15,7 @@ module Language.Rust.Data.InputStream (
   -- * InputStream type
   InputStream, countLines, inputStreamEmpty,
   -- * Introduction forms
-  readInputStream, inputStreamFromString,
+  readInputStream, hReadInputStream, inputStreamFromString,
   -- * Elimination forms
   inputStreamToString, takeByte, takeChar, takeChars,
 ) where
@@ -23,6 +23,7 @@ module Language.Rust.Data.InputStream (
 import Data.Word (Word8)
 import Data.Coerce (coerce)
 import Data.String (IsString(..))
+import System.IO
 
 #ifndef NO_BYTESTRING
 import qualified Data.ByteString as BS
@@ -35,6 +36,9 @@ import qualified Data.Char as Char
 
 -- | Read a file into an 'InputStream'
 readInputStream :: FilePath -> IO InputStream
+
+-- | Read an 'InputStream' from a 'Handle'
+hReadInputStream :: Handle -> IO InputStream
 
 -- | Convert 'InputStream' to 'String'
 inputStreamToString :: InputStream -> String
@@ -75,6 +79,7 @@ takeChar bs = let Just res = BE.uncons (coerce bs) in coerce res
 inputStreamEmpty = BS.null . coerce
 takeChars n = BE.toString . BE.take n . coerce
 readInputStream f = coerce <$> BS.readFile f
+hReadInputStream h = coerce <$> BS.hGetContents h
 inputStreamToString = BE.toString . coerce
 inputStreamFromString = IS . BE.fromString 
 countLines = length . BE.lines . coerce
@@ -90,6 +95,7 @@ takeChar (IS ~(c:str)) = (c, IS str)
 inputStreamEmpty (IS str) = null str
 takeChars n (IS str) = take n str
 readInputStream f = IS <$> readFile f
+hReadInputStream h = IS <$> hGetContents h
 inputStreamToString = coerce
 inputStreamFromString = IS
 countLines (IS str) = length . lines $ str

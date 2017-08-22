@@ -44,7 +44,6 @@ module Language.Rust.Syntax.AST (
 
 import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)
 import Language.Rust.Syntax.Ident (Ident, Name)
-import Language.Rust.Syntax.Annotated
 import Language.Rust.Data.Position
 
 import GHC.Generics (Generic, Generic1)

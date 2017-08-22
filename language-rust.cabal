@@ -51,7 +51,6 @@ library
                        Language.Rust.Pretty.Literals
                        Language.Rust.Pretty.Util
                        Language.Rust.Syntax.AST
-                       Language.Rust.Syntax.Annotated
                        Language.Rust.Syntax.Ident
                        Language.Rust.Syntax.Token
 

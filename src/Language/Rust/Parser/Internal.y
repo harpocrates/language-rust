@@ -1420,7 +1420,9 @@ vis :: { Spanned (Visibility Span) }
   : {- empty -}   %prec VIS { Spanned InheritedV mempty }
   | pub           %prec VIS { Spanned PublicV (spanOf $1) }
   | pub '(' crate ')'       { Spanned CrateV ($1 # $4) }
-  | pub '(' mod_path ')'    { Spanned (RestrictedV $3) ($1 # $4) }
+  | pub '(' in mod_path ')' { Spanned (RestrictedV $4) ($1 # $5) }
+  | pub '(' super ')'       { Spanned (RestrictedV (Path False [("super", NoParameters mempty)] (spanOf $3))) ($1 # $4) }
+  | pub '(' self ')'        { Spanned (RestrictedV (Path False [("self", NoParameters mempty)] (spanOf $3))) ($1 # $4) }
 
 def :: { Spanned Defaultness }
   : {- empty -}  %prec DEF        { pure Final }
