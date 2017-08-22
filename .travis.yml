@@ -3,12 +3,15 @@ sudo: true
 
 # Add new environments to the build here:
 env:
- - GHCVER=8.0.2 CABALVER=1.24
- - GHCVER=head CABALVER=head
+ - GHCVER=7.10.3 CABALVER=1.22
+ - GHCVER=8.0.2  CABALVER=1.24
+ - GHCVER=8.2.1  CABALVER=2.0
+ - GHCVER=head   CABALVER=head
 
 # Allow for develop branch to break
 matrix:
   allow_failures:
+   - env: GHCVER=7.10.3 CABALVER=1.22
    - env: GHCVER=head CABALVER=head
 
 # Manually install ghc and cabal
