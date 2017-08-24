@@ -9,7 +9,7 @@ Portability : portable
 
 Everything to do with describing a position or a contiguous region in a file.
 -}
-{-# LANGUAGE DeriveDataTypeable, DeriveGeneric, CPP, UndecidableInstances, PolyKinds, DeriveAnyClass #-}
+{-# LANGUAGE CPP, DeriveDataTypeable, DeriveGeneric, DeriveAnyClass #-}
 
 module Language.Rust.Data.Position (
   -- * Positions in files

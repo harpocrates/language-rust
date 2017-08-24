@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TypeApplications #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 import Criterion
 import Criterion.Main (defaultConfig)
@@ -11,6 +11,7 @@ import Data.Foldable (for_)
 import Data.Traversable (for)
 import GHC.Exts (fromString)
 
+import Language.Rust.Data.InputStream (InputStream)
 import Language.Rust.Syntax (SourceFile)
 import Language.Rust.Parser (readInputStream, Span, parse')
 
@@ -50,7 +51,7 @@ main = do
     let name = takeFileName f
     putStrLn name
     is <- readInputStream f
-    bnch <- benchmarkWith' defaultConfig{ timeLimit = 20 } (nf (parse' @(SourceFile Span)) is)
+    bnch <- benchmarkWith' defaultConfig{ timeLimit = 20 } (nf (parse' :: InputStream -> SourceFile Span) is)
     pure (name, bnch)
   let results = object [ fromString name .= object [ "mean" .= m
                                                    , "lower bound" .= l

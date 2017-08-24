@@ -510,6 +510,9 @@ printEitherAttrs attrs kind inline = unless (null attrs') (glue attrs')
   where glue = if inline then hsep else vcat
         attrs' = [ printAttr attr inline | attr <- attrs, style attr == kind ]
 
+        style (Attribute sty _ _ _) = sty
+        style (SugaredDoc sty _ _ _) = sty
+
 -- | Print an attribute (@print_attribute_inline@ or @print_attribute@)
 printAttr :: Attribute a -> Bool -> Doc a
 printAttr (Attribute Inner p ts x) _     = annotate x ("#![" <> printPath p True <> printTokenStreamSp ts <> printTokenStream ts <> "]")

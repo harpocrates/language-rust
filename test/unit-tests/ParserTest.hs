@@ -4,7 +4,7 @@ also checks that calling 'resolve' on the parsed output is a NOP and that re-par
 output is the same. This doesn't fully check that 'resolve' works - but it does provide some checks
 that it isn't grossly broken. Plus it adds some more pretty-printing checks!
 -}
-{-# LANGUAGE OverloadedStrings, OverloadedLists, UnicodeSyntax, FlexibleContexts, ScopedTypeVariables, TypeApplications #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLists, UnicodeSyntax, FlexibleContexts, ScopedTypeVariables #-}
 module ParserTest (parserSuite) where
 
 import Test.Framework (testGroup, Test, TestName)
@@ -53,8 +53,8 @@ testP inp y = testCase inp $ do
                     parseNoSpans parser (inputStreamFromString inp')
   
     -- check that the sub-spans re-parse correctly
-    let Right y' = parse @(f Span) inps
-    checkSubterms inps y'
+    let Right y' = parse inps
+    checkSubterms inps (y' :: f Span)
   where
   inps = inputStreamFromString inp
 
@@ -68,29 +68,29 @@ testP inp y = testCase inp $ do
 checkTerm :: Typeable a => InputStream -> a -> IO ()
 checkTerm inp y = sequence_ $ catMaybes tests
   where
-  tests = [ checkTerm' @Lit inp <$> cast y
-          , checkTerm' @Attribute inp <$> cast y
-          , checkTerm' @Ty inp <$> cast y
-          , checkTerm' @Pat inp <$> cast y
-          , checkTerm' @Expr inp <$> cast y
-       -- , checkTerm' @Stmt inp <$> cast y  
-          , checkTerm' @Item inp <$> cast y
-       --   , checkTerm' @TyParamBound inp <$> cast y
-          , checkTerm' @TyParam inp <$> cast y
-          , checkTerm' @TraitItem inp <$> cast y
-          , checkTerm' @ImplItem inp <$> cast y
-          , checkTerm' @LifetimeDef inp <$> cast y
-          , checkTerm' @Block inp <$> cast y
+  tests = [ checkTerm' (Proxy :: Proxy Lit) inp <$> cast y
+          , checkTerm' (Proxy :: Proxy Attribute) inp <$> cast y
+          , checkTerm' (Proxy :: Proxy Ty) inp <$> cast y
+          , checkTerm' (Proxy :: Proxy Pat) inp <$> cast y
+          , checkTerm' (Proxy :: Proxy Expr) inp <$> cast y
+       -- , checkTerm' (Proxy :: Proxy Stmt) inp <$> cast y  
+          , checkTerm' (Proxy :: Proxy Item) inp <$> cast y
+       -- , checkTerm' (Proxy :: Proxy TyParamBound) inp <$> cast y
+          , checkTerm' (Proxy :: Proxy TyParam) inp <$> cast y
+          , checkTerm' (Proxy :: Proxy TraitItem) inp <$> cast y
+          , checkTerm' (Proxy :: Proxy ImplItem) inp <$> cast y
+          , checkTerm' (Proxy :: Proxy LifetimeDef) inp <$> cast y
+          , checkTerm' (Proxy :: Proxy Block) inp <$> cast y
           ]
 
   -- | Check that a given term slice re-parses properly
   checkTerm' :: ( Functor f
                 , Show (f ()), Eq (f ())
                 , Pretty (f Span), Parse (f Span), Located (f Span)
-                ) => InputStream -> f Span -> IO ()
-  checkTerm' inp' y' = case slice (spanOf y') (inputStreamToString inp') of
-                         Nothing -> pure ()
-                         Just inp'' -> Right (void y') @=? parseNoSpans parser (inputStreamFromString inp'')
+                ) => Proxy f -> InputStream -> f Span -> IO ()
+  checkTerm' Proxy inp' y' = case slice (spanOf y') (inputStreamToString inp') of
+                               Nothing -> pure ()
+                               Just inp'' -> Right (void y') @=? parseNoSpans parser (inputStreamFromString inp'')
 
   -- | Take a sub-slice of an input string
   slice :: Span -> String -> Maybe String

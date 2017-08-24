@@ -7,7 +7,7 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 -}
-{-# LANGUAGE DuplicateRecordFields, DeriveFunctor, DeriveDataTypeable, DeriveGeneric, PatternSynonyms, DeriveAnyClass, StandaloneDeriving #-}
+{-# LANGUAGE DeriveFunctor, DeriveDataTypeable, DeriveGeneric, DeriveAnyClass, StandaloneDeriving #-}
 
 module Language.Rust.Syntax.AST (
   -- $overview
@@ -25,9 +25,9 @@ module Language.Rust.Syntax.AST (
   Expr(..), Abi(..), Arm(..), UnOp(..), BinOp(..), CaptureBy(..), Field(..),
   RangeLimits(..),
   -- ** Types and lifetimes
-  Ty(..), Generics(..), pattern NoGenerics, Lifetime(..), LifetimeDef(..), TyParam(..),
-  TyParamBound(..), partitionTyParamBounds, WhereClause(..), WherePredicate(..), PolyTraitRef(..),
-  TraitRef(..), TraitBoundModifier(..),
+  Ty(..), Generics(..), Lifetime(..), LifetimeDef(..), TyParam(..),
+  TyParamBound(..), partitionTyParamBounds, WhereClause(..), whereClause, WherePredicate(..),
+  PolyTraitRef(..), TraitRef(..), TraitBoundModifier(..),
   -- ** Patterns
   Pat(..), BindingMode(..), FieldPat(..),
   -- ** Statements
@@ -149,17 +149,12 @@ instance Located a => Located (Arg a) where
   spanOf (SelfRegion _ _ s) = spanOf s
   spanOf (SelfExplicit _ _ s) = spanOf s
 
--- | An arm of a 'Match' expression (@syntax::ast::Arm@).
+-- | An arm of a 'Match' expression (@syntax::ast::Arm@). An arm has at least one patten, possibly a
+-- guard expression, and a body expression.
 --
 -- Example: @_ if 1 == 1 => { println!("match!") }@ as in @match n { _ if 1 == 1 => { println!("match!") } }@
-data Arm a
-  = Arm
-      { attrs :: [Attribute a]
-      , pats :: NonEmpty (Pat a)
-      , guard :: Maybe (Expr a)
-      , body :: Expr a
-      , nodeInfo :: a
-      } deriving (Eq, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
+data Arm a = Arm [Attribute a] (NonEmpty (Pat a)) (Maybe (Expr a)) (Expr a) a
+  deriving (Eq, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
 
@@ -168,19 +163,12 @@ instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
 --
 -- Example: @#[repr(C)]@ in @#[derive(Clone, Copy)] struct Complex { re: f32, im: f32 }@
 data Attribute a
-  = Attribute
-      { style :: AttrStyle   -- ^ whether attribute is inner or outer
-      , path :: Path a       -- ^ all attributes start with a path
-      , value :: TokenStream -- ^ actual content of attribute
-      , nodeInfo :: a
-      }
-  | SugaredDoc
-      { style :: AttrStyle   -- ^ whether attribute is inner or outer
-      , inline :: Bool       -- ^ whether attribute is inline or not
-      , contents :: Name     -- ^ what is in the doc comment
-      , nodeInfo :: a
-      }
- deriving (Eq, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
+  -- | Regular attributes starting with '#'.
+  = Attribute AttrStyle (Path a) TokenStream a
+  -- | Doc comment attributes. The 'Bool' argument identifies if the comment is inline or not, and
+  -- the 'Name' contains the actual doc comment content.
+  | SugaredDoc AttrStyle Bool Name a
+  deriving (Eq, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Attribute a) where
   spanOf (Attribute _ _ _ s) = spanOf s
@@ -227,17 +215,12 @@ data BindingMode
   | ByValue Mutability
   deriving (Eq, Show, Typeable, Data, Generic, NFData)
 
--- | A curly brace delimited sequence of statements (@syntax::ast::Block@).
+-- | A curly brace delimited sequence of statements (@syntax::ast::Block@). The last statement in
+-- the block can always be a 'NoSemi' expression.
 --
 -- Example: @{ let x = 1; return x + y }@ as in @fn foo() { let x = 1; return x + y }@
-data Block a
-  = Block
-      { stmts :: [Stmt a]  -- ^ Statements in the block. Note that the last statement in the block
-                           -- can always be a 'NoSemi' expression.
-      , rules :: Unsafety  -- ^ Distinguishes between regular (safe) blocks and unsafe blocks such
-                           -- as @unsafe { x += 1 }@.
-      , nodeInfo :: a
-      } deriving (Eq, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
+data Block a = Block [Stmt a] Unsafety a
+  deriving (Eq, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Block a) where spanOf (Block _ _ s) = spanOf s
  
@@ -383,39 +366,26 @@ instance Located a => Located (Expr a) where
 -- | Field in a struct literal expression (@syntax::ast::Field@).
 --
 -- Example: @x: 1@ in @Point{ x: 1, y: 2 }@
-data Field a
-  = Field
-      { ident :: Ident         -- ^ the field name
-      , expr :: Maybe (Expr a) -- ^ value assigned to the field
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data Field a = Field Ident (Maybe (Expr a)) a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Field a) where spanOf (Field _ _ s) = spanOf s
 
--- | Field in a struct literal pattern (@syntax::ast::FieldPat@).
+-- | Field in a struct literal pattern (@syntax::ast::FieldPat@). The field name 'Ident' is optional
+-- but, when it is 'Nothing', the pattern the field is destructured to must be 'IdentP'.
 --
 -- Example: @x@ in @Point{ x, y }@
-data FieldPat a
-  = FieldPat
-      { ident :: Maybe Ident -- ^ the field name
-      , pat :: Pat a         -- ^ the pattern the field is destructured to - must be 'IdentP'
-                             -- when the @ident@ field is 'Nothing'
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data FieldPat a = FieldPat (Maybe Ident) (Pat a) a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (FieldPat a) where spanOf (FieldPat _ _ s) = spanOf s
 
--- | Header (not the body) of a function declaration (@syntax::ast::FnDecl@).
+-- | Header (not the body) of a function declaration (@syntax::ast::FnDecl@). The 'Bool' argument
+-- indicates whether the header is variadic (so whether the argument list ends in @...@).
 --
 -- Example: @(bar: i32) -> ()@ in @fn foo(bar: i32) -> ()@
-data FnDecl a
-  = FnDecl
-      { inputs :: [Arg a]      -- ^ argument list
-      , output :: Maybe (Ty a) -- ^ return type (inlined from @syntax::ast::FunctionRetTy@). When
-                               -- 'Nothing', functions default to @()@ and closures to inference.
-      , variadic :: Bool       -- ^ whether the argument list ends in @...@
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data FnDecl a = FnDecl [Arg a] (Maybe (Ty a)) Bool a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (FnDecl a) where spanOf (FnDecl _ _ _ s) = spanOf s
 
@@ -448,21 +418,14 @@ instance Located a => Located (ForeignItem a) where
 --
 -- Example: @\<\'a, \'b: \'c, T: \'a\>@ and @where Option\<T\>: Copy@
 -- in @fn nonsense\<\'a, \'b: \'c, T: \'a\>(x: i32) -\> i32 where Option\<T\>: Copy { 1 }@.
-data Generics a
-  = Generics
-      { lifetimes :: [LifetimeDef a]  -- ^ lifetimes defined (possibly with bounds)
-      , tyParams :: [TyParam a]       -- ^ type parameters defined (possibly with bounds)
-      , whereClause :: WhereClause a  -- ^ constraints on the lifetimes and type parameters
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data Generics a = Generics [LifetimeDef a] [TyParam a] (WhereClause a) a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+
+-- | Extract the where clause from a 'Generics'.
+whereClause :: Generics a -> WhereClause a
+whereClause (Generics _ _ wc _) = wc
 
 instance Located a => Located (Generics a) where spanOf (Generics _ _ _ s) = spanOf s
-
--- | Most functions or paths have no generics at all, even if they /could/. To avoid having to write
--- out an empty generics @'Generics' [] [] ('WhereClause' [] x) y@, this pattern lets you write
--- the (slightly) abbreviated @'NoGenerics' x y@.
-pattern NoGenerics :: a -> a -> Generics a
-pattern NoGenerics x y = Generics [] [] (WhereClause [] x) y
 
 -- | An item within an impl (@syntax::ast::ImplItem@ with @syntax::ast::ImplItemKind@ inlined).
 --
@@ -574,14 +537,12 @@ instance Located a => Located (Item a) where
 
 -- | A lifetime is a name for a scope in a program (@syntax::ast::Lifetime@). One of the novel
 -- features of Rust is that code can be parametrized over lifetimes. Syntactically, they are like
--- regular identifiers, but start with a tick @\'@ mark.
+-- regular identifiers, but start with a tick @\'@ mark. The 'Name' argument is /not/ supposed to
+-- include that tick.
 --
 -- Examples: @\'a@ or @\'static@
-data Lifetime a
-  = Lifetime
-      { name :: Name   -- ^ string that is the actual name part (so omits the tick @\'@)
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data Lifetime a = Lifetime Name a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Lifetime a) where spanOf (Lifetime _ s) = spanOf s
 
@@ -589,13 +550,8 @@ instance Located a => Located (Lifetime a) where spanOf (Lifetime _ s) = spanOf 
 -- (@syntax::ast::LifetimeDef@).
 --
 -- Example: @\'a: \'b+\'c+\'d@
-data LifetimeDef a
-  = LifetimeDef
-      { attrs :: [Attribute a]   -- ^ attributes attached to the lifetime definition
-      , lifetime :: Lifetime a   -- ^ lifetime being defined (@\'a@ in the example)
-      , bounds :: [Lifetime a]   -- ^ other lifetimes which bound it (@\'b+\'c+\'d@ in the example)
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data LifetimeDef a = LifetimeDef [Attribute a] (Lifetime a) [Lifetime a] a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (LifetimeDef a) where spanOf (LifetimeDef _ _ _ s) = spanOf s
 
@@ -780,47 +736,34 @@ instance Located a => Located (Pat a) where
 -- Paths are used to identify expressions (see 'PathExpr'), types (see 'PathTy'), and modules
 -- (indirectly through 'ViewPath' and such).
 --
+-- The 'Bool' argument identifies whether the path is relative or absolute.
+--
 -- Example: @std::cmp::PartialEq@
-data Path a
-  = Path
-      { global :: Bool                                 -- ^ is the path relative or absolute (with respect to the crate root) 
-      , segments :: NonEmpty (Ident, PathParameters a) -- ^ segments in the path (the things separated by @::@)
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data Path a = Path Bool (NonEmpty (Ident, PathParameters a)) a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Path a) where spanOf (Path _ _ s) = spanOf s
 
--- | Manage the terminal segments in (non-glob) 'ViewPath's (@syntax::ast::PathListItem@).
-data PathListItem a
-  = PathListItem
-      { name :: Ident         -- ^ name of element (examples: @foo@)
-      , rename :: Maybe Ident -- ^ optional renames (examples: @as bar@)
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+-- | Manage the terminal segments in (non-glob) 'ViewPath's (@syntax::ast::PathListItem@). The first
+-- argument is the actual name of the element and the second is its optional rename.
+data PathListItem a = PathListItem Ident (Maybe Ident) a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (PathListItem a) where spanOf (PathListItem _ _ s) = spanOf s
 
 -- | Parameters on a path segment (@syntax::ast::PathParameters@).
 data PathParameters a
   -- | Parameters in a chevron comma-delimited list (@syntax::ast::AngleBracketedParameterData@).
-  -- Note that lifetimes must come before types, which must come before bindings. 
+  -- Note that lifetimes must come before types, which must come before bindings. Bindings are
+  -- equality constraints on associated types (example: @Foo\<A=Bar\>@)
   --
   -- Example: @\<\'a,A,B,C=i32\>@ in a path segment like @foo::\<'a,A,B,C=i32\>@
-  = AngleBracketed
-      { lifetimes :: [Lifetime a]   -- ^ lifetime parameters
-      , types :: [Ty a]             -- ^ type parameters
-      , bindings :: [(Ident, Ty a)] -- ^ bindings (equality constraints) on associated types (example: @Foo\<A=Bar\>@)
-      , nodeInfo :: a
-      }
+  = AngleBracketed [Lifetime a] [Ty a] [(Ident, Ty a)] a
   -- | Parameters in a parenthesized comma-delimited list, with an optional output type
   -- (@syntax::ast::ParenthesizedParameterData@).
   --
   -- Example: @(A,B) -\> C@ in a path segment @Foo(A,B) -\> C@
-  | Parenthesized
-      { inputs :: [Ty a]            -- ^ input type parameters (@A@ and @B@ in the example)
-      , output :: Maybe (Ty a)      -- ^ output type parameter (@C@ in the example)
-      , nodeInfo :: a
-      }
+  | Parenthesized [Ty a] (Maybe (Ty a)) a
   -- | No parameters. Note that in @syntax::ast::PathParameters@, this variant does not exist - it
   -- is considered a subcase of 'AngleBracketed'. However, I want to be able to distinguish between
   -- @foo<>@ and @foo@ for faithful pretty-printing purposes.
@@ -834,23 +777,17 @@ instance Located a => Located (PathParameters a) where
 
 -- | Trait ref parametrized over lifetimes introduced by a @for@ (@syntax::ast::PolyTraitRef@).
 --
--- Example: @for\<\'a\> Foo\<&\'a Bar\>@ 
-data PolyTraitRef a
-  = PolyTraitRef
-      { boundLifetimes :: [LifetimeDef a] -- ^ lifetime introduced (@\'a'@ in the example)
-      , traitRef :: TraitRef a            -- ^ trait ref using those lifetimes (@Foo\<&\'a T\>@ in the example)
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+-- Example: @for\<\'a, 'b\> Foo\<&\'a Bar\>@ 
+data PolyTraitRef a = PolyTraitRef [LifetimeDef a] (TraitRef a) a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (PolyTraitRef a) where spanOf (PolyTraitRef _ _ s) = spanOf s 
 
 -- | The explicit @Self@ type in a "qualified path". The actual path, including the trait and the
--- associated item, is stored separately.
-data QSelf a
-  = QSelf
-      { ty :: Ty a       -- ^ type given to @Self@
-      , position :: Int  -- ^ index of the associated qualified with this @Self@ type
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+-- associated item, is stored separately. The first argument is the type given to @Self@ and the
+-- second is the index of the associated qualified with this @Self@ type
+data QSelf a = QSelf (Ty a) Int
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 -- | Limit types of a 'Range'
 data RangeLimits
@@ -862,13 +799,7 @@ data RangeLimits
 -- expressions (sometimes with a required semicolon at the end) and items into statements.
 data Stmt a
   -- | A local @let@ binding (@syntax::ast::Local@) (example: @let x: i32 = 1;@)
-  = Local
-      { pat :: Pat a                    -- ^ variable(s) being bound by the binding
-      , ty :: Maybe (Ty a)              -- ^ optional type ascription
-      , init :: Maybe (Expr a)          -- ^ optional initializer expression
-      , attrs :: [Attribute a]          -- ^ attributes on the binding 
-      , nodeInfo :: a
-      }
+  = Local (Pat a) (Maybe (Ty a)) (Maybe (Expr a)) [Attribute a] a
   -- | Item definition (example: @fn foo(x: i32) { return x + 1 }@)
   | ItemStmt (Item a) a
   -- | Expression without a trailing semicolon (example: @x + 1@)
@@ -895,14 +826,8 @@ data StrStyle
 -- | Field of a struct (@syntax::ast::StructField@) used in declarations
 --
 -- Example: @bar: usize@ as in @struct Foo { bar: usize }@
-data StructField a
-  = StructField
-      { ident :: Maybe Ident    -- ^ name of field
-      , vis :: Visibility a     -- ^ visibility of the field
-      , ty :: Ty a              -- ^ type of the field
-      , attrs :: [Attribute a]  -- ^ attributes on the field
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data StructField a = StructField (Maybe Ident) (Visibility a) (Ty a) [Attribute a] a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (StructField a) where spanOf (StructField _ _ _ _ s) = spanOf s
 
@@ -1034,15 +959,10 @@ instance Located a => Located (Ty a) where
   spanOf (Infer s) = spanOf s
   spanOf (MacTy _ s) = spanOf s
 
--- | type parameter definition used in 'Generics' (@syntax::ast::TyParam@).
-data TyParam a
-  = TyParam
-      { attrs :: [Attribute a]
-      , ident :: Ident             -- ^ name of the type parameter
-      , bounds :: [TyParamBound a] -- ^ lifetime or trait bounds on the parameter
-      , default_ :: Maybe (Ty a)   -- ^ a possible default type
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+-- | type parameter definition used in 'Generics' (@syntax::ast::TyParam@). Note that each
+-- parameter can have any number of (lifetime or trait) bounds, as well as possibly a default type.
+data TyParam a = TyParam [Attribute a] Ident [TyParamBound a] (Maybe (Ty a)) a
+   deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (TyParam a) where spanOf (TyParam _ _ _ _ s) = spanOf s
 
@@ -1081,14 +1001,8 @@ data Unsafety = Unsafe | Normal deriving (Eq, Enum, Bounded, Show, Typeable, Dat
 -- | A variant in Rust is a constructor (either in a 'StructItem', 'Union', or 'Enum') which groups
 -- together fields (@syntax::ast::Variant@). In the case of a unit variant, there can also be an
 -- explicit discriminant expression.
-data Variant a
-  = Variant
-      { name :: Ident              -- ^ name of the constructor
-      , attrs :: [Attribute a]     -- ^ attributes attached to it
-      , data_ :: VariantData a     -- ^ fields and form of the constructor
-      , disrExpr :: Maybe (Expr a) -- ^ explicit discriminant, e.g. Foo = 1
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data Variant a = Variant Ident [Attribute a] (VariantData a) (Maybe (Expr a)) a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Variant a) where spanOf (Variant _ _ _ _ s) = spanOf s
 
@@ -1144,31 +1058,17 @@ data Visibility a
 -- a where clause. In those cases, we leave the list of predicates empty.
 --
 -- Example:  @where Option\<T\>: Debug@ in @impl\<T\> PrintInOption for T where Option\<T\>: Debug@
-data WhereClause a
-  = WhereClause
-      { predicates :: [WherePredicate a]  -- ^ predicates enforced by the clause
-      , nodeInfo :: a
-      } deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data WhereClause a = WhereClause [WherePredicate a] a
+  deriving (Eq, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (WhereClause a) where spanOf (WhereClause _ s) = spanOf s
 
 -- | An individual predicate in a 'WhereClause' (@syntax::ast::WherePredicate@).
 data WherePredicate a
   -- | type bound (@syntax::ast::WhereBoundPredicate@) (example: @for\<\'c\> Foo: Send+Clone+\'c@)
-  = BoundPredicate
-      { boundLifetimes :: [LifetimeDef a]       -- ^ any lifetimes from an optional @for@ binding
-                                                -- (@\'c@ in the example)
-      , boundedTy :: Ty a                       -- ^ type being bounded (@Foo@ in the example)
-      , traitLifetimeBounds :: [TyParamBound a] -- ^ trait and lifetime bounds (@Clone+Send+'c@ in
-                                                -- the example)
-      , nodeInfo :: a
-      }
+  = BoundPredicate [LifetimeDef a] (Ty a) [TyParamBound a] a
   -- | lifetime predicate (@syntax::ast::WhereRegionPredicate@) (example: @\'a: \'b+\'c@)
-  | RegionPredicate
-      { lifetime :: Lifetime a                  -- ^ lifetime being bounded (@\'a@ in the example)
-      , lifetimeBounds :: [Lifetime a]          -- ^ lifetime bounds (@\'b+\'c@) in the example)
-      , nodeInfo :: a
-      }
+  | RegionPredicate (Lifetime a) [Lifetime a] a
   -- | equality predicate (@syntax::ast::WhereEqPredicate@) (example: @T=int@). Note that this is
   -- not currently supported.
   | EqPredicate (Ty a) (Ty a) a

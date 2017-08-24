@@ -1,5 +1,7 @@
-{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE CPP #-}
+#if __GLASGOW_HASKELL__ >= 800
 {-# OPTIONS_GHC -Wno-missing-methods #-}
+#endif
 module DiffUtils where
 
 import qualified Data.Aeson as Aeson
