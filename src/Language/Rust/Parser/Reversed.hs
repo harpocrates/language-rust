@@ -10,7 +10,11 @@ Portability : portable
 Datatypes wrapping lists and non-empty lists designed for fast append (as opposed to prepend) 
 along with the usual class instances.
 -}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances, TypeFamilies #-}
+#if __GLASGOW_HASKELL__ < 800
+{-# LANGUAGE FlexibleContexts #-}
+#endif
 
 module Language.Rust.Parser.Reversed (
   Reversed(..), toNonEmpty, unsnoc

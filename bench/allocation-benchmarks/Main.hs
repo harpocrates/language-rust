@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TypeApplications #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 import Weigh
 
@@ -8,6 +8,7 @@ import Data.Foldable (for_)
 import Data.Traversable (for)
 import GHC.Exts (fromString)
 
+import Language.Rust.Data.InputStream (InputStream)
 import Language.Rust.Syntax (SourceFile)
 import Language.Rust.Parser (readInputStream, Span, parse')
 
@@ -47,7 +48,7 @@ main = do
   -- Run 'weigh' tests
   fileStreams <- for files $ \file -> do { is <- readInputStream file; pure (takeFileName file, is) }
   let weigh = do setColumns [ Case, Max, Allocated, GCs, Live ]
-                 for_ fileStreams $ \(file,is) -> func file (parse' @(SourceFile Span)) is
+                 for_ fileStreams $ \(file,is) -> func file (parse' :: InputStream -> SourceFile Span) is
   mainWith weigh
   (wr, _) <- weighResults weigh
   let results = object [ case maybeErr of

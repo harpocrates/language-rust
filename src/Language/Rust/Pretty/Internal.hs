@@ -510,6 +510,9 @@ printEitherAttrs attrs kind inline = unless (null attrs') (glue attrs')
   where glue = if inline then hsep else vcat
         attrs' = [ printAttr attr inline | attr <- attrs, style attr == kind ]
 
+        style (Attribute sty _ _ _) = sty
+        style (SugaredDoc sty _ _ _) = sty
+
 -- | Print an attribute (@print_attribute_inline@ or @print_attribute@)
 printAttr :: Attribute a -> Bool -> Doc a
 printAttr (Attribute Inner p ts x) _     = annotate x ("#![" <> printPath p True <> printTokenStreamSp ts <> printTokenStream ts <> "]")
@@ -665,7 +668,9 @@ printPolarity Positive = mempty
 printVis :: Visibility a -> Doc a
 printVis PublicV = "pub"
 printVis CrateV = "pub(crate)"
-printVis (RestrictedV path) = "pub(" <> printPath path False <> ")"
+printVis (RestrictedV path@(Path False (("super", NoParameters _) :| _) _)) = "pub(" <> printPath path False <> ")"
+printVis (RestrictedV path@(Path False (("self", NoParameters _) :| _) _)) = "pub(" <> printPath path False <> ")"
+printVis (RestrictedV path) = "pub(" <> "in" <+> printPath path False <> ")"
 printVis InheritedV = mempty
 
 -- | Print a foreign item (@print_foreign_item@)

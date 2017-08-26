@@ -17,7 +17,7 @@ import Language.Rust.Pretty (prettyUnresolved, Resolve(..), Issue(..), Severity(
 import Language.Rust.Syntax (SourceFile)
 
 import System.Directory (getCurrentDirectory, getTemporaryDirectory, listDirectory, doesFileExist)
-import System.Process (createProcess, proc, CreateProcess(..), StdStream(..), callProcess, readProcess)
+import System.Process (withCreateProcess, proc, CreateProcess(..), StdStream(..), callProcess, readProcess)
 import System.FilePath ((</>), takeFileName)
 import System.IO (withFile, IOMode(WriteMode))
 
@@ -33,7 +33,7 @@ import Test.Framework.Providers.API
 main :: IO ()
 main = do
   -- Check last time `rustc` version was bumped
-  let lastDay = fromGregorian 2017 6 13
+  let lastDay = fromGregorian 2017 8 21
   today <- utctDay <$> getCurrentTime
   when (diffDays today lastDay > 32) $
     putStrLn $ "\x1b[33m" ++ "\nThe version of `rustc' the tests will try to use is older than 1 month" ++ "\x1b[0m"
@@ -59,11 +59,11 @@ getJsonAST fileName = do
                                       , std_err = NoStream
                                       , std_in  = NoStream
                                       }
-  (_, Just hOut, _, _) <- createProcess cp
-  jsonContents <- hGetContents hOut
-  case decode' jsonContents of
-    Just value -> pure value
-    Nothing -> error ("Failed to get `rustc' JSON\n" ++ unpack jsonContents)
+  withCreateProcess cp $ \_ (Just hOut) _ _ -> do
+    jsonContents <- hGetContents hOut
+    case decode' jsonContents of
+      Just value -> pure value
+      Nothing -> error ("Failed to get `rustc' JSON\n" ++ unpack jsonContents)
 
 -- | Given an AST and a file name, print it into a temporary file (without resolving) and return
 -- that path

@@ -415,16 +415,16 @@ string :: { Lit Span }
 qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
   : '<' qual_path_suf(segs)                    { let Spanned x _ = $2 in Spanned x ($1 # $2) }
   | lt_ty_qual_path as ty_path '>' '::' segs   {
-      let segs = segments $3 <> unspan $6
-      in Spanned (QSelf (unspan $1) (length (segments $3)), $3{ segments = segs }) ($1 # $>)
+      let Path g segsTy x = $3
+      in Spanned (QSelf (unspan $1) (length segsTy), Path g (segsTy <> unspan $6) x) ($1 # $>)
     }
 
 -- Basically a qualified path, but ignoring the very first '<' token
 qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
   : ty '>' '::' segs                { Spanned (QSelf $1 0, Path False (unspan $4) (spanOf $4)) ($1 # $>) }
   | ty as ty_path '>' '::' segs     {
-      let segs = segments $3 <> unspan $6
-      in Spanned (QSelf $1 (length (segments $3)), $3{ segments = segs }) ($1 # $>) 
+      let Path g segsTy x = $3
+      in Spanned (QSelf $1 (length segsTy), Path g (segsTy <> unspan $6) x) ($1 # $>) 
     }
 
 -- Usually qual_path_suf is for... type paths! This consumes these but with a starting '<<' token.
@@ -507,9 +507,10 @@ mod_path :: { Path Span  }
   : ntPath               { $1 }
   | self_or_ident        { Path False [(unspan $1, NoParameters mempty)] (spanOf $1) }
   | '::' self_or_ident   { Path True  [(unspan $2, NoParameters mempty)] ($1 # $>) }
-  | mod_path '::' ident
-    { Path (global $1) (segments $1 |> (unspan $3, NoParameters mempty)) ($1 # $>) }
-
+  | mod_path '::' ident  {
+      let Path g segs _ = $1 
+      in Path g (segs |> (unspan $3, NoParameters mempty)) ($1 # $>)
+    }
 
 -----------
 -- Types --
@@ -1250,7 +1251,7 @@ gen_item(vis) :: { Item Span }
   | many(outer_attribute) vis const ident ':' ty '=' expr ';'
     { ConstItem $1 (unspan $2) (unspan $4) $6 $8 ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis type ident generics where_clause '=' ty ';'
-    { TyAlias $1 (unspan $2) (unspan $4) $8 $5{ whereClause = $6 } ($1 # $2 # $3 # $>) }
+    { TyAlias $1 (unspan $2) (unspan $4) $8 ($5 `withWhere` $6) ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis use view_path ';'
     { Use $1 (unspan $2) $4 ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis safety extern crate ident ';'
@@ -1258,11 +1259,11 @@ gen_item(vis) :: { Item Span }
   | many(outer_attribute) vis safety extern crate ident as ident ';'
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $8) (Just (unspan $6)) ($1 # $2 # $4 # $>)) }
   | many(outer_attribute) vis const safety  fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
-    { Fn ($1 ++ fst $>) (unspan $2) (unspan $6) $8 (unspan $4) Const Rust $7{ whereClause = $9 } (snd $>) ($1 # $2 # $3 # snd $>) }
+    { Fn ($1 ++ fst $>) (unspan $2) (unspan $6) $8 (unspan $4) Const Rust ($7 `withWhere` $9) (snd $>) ($1 # $2 # $3 # snd $>) }
   | many(outer_attribute) vis safety extern abi fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
-    { Fn ($1 ++ fst $>) (unspan $2) (unspan $7) $9 (unspan $3) NotConst $5 $8{ whereClause = $10 } (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
+    { Fn ($1 ++ fst $>) (unspan $2) (unspan $7) $9 (unspan $3) NotConst $5 ($8 `withWhere` $10) (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
   | many(outer_attribute) vis safety            fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
-    { Fn ($1 ++ fst $>) (unspan $2) (unspan $5) $7 (unspan $3) NotConst Rust $6{ whereClause = $8 } (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
+    { Fn ($1 ++ fst $>) (unspan $2) (unspan $5) $7 (unspan $3) NotConst Rust ($6 `withWhere` $8) (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
   | many(outer_attribute) vis mod ident ';'
     { Mod $1 (unspan $2) (unspan $4) Nothing ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis mod ident '{'             many(mod_item) '}'
@@ -1274,31 +1275,31 @@ gen_item(vis) :: { Item Span }
   | many(outer_attribute) vis safety extern abi '{' inner_attrs many(foreign_item) '}'
     {% noSafety $3 (ForeignMod ($1 ++ toList $7) (unspan $2) $5 $8 ($1 # $2 # $4 # $>)) }
   | many(outer_attribute) vis struct ident generics struct_decl_args
-    { StructItem $1 (unspan $2) (unspan $4) (snd $6) $5{ whereClause = fst $6 } ($1 # $2 # $3 # snd $>) }
+    { StructItem $1 (unspan $2) (unspan $4) (snd $6) ($5 `withWhere` fst $6) ($1 # $2 # $3 # snd $>) }
   | many(outer_attribute) vis union ident generics struct_decl_args
-    { Union $1 (unspan $2) (unspan $4) (snd $6) $5{ whereClause = fst $6 } ($1 # $2 # $3 # snd $>) }
+    { Union $1 (unspan $2) (unspan $4) (snd $6) ($5 `withWhere` fst $6) ($1 # $2 # $3 # snd $>) }
   | many(outer_attribute) vis enum ident generics where_clause '{' sep_byT(enum_def,',') '}'
-    { Enum $1 (unspan $2) (unspan $4) $8 $5{ whereClause = $6 } ($1 # $2 # $3 # $>) }
+    { Enum $1 (unspan $2) (unspan $4) $8 ($5 `withWhere` $6) ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis safety trait ident generics ':' sep_by1T(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
-     { Trait $1 (unspan $2) (unspan $5) (unspan $3) $6{ whereClause = $9 } (toList $8) $11 ($1 # $2 # $3 # $4 # $>) }
+     { Trait $1 (unspan $2) (unspan $5) (unspan $3) ($6 `withWhere` $9) (toList $8) $11 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute) vis safety trait ident generics where_clause '{' many(trait_item) '}'
-     { Trait $1 (unspan $2) (unspan $5) (unspan $3) $6{ whereClause = $7 } [] $9 ($1 # $2 # $3 # $4 # $>) }
+     { Trait $1 (unspan $2) (unspan $5) (unspan $3) ($6 `withWhere` $7) [] $9 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute) vis         safety impl generics ty_prim              where_clause '{' impl_items '}'
-    { Impl ($1 ++ fst $9) (unspan $2) Final (unspan $3) Positive $5{ whereClause = $7 } Nothing $6 (snd $9) ($1 # $2 # $3 # $4 # $5 # $>) }
+    { Impl ($1 ++ fst $9) (unspan $2) Final (unspan $3) Positive ($5 `withWhere` $7) Nothing $6 (snd $9) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis default safety impl generics ty_prim              where_clause '{' impl_items '}'
-    { Impl ($1 ++ fst $10) (unspan $2) Default (unspan $4) Positive $6{ whereClause = $8 } Nothing $7 (snd $10) ($1 # $2 # $3 # $4 # $5 # $>) }
+    { Impl ($1 ++ fst $10) (unspan $2) Default (unspan $4) Positive ($6 `withWhere` $8) Nothing $7 (snd $10) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis         safety impl generics '(' ty_no_plus ')'   where_clause '{' impl_items '}'
-    { Impl ($1 ++ fst $11) (unspan $2) Final (unspan $3) Positive $5{ whereClause = $9 } Nothing (ParenTy $7 ($6 # $8)) (snd $11) ($1 # $2 # $3 # $4 # $5 # $>) }
+    { Impl ($1 ++ fst $11) (unspan $2) Final (unspan $3) Positive ($5 `withWhere` $9) Nothing (ParenTy $7 ($6 # $8)) (snd $11) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis default safety impl generics '(' ty_no_plus ')'   where_clause '{' impl_items '}'
-    { Impl ($1 ++ fst $12) (unspan $2) Default (unspan $4) Positive $6{ whereClause = $10 } Nothing (ParenTy $8 ($7 # $9)) (snd $12) ($1 # $2 # $3 # $4 # $5 # $>) }
+    { Impl ($1 ++ fst $12) (unspan $2) Default (unspan $4) Positive ($6 `withWhere` $10) Nothing (ParenTy $8 ($7 # $9)) (snd $12) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis         safety impl generics '!' trait_ref for ty where_clause '{' impl_items '}'
-    { Impl ($1 ++ fst $12) (unspan $2) Final (unspan $3) Negative $5{ whereClause = $10 } (Just $7) $9 (snd $12) ($1 # $2 # $3 # $4 # $5 # $>) }
+    { Impl ($1 ++ fst $12) (unspan $2) Final (unspan $3) Negative ($5 `withWhere` $10) (Just $7) $9 (snd $12) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis default safety impl generics '!' trait_ref for ty where_clause '{' impl_items '}'
-    { Impl ($1 ++ fst $13) (unspan $2) Default (unspan $4) Negative $6{ whereClause = $11 } (Just $8) $10 (snd $13) ($1 # $2 # $3 # $4 # $5 # $>) }
+    { Impl ($1 ++ fst $13) (unspan $2) Default (unspan $4) Negative ($6 `withWhere` $11) (Just $8) $10 (snd $13) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis         safety impl generics     trait_ref for ty where_clause '{' impl_items '}'
-    { Impl ($1 ++ fst $11) (unspan $2) Final (unspan $3) Positive $5{ whereClause = $9 } (Just $6) $8 (snd $11) ($1 # $2 # $3 # $4 # $5 # $>) }
+    { Impl ($1 ++ fst $11) (unspan $2) Final (unspan $3) Positive ($5 `withWhere` $9) (Just $6) $8 (snd $11) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis default safety impl generics     trait_ref for ty where_clause '{' impl_items '}'
-    { Impl ($1 ++ fst $12) (unspan $2) Default (unspan $4) Positive $6{ whereClause = $10 } (Just $7) $9 (snd $12) ($1 # $2 # $3 # $4 # $5 # $>) }
+    { Impl ($1 ++ fst $12) (unspan $2) Default (unspan $4) Positive ($6 `withWhere` $10) (Just $7) $9 (snd $12) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis safety impl generics     trait_ref for '..'            '{'            '}'
     {% case $5 of
          Generics [] [] _ _ -> pure $ DefaultImpl $1 (unspan $2) (unspan $3) $6 ($1 # $2 # $3 # $4 # $>)
@@ -1328,7 +1329,7 @@ foreign_item :: { ForeignItem Span }
   | many(outer_attribute) vis static mut ident ':' ty ';'
     { ForeignStatic $1 (unspan $2) (unspan $5) $7 Mutable ($1 # $2 # $>) }
   | many(outer_attribute) vis fn ident generics fn_decl(arg_named) where_clause ';'
-    { ForeignFn $1 (unspan $2) (unspan $4) $6 $5{ whereClause = $7 } ($1 # $2 # $>) }
+    { ForeignFn $1 (unspan $2) (unspan $4) $6 ($5 `withWhere` $7) ($1 # $2 # $>) }
 
 -- parse_generics
 -- Leaves the WhereClause empty
@@ -1390,10 +1391,10 @@ impl_item :: { ImplItem Span }
   | many(outer_attribute) vis def const ident ':' ty '=' expr ';' { ConstI $1 (unspan $2) (unspan $3) (unspan $5) $7 $9 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute)     def mod_mac                         { MacroI $1 (unspan $2) $3 ($1 # $2 # $>) }
   | many(outer_attribute) vis def const safety fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
-    { let methodSig = MethodSig (unspan $5) Const Rust $9 $8{ whereClause = $10 }
+    { let methodSig = MethodSig (unspan $5) Const Rust $9 ($8 `withWhere` $10)
       in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) methodSig (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
   | many(outer_attribute) vis def safety ext_abi fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
-    { let methodSig = MethodSig (unspan $4) NotConst (unspan $5) $9 $8{ whereClause = $10 }
+    { let methodSig = MethodSig (unspan $4) NotConst (unspan $5) $9 ($8 `withWhere` $10)
       in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) methodSig (snd $>) ($1 # $2 # $3 # $4 # $5 # $6 # snd $>) }
 
 trait_item :: { TraitItem Span }
@@ -1407,10 +1408,10 @@ trait_item :: { TraitItem Span }
   | many(outer_attribute) type ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty ';'
     { TypeT $1 (unspan $3) (toList $5) (Just $7) ($1 # $2 # $>) }
   | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self_general where_clause ';'
-    { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7 $6{ whereClause = $8 }
+    { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7 ($6 `withWhere` $8)
       in MethodT $1 (unspan $5) methodSig Nothing ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self_general where_clause inner_attrs_block
-    { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7 $6{ whereClause = $8 }
+    { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7 ($6 `withWhere` $8)
       in MethodT ($1 ++ fst $>) (unspan $5) methodSig (Just (snd $>)) ($1 # $2 # $3 # $4 # snd $>) }
 
 safety :: { Spanned Unsafety }
@@ -1425,7 +1426,9 @@ vis :: { Spanned (Visibility Span) }
   : {- empty -}   %prec VIS { Spanned InheritedV mempty }
   | pub           %prec VIS { Spanned PublicV (spanOf $1) }
   | pub '(' crate ')'       { Spanned CrateV ($1 # $4) }
-  | pub '(' mod_path ')'    { Spanned (RestrictedV $3) ($1 # $4) }
+  | pub '(' in mod_path ')' { Spanned (RestrictedV $4) ($1 # $5) }
+  | pub '(' super ')'       { Spanned (RestrictedV (Path False [("super", NoParameters mempty)] (spanOf $3))) ($1 # $4) }
+  | pub '(' self ')'        { Spanned (RestrictedV (Path False [("self", NoParameters mempty)] (spanOf $3))) ($1 # $4) }
 
 def :: { Spanned Defaultness }
   : {- empty -}  %prec DEF        { pure Final }
@@ -1710,6 +1713,10 @@ toStmt e hasSemi _ = (if hasSemi then Semi else NoSemi) e
 noVis :: Spanned (Visibility Span) -> a -> P a
 noVis (Spanned InheritedV _) x = pure x
 noVis _ _ = fail "visibility is not allowed here"
+
+-- | Fill in the where clause in a generic
+withWhere :: Generics a -> WhereClause a -> Generics a
+withWhere (Generics l t _ x) w = Generics l t w x
 
 -- | Return the second argument, as long as the safety is 'Normal'
 noSafety :: Spanned Unsafety -> a -> P a

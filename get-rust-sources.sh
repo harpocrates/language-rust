@@ -52,7 +52,10 @@ curl https://api.github.com/orgs/rust-lang-nursery/repos > rust-lang-nursery.jso
     # Check the file is longer than 2000 lines
     if (( 1000 < $(wc -l < "$FILE") ))
     then
-      cp $FILE $DEST_FILE
+      # copy the file over, but filter out lines which contain a reference to a 'mod <name>;'
+      # since those cause some issues for the rust compiler (it will go looking for those files
+      # even during parsing.
+      grep -Ev "(#\[macro_use\]|mod\s+\w+;)" $FILE > $DEST_FILE
     fi
 
   done;

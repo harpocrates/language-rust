@@ -17,7 +17,7 @@ instruction manual, the benefits of this are that:
 
 In our case, this shared information is held in 'PState'.
 -}
-{-# LANGUAGE RankNTypes, BangPatterns #-}
+{-# LANGUAGE Rank2Types, BangPatterns #-}
 
 module Language.Rust.Parser.ParseMonad (
   -- * Parsing monad

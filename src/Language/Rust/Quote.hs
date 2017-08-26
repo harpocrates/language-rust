@@ -29,8 +29,6 @@ i32
 
 For now, however, you cannot use '$x' or '$x:ty' meta variables.
 -}
-{-# LANGUAGE TemplateHaskellQuotes #-}
-
 module Language.Rust.Quote (
   lit, attr, ty, pat, stmt, expr, item, sourceFile, implItem, traitItem, tokenTree, block
 ) where

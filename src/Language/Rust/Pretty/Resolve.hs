@@ -55,7 +55,7 @@ fn foo(mut x: i32) -> i32 {
 And now we have generated valid code.
 
 -}
-{-# LANGUAGE ConstraintKinds, TypeOperators, OverloadedLists #-}
+{-# LANGUAGE TypeOperators, OverloadedLists #-}
 
 module Language.Rust.Pretty.Resolve (
   Resolve(..), Issue(..), Severity(..), runResolve 
@@ -194,7 +194,7 @@ instance (Typeable c, Resolve c) => GResolve (K1 i c) where
 --   * the attributes to be inner
 --   * the items to be 'ModItems'
 --
-resolveSourceFile :: (Typeable a, (Typeable a, Monoid a)) => SourceFile a -> ResolveM (SourceFile a)
+resolveSourceFile :: (Typeable a, Monoid a) => SourceFile a -> ResolveM (SourceFile a)
 resolveSourceFile s@(SourceFile sh as is) = scope s $ do
   sh' <- case sh of
            Just ('[':_) -> err sh "shebang cannot start with `['"
@@ -204,7 +204,7 @@ resolveSourceFile s@(SourceFile sh as is) = scope s $ do
   is' <- traverse (resolveItem ModItem) is
   pure (SourceFile sh' as' is')
 
-instance (Typeable a, (Typeable a, Monoid a)) => Resolve (SourceFile a) where resolveM = resolveSourceFile
+instance (Typeable a, Monoid a) => Resolve (SourceFile a) where resolveM = resolveSourceFile
 
 -- | An identifier can be invalid if
 -- 
@@ -573,10 +573,10 @@ resolvePat p@(PathP q@(Just (QSelf _ i)) p'@(Path g s x) x')
   | i < 0 || i >= length s = scope p (err p "index given by QSelf is outside the possible range")
   | i == 0 = scope p (PathP <$> traverse resolveQSelf q <*> resolvePath ExprPath p' <*> pure x)
   | otherwise = scope p $ do
-      tyP <-   resolvePath TypePath $ Path g     (N.fromList (N.take i s)) mempty
-      exprP <- resolvePath ExprPath $ Path False (N.fromList (N.drop i s)) x
+      tyP@(Path _ tyPSegs _) <-   resolvePath TypePath $ Path g     (N.fromList (N.take i s)) mempty
+      exprP@(Path _ exprPSegs _) <- resolvePath ExprPath $ Path False (N.fromList (N.drop i s)) x
       q' <- traverse resolveQSelf q
-      pure (PathP q' (Path g (segments tyP <> segments exprP) x) x')
+      pure (PathP q' (Path g (tyPSegs <> exprPSegs) x) x')
 -- TupleP
 resolvePat p@(TupleP ps i x) = scope p $ do
   ps' <- traverse resolvePat ps
@@ -911,10 +911,10 @@ resolveExprP _ _ p@(PathExpr as q@(Just (QSelf _ i)) p'@(Path g s x) x')
       pure (PathExpr as' q' p'' x)
   | otherwise = scope p $ do
       as' <- traverse (resolveAttr OuterAttr) as
-      tyP <-   resolvePath TypePath $ Path g     (N.fromList (N.take i s)) mempty
-      exprP <- resolvePath ExprPath $ Path False (N.fromList (N.drop i s)) x
+      tyP@(Path _ tyPSegs _) <-   resolvePath TypePath $ Path g     (N.fromList (N.take i s)) mempty
+      exprP@(Path _ exprPSegs _) <- resolvePath ExprPath $ Path False (N.fromList (N.drop i s)) x
       q' <- traverse resolveQSelf q
-      pure (PathExpr as' q' (Path g (segments tyP <> segments exprP) x) x') 
+      pure (PathExpr as' q' (Path g (tyPSegs <> exprPSegs) x) x') 
 resolveExprP _ _ i@(Lit as l x) = scope i $ do
   as' <- traverse (resolveAttr OuterAttr) as
   l' <- resolveLit l
