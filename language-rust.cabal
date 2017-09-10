@@ -29,7 +29,12 @@ flag enableQuasiquotes
 
 library
   hs-source-dirs:      src
+
   ghc-options:         -Wall
+                       -Wincomplete-patterns
+                       -Wincomplete-uni-patterns
+                       -Wmissing-signatures
+
   build-tools:         alex, happy
   default-language:    Haskell2010
 
@@ -58,7 +63,6 @@ library
                      , FlexibleInstances
                      , OverloadedStrings
                      , OverloadedLists
-                     , StandaloneDeriving
                      , DeriveFunctor
                      , DeriveGeneric
                      , DeriveAnyClass

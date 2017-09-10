@@ -32,7 +32,6 @@ import Data.Text.Prettyprint.Doc.Internal.Type (Doc(..))
 
 import Language.Rust.Syntax.Token (Delim(..))
 
-
 -- | Indentation level
 n :: Int
 n = 2

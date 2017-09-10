@@ -27,8 +27,8 @@ import Text.Read (readMaybe)
 
 -- | Parse a valid 'LitTok' into a 'Lit'.
 translateLit :: LitTok -> Suffix -> a -> Lit a
-translateLit (ByteTok s)         = let Just (w8,"") = unescapeByte False s in Byte w8
-translateLit (CharTok s)         = let Just (c,"")  = unescapeChar False s in Char c
+translateLit (ByteTok s)         = Byte (unescapeByte' s)
+translateLit (CharTok s)         = Char (unescapeChar' s)
 translateLit (FloatTok s)        = Float (unescapeFloat s) 
 translateLit (StrTok s)          = Str (unfoldr (unescapeChar True) s) Cooked
 translateLit (StrRawTok s n)     = Str s (Raw n)
@@ -87,6 +87,18 @@ unescapeByte multiline ('\\':c:cs) = case c of
        _    -> error "unescape byte: bad escape sequence"
 unescapeByte _ (c:cs) = Just (toEnum $ fromEnum c, cs)
 unescapeByte _ [] = fail "unescape byte: empty string"
+
+-- | Given a string Rust representation of a character, parse it into a character
+unescapeChar' :: String -> Char
+unescapeChar' s = case unescapeChar False s of
+                    Just (c, "") -> c
+                    _ -> error "unescape char: bad character literal"
+
+-- | Given a string Rust representation of a byte, parse it into a byte
+unescapeByte' :: String -> Word8
+unescapeByte' s = case unescapeByte False s of
+                    Just (w8, "") -> w8
+                    _ -> error "unescape byte: bad byte literal"
 
 -- | Given a string Rust representation of an integer, parse it into a number
 unescapeInteger :: Num a => String -> (IntRep,a)

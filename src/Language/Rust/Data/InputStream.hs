@@ -13,11 +13,20 @@ These are the only functions that need to be implemented in order to use the par
 
 module Language.Rust.Data.InputStream (
   -- * InputStream type
-  InputStream, countLines, inputStreamEmpty,
+  InputStream,
+  countLines,
+  inputStreamEmpty,
+  
   -- * Introduction forms
-  readInputStream, hReadInputStream, inputStreamFromString,
+  readInputStream,
+  hReadInputStream,
+  inputStreamFromString,
+  
   -- * Elimination forms
-  inputStreamToString, takeByte, takeChar, takeChars,
+  inputStreamToString,
+  takeByte,
+  takeChar,
+  takeChars,
 ) where
 
 import Data.Word (Word8)
@@ -75,7 +84,7 @@ countLines :: InputStream -> Int
 -- | Opaque input type.
 newtype InputStream = IS BS.ByteString
 takeByte bs = (BS.head (coerce bs), coerce (BS.tail (coerce bs)))
-takeChar bs = let Just res = BE.uncons (coerce bs) in coerce res
+takeChar bs = maybe (error "takeChar: no char left") coerce (BE.uncons (coerce bs))
 inputStreamEmpty = BS.null . coerce
 takeChars n = BE.toString . BE.take n . coerce
 readInputStream f = coerce <$> BS.readFile f

@@ -7,39 +7,99 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 -}
-{-# LANGUAGE DeriveFunctor, DeriveDataTypeable, DeriveGeneric, DeriveAnyClass, StandaloneDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module Language.Rust.Syntax.AST (
   -- $overview
+  
   -- ** Top level
   SourceFile(..),
+  
   -- ** General
-  Mutability(..), Unsafety(..), Arg(..), FnDecl(..),
+  Mutability(..),
+  Unsafety(..),
+  Arg(..),
+  FnDecl(..),
+  
   -- ** Paths
-  Path(..), PathListItem(..), PathParameters(..), QSelf(..),
+  Path(..),
+  PathListItem(..),
+  PathParameters(..),
+  QSelf(..),
+  
   -- ** Attributes
-  Attribute(..), AttrStyle(..),
+  Attribute(..),
+  AttrStyle(..),
+  
   -- ** Literals
-  Lit(..), byteStr, Suffix(..), suffix, IntRep(..), StrStyle(..),
+  Lit(..),
+  byteStr,
+  Suffix(..),
+  suffix,
+  IntRep(..),
+  StrStyle(..),
+  
   -- ** Expressions
-  Expr(..), Abi(..), Arm(..), UnOp(..), BinOp(..), CaptureBy(..), Field(..),
+  Expr(..),
+  Abi(..),
+  Arm(..),
+  UnOp(..),
+  BinOp(..),
+  CaptureBy(..),
+  Field(..),
   RangeLimits(..),
+  
   -- ** Types and lifetimes
-  Ty(..), Generics(..), Lifetime(..), LifetimeDef(..), TyParam(..),
-  TyParamBound(..), partitionTyParamBounds, WhereClause(..), whereClause, WherePredicate(..),
-  PolyTraitRef(..), TraitRef(..), TraitBoundModifier(..),
+  Ty(..),
+  Generics(..),
+  Lifetime(..),
+  LifetimeDef(..),
+  TyParam(..),
+  TyParamBound(..),
+  partitionTyParamBounds,
+  WhereClause(..),
+  whereClause,
+  WherePredicate(..),
+  PolyTraitRef(..),
+  TraitRef(..),
+  TraitBoundModifier(..),
+  
   -- ** Patterns
-  Pat(..), BindingMode(..), FieldPat(..),
+  Pat(..),
+  BindingMode(..),
+  FieldPat(..),
+  
   -- ** Statements
   Stmt(..),
+  
   -- ** Items
-  Item(..), ForeignItem(..), ImplItem(..), TraitItem(..), Defaultness(..), ImplPolarity(..),
-  StructField(..), Variant(..), VariantData(..), ViewPath(..), Visibility(..), Constness(..),
+  Item(..),
+  ForeignItem(..),
+  ImplItem(..),
+  TraitItem(..),
+  Defaultness(..),
+  ImplPolarity(..),
+  StructField(..),
+  Variant(..),
+  VariantData(..),
+  ViewPath(..),
+  Visibility(..),
+  Constness(..),
   MethodSig(..),
+  
   -- ** Blocks
   Block(..),
+
   -- ** Token trees
-  TokenTree(..), TokenStream(..), unconsTokenStream, Nonterminal(..), Mac(..), MacStmtStyle(..),
+  TokenTree(..),
+  TokenStream(..),
+  unconsTokenStream,
+  Nonterminal(..),
+  Mac(..),
+  MacStmtStyle(..),
 ) where
 
 import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)

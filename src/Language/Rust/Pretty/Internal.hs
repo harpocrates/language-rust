@@ -13,26 +13,94 @@ documented.
 -}
 {-# OPTIONS_GHC -Wall -fno-warn-name-shadowing #-}
 {-# OPTIONS_HADDOCK hide, not-home #-}
-{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Language.Rust.Pretty.Internal (
-  printLit, printTraitItem, printTraitRef, printType, printTyParam, printBound, printVariant,
-  printViewPath, printVis, printWhereClause, printLifetime, printLifetimeDef, printNonterminal,
-  printPat, printPath, printStmt, printStructField, printWherePredicate, printExpr, printField,
-  printFieldPat, printFnArgsAndRet, printForeignItem, printGenerics, printImplItem,
-  printPolyTraitRef, printMutability, printRangeLimits, printToken, printTt, printUnOp,
-  printUnsafety, printAttr, printBinOp, printItem, printSourceFile, printBlock, printTokenStream,
-  printLitTok, printIdent, printBindingMode, printAbi, printPolarity, flatten
+
+  -- * Pretty printers
+  -- As much as possible, these functions should say which function in the @rustc@ printer they are
+  -- emulating.
+
+  -- ** Top level
+  printSourceFile,
+  
+  -- ** General
+  printMutability,
+  printUnsafety,
+  printFnArgsAndRet,
+  printIdent,
+  
+  -- ** Paths
+  printPath,
+  
+  -- ** Attributes
+  printAttr,
+  
+  -- ** Literals
+  printLit,
+  printLitTok,
+  
+  -- ** Expressions
+  printExpr,
+  printAbi,
+  printUnOp,
+  printBinOp,
+  printField,
+  printRangeLimits,
+ 
+  -- ** Types and lifetimes
+  printType,
+  printGenerics,
+  printLifetime,
+  printLifetimeDef,
+  printTyParam,
+  printBound,
+  printWhereClause,
+  printWherePredicate,
+  printPolyTraitRef,
+  printTraitRef,
+  
+  -- ** Patterns
+  printPat,
+  printBindingMode,
+  printFieldPat,
+  
+  -- ** Statements
+  printStmt,
+  
+  -- ** Items
+  printItem,
+  printForeignItem,
+  printImplItem,
+  printTraitItem,
+  printPolarity,
+  printStructField,
+  printVariant,
+  printViewPath,
+  printVis,
+  
+  -- ** Blocks
+  printBlock,
+
+  -- ** Token trees
+  printToken,
+  printTt,
+  printTokenStream,
+  printNonterminal,
+  printMac,
+
+  -- * Utilities
+  module Language.Rust.Pretty.Util,
 ) where
 
 import Language.Rust.Pretty.Literals
+import Language.Rust.Pretty.Util
 
 import Language.Rust.Data.Position
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 import Language.Rust.Syntax.Ident
 
-import Language.Rust.Pretty.Util
 import Data.Text.Prettyprint.Doc hiding ((<+>), hsep, indent, vsep)
 
 import Data.Maybe (maybeToList, fromMaybe)
@@ -40,10 +108,6 @@ import Data.Foldable (toList)
 import Data.List (unfoldr)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as N
-
--- * Pretty printing the AST
--- As much as possible, these functions should say which function in the @rustc@ printer they are
--- emulating.
 
 -- | Print a source file
 printSourceFile :: SourceFile a -> Doc a
@@ -78,14 +142,14 @@ printType (ImplTrait bs x)      = annotate x (printBounds "impl" (toList bs))
 printType (ParenTy ty x)        = annotate x ("(" <> printType ty <> ")")
 printType (Typeof e x)          = annotate x ("typeof" <> block Paren True mempty mempty [ printExpr e ])
 printType (Infer x)             = annotate x "_"
-printType (MacTy m x)           = annotate x (printMac m Bracket)
+printType (MacTy m x)           = annotate x (printMac Bracket m)
 printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
                                                <+> printFnHeaderInfo u NotConst a InheritedV
                                                <> printFnArgsAndRet d)
 
 -- | Print a macro (@print_mac@)
-printMac :: Mac a -> Delim -> Doc a
-printMac (Mac path ts x) d = annotate x (printPath path False <> "!" <> body)
+printMac :: Delim -> Mac a -> Doc a
+printMac d (Mac path ts x) = annotate x (printPath path False <> "!" <> body)
   where body = block d True mempty mempty [ printTokenStream ts ]
 
 -- | Given two positions, find out how to print appropriate amounts of space between them
@@ -99,7 +163,7 @@ printSpaceBetween _ _ _ = Nothing
 
 -- | Print a token tree (@print_tt@)
 printTt :: TokenTree -> Doc a
-printTt (Token _ t) = printToken t 
+printTt (Token _ t) = printToken t
 printTt (Delimited _ d ts) = block d True mempty mempty [ printTokenStream ts ] 
 
 -- | Print a list of token trees, with the right amount of space between successive elements
@@ -274,7 +338,7 @@ printStmt (NoSemi expr x)     = annotate x (printExprOuterAttrStyle expr False <
   requiresSemi BlockExpr{} = False
   requiresSemi _ = True
 printStmt (Semi expr x)       = annotate x (printExprOuterAttrStyle expr False <> ";")
-printStmt (MacStmt m ms as x) = annotate x (printOuterAttrs as </> printMac m delim <> end)
+printStmt (MacStmt m ms as x) = annotate x (printOuterAttrs as </> printMac delim m <> end)
   where delim = case ms of { BracesMac -> Brace; _ -> Paren }
         end   = case ms of { SemicolonMac -> ";"; _ -> mempty }
 printStmt (Local p ty i as x) = annotate x (printOuterAttrs as <#> group ("let" <+> binding <+> initializer <> ";"))
@@ -330,7 +394,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Break _ brk e x             -> annotate x ("break" <+> perhaps printLifetime brk <+> perhaps printExpr e)
     Continue _ cont x           -> annotate x ("continue" <+> perhaps printLifetime cont)
     Ret _ result x              -> annotate x ("return" <+> perhaps printExpr result)
-    MacExpr _ m x               -> annotate x (printMac m Paren)
+    MacExpr _ m x               -> annotate x (printMac Paren m)
     Struct as p fs Nothing x    -> annotate x (printPath p True <+> block Brace True "," (printInnerAttrs as) (printField `map` fs))
     Struct as p fs (Just d) x   -> let body = [ printField f <> "," | f <- fs ] ++ [ ".." <> printExpr d ] 
                                    in annotate x (printPath p True <+> block Brace True mempty (printInnerAttrs as) body)
@@ -605,10 +669,9 @@ printTraitItem :: TraitItem a -> Doc a
 printTraitItem (ConstT as ident ty expr x) = annotate x $ printOuterAttrs as <#> printAssociatedConst ident ty expr InheritedV
 printTraitItem (MethodT as ident sig body x) = annotate x $ printOuterAttrs as <#> printMethodSig ident sig InheritedV (fmap (\b -> (b, as)) body)
 printTraitItem (TypeT as ident bounds ty x) = annotate x $ printOuterAttrs as <#> printAssociatedType ident (Just bounds) ty
-printTraitItem (MacroT as m x) = annotate x $ printOuterAttrs as <#> printMac m Paren <> ";"
+printTraitItem (MacroT as m x) = annotate x $ printOuterAttrs as <#> printMac Paren m <> ";"
 
 -- | Print type parameter bounds with the given prefix, but only if there are any bounds (@print_bounds@)
--- TODO: follow up on <https://github.com/rust-lang-nursery/fmt-rfcs/issues/80>
 printBounds :: Doc a -> [TyParamBound a] -> Doc a
 printBounds _ [] = mempty
 printBounds prefix bs = group (prefix <#> ungroup (block NoDelim False " +" mempty (printBound `map` bs)))
@@ -633,7 +696,7 @@ printImplItem (MethodI as vis def ident sig body x) = annotate x $ printOuterAtt
 printImplItem (TypeI as vis def ident ty x) = annotate x $ printOuterAttrs as <#>
   (printVis vis <+> printDef def <+> printAssociatedType ident Nothing (Just ty))
 printImplItem (MacroI as def mac x) = annotate x $ printOuterAttrs as <#>
-  (printDef def <+> printMac mac Paren <> ";")
+  (printDef def <+> printMac Paren mac <> ";")
 
 -- | Print defaultness (@Defaultness@)
 printDef :: Defaultness -> Doc a
@@ -811,7 +874,7 @@ printPat (SliceP pb (Just ps) pa x)     = annotate x ("[" <> commas pb printPat 
                    , ".."
                    , unless (null pa) ","
                    ]
-printPat (MacP m x)                     = annotate x (printMac m Paren)
+printPat (MacP m x)                     = annotate x (printMac Paren m)
 
 -- | Print a field pattern
 printFieldPat :: FieldPat a -> Doc a
