@@ -11,7 +11,7 @@ env:
 # Allow for develop branch to break
 matrix:
   allow_failures:
-   - env: GHCVER=head CABALVER=head
+   - env: GHCVER=head   CABALVER=head
 
 # Manually install ghc and cabal
 before_install:

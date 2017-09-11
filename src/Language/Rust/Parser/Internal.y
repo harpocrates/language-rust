@@ -449,7 +449,8 @@ generic_values :: { Spanned ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
   | lt_ty_qual_path                                ',' sep_by1T(binding,',') gt '>' { Spanned ([],            [unspan $1],toList $3) ($1 # $>) }
   | lt_ty_qual_path                                                          gt '>' { Spanned ([],            [unspan $1],[]       ) ($1 # $>) }
 
-binding : ident '=' ty                             { (unspan $1, $3) }
+binding :: { (Ident, Ty Span) }
+  : ident '=' ty                             { (unspan $1, $3) }
 
 
 -- Type related:
