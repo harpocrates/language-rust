@@ -1060,8 +1060,10 @@ else_expr :: { Maybe (Expr Span) }
 arms :: { [Arm Span] }
   : ntArm                                               { [$1] }
   | ntArm arms                                          { $1 : $2 }
-  | many(outer_attribute) sep_by1(pat,'|') arm_guard '=>' expr_arms
+  | many(outer_attribute)     sep_by1(pat,'|') arm_guard '=>' expr_arms
     { let (e,as) = $> in (Arm $1 (toNonEmpty $2) $3 e ($1 # $2 # e) : as) }
+  | many(outer_attribute) '|' sep_by1(pat,'|') arm_guard '=>' expr_arms
+    { let (e,as) = $> in (Arm $1 (toNonEmpty $3) $4 e ($1 # $2 # e) : as) }
 
 arm_guard :: { Maybe (Expr Span) }
   : {- empty -}  { Nothing }
