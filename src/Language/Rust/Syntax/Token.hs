@@ -92,8 +92,8 @@ data Token
   | Underscore            -- ^ @_@ token
   | LifetimeTok Ident     -- ^ a lifetime (something like @\'a@ or @\'static@)
   | Space Space Name      -- ^ whitespace
-  -- ^ doc comment with its contents, whether it is outer/inner, and whether it is inline or not
   | Doc String !AttrStyle !Bool
+  -- ^ doc comment with its contents, whether it is outer/inner, and whether it is inline or not
   | Shebang               -- ^ @#!@ shebang token
   | Eof                   -- ^ end of file token
   

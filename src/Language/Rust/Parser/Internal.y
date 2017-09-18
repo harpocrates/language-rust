@@ -27,9 +27,15 @@ To get information about transition states and such, run
 {-# LANGUAGE OverloadedStrings, OverloadedLists, PartialTypeSignatures #-}
 
 module Language.Rust.Parser.Internal (
+  -- * Complete parsers
   parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseSourceFile,
   parseBlock, parseImplItem, parseTraitItem, parseTt, parseTokenStream, parseTyParam,
-  parseGenerics, parseWhereClause, parseLifetimeDef
+  parseGenerics, parseWhereClause, parseLifetimeDef,
+  
+  -- * Partial parsers
+  parseLitP, parseAttrP, parseTyP, parsePatP, parseStmtP, parseExprP, parseItemP, parseSourceFileP,
+  parseBlockP, parseImplItemP, parseTraitItemP, parseTtP, parseTokenStreamP, parseTyParamP,
+  parseGenericsP, parseWhereClauseP, parseLifetimeDefP
 ) where
 
 import Language.Rust.Syntax
@@ -66,12 +72,32 @@ import Text.Read (readMaybe)
 %name parseWhereClause where_clause
 %name parseGenerics generics
 
+-- we also document the partial parsers
+%partial parseLitP lit
+%partial parseAttrP export_attribute
+%partial parseTyP export_ty
+%partial parsePatP pat
+%partial parseStmtP stmt
+%partial parseExprP expr
+%partial parseItemP mod_item
+%partial parseSourceFileContentsP source_file
+%partial parseBlockP export_block
+%partial parseImplItemP impl_item
+%partial parseTraitItemP trait_item
+%partial parseTtP token_tree
+%partial parseTokenStreamP token_stream
+%partial parseTyParamP ty_param
+%partial parseLifetimeDefP lifetime_def
+%partial parseWhereClauseP where_clause
+%partial parseGenericsP generics
+
+
 %tokentype { Spanned Token }
 %lexer { lexNonSpace >>= } { Spanned Eof _ }
 %monad { P } { >>= } { return }
 
 %errorhandlertype explist
-%error { expParseError } --parseError }
+%error { expParseError }
 
 %expect 0
 
@@ -1792,6 +1818,13 @@ parseSourceFile :: P (SourceFile Span)
 parseSourceFile = do
   sh <- lexShebangLine
   (as,items) <- parseSourceFileContents
+  pure (SourceFile sh as items)
+
+-- | Parse a partial source file
+parseSourceFileP :: P (SourceFile Span)
+parseSourceFileP = do
+  sh <- lexShebangLine
+  (as,items) <- parseSourceFileContentsP
   pure (SourceFile sh as items)
 
 -- | Nudge the span endpoints of a 'Span' value
