@@ -23,7 +23,8 @@ fn main() {
   loop { break; }
   'l: loop { break 'l 1; }
   match x { _ => () }
-  let x = move |a,b,c| { a + b + c }; 
+  let x = move |a,b,c| { a + b + c };
+  let f = |_||x, y| x+y;
   let x = { 1 };
   let x = unsafe { 1 };
   a = 1;

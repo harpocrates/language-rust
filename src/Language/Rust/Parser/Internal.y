@@ -348,6 +348,16 @@ gt :: { () }
            _                   -> pushToken (Spanned tok s)
     }
 
+-- This should precede any '|' token which could be absorbed in a '||' token. This works in the same
+-- way as 'gt'.
+pipe :: { () }
+  : {- empty -}   {%% \(Spanned tok s) -> 
+      let s' = nudge 1 0 s; s'' = nudge 0 (-1) s
+      in case tok of
+           PipePipe -> pushToken (Spanned Pipe s') *> pushToken (Spanned Pipe s'')
+           _        -> pushToken (Spanned tok s)
+    }
+
 -------------
 -- Utility --
 -------------
@@ -1133,7 +1143,7 @@ lambda_expr_block :: { Expr Span }
 -- Lambda expression arguments block
 lambda_args :: { Spanned [Arg Span] }
   : '||'                                                { Spanned [] (spanOf $1) }
-  | '|' sep_byT(lambda_arg,',') '|'                     { Spanned $2 ($1 # $3) }
+  | '|' sep_byT(lambda_arg,',') pipe '|'                { Spanned $2 ($1 # $4) }
 
 
 -- Struct expression literal
