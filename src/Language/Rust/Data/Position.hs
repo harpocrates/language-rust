@@ -54,7 +54,7 @@ data Position = Position {
     col :: {-# UNPACK #-} !Int             -- ^ column in the source file.
   }
   | NoPosition
-  deriving (Eq, Show, Data, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Show, Data, Typeable, Generic, NFData)
 
 -- | Pretty print a 'Position'
 prettyPosition :: Position -> String
@@ -116,7 +116,7 @@ incOffset p@Position{ absoluteOffset = a } offset = p { absoluteOffset = a + off
 -- | Spans represent a contiguous region of code, delimited by two 'Position's. The endpoints are
 -- inclusive. Analogous to the information encoded in a selection.
 data Span = Span { lo, hi :: !Position }
-  deriving (Eq, Show, Data, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Show, Data, Typeable, Generic, NFData)
 
 -- | Check if a span is a subset of another span
 subsetOf :: Span -> Span -> Bool
@@ -145,7 +145,7 @@ prettySpan (Span lo' hi') = show lo' ++ " - " ++ show hi'
 
 -- | A "tagging" of something with a 'Span' that describes its extent.
 data Spanned a = Spanned a {-# UNPACK #-} !Span
-  deriving (Data, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Data, Typeable, Generic, NFData)
 
 -- | Extract the wrapped value from 'Spanned'
 {-# INLINE unspan #-}

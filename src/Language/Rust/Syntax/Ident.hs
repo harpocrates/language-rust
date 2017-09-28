@@ -40,6 +40,11 @@ instance Eq Ident where
   i1 == i2 = hash i1 == hash i2 && name i1 == name i2
   i1 /= i2 = hash i1 /= hash i2 || name i1 /= name i2
 
+instance Ord Ident where
+  compare i1 i2 = case compare i1 i2 of
+                    EQ -> compare (name i1) (name i2)
+                    rt -> rt
+
 instance Monoid Ident where
   Ident n1 _ `mappend` Ident n2 _ = mkIdent (n1 `mappend` n2)
   mempty = invalidIdent

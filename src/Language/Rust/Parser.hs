@@ -23,7 +23,7 @@ sourceFile :: SourceFile Span
 
 module Language.Rust.Parser (
   -- * Parsing
-  parse, parse', readSourceFile, readTokens, Parse(..), P, execParser, initPos, Span,
+  parse, parse', readSourceFile, readTokens, Parse(..), P, execParser, execParserTokens, initPos, Span,
   -- * Lexing
   lexToken, lexNonSpace, lexTokens, translateLit,
   -- * Input stream
@@ -38,10 +38,11 @@ import Language.Rust.Data.Position (Position, Span, Spanned, initPos, prettyPosi
 import Language.Rust.Parser.Internal
 import Language.Rust.Parser.Lexer (lexToken, lexNonSpace, lexTokens, lexicalError)
 import Language.Rust.Parser.Literals (translateLit)
-import Language.Rust.Parser.ParseMonad (P, execParser, parseError)
+import Language.Rust.Parser.ParseMonad (P, execParser, parseError, pushToken)
 
 import Data.Typeable (Typeable)
 import Control.Exception (Exception, throw) 
+import Data.Foldable (traverse_)
 
 -- | Parse something from an input stream (it is assumed the initial position is 'initPos')
 parse :: Parse a => InputStream -> Either (Position,String) a
@@ -54,6 +55,12 @@ parse' :: Parse a => InputStream -> a
 parse' is = case execParser parser is initPos of
               Left (pos, msg) -> throw (ParseFail pos msg)
               Right x -> x
+
+
+execParserTokens :: P a -> [Spanned Token] -> Position -> Either (Position,String) a
+execParserTokens p toks pos = execParser (pushTokens toks *> p) (inputStreamFromString "") pos
+  where pushTokens = traverse_ pushToken . reverse
+
 
 -- | Given a path pointing to a Rust source file, read that file and parse it into a 'SourceFile'
 readSourceFile :: FilePath -> IO (SourceFile Span)
@@ -78,23 +85,57 @@ instance Exception ParseFail
 
 -- | Describes things that can be parsed
 class Parse a where
+  -- | Complete parser (fails if not all of the input is consumed)
   parser :: P a
 
-instance Parse (Lit Span) where parser = parseLit
-instance Parse (Attribute Span) where parser = parseAttr
-instance Parse (Ty Span) where parser = parseTy 
-instance Parse (Pat Span) where parser = parsePat
-instance Parse (Expr Span) where parser = parseExpr
-instance Parse (Stmt Span) where parser = parseStmt
-instance Parse (Item Span) where parser = parseItem
-instance Parse (SourceFile Span) where parser = parseSourceFile
-instance Parse TokenTree where parser = parseTt
-instance Parse TokenStream where parser = parseTokenStream
-instance Parse (Block Span) where parser = parseBlock
-instance Parse (ImplItem Span) where parser = parseImplItem 
-instance Parse (TraitItem Span) where parser = parseTraitItem
-instance Parse (TyParam Span) where parser = parseTyParam
-instance Parse (LifetimeDef Span) where parser = parseLifetimeDef
-instance Parse (Generics Span) where parser = parseGenerics
-instance Parse (WhereClause Span) where parser = parseWhereClause
+instance Parse (Lit Span) where
+  parser = parseLit
+
+instance Parse (Attribute Span) where
+  parser = parseAttr
+
+instance Parse (Ty Span) where
+  parser = parseTy 
+
+instance Parse (Pat Span) where
+  parser = parsePat
+
+instance Parse (Expr Span) where
+  parser = parseExpr
+
+instance Parse (Stmt Span) where
+  parser = parseStmt
+
+instance Parse (Item Span) where
+  parser = parseItem
+
+instance Parse (SourceFile Span) where
+  parser = parseSourceFile
+
+instance Parse TokenTree where
+  parser = parseTt
+
+instance Parse TokenStream where
+  parser = parseTokenStream
+
+instance Parse (Block Span) where
+  parser = parseBlock
+
+instance Parse (ImplItem Span) where
+  parser = parseImplItem 
+
+instance Parse (TraitItem Span) where
+  parser = parseTraitItem
+
+instance Parse (TyParam Span) where
+  parser = parseTyParam
+
+instance Parse (LifetimeDef Span) where
+  parser = parseLifetimeDef
+
+instance Parse (Generics Span) where
+  parser = parseGenerics
+
+instance Parse (WhereClause Span) where
+  parser = parseWhereClause
 

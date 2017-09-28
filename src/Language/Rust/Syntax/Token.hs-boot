@@ -15,6 +15,7 @@ data LitTok
 
 data Token
 instance Eq Token
+instance Ord Token
 instance Show Token
 instance Data Token
 -- instance Typeable Token
@@ -23,6 +24,7 @@ instance NFData Token
 
 data Delim
 instance Eq Delim
+instance Ord Delim
 instance Data Delim
 -- instance Typeable Delim
 instance Generic Delim
@@ -31,4 +33,6 @@ instance NFData Delim
 
 data Space
 instance NFData Space
+instance Eq Space
+instance Ord Space
 

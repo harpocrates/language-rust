@@ -99,14 +99,14 @@ data Token
   
   -- NOT PRODUCED IN TOKENIZATION!!
   | Interpolated (Nonterminal Span) -- ^ can be expanded into several tokens in macro-expansion
-  deriving (Eq, Data, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Data, Typeable, Generic, NFData)
 
 -- | Rust is whitespace independent. Short of providing space between tokens, whitespace is all the
 -- same to the parser.
 data Space
   = Whitespace  -- ^ usual white space: @[\\ \\t\\n\\f\\v\\r]+@
   | Comment     -- ^ comment (either inline or not)
-  deriving (Eq, Show, Enum, Bounded, Data, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Show, Enum, Bounded, Data, Typeable, Generic, NFData)
 
 -- | A delimiter token (@syntax::parse::token::DelimToken@)
 data Delim
@@ -114,7 +114,7 @@ data Delim
   | Bracket -- ^ square bracket: @[@ or @]@
   | Brace   -- ^ curly brace: @{@ or @}@
   | NoDelim -- ^ empty delimiter             -- TODO: BANISH! (or rather: distinguish DelimToken from Delim, as rustc does)
-  deriving (Eq, Enum, Bounded, Show, Data, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Enum, Bounded, Show, Data, Typeable, Generic, NFData)
 
 -- | A literal token (@syntax::parse::token::Lit@)
 data LitTok
@@ -126,7 +126,7 @@ data LitTok
   | StrRawTok Name !Int     -- ^ raw string literal and the number of @#@ marks around it
   | ByteStrTok Name         -- ^ byte string literal
   | ByteStrRawTok Name !Int -- ^ raw byte string literal and the number of @#@ marks around it
-  deriving (Eq, Show, Data, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Show, Data, Typeable, Generic, NFData)
 
 
 -- | Check whether a space is needed between two tokens to avoid confusion
