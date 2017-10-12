@@ -56,11 +56,9 @@ parse' is = case execParser parser is initPos of
               Left (pos, msg) -> throw (ParseFail pos msg)
               Right x -> x
 
-
 execParserTokens :: P a -> [Spanned Token] -> Position -> Either (Position,String) a
-execParserTokens p toks pos = execParser (pushTokens toks *> p) (inputStreamFromString "") pos
+execParserTokens p toks = execParser (pushTokens toks *> p) (inputStreamFromString "")
   where pushTokens = traverse_ pushToken . reverse
-
 
 -- | Given a path pointing to a Rust source file, read that file and parse it into a 'SourceFile'
 readSourceFile :: FilePath -> IO (SourceFile Span)

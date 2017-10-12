@@ -24,12 +24,18 @@ To get information about transition states and such, run
   [2]: https://doc.rust-lang.org/grammar.html
 -}
 {-# OPTIONS_HADDOCK hide, not-home #-}
-{-# LANGUAGE OverloadedStrings, OverloadedLists #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLists, PartialTypeSignatures #-}
 
 module Language.Rust.Parser.Internal (
+  -- * Complete parsers
   parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseSourceFile,
   parseBlock, parseImplItem, parseTraitItem, parseTt, parseTokenStream, parseTyParam,
-  parseGenerics, parseWhereClause, parseLifetimeDef
+  parseGenerics, parseWhereClause, parseLifetimeDef,
+  
+  -- * Partial parsers
+  parseLitP, parseAttrP, parseTyP, parsePatP, parseStmtP, parseExprP, parseItemP, parseSourceFileP,
+  parseBlockP, parseImplItemP, parseTraitItemP, parseTtP, parseTokenStreamP, parseTyParamP,
+  parseGenericsP, parseWhereClauseP, parseLifetimeDefP
 ) where
 
 import Language.Rust.Syntax
@@ -40,6 +46,7 @@ import Language.Rust.Parser.Literals (translateLit)
 import Language.Rust.Parser.Reversed
 
 import Data.Foldable (toList)
+import Data.List ((\\), isSubsequenceOf)
 import Data.List.NonEmpty (NonEmpty(..), (<|))
 import qualified Data.List.NonEmpty as N
 import Data.Semigroup ((<>))
@@ -50,7 +57,7 @@ import Text.Read (readMaybe)
 %name parseLit lit
 %name parseAttr export_attribute
 %name parseTy export_ty
-%name parsePat export_pat
+%name parsePat pat
 %name parseStmt stmt
 %name parseExpr expr
 %name parseItem mod_item
@@ -65,11 +72,32 @@ import Text.Read (readMaybe)
 %name parseWhereClause where_clause
 %name parseGenerics generics
 
-%tokentype { Spanned Token }
+-- we also document the partial parsers
+%partial parseLitP lit
+%partial parseAttrP export_attribute
+%partial parseTyP export_ty
+%partial parsePatP pat
+%partial parseStmtP stmt
+%partial parseExprP expr
+%partial parseItemP mod_item
+%partial parseSourceFileContentsP source_file
+%partial parseBlockP export_block
+%partial parseImplItemP impl_item
+%partial parseTraitItemP trait_item
+%partial parseTtP token_tree
+%partial parseTokenStreamP token_stream
+%partial parseTyParamP ty_param
+%partial parseLifetimeDefP lifetime_def
+%partial parseWhereClauseP where_clause
+%partial parseGenericsP generics
 
-%monad { P } { >>= } { return }
-%error { parseError }
+
+%tokentype { Spanned Token }
 %lexer { lexNonSpace >>= } { Spanned Eof _ }
+%monad { P } { >>= } { return }
+
+%errorhandlertype explist
+%error { expParseError }
 
 %expect 0
 
@@ -320,38 +348,48 @@ gt :: { () }
            _                   -> pushToken (Spanned tok s)
     }
 
+-- This should precede any '|' token which could be absorbed in a '||' token. This works in the same
+-- way as 'gt'.
+pipe :: { () }
+  : {- empty -}   {%% \(Spanned tok s) -> 
+      let s' = nudge 1 0 s; s'' = nudge 0 (-1) s
+      in case tok of
+           PipePipe -> pushToken (Spanned Pipe s') *> pushToken (Spanned Pipe s'')
+           _        -> pushToken (Spanned tok s)
+    }
+
 -------------
 -- Utility --
 -------------
 
 -- | One or more occurences of 'p'
-some(p) :: { Reversed NonEmpty a }
+some(p) :: { Reversed NonEmpty _ }
   : some(p) p          { let Reversed xs = $1 in Reversed ($2 <| xs) }
   | p                  { [$1] }
 
 -- | Zero or more occurences of 'p'
-many(p) :: { [a] }
+many(p) :: { [_] }
   : some(p)            { toList $1 }
   | {- empty -}        { [] }
 
 -- | One or more occurences of 'p', seperated by 'sep'
-sep_by1(p,sep) :: { Reversed NonEmpty a }
+sep_by1(p,sep) :: { Reversed NonEmpty _ }
   : sep_by1(p,sep) sep p  { let Reversed xs = $1 in Reversed ($3 <| xs) }
   | p                     { [$1] }
 
 -- | Zero or more occurrences of 'p', separated by 'sep'
-sep_by(p,sep) :: { [a] }
+sep_by(p,sep) :: { [ _ ] }
   : sep_by1(p,sep)     { toList $1 }
   | {- empty -}        { [] }
 
 -- | One or more occurrences of 'p', seperated by 'sep', optionally ending in 'sep'
-sep_by1T(p,sep) :: { Reversed NonEmpty a }
+sep_by1T(p,sep) :: { Reversed NonEmpty _ }
   : sep_by1(p,sep) sep { $1 }
   | sep_by1(p,sep)     { $1 }
 
 -- | Zero or more occurences of 'p', seperated by 'sep', optionally ending in 'sep' (only if there
 -- is at least one 'p')
-sep_byT(p,sep) :: { [a] }
+sep_byT(p,sep) :: { [ _ ] }
   : sep_by1T(p,sep)    { toList $1 }
   | {- empty -}        { [] }
 
@@ -361,7 +399,7 @@ sep_byT(p,sep) :: { [a] }
 --------------------------
 
 -- shebang is dealt with at the top level, outside Happy/Alex
-source_file :: { ([Attribute a],[Item a]) }
+source_file :: { ([Attribute Span],[Item Span]) }
   : inner_attrs many(mod_item)   { (toList $1, $2) }
   |             many(mod_item)   { ([],        $1) }
 
@@ -634,6 +672,42 @@ ty_param_bound_mod :: { TyParamBound Span }
   : ty_param_bound       { $1 }
   | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe ($1 # $2) }
 
+-- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
+abi :: { Abi }
+  : str             {% case unspan $1 of
+                         (LiteralTok (StrTok s) Nothing) -> maybe (parseError $1 {- "invalid ABI" -}) pure (readMaybe s)
+                         _ -> parseError $1 {- "invalid ABI" -}
+                    }
+  | {- empty -}     { C }
+
+-- parse_ret_ty
+-- Note that impl traits are still at RFC stage - they may eventually become accepted in more places
+-- than just return types.
+ret_ty :: { Maybe (Ty Span) }
+  : '->' ty_no_plus                                  { Just $2 }
+  | '->' impl_ty                                     { Just $2 }
+  | {- empty -}                                      { Nothing }
+
+-- parse_poly_trait_ref()
+poly_trait_ref :: { PolyTraitRef Span }
+  :         trait_ref                                { PolyTraitRef [] $1 (spanOf $1) }
+  | for_lts trait_ref                                { PolyTraitRef (unspan $1) $2 ($1 # $2) }
+
+-- parse_for_lts()
+-- Unlike the Rust libsyntax version, this _requires_ the 'for'
+for_lts :: { Spanned [LifetimeDef Span] }
+  : for '<' sep_byT(lifetime_def,',') '>'            { Spanned $3 ($1 # $>) }
+
+-- Definition of a lifetime: attributes can come before the lifetime, and a list of bounding
+-- lifetimes can come after the lifetime.
+lifetime_def :: { LifetimeDef Span }
+  : many(outer_attribute) lifetime ':' sep_by1T(lifetime,'+')  { LifetimeDef $1 $2 (toList $4) ($1 # $2 # $>) }
+  | many(outer_attribute) lifetime                             { LifetimeDef $1 $2 [] ($1 # $2 # $>) }
+
+
+---------------
+-- Arguments --
+---------------
 
 -- Argument (requires a name / pattern, ie. @parse_arg_general(true)@)
 arg_named :: { Arg Span }
@@ -678,38 +752,11 @@ arg_self_named :: { Arg Span }
   |     self ':' ty       { SelfExplicit $3 Immutable ($1 # $>) }
   | mut self ':' ty       { SelfExplicit $4 Mutable ($1 # $>) }
 
-
--- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
-abi :: { Abi }
-  : str             {% case unspan $1 of
-                         (LiteralTok (StrTok s) Nothing) -> maybe (parseError $1 {- "invalid ABI" -}) pure (readMaybe s)
-                         _ -> parseError $1 {- "invalid ABI" -}
-                    }
-  | {- empty -}     { C }
-
--- parse_ret_ty
--- Note that impl traits are still at RFC stage - they may eventually become accepted in more places
--- than just return types.
-ret_ty :: { Maybe (Ty Span) }
-  : '->' ty_no_plus                                  { Just $2 }
-  | '->' impl_ty                                     { Just $2 }
-  | {- empty -}                                      { Nothing }
-
--- parse_poly_trait_ref()
-poly_trait_ref :: { PolyTraitRef Span }
-  :         trait_ref                                { PolyTraitRef [] $1 (spanOf $1) }
-  | for_lts trait_ref                                { PolyTraitRef (unspan $1) $2 ($1 # $2) }
-
--- parse_for_lts()
--- Unlike the Rust libsyntax version, this _requires_ the 'for'
-for_lts :: { Spanned [LifetimeDef Span] }
-  : for '<' sep_byT(lifetime_def,',') '>'            { Spanned $3 ($1 # $>) }
-
--- Definition of a lifetime: attributes can come before the lifetime, and a list of bounding
--- lifetimes can come after the lifetime.
-lifetime_def :: { LifetimeDef Span }
-  : many(outer_attribute) lifetime ':' sep_by1T(lifetime,'+')  { LifetimeDef $1 $2 (toList $4) ($1 # $2 # $>) }
-  | many(outer_attribute) lifetime                             { LifetimeDef $1 $2 [] ($1 # $2 # $>) }
+-- Lambda expression argument
+lambda_arg :: { Arg Span }
+  : ntArg                         { $1 }
+  | pat ':' ty                    { Arg (Just $1) $3 ($1 # $3) }
+  | pat                           { Arg (Just $1) (Infer mempty) (spanOf $1) }
 
 
 --------------
@@ -839,20 +886,6 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | expr_mac                         { MacExpr [] $1 (spanOf $1) }
   | expr_path            %prec PATH  { PathExpr [] Nothing $1 (spanOf $1) }
   | expr_qual_path                   { PathExpr [] (Just (fst (unspan $1))) (snd (unspan $1)) (spanOf $1) }
-  -- postfix expressions
-  | lhs '?'                          { Try [] $1 ($1 # $>) }
-  | lhs '[' expr ']'                 { Index [] $1 $3 ($1 # $>) }
-  | lhs '(' sep_byT(expr,',') ')'    { Call [] $1 $3 ($1 # $>) }
-  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
-  | lhs '.' ident '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
-  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
-  | lhs '.' int                      {%
-      case lit $3 of
-        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
-        _ -> parseError $3
-    }
   -- unary expressions
   | '*'      rhs     %prec UNARY     { Unary [] Deref $2 ($1 # $>) }
   | '!'      rhs     %prec UNARY     { Unary [] Not $2 ($1 # $>) }
@@ -862,6 +895,34 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | '&&'     rhs     %prec UNARY     { AddrOf [] Immutable (AddrOf [] Immutable $2 (nudge 1 0 ($1 # $2))) ($1 # $2) }
   | '&&' mut rhs     %prec UNARY     { AddrOf [] Immutable (AddrOf [] Mutable $3 (nudge 1 0 ($1 # $3))) ($1 # $3) }
   | box rhs          %prec UNARY     { Box [] $2 ($1 # $>) }
+  -- left-recursive
+  | left_gen_expression(lhs,rhs,rhs2) { $1 }
+  -- range expressions
+  |     '..'  rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) HalfOpen ($1 # $2) }
+  |     '...' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) Closed ($1 # $2) }
+  |     '..'        %prec SINGLERNG  { Range [] Nothing Nothing HalfOpen (spanOf $1) }
+  |     '...'       %prec SINGLERNG  { Range [] Nothing Nothing Closed (spanOf $1) }
+  -- low precedence prefix expressions
+  | return                           { Ret [] Nothing (spanOf $1) }
+  | return rhs                       { Ret [] (Just $2) ($1 # $2) }
+  | continue                         { Continue [] Nothing (spanOf $1) }
+  | continue lifetime                { Continue [] (Just $2) ($1 # $2) }
+  | break                            { Break [] Nothing Nothing (spanOf $1) }
+  | break          rhs               { Break [] Nothing (Just $2) ($1 # $2) }
+  | break lifetime                   { Break [] (Just $2) Nothing ($1 # $2) }
+  | break lifetime rhs   %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
+  -- lambda expressions
+  | move lambda_args rhs   %prec LAMBDA
+    { Closure [] Value (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
+  |      lambda_args rhs   %prec LAMBDA
+    { Closure [] Ref   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $>) }
+
+-- Variant of 'gen_expression' which only constructs expressions starting with another expression.
+left_gen_expression(lhs,rhs,rhs2) :: { Expr Span }
+  : postfix_blockexpr(lhs)           { $1 }
+  | lhs '[' expr ']'                 { Index [] $1 $3 ($1 # $>) }
+  | lhs '(' sep_byT(expr,',') ')'    { Call [] $1 $3 ($1 # $>) }
+  -- unary expressions
   | lhs ':' ty_no_plus               { TypeAscription [] $1 $3 ($1 # $>) }
   | lhs as ty_no_plus                { Cast [] $1 $3 ($1 # $>) }
   -- binary expressions
@@ -884,14 +945,10 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | lhs '&&' rhs                     { Binary [] AndOp $1 $3 ($1 # $>) }
   | lhs '||' rhs                     { Binary [] OrOp $1 $3 ($1 # $>) }
   -- range expressions
-  |     '..'  rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) HalfOpen ($1 # $2) }
-  |     '...' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) Closed ($1 # $2) }
   | lhs '..'        %prec POSTFIXRNG { Range [] (Just $1) Nothing HalfOpen ($1 # $>) }
   | lhs '...'       %prec POSTFIXRNG { Range [] (Just $1) Nothing Closed ($1 # $>) }
   | lhs '..'  rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) HalfOpen ($1 # $>) }
   | lhs '...' rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
-  |     '..'        %prec SINGLERNG  { Range [] Nothing Nothing HalfOpen (spanOf $1) }
-  |     '...'       %prec SINGLERNG  { Range [] Nothing Nothing Closed (spanOf $1) }
   -- assignment expressions
   | lhs '<-' rhs                     { InPlace [] $1 $3 ($1 # $>) }
   | lhs '=' rhs                      { Assign [] $1 $3 ($1 # $>) }
@@ -905,20 +962,42 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | lhs '|=' rhs                     { AssignOp [] BitOrOp $1 $3 ($1 # $>) }
   | lhs '&=' rhs                     { AssignOp [] BitAndOp $1 $3 ($1 # $>) }
   | lhs '%=' rhs                     { AssignOp [] RemOp $1 $3 ($1 # $>) }
-  -- low precedence prefix expressions
-  | return                           { Ret [] Nothing (spanOf $1) }
-  | return rhs                       { Ret [] (Just $2) ($1 # $2) }
-  | continue                         { Continue [] Nothing (spanOf $1) }
-  | continue lifetime                { Continue [] (Just $2) ($1 # $2) }
-  | break                            { Break [] Nothing Nothing (spanOf $1) }
-  | break          rhs               { Break [] Nothing (Just $2) ($1 # $2) }
-  | break lifetime                   { Break [] (Just $2) Nothing ($1 # $2) }
-  | break lifetime rhs   %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
-  -- lambda expressions
-  | move lambda_args rhs   %prec LAMBDA
-    { Closure [] Value (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
-  |      lambda_args rhs   %prec LAMBDA
-    { Closure [] Ref   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $>) }
+
+-- Postfix expressions that can come after an expression block, in a 'stmt'
+--
+--  * `{ 1 }[0]` isn't here because it is treated as `{ 1 }; [0]`
+--  * `{ 1 }(0)` isn't here because it is treated as `{ 1 }; (0)`
+--
+postfix_blockexpr(lhs) :: { Expr Span }
+  : lhs '?'                          { Try [] $1 ($1 # $>) }
+  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
+  | lhs '.' ident '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
+  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
+  | lhs '.' int                      {%
+      case lit $3 of
+        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
+        _ -> parseError $3
+    }
+
+-- Postfix expressions that can come after an expression block, in a 'stmt'
+--
+--  * `{ 1 }[0]` isn't here because it is treated as `{ 1 }; [0]`
+--  * `{ 1 }(0)` isn't here because it is treated as `{ 1 }; (0)`
+--
+postfix_blockexpr(lhs) :: { Expr Span }
+  : lhs '?'                          { Try [] $1 ($1 # $>) }
+  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
+  | lhs '.' ident '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
+  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
+    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
+  | lhs '.' int                      {%
+      case lit $3 of
+        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
+        _ -> parseError $3
+    }
 
 -- Postfix expressions that can come after an expression block, in a 'stmt'
 --
@@ -953,6 +1032,9 @@ postfix_blockexpr(lhs) :: { Expr Span }
 --                          not allowed, while struct expressions are - their "block" is at the end
 --                          of the expression)
 --
+--   ['blockpostfix_expr']  Allows expressions starting with blocks (things such as '{ 1 }? + 1')
+--                          but only when the leading block is itself a postfix expression.
+--
 -- There is also a later instantiation revolving around 'match' expressions, but it has some
 -- different types.
 
@@ -980,6 +1062,11 @@ nonblock_expr :: { Expr Span }
   | paren_expr                                                                { $1 }
   | struct_expr                                                               { $1 }
   | lambda_expr_block                                                         { $1 }
+
+blockpostfix_expr :: { Expr Span }
+  : postfix_blockexpr(block_like_expr)                                        { $1 }
+  | postfix_blockexpr(vis_safety_block)                                       { $1 }
+  | left_gen_expression(blockpostfix_expr,expr,expr)                          { $1 } 
 
 
 -- Finally, what remains is the more mundane definitions of particular types of expressions.
@@ -1029,8 +1116,10 @@ else_expr :: { Maybe (Expr Span) }
 arms :: { [Arm Span] }
   : ntArm                                               { [$1] }
   | ntArm arms                                          { $1 : $2 }
-  | many(outer_attribute) sep_by1(pat,'|') arm_guard '=>' expr_arms
+  | many(outer_attribute)     sep_by1(pat,'|') arm_guard '=>' expr_arms
     { let (e,as) = $> in (Arm $1 (toNonEmpty $2) $3 e ($1 # $2 # e) : as) }
+  | many(outer_attribute) '|' sep_by1(pat,'|') arm_guard '=>' expr_arms
+    { let (e,as) = $> in (Arm $1 (toNonEmpty $3) $4 e ($1 # $2 # e) : as) }
 
 arm_guard :: { Maybe (Expr Span) }
   : {- empty -}  { Nothing }
@@ -1074,13 +1163,7 @@ lambda_expr_block :: { Expr Span }
 -- Lambda expression arguments block
 lambda_args :: { Spanned [Arg Span] }
   : '||'                                                { Spanned [] (spanOf $1) }
-  | '|' sep_byT(lambda_arg,',') '|'                     { Spanned $2 ($1 # $3) }
-
--- Lambda expression argument
-lambda_arg :: { Arg Span }
-  : ntArg                         { $1 }
-  | pat ':' ty                    { Arg (Just $1) $3 ($1 # $3) }
-  | pat                           { Arg (Just $1) (Infer mempty) (spanOf $1) }
+  | '|' sep_byT(lambda_arg,',') pipe '|'                { Spanned $2 ($1 # $4) }
 
 
 -- Struct expression literal
@@ -1096,75 +1179,7 @@ field :: { Field Span }
   : ident ':' expr  { Field (unspan $1) (Just $3) ($1 # $3) }
   | ident           { Field (unspan $1) Nothing (spanOf $1) }
 
-
-----------------
--- Statements --
-----------------
-
-gen_expression_block(lhs,rhs,rhs2) :: { Expr Span }
-  : lhs '?'                          { Try [] $1 ($1 # $>) }
-  | lhs '[' expr ']'                 { Index [] $1 $3 ($1 # $>) }
-  | lhs '(' sep_byT(expr,',') ')'    { Call [] $1 $3 ($1 # $>) }
-  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
-  | lhs '.' ident '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
-  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
-  | lhs '.' int                      {%
-      case lit $3 of
-        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
-        _ -> parseError $3
-    }
-  -- unary expressions
-  | lhs ':' ty_no_plus               { TypeAscription [] $1 $3 ($1 # $>) }
-  | lhs as ty_no_plus                { Cast [] $1 $3 ($1 # $>) }
-  -- binary expressions
-  | lhs '*' rhs                      { Binary [] MulOp $1 $3 ($1 # $>) }
-  | lhs '/' rhs                      { Binary [] DivOp $1 $3 ($1 # $>) }
-  | lhs '%' rhs                      { Binary [] RemOp $1 $3 ($1 # $>) }
-  | lhs '+' rhs                      { Binary [] AddOp $1 $3 ($1 # $>) }
-  | lhs '-' rhs                      { Binary [] SubOp $1 $3 ($1 # $>) }
-  | lhs '<<' rhs                     { Binary [] ShlOp $1 $3 ($1 # $>) }
-  | lhs '>>' rhs                     { Binary [] ShrOp $1 $3 ($1 # $>) }
-  | lhs '&' rhs                      { Binary [] BitAndOp $1 $3 ($1 # $>) }
-  | lhs '^' rhs                      { Binary [] BitXorOp $1 $3 ($1 # $>) }
-  | lhs '|' rhs                      { Binary [] BitOrOp $1 $3 ($1 # $>) }
-  | lhs '==' rhs                     { Binary [] EqOp $1 $3 ($1 # $>) }
-  | lhs '!=' rhs                     { Binary [] NeOp $1 $3 ($1 # $>) }
-  | lhs '<'  rhs                     { Binary [] LtOp $1 $3 ($1 # $>) }
-  | lhs '>'  rhs                     { Binary [] GtOp $1 $3 ($1 # $>) }
-  | lhs '<=' rhs                     { Binary [] LeOp $1 $3 ($1 # $>) }
-  | lhs '>=' rhs                     { Binary [] GeOp $1 $3 ($1 # $>) }
-  | lhs '&&' rhs                     { Binary [] AndOp $1 $3 ($1 # $>) }
-  | lhs '||' rhs                     { Binary [] OrOp $1 $3 ($1 # $>) }
-  -- range expressions
-  | lhs '..'        %prec POSTFIXRNG { Range [] (Just $1) Nothing HalfOpen ($1 # $>) }
-  | lhs '...'       %prec POSTFIXRNG { Range [] (Just $1) Nothing Closed ($1 # $>) }
-  | lhs '..'  rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) HalfOpen ($1 # $>) }
-  | lhs '...' rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
-  -- assignment expressions
-  | lhs '<-' rhs                     { InPlace [] $1 $3 ($1 # $>) }
-  | lhs '=' rhs                      { Assign [] $1 $3 ($1 # $>) }
-  | lhs '>>=' rhs                    { AssignOp [] ShrOp $1 $3 ($1 # $>) }
-  | lhs '<<=' rhs                    { AssignOp [] ShlOp $1 $3 ($1 # $>) }
-  | lhs '-=' rhs                     { AssignOp [] SubOp $1 $3 ($1 # $>) }
-  | lhs '+=' rhs                     { AssignOp [] AddOp $1 $3 ($1 # $>) }
-  | lhs '*=' rhs                     { AssignOp [] MulOp $1 $3 ($1 # $>) }
-  | lhs '/=' rhs                     { AssignOp [] DivOp $1 $3 ($1 # $>) }
-  | lhs '^=' rhs                     { AssignOp [] BitXorOp $1 $3 ($1 # $>) }
-  | lhs '|=' rhs                     { AssignOp [] BitOrOp $1 $3 ($1 # $>) }
-  | lhs '&=' rhs                     { AssignOp [] BitAndOp $1 $3 ($1 # $>) }
-  | lhs '%=' rhs                     { AssignOp [] RemOp $1 $3 ($1 # $>) }
-
---
---   ['blockpostfix_expr']  Allows expressions starting with blocks (things such as '{ 1 }? + 1')
---                          but only when the leading block is itself a postfix expression.
---
-blockpostfix_expr :: { Expr Span }
-  : postfix_blockexpr(block_like_expr)                         { $1 }
-  | postfix_blockexpr(vis_safety_block)                        { $1 }
-  | gen_expression_block(blockpostfix_expr,expr,expr)          { $1 } 
-
+-- an expression block that won't cause conflicts with stmts
 vis_safety_block :: { Expr Span }
   : pub_or_inherited safety inner_attrs_block {%
        let (as, Block ss r x) = $3
@@ -1172,20 +1187,20 @@ vis_safety_block :: { Expr Span }
        in noVis $1 e
     }
 
-
-{-
--- TODO: Just uncommenting these rules (without using them anywhere), causes everything to start
-failing, but moving them to the top of the file causes everything to start working again...
-
+-- an expression starting with 'union' (as an identifier) that won't cause conflicts with stmts
 vis_union_nonblock_expr :: { Expr Span }
   : union_expr                                                { $1 }
-  | gen_expression_block(vis_union_nonblock_expr, expr, expr) { $1 }
+  | left_gen_expression(vis_union_nonblock_expr, expr, expr) { $1 }
 
 union_expr :: { Expr Span }
   : pub_or_inherited union         {%
       noVis $1 (PathExpr [] Nothing (Path False [("union", NoParameters mempty)] (spanOf $1)) (spanOf $1))
     }
--}
+
+
+----------------
+-- Statements --
+----------------
 
 stmt :: { Stmt Span }
   : ntStmt                                                 { $1 }
@@ -1194,7 +1209,7 @@ stmt :: { Stmt Span }
   | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
   | many(outer_attribute) block_like_expr ';'              { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
   | many(outer_attribute) blockpostfix_expr ';'            { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
---  | many(outer_attribute) vis_union_nonblock_expr ';'      { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) } 
+  | many(outer_attribute) vis_union_nonblock_expr ';'      { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) } 
   | many(outer_attribute) block_like_expr    %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
   | many(outer_attribute) vis_safety_block ';'             { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
   | many(outer_attribute) vis_safety_block   %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }
@@ -1639,10 +1654,6 @@ export_block :: { Block Span }
   | safety '{' '}'                                         { Block [] (unspan $1) ($1 # $2 # $>) }
   | safety '{' stmts_possibly_no_semi '}'                  { Block [ s | Just s <- $3 ] (unspan $1) ($1 # $2 # $>) }
 
--- Exporting 'pat' directly screws up expressions like 'x && y()'
-export_pat :: { Pat Span }
-  : pat                                                    { $1 }
-
 -- Any type, including trait types with plus and impl trait types
 export_ty :: { Ty Span }
   : ty                               { $1 }
@@ -1698,6 +1709,44 @@ parseWhereClause :: P (WhereClause Span)
 -- | Parser for generics (although 'WhereClause' is always empty here)
 parseGenerics :: P (Generics Span)
 
+-- | Generate a nice looking error message based on expected tokens
+expParseError :: (Spanned Token, [String]) -> P a
+expParseError (Spanned t _, exps) = fail $ "Syntax error: unexpected `" ++ show t ++ "'" ++
+    case go exps [] replacements of
+      []       -> ""
+      [s]      -> " (expected " ++ s ++ ")"
+      [s2,s1]  -> " (expected " ++ s1 ++ " or " ++ s2 ++ ")"
+      (s : ss) -> " (expected " ++ (reverse ss >>= (++ ", ")) ++ "or " ++ s ++ ")"
+  where
+
+  go []     msgs _ = msgs
+  go (e:es) msgs rs | e `elem` ignore = go es msgs rs
+  go (e:es) msgs [] = go es (e : msgs) []
+  go es     msgs ((rep,msg):rs)
+    | rep `isSubsequenceOf` es = go (es \\ rep) (msg : msgs) rs
+    | otherwise = go es msgs rs
+
+  ignore = words "ntItem ntBlock ntStmt ntPat ntExpr ntTy ntIdent ntPath ntTT\
+                  ntArm ntImplItem ntTraitItem ntGenerics ntWhereClause ntArg ntLit"
+
+  replacements =
+    [ (words "byte char int float str byteStr rawStr rawByteStr", "a literal"       )
+    , (words "byte",                                              "a byte"          )
+    , (words "char",                                              "a character"     )
+    , (words "int",                                               "an int"          )
+    , (words "float",                                             "a float"         )
+    , (words "str",                                               "a string"        )
+    , (words "byteStr",                                           "a byte string"   )
+    , (words "rawStr",                                            "a raw string"    )
+    , (words "rawByteStr",                                        "a raw bytestring")
+    
+    , (words "outerDoc innerDoc",                                 "a doc"           )
+    , (words "outerDoc",                                          "an outer doc"    )
+    , (words "innerDoc",                                          "an inner doc"    )
+
+    , (words "IDENT",                                             "an identifier"   )
+    , (words "LIFETIME",                                          "a lifetime"      )
+    ]
 
 -- | Convert an 'IdentTok' into an 'Ident'
 toIdent :: Spanned Token -> Spanned Ident
@@ -1803,6 +1852,13 @@ parseSourceFile :: P (SourceFile Span)
 parseSourceFile = do
   sh <- lexShebangLine
   (as,items) <- parseSourceFileContents
+  pure (SourceFile sh as items)
+
+-- | Parse a partial source file
+parseSourceFileP :: P (SourceFile Span)
+parseSourceFileP = do
+  sh <- lexShebangLine
+  (as,items) <- parseSourceFileContentsP
   pure (SourceFile sh as items)
 
 -- | Nudge the span endpoints of a 'Span' value
