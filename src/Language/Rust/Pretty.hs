@@ -47,16 +47,20 @@ import Data.Typeable (Typeable)
 writeSourceFile :: (Monoid a, Typeable a) => Handle -> SourceFile a -> IO ()
 writeSourceFile hdl = renderIO hdl . PP.layoutPretty (PP.LayoutOptions (PP.AvailablePerLine 100 1.0)) . pretty
 
+-- | Resolve and pretty print. When in doubt, this is probably the function you want to use for
+-- pretty-printing.
 pretty :: (Resolve a, Pretty a) => a -> Doc b
 pretty x = case resolve x of
              Left desc -> error ("Failed to resolve: " ++ desc)
              Right y -> prettyUnresolved y
 
+-- | Resolve and pretty print with annotations.
 prettyAnnotated :: (Resolve (f a), PrettyAnnotated f) => f a -> Doc a
 prettyAnnotated x = case resolve x of
                       Left desc -> error ("Failed to resolve: " ++ desc)
                       Right y -> prettyAnnUnresolved y
 
+-- | Represents things that can be pretty printed
 class Pretty a where
   -- | Pretty-print the given value
   prettyUnresolved :: a -> Doc b

@@ -1,4 +1,4 @@
-# NOTE: `language-rust` is complete, but still undergoing testing! [![Build Status][4]][5]
+# Parser and pretty printer for the Rust language [![Build Status][4]][5]
 
 `language-rust` aspires to efficiently and accurately parse and pretty-print the [Rust language][0].
 The underlying AST structures are also intended to be as similar as possible to the AST `rustc` uses

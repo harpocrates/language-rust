@@ -27,30 +27,26 @@ To get information about transition states and such, run
 {-# LANGUAGE OverloadedStrings, OverloadedLists, PartialTypeSignatures #-}
 
 module Language.Rust.Parser.Internal (
-  -- * Complete parsers
+  -- * Parsers
   parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseSourceFile,
   parseBlock, parseImplItem, parseTraitItem, parseTt, parseTokenStream, parseTyParam,
   parseGenerics, parseWhereClause, parseLifetimeDef,
-  
-  -- * Partial parsers
-  parseLitP, parseAttrP, parseTyP, parsePatP, parseStmtP, parseExprP, parseItemP, parseSourceFileP,
-  parseBlockP, parseImplItemP, parseTraitItemP, parseTtP, parseTokenStreamP, parseTyParamP,
-  parseGenericsP, parseWhereClauseP, parseLifetimeDefP
 ) where
 
 import Language.Rust.Syntax
 import Language.Rust.Data.Position
-import Language.Rust.Parser.Lexer (lexNonSpace, lexShebangLine)
-import Language.Rust.Parser.ParseMonad (pushToken, getPosition, P, parseError)
-import Language.Rust.Parser.Literals (translateLit)
+import Language.Rust.Parser.Lexer      ( lexNonSpace, lexShebangLine )
+import Language.Rust.Parser.ParseMonad ( pushToken, getPosition, P, parseError )
+import Language.Rust.Parser.Literals   ( translateLit )
 import Language.Rust.Parser.Reversed
 
-import Data.Foldable (toList)
-import Data.List ((\\), isSubsequenceOf)
-import Data.List.NonEmpty (NonEmpty(..), (<|))
+import Data.Foldable                   ( toList )
+import Data.List                       ( (\\), isSubsequenceOf )
+import Text.Read                       ( readMaybe )
+import Data.Semigroup                  ( (<>) )
+
+import Data.List.NonEmpty              ( NonEmpty(..), (<|) )
 import qualified Data.List.NonEmpty as N
-import Data.Semigroup ((<>))
-import Text.Read (readMaybe)
 }
 
 -- in order to document the parsers, we have to alias them
@@ -63,7 +59,7 @@ import Text.Read (readMaybe)
 %name parseItem mod_item
 %name parseSourceFileContents source_file
 %name parseBlock export_block
-%name parseImplItem impl_item
+%name parseImplItem  impl_item
 %name parseTraitItem trait_item
 %name parseTt token_tree
 %name parseTokenStream token_stream
@@ -71,26 +67,6 @@ import Text.Read (readMaybe)
 %name parseLifetimeDef lifetime_def
 %name parseWhereClause where_clause
 %name parseGenerics generics
-
--- we also document the partial parsers
-%partial parseLitP lit
-%partial parseAttrP export_attribute
-%partial parseTyP export_ty
-%partial parsePatP pat
-%partial parseStmtP stmt
-%partial parseExprP expr
-%partial parseItemP mod_item
-%partial parseSourceFileContentsP source_file
-%partial parseBlockP export_block
-%partial parseImplItemP impl_item
-%partial parseTraitItemP trait_item
-%partial parseTtP token_tree
-%partial parseTokenStreamP token_stream
-%partial parseTyParamP ty_param
-%partial parseLifetimeDefP lifetime_def
-%partial parseWhereClauseP where_clause
-%partial parseGenericsP generics
-
 
 %tokentype { Spanned Token }
 %lexer { lexNonSpace >>= } { Spanned Eof _ }
@@ -340,22 +316,22 @@ ident :: { Spanned Ident }
 -- lexers to discard what would have been the troublesome '>>', '>=', or '>>=' token.
 gt :: { () }
   : {- empty -}   {%% \(Spanned tok s) ->
-      let s' = nudge 1 0 s; s'' = nudge 0 (-1) s
-      in case tok of
-           GreaterGreater      -> pushToken (Spanned Greater s')      *> pushToken (Spanned Greater s'')
-           GreaterEqual        -> pushToken (Spanned Equal s')        *> pushToken (Spanned Greater s'')
-           GreaterGreaterEqual -> pushToken (Spanned GreaterEqual s') *> pushToken (Spanned Greater s'')
-           _                   -> pushToken (Spanned tok s)
+      let s' = nudge 1 0 s; s'' = nudge 0 (-1) s in
+      case tok of
+        GreaterGreater      -> pushToken (Spanned Greater s')      *> pushToken (Spanned Greater s'')
+        GreaterEqual        -> pushToken (Spanned Equal s')        *> pushToken (Spanned Greater s'')
+        GreaterGreaterEqual -> pushToken (Spanned GreaterEqual s') *> pushToken (Spanned Greater s'')
+        _                   -> pushToken (Spanned tok s)
     }
 
 -- This should precede any '|' token which could be absorbed in a '||' token. This works in the same
 -- way as 'gt'.
 pipe :: { () }
   : {- empty -}   {%% \(Spanned tok s) -> 
-      let s' = nudge 1 0 s; s'' = nudge 0 (-1) s
-      in case tok of
-           PipePipe -> pushToken (Spanned Pipe s') *> pushToken (Spanned Pipe s'')
-           _        -> pushToken (Spanned tok s)
+      let s' = nudge 1 0 s; s'' = nudge 0 (-1) s in
+      case tok of
+        PipePipe -> pushToken (Spanned Pipe s') *> pushToken (Spanned Pipe s'')
+        _        -> pushToken (Spanned tok s)
     }
 
 -------------
@@ -364,13 +340,13 @@ pipe :: { () }
 
 -- | One or more occurences of 'p'
 some(p) :: { Reversed NonEmpty _ }
-  : some(p) p          { let Reversed xs = $1 in Reversed ($2 <| xs) }
-  | p                  { [$1] }
+  : some(p) p             { let Reversed xs = $1 in Reversed ($2 <| xs) }
+  | p                     { [$1] }
 
 -- | Zero or more occurences of 'p'
-many(p) :: { [_] }
-  : some(p)            { toList $1 }
-  | {- empty -}        { [] }
+many(p) :: { [ _ ] }
+  : some(p)               { toList $1 }
+  | {- empty -}           { [] }
 
 -- | One or more occurences of 'p', seperated by 'sep'
 sep_by1(p,sep) :: { Reversed NonEmpty _ }
@@ -379,19 +355,19 @@ sep_by1(p,sep) :: { Reversed NonEmpty _ }
 
 -- | Zero or more occurrences of 'p', separated by 'sep'
 sep_by(p,sep) :: { [ _ ] }
-  : sep_by1(p,sep)     { toList $1 }
-  | {- empty -}        { [] }
+  : sep_by1(p,sep)        { toList $1 }
+  | {- empty -}           { [] }
 
 -- | One or more occurrences of 'p', seperated by 'sep', optionally ending in 'sep'
 sep_by1T(p,sep) :: { Reversed NonEmpty _ }
-  : sep_by1(p,sep) sep { $1 }
-  | sep_by1(p,sep)     { $1 }
+  : sep_by1(p,sep) sep    { $1 }
+  | sep_by1(p,sep)        { $1 }
 
 -- | Zero or more occurences of 'p', seperated by 'sep', optionally ending in 'sep' (only if there
 -- is at least one 'p')
 sep_byT(p,sep) :: { [ _ ] }
-  : sep_by1T(p,sep)    { toList $1 }
-  | {- empty -}        { [] }
+  : sep_by1T(p,sep)       { toList $1 }
+  | {- empty -}           { [] }
 
 
 --------------------------
@@ -419,8 +395,8 @@ inner_attribute :: { Attribute Span }
 
 -- TODO: for some precedence related reason, using 'some' here doesn't work
 inner_attrs :: { NonEmpty (Attribute Span) }
-  : inner_attrs inner_attribute  { $1 |> $2 }
-  | inner_attribute              { [$1] }
+  : inner_attrs inner_attribute               { $1 |> $2 }
+  | inner_attribute                           { [$1] }
 
 
 --------------
@@ -453,16 +429,16 @@ string :: { Lit Span }
 qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
   : '<' qual_path_suf(segs)                    { let Spanned x _ = $2 in Spanned x ($1 # $2) }
   | lt_ty_qual_path as ty_path '>' '::' segs   {
-      let Path g segsTy x = $3
-      in Spanned (QSelf (unspan $1) (length segsTy), Path g (segsTy <> unspan $6) x) ($1 # $>)
+      let Path g segsTy x = $3 in
+      Spanned (QSelf (unspan $1) (length segsTy), Path g (segsTy <> unspan $6) x) ($1 # $>)
     }
 
 -- Basically a qualified path, but ignoring the very first '<' token
 qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
   : ty '>' '::' segs                { Spanned (QSelf $1 0, Path False (unspan $4) (spanOf $4)) ($1 # $>) }
   | ty as ty_path '>' '::' segs     {
-      let Path g segsTy x = $3
-      in Spanned (QSelf $1 (length segsTy), Path g (segsTy <> unspan $6) x) ($1 # $>) 
+      let Path g segsTy x = $3 in
+      Spanned (QSelf $1 (length segsTy), Path g (segsTy <> unspan $6) x) ($1 # $>) 
     }
 
 -- Usually qual_path_suf is for... type paths! This consumes these but with a starting '<<' token.
@@ -547,8 +523,8 @@ mod_path :: { Path Span  }
   | self_or_ident        { Path False [(unspan $1, NoParameters mempty)] (spanOf $1) }
   | '::' self_or_ident   { Path True  [(unspan $2, NoParameters mempty)] ($1 # $>) }
   | mod_path '::' ident  {
-      let Path g segs _ = $1 
-      in Path g (segs |> (unspan $3, NoParameters mempty)) ($1 # $>)
+      let Path g segs _ = $1 in
+      Path g (segs |> (unspan $3, NoParameters mempty)) ($1 # $>)
     }
 
 -----------
@@ -624,8 +600,8 @@ for_ty_no_plus :: { Ty Span }
   | for_lts extern abi fn fn_decl(arg_general)        { BareFn Normal $3 (unspan $1) $> ($1 # $>) }
   | for_lts fn fn_decl(arg_general)                   { BareFn Normal Rust (unspan $1) $> ($1 # $>) }
   | for_lts trait_ref                                 {
-      let poly = PolyTraitRef (unspan $1) $2 ($1 # $2)
-      in TraitObject [TraitTyParamBound poly None ($1 # $2)] ($1 # $2)
+      let poly = PolyTraitRef (unspan $1) $2 ($1 # $2) in
+      TraitObject [TraitTyParamBound poly None ($1 # $2)] ($1 # $2)
     }
 
 impl_ty :: { Ty Span }
@@ -1852,13 +1828,6 @@ parseSourceFile :: P (SourceFile Span)
 parseSourceFile = do
   sh <- lexShebangLine
   (as,items) <- parseSourceFileContents
-  pure (SourceFile sh as items)
-
--- | Parse a partial source file
-parseSourceFileP :: P (SourceFile Span)
-parseSourceFileP = do
-  sh <- lexShebangLine
-  (as,items) <- parseSourceFileContentsP
   pure (SourceFile sh as items)
 
 -- | Nudge the span endpoints of a 'Span' value

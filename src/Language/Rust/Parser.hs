@@ -56,6 +56,7 @@ parse' is = case execParser parser is initPos of
               Left (pos, msg) -> throw (ParseFail pos msg)
               Right x -> x
 
+-- | Same as 'execParser', but working from a list of tokens instead of an 'InputStream'.
 execParserTokens :: P a -> [Spanned Token] -> Position -> Either (Position,String) a
 execParserTokens p toks = execParser (pushTokens toks *> p) (inputStreamFromString "")
   where pushTokens = traverse_ pushToken . reverse

@@ -25,7 +25,6 @@ neutral element for @<+>@, @hsep@, @<#>@, @vsep@, and @</>@.
 module Language.Rust.Pretty.Util where
 
 import Data.Monoid ((<>))
-import Data.List (mapAccumL)
 
 import qualified Data.Text.Prettyprint.Doc as PP
 import Data.Text.Prettyprint.Doc.Internal.Type (Doc(..))
@@ -156,8 +155,8 @@ block delim p s as xs = group' (lDel # PP.vsep (as' ++ ys) # rDel)
           _ -> [ PP.flatAlt (PP.indent n as) (flatten as) ]
 
   -- list of entries
-  ys = snd $ mapAccumL (\(z:zs) _ -> (zs, PP.flatAlt (PP.indent n z <> s)
-                                                     (flatten z <> unless (null zs) s)))
-                       xs xs
+  ys = go xs where go [] = []
+                   go [z] = [ PP.flatAlt (PP.indent n z <> s) (flatten z) ]
+                   go (z:zs) = PP.flatAlt (PP.indent n z <> s) (flatten z <> s) : go zs
   
 

@@ -34,7 +34,7 @@ import Data.Coerce (coerce)
 import Data.String (IsString(..))
 import System.IO
 
-#ifndef NO_BYTESTRING
+#ifdef USE_BYTESTRING
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BE
 #else
@@ -79,7 +79,7 @@ takeChars :: Int -> InputStream -> String
 -- | Returns the number of text lines in the given 'InputStream'
 countLines :: InputStream -> Int
 
-#ifndef NO_BYTESTRING
+#ifdef USE_BYTESTRING
 
 -- | Opaque input type.
 newtype InputStream = IS BS.ByteString

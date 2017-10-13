@@ -10,7 +10,7 @@ import Language.Rust.Syntax
 import Language.Rust.Pretty.Internal
 
 import Data.Text.Prettyprint.Doc (Doc, layoutPretty, LayoutOptions(..), PageWidth(..))
-import Data.Text.Prettyprint.Doc.Render.ShowS (renderShowS)
+import Data.Text.Prettyprint.Doc.Render.String (renderShowS)
 
 prettySuite :: Test
 prettySuite = testGroup "pretty suite"

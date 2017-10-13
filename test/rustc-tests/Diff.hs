@@ -1,7 +1,5 @@
 {-# LANGUAGE CPP, OverloadedStrings, OverloadedLists, InstanceSigs #-}
-#if __GASGOW_HASKELL__ >= 800
-{-# OPTIONS_GHC -Wall -Wno-orphans #-}
-#endif
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Diff where
 
 import Data.Aeson
