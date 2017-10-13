@@ -27,7 +27,7 @@ i32
 >>> pretty body
 { (1i32) + x }
 
-For now, however, you cannot use '$x' or '$x:ty' meta variables.
+For now, however, you cannot use @$x@ or @$x:ty@ meta variables.
 -}
 module Language.Rust.Quote (
   lit, attr, ty, pat, stmt, expr, item, sourceFile, implItem, traitItem, tokenTree, block

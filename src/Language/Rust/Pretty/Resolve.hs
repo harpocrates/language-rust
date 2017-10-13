@@ -97,8 +97,8 @@ data Severity
 
 -- | Localized information about an issue in a syntax tree
 data Issue = Issue
-  { description :: String  -- ^ Description of the issue
-  , severity :: Severity   -- ^ Severity of the issue
+  { description :: String    -- ^ Description of the issue
+  , severity :: !Severity    -- ^ Severity of the issue
   -- | The first element in this list is the syntax tree where the issue occurs. The next elements
   -- are increasingly zoomed out syntax trees centered on the first element. In lieu of positional
   -- information, this provides a next best way of debugging exactly where the problem is.

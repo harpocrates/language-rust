@@ -425,7 +425,7 @@ instance Located a => Located (Expr a) where
 
 -- | Field in a struct literal expression (@syntax::ast::Field@).
 --
--- Example: @x: 1@ in @Point{ x: 1, y: 2 }@
+-- Example: @x: 1@ in @Point { x: 1, y: 2 }@
 data Field a = Field Ident (Maybe (Expr a)) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -434,7 +434,7 @@ instance Located a => Located (Field a) where spanOf (Field _ _ s) = spanOf s
 -- | Field in a struct literal pattern (@syntax::ast::FieldPat@). The field name 'Ident' is optional
 -- but, when it is 'Nothing', the pattern the field is destructured to must be 'IdentP'.
 --
--- Example: @x@ in @Point{ x, y }@
+-- Example: @x@ in @Point { x, y }@
 data FieldPat a = FieldPat (Maybe Ident) (Pat a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -609,7 +609,7 @@ instance Located a => Located (Lifetime a) where spanOf (Lifetime _ s) = spanOf 
 -- | A lifetime definition, introducing a lifetime and the other lifetimes that bound it
 -- (@syntax::ast::LifetimeDef@).
 --
--- Example: @\'a: \'b+\'c+\'d@
+-- Example: @\'a: \'b + \'c + \'d@
 data LifetimeDef a = LifetimeDef [Attribute a] (Lifetime a) [Lifetime a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -1069,7 +1069,7 @@ instance Located a => Located (Variant a) where spanOf (Variant _ _ _ _ s) = spa
 -- | Main payload in a 'Variant' (@syntax::ast::VariantData@).
 data VariantData a
   = StructD [StructField a] a -- ^ struct variant (example: @Bar { .. }@ as in @enum Foo { Bar { .. } }@)
-  | TupleD [StructField a] a  -- ^ tuple variant (exmaple: @Bar(..)@ as in enum Foo { Bar(..) }@)
+  | TupleD [StructField a] a  -- ^ tuple variant (exmaple: @Bar(..)@ as in enum @Foo { Bar(..) }@)
   | UnitD a                   -- ^ unit variant (example @Bar@ as in @enum Foo { Bar = .. }@)
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 

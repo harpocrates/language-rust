@@ -635,6 +635,10 @@ instance Diffable Ident where
   Ident i _ === String s | fromString i == s = pure ()
   ident'    === val = diff "identifiers are different" ident' val
 
+-- | The empty identifier is invalid
+invalidIdent :: Ident
+invalidIdent = mkIdent ""
+
 instance Diffable BindingMode where
   bm === val =
     case (val ! "variant", bm) of

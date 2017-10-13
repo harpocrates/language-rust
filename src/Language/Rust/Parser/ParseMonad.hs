@@ -8,7 +8,7 @@ Stability   : experimental
 Portability : portable
 
 Both the lexer and the parser run inside of the 'P' monad. As detailed in the section on 
-[threaded-lexers](https://www.haskell.org/happy/doc/html/sec-monads.html#sec-lexers) in Happy's
+on [threaded-lexers](https://www.haskell.org/happy/doc/html/sec-monads.html#sec-lexers) in Happy's
 instruction manual, the benefits of this are that:
 
   * Lexical errors can be treated in the same way as parse errors
@@ -101,7 +101,7 @@ getPState = P $ \ !s pOk _ -> pOk s s
 
 -- | Update the state stored in the parser.
 setPState :: PState -> P ()
-setPState s = P $ \_ pOk _ -> pOk () s 
+setPState s = P $ \ _ pOk _ -> pOk () s 
 
 -- | Modify the state stored in the parser.
 modifyPState :: (PState -> PState) -> P ()
@@ -113,7 +113,7 @@ getPosition = curPos <$> getPState
 
 -- | Update the current position of the parser.
 setPosition :: Position -> P ()
-setPosition pos = modifyPState $ \s -> s{ curPos = pos }
+setPosition pos = modifyPState $ \ s -> s{ curPos = pos }
 
 -- | Retrieve the current 'InputStream' of the parser
 getInput :: P InputStream

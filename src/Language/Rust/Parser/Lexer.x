@@ -18,7 +18,7 @@ bitwise and, and unary reference), @&&&x&&&y@ lexes into 'AmpersandAmpersand', '
 @'IdentTok' "x"@, 'AmpersandAmpersand', 'Ampersand', @'IdentTok' "y"@. Although the parser sometimes
 needs to "break apart" tokens, it never has to think about putting them together. That means it can
 easily figure out that @&&&x&&&y@ parses as @&(&(&x)) && (&y)@ and not @&(&(&x)) & (&(&y))@ even if
-bitwise conjunctions binds more tightly that logical conjunctions. 
+bitwise conjunctions bind more tightly that logical conjunctions. 
 
 This sort of amguity where one tokens need to be broken up occurs for
 

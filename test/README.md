@@ -26,9 +26,9 @@ Whenever a bug is fixed or a feature introduced, new tests covering that case sh
 ## `rustc-tests`
 
 These require `rustup` to be installed. The idea is to feed in as input many rust source files, run
-them through the Rust compiler with `rustc -Z ast-json` (now only available on nightly) to get a
-JSON of the AST, then parse the same file on our side, and finally find the differences between the
-two. Specifically, these tests check that:
+them through the Rust compiler with `rustc -Z ast-json -Z parse-only` (now only available on
+nightly) to get a JSON of the AST, then parse the same file on our side, and finally find the
+differences between the two. Specifically, these tests check that:
 
   * we parse the same thing as `rustc`
   * pretty-printing the AST and then reparsing it doesn't change anything

@@ -1,13 +1,35 @@
-# Parser and pretty printer for Rust [![Build Status][4]][5] [![Windows build status][7]][8]
+# Parser and pretty-printer for Rust [![Build Status][4]][5] [![Windows build status][7]][8]
 
 `language-rust` aspires to efficiently and accurately parse and pretty-print the [Rust language][0].
 The underlying AST structures are also intended to be as similar as possible to the AST `rustc` uses
 itself. When `language-rust` and `rustc` have diverging AST, the divergence should be detailed in
 the documentation.
 
+A typical use looks like:
+
+```haskell
+>>> :set -XTypeApplications +t
+>>> import Language.Rust.Syntax
+>>>
+>>> -- Sample use of the parser
+>>> import Language.Rust.Parser
+>>> let inp = inputStreamFromString "fn main () { println!(\"Hello world!\"); }"
+inp :: InputStream
+>>> Right sourceFile = parse @(SourceFile Span) inp
+sourceFile :: SourceFile Span
+>>>
+>>> -- Sample use of the pretty-printer
+>>> import Language.Rust.Pretty
+>>> pretty sourceFile
+fn main() {
+  println!("Hello world!");
+}
+it :: Doc b
+```
+
 ## Building
 
-## Cabal
+### Cabal
 
 With Cabal and GHC, you should only need to run
 
@@ -16,7 +38,7 @@ With Cabal and GHC, you should only need to run
     cabal configure
     cabal build
 
-## Stack
+### Stack
 
 With the [Stack][1] tool installed, you should only need to run
 
@@ -32,6 +54,8 @@ As Rust evolves, so will `language-rust`. We will make a best effort to support 
 from nightly as they come out, but in general will only target compatibility with stable.
 
 ## Bugs
+
+Please report any bugs to the [github issue tracker][9].
 
 ### Parser
 
@@ -60,3 +84,4 @@ pretty-printing.
 [6]: https://github.com/rust-lang-nursery/fmt-rfcs
 [7]: https://ci.appveyor.com/api/projects/status/um8dxklqmubvn091/branch/master?svg=true
 [8]: https://ci.appveyor.com/project/harpocrates/language-rust/branch/master
+[9]: https://github.com/harpocrates/language-rust/issues

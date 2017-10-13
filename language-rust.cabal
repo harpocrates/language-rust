@@ -15,7 +15,7 @@ stability:           alpha
 bug-reports:         https://github.com/harpocrates/language-rust/issues
 category:            Language
 build-type:          Simple
-extra-source-files:  ChangeLog.md
+extra-source-files:  ChangeLog.md README.md
 cabal-version:       >=1.10
 
 source-repository head
@@ -28,7 +28,7 @@ flag useByteStrings
 
 flag enableQuasiquotes
     description:     Provide the experimental 'Language.Rust.Quote' module
-    default:         True
+    default:         False
 
 library
   hs-source-dirs:      src

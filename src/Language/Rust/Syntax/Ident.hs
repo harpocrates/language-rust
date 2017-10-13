@@ -11,7 +11,7 @@ Data structure behind identifiers.
 -}
 {-# LANGUAGE DeriveDataTypeable, DeriveGeneric, DeriveAnyClass #-}
 
-module Language.Rust.Syntax.Ident (Ident(..), mkIdent, invalidIdent, Name) where
+module Language.Rust.Syntax.Ident (Ident(..), mkIdent, Name) where
 
 import GHC.Generics (Generic)
 import Data.Data (Data)
@@ -25,8 +25,8 @@ import Data.Semigroup
 
 -- | An identifier
 data Ident
-  = Ident { name :: Name  -- ^ payload of the identifier
-          , hash :: !Int  -- ^ hash for quick comparision
+  = Ident { name :: Name                 -- ^ payload of the identifier
+          , hash :: {-# UNPACK #-} !Int  -- ^ hash for quick comparision
           } deriving (Data, Typeable, Generic, NFData)
 
 instance Show Ident where
@@ -46,10 +46,12 @@ instance Ord Ident where
                     rt -> rt
 
 instance Monoid Ident where
-  Ident n1 _ `mappend` Ident n2 _ = mkIdent (n1 `mappend` n2)
-  mempty = invalidIdent
+  mappend = (<>)
+  mempty = mkIdent ""
 
-instance Semigroup Ident
+instance Semigroup Ident where
+  Ident n1 _ <> Ident n2 _ = mkIdent (n1 <> n2)
+
 
 -- | Smart constructor for making an 'Ident'.
 mkIdent :: String -> Ident
@@ -62,10 +64,6 @@ hashString = foldl' f golden
          magic = 0xdeadbeef
          golden = 1013904242
 
--- | The empty identifier is invalid
-invalidIdent :: Ident
-invalidIdent = mkIdent ""
-
--- | TODO: backpack
+-- | The payload of an identifier
 type Name = String
 

@@ -41,8 +41,6 @@ import qualified Data.ByteString.UTF8 as BE
 import qualified Data.Char as Char
 #endif
 
--- TODO: backpack this when GHC 8.2 is released
-
 -- | Read a file into an 'InputStream'
 readInputStream :: FilePath -> IO InputStream
 
