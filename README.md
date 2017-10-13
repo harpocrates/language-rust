@@ -1,16 +1,27 @@
-# Parser and pretty printer for the Rust language [![Build Status][4]][5]
+# Parser and pretty printer for Rust [![Build Status][4]][5] [![Windows build status][7]][8]
 
 `language-rust` aspires to efficiently and accurately parse and pretty-print the [Rust language][0].
 The underlying AST structures are also intended to be as similar as possible to the AST `rustc` uses
 itself. When `language-rust` and `rustc` have diverging AST, the divergence should be detailed in
 the documentation.
 
-## Building with Stack
+## Building
+
+## Cabal
+
+With Cabal and GHC, you should only need to run
+
+    cabal install happy --constraint 'happy >= 1.19.8'
+    cabal install alex
+    cabal configure
+    cabal build
+
+## Stack
 
 With the [Stack][1] tool installed, you should only need to run
 
     stack init
-    stack install
+    stack build
 
 The second command is responsible for pulling in all of the dependencies (including executable
 tools like [Alex][2], [Happy][3], and GHC itself) and then compiling everything.
@@ -47,3 +58,5 @@ pretty-printing.
 [4]: https://travis-ci.org/harpocrates/language-rust.svg?branch=master
 [5]: https://travis-ci.org/harpocrates/language-rust
 [6]: https://github.com/rust-lang-nursery/fmt-rfcs
+[7]: https://ci.appveyor.com/api/projects/status/um8dxklqmubvn091/branch/master?svg=true
+[8]: https://ci.appveyor.com/project/harpocrates/language-rust/branch/master
