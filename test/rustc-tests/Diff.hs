@@ -552,6 +552,7 @@ instance Diffable Token where
   PipePipe === "OrOr" = pure ()
   DotDot === "DotDot" = pure ()
   DotDotDot === "DotDotDot" = pure ()
+  DotDotEqual === "DotDotEq" = pure ()
   RArrow === "RArrow" = pure ()
   LArrow === "LArrow" = pure ()
   Question === "Question" = pure ()
@@ -968,7 +969,10 @@ instance Show a => Diffable (Lit a) where
         suf === (n ! "fields" ! 1)
       ("FloatUnsuffixed", Float f Unsuffixed _) -> do
         let String j = n ! "fields" ! 0
-        case readMaybe (T.unpack j) of
+            str' = case T.unpack j of
+                     str | last str == '.' -> str ++ "0"
+                         | otherwise -> str
+        case readMaybe str' of
           Nothing -> diff "float literal has un-readable value" l val
           Just s | s == f -> pure ()
           _ -> diff "float literal has two different values" l val

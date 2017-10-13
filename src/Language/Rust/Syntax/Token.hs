@@ -68,6 +68,7 @@ data Token
   | At                    -- ^ @\@@ token
   | Dot                   -- ^ @.@ token
   | DotDot                -- ^ @..@ token
+  | DotDotEqual           -- ^ @..=@ token
   | DotDotDot             -- ^ @...@ token
   | Comma                 -- ^ @,@ token
   | Semicolon             -- ^ @;@ token
@@ -234,6 +235,11 @@ spaceNeeded DotDot Dot = True
 spaceNeeded DotDot DotDot = True
 spaceNeeded DotDot DotDotDot = True
 
+-- conflicts with 'DotDotEqual'
+spaceNeeded DotDot Equal = True
+spaceNeeded DotDot EqualEqual = True
+spaceNeeded DotDot FatArrow = True
+
 -- conflicts with 'ModSep'
 spaceNeeded Colon Colon = True
 spaceNeeded Colon ModSep = True
@@ -311,6 +317,7 @@ instance Show Token where
   show Dot = "."
   show DotDot = ".."
   show DotDotDot = "..."
+  show DotDotEqual = "..="
   show Comma = ","
   show Semicolon = ";"
   show Colon = ":"

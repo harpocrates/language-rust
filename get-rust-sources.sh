@@ -69,3 +69,9 @@ done;
 cd ..
 rm -rf $TEMP
 
+# Print disclaimer
+echo "WARNING: Don't expect the 'rustc-tests' suite to necessarily"
+echo "         work on all the files this produces. A failure in the"
+echo "         test suite is only a bug if `rustc` succeeds on the"
+echo "         same file."
+

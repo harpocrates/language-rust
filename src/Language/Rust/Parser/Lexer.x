@@ -1021,6 +1021,7 @@ $white+         { \s -> pure (Space Whitespace s)  }
 "."             { token Dot }        
 ".."            { token DotDot }     
 "..."           { token DotDotDot } 
+"..="           { token DotDotEqual } 
 ","             { token Comma } 
 ";"             { token Semicolon }     
 ":"             { token Colon }

@@ -98,6 +98,7 @@ import qualified Data.List.NonEmpty as N
   -- Structural symbols.
   '@'            { Spanned At _ }
   '...'          { Spanned DotDotDot _ }
+  '..='          { Spanned DotDotEqual _ }
   '..'           { Spanned DotDot _ }
   '.'            { Spanned Dot _ }
   ','            { Spanned Comma _ }
@@ -267,7 +268,7 @@ import qualified Data.List.NonEmpty as N
 %nonassoc INFIXRNG
 %nonassoc POSTFIXRNG
 %nonassoc PREFIXRNG
-%nonassoc '..' '...'
+%nonassoc '..' '...' '..='
 %left '||'
 %left '&&'
 %left '==' '!=' '<' '>' '<=' '>='
@@ -636,8 +637,9 @@ fn_decl_with_self_named :: { FnDecl Span }
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
 ty_param_bound :: { TyParamBound Span }
-  : lifetime             { RegionTyParamBound $1 (spanOf $1) }
-  | poly_trait_ref       { TraitTyParamBound $1 None (spanOf $1) }
+  : lifetime                { RegionTyParamBound $1 (spanOf $1) }
+  | poly_trait_ref          { TraitTyParamBound $1 None (spanOf $1) }
+  | '(' poly_trait_ref ')'  { TraitTyParamBound $2 None ($1 # $3) }
 
 poly_trait_ref_mod_bound :: { TyParamBound Span }
   : poly_trait_ref       { TraitTyParamBound $1 None (spanOf $1) }
@@ -763,6 +765,7 @@ pat :: { Pat Span }
     }
   | expr_qual_path                  { PathP (Just (fst (unspan $1))) (snd (unspan $1)) ($1 # $>) }
   | lit_or_path '...' lit_or_path   { RangeP $1 $3 ($1 # $>) }
+  | lit_or_path '..=' lit_or_path   { RangeP $1 $3 ($1 # $>) }
   | expr_path '{' '..' '}'          { StructP $1 [] True ($1 # $>) }
   | expr_path '{' pat_fields '}'    { let (fs,b) = $3 in StructP $1 fs b ($1 # $>) }
   | expr_path '(' pat_tup ')'       { let (ps,m,_) = $3 in TupleStructP $1 ps m ($1 # $>) }
@@ -849,7 +852,7 @@ binding_mode :: { Spanned BindingMode }
 --
 --   * 'lhs' - expressions allowed on the left extremity of the term
 --   * 'rhs' - expressions allowed on the right extremity of the term
---   * 'rhs2' - expressions allowed on the right extremity following '..'/'...'
+--   * 'rhs2' - expressions allowed on the right extremity following '..'/'.../..='
 --
 -- Precedences are handled by Happy (right at the end of the token section)
 gen_expression(lhs,rhs,rhs2) :: { Expr Span }
@@ -876,8 +879,9 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   -- range expressions
   |     '..'  rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) HalfOpen ($1 # $2) }
   |     '...' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) Closed ($1 # $2) }
+  |     '..=' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) Closed ($1 # $2) }
   |     '..'        %prec SINGLERNG  { Range [] Nothing Nothing HalfOpen (spanOf $1) }
-  |     '...'       %prec SINGLERNG  { Range [] Nothing Nothing Closed (spanOf $1) }
+  |     '..='       %prec SINGLERNG  { Range [] Nothing Nothing Closed (spanOf $1) }
   -- low precedence prefix expressions
   | return                           { Ret [] Nothing (spanOf $1) }
   | return rhs                       { Ret [] (Just $2) ($1 # $2) }
@@ -923,8 +927,10 @@ left_gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   -- range expressions
   | lhs '..'        %prec POSTFIXRNG { Range [] (Just $1) Nothing HalfOpen ($1 # $>) }
   | lhs '...'       %prec POSTFIXRNG { Range [] (Just $1) Nothing Closed ($1 # $>) }
+  | lhs '..='       %prec POSTFIXRNG { Range [] (Just $1) Nothing Closed ($1 # $>) }
   | lhs '..'  rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) HalfOpen ($1 # $>) }
   | lhs '...' rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
+  | lhs '..=' rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
   -- assignment expressions
   | lhs '<-' rhs                     { InPlace [] $1 $3 ($1 # $>) }
   | lhs '=' rhs                      { Assign [] $1 $3 ($1 # $>) }
@@ -1523,6 +1529,7 @@ token :: { Spanned Token }
   -- Structural symbols.
   | '@'        { $1 }
   | '...'      { $1 }
+  | '..='      { $1 }
   | '..'       { $1 }
   | '.'        { $1 }
   | ','        { $1 }

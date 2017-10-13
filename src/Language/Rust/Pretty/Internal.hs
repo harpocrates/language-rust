@@ -252,6 +252,7 @@ printToken At = "@"
 printToken Dot = "."
 printToken DotDot = ".."
 printToken DotDotDot = "..."
+printToken DotDotEqual = "..="
 printToken Comma = ","
 printToken Semicolon = ";"
 printToken Colon = ":"
@@ -490,7 +491,7 @@ printField (Field ident (Just expr) x) = annotate x (printIdent ident <>":" <+> 
 -- | Print range limits
 printRangeLimits :: RangeLimits -> Doc a
 printRangeLimits HalfOpen = ".."
-printRangeLimits Closed = "..."
+printRangeLimits Closed = "..="
 
 -- | Print a closure function declaration (@print_fn_block_args@)
 printFnBlockArgs :: FnDecl a -> Doc a
@@ -864,7 +865,7 @@ printPat (TupleP elts (Just ddpos) _) = let (before,after) = splitAt ddpos elts
 printPat (BoxP inner x)                 = annotate x ("box" <+> printPat inner)
 printPat (RefP inner mutbl x)           = annotate x ("&" <> printMutability mutbl <+> printPat inner)
 printPat (LitP expr x)                  = annotate x (printExpr expr)
-printPat (RangeP lo hi x)               = annotate x (printExpr lo <+> "..." <+> printExpr hi)
+printPat (RangeP lo hi x)               = annotate x (printExpr lo <+> "..=" <+> printExpr hi)
 printPat (SliceP pb Nothing pa x)       = annotate x ("[" <> commas (pb ++ pa) printPat <> "]")
 printPat (SliceP pb (Just ps) pa x)     = annotate x ("[" <> commas pb printPat <> ps' <+> commas pa printPat <> "]")
   where ps' = hcat [ unless (null pb) ","

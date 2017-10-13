@@ -98,10 +98,12 @@ diff :: Show a => String -> a -> Aeson.Value -> IO b
 diff explanation v j = throw (DiffError msg)
   where msg = unlines [ explanation ++ " in"
                       , " * parsed AST"
-                      , show (show v)
+                      , cropped (show v)
                       , " * dumped JSON"
-                      , unpack (Aeson.encode j)
+                      , cropped (unpack (Aeson.encode j))
                       ]
+        cropped msg' | length msg' > 500 = take 500 msg' ++ "..."
+                     | otherwise = msg'
 
   
 
