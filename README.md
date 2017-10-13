@@ -1,23 +1,23 @@
 # Parser and pretty-printer for Rust [![Build Status][4]][5] [![Windows build status][7]][8]
 
 `language-rust` aspires to efficiently and accurately parse and pretty-print the [Rust language][0].
-The underlying AST structures are also intended to be as similar as possible to the AST `rustc` uses
-itself. When `language-rust` and `rustc` have diverging AST, the divergence should be detailed in
-the documentation.
+The underlying AST structures are also intended to be as similar as possible to the `libsyntax` AST
+`rustc` uses itself. When `language-rust` and `rustc` have diverging AST, the divergence should be
+detailed in the documentation.
 
 A typical use looks like:
 
 ```haskell
 >>> :set -XTypeApplications +t
 >>> import Language.Rust.Syntax
->>>
+
 >>> -- Sample use of the parser
 >>> import Language.Rust.Parser
 >>> let inp = inputStreamFromString "fn main () { println!(\"Hello world!\"); }"
 inp :: InputStream
 >>> Right sourceFile = parse @(SourceFile Span) inp
 sourceFile :: SourceFile Span
->>>
+
 >>> -- Sample use of the pretty-printer
 >>> import Language.Rust.Pretty
 >>> pretty sourceFile
@@ -31,7 +31,7 @@ it :: Doc b
 
 ### Cabal
 
-With Cabal and GHC, you should only need to run
+With Cabal and GHC, run
 
     cabal install happy --constraint 'happy >= 1.19.8'
     cabal install alex
@@ -40,7 +40,7 @@ With Cabal and GHC, you should only need to run
 
 ### Stack
 
-With the [Stack][1] tool installed, you should only need to run
+With the [Stack][1] tool installed, run
 
     stack init
     stack build
