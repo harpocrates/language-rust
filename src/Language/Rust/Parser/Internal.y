@@ -6,7 +6,7 @@ Copyright   : (c) Alec Theriault, 2017
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
-Portability : portable
+Portability : GHC
 
 The parsers in this file are all re-exported to 'Language.Rust.Parser' via the 'Parse' class. The
 parsers are based off of:
@@ -24,17 +24,36 @@ To get information about transition states and such, run
   [2]: https://doc.rust-lang.org/grammar.html
 -}
 {-# OPTIONS_HADDOCK hide, not-home #-}
-{-# LANGUAGE OverloadedStrings, OverloadedLists, PartialTypeSignatures #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 
 module Language.Rust.Parser.Internal (
   -- * Parsers
-  parseLit, parseAttr, parseTy, parsePat, parseStmt, parseExpr, parseItem, parseSourceFile,
-  parseBlock, parseImplItem, parseTraitItem, parseTt, parseTokenStream, parseTyParam,
-  parseGenerics, parseWhereClause, parseLifetimeDef,
+  parseAttr,
+  parseBlock,
+  parseExpr,
+  parseGenerics,
+  parseImplItem,
+  parseItem,
+  parseLifetimeDef,
+  parseLit,
+  parsePat,
+  parseSourceFile,
+  parseStmt,
+  parseTokenStream,
+  parseTraitItem,
+  parseTt,
+  parseTy,
+  parseTyParam,
+  parseWhereClause,
 ) where
 
 import Language.Rust.Syntax
+
+import Language.Rust.Data.Ident        ( Ident(..), mkIdent )
 import Language.Rust.Data.Position
+
 import Language.Rust.Parser.Lexer      ( lexNonSpace, lexShebangLine )
 import Language.Rust.Parser.ParseMonad ( pushToken, getPosition, P, parseError )
 import Language.Rust.Parser.Literals   ( translateLit )
@@ -42,8 +61,9 @@ import Language.Rust.Parser.Reversed
 
 import Data.Foldable                   ( toList )
 import Data.List                       ( (\\), isSubsequenceOf )
-import Text.Read                       ( readMaybe )
 import Data.Semigroup                  ( (<>) )
+
+import Text.Read                       ( readMaybe )
 
 import Data.List.NonEmpty              ( NonEmpty(..), (<|) )
 import qualified Data.List.NonEmpty as N

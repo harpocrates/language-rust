@@ -1,5 +1,5 @@
 {-|
-Module      : Language.Rust.Syntax.Ident
+Module      : Language.Rust.Data.Ident
 Description : Identifiers
 Copyright   : (c) Alec Theriault, 2017
 License     : BSD-style
@@ -9,19 +9,22 @@ Portability : portable
 
 Data structure behind identifiers.
 -}
-{-# LANGUAGE DeriveDataTypeable, DeriveGeneric, DeriveAnyClass #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
-module Language.Rust.Syntax.Ident (Ident(..), mkIdent, Name) where
+module Language.Rust.Data.Ident (Ident(..), mkIdent, Name) where
 
-import GHC.Generics (Generic)
-import Data.Data (Data)
-import Data.Typeable (Typeable)
-import Control.DeepSeq (NFData)
+import GHC.Generics       ( Generic )
 
-import Data.List (foldl')
-import Data.Char (ord)
-import Data.String (IsString(..))
-import Data.Semigroup
+import Control.DeepSeq    ( NFData )
+import Data.Data          ( Data )
+import Data.Typeable      ( Typeable )
+
+import Data.List          ( foldl' )
+import Data.Char          ( ord )
+import Data.String        ( IsString(..) )
+import Data.Semigroup     ( Semigroup(..) )
 
 -- | An identifier
 data Ident

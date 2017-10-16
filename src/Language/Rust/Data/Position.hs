@@ -5,7 +5,7 @@ Copyright   : (c) Alec Theriault, 2017
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
-Portability : portable
+Portability : GHC
 
 Everything to do with describing a position or a contiguous region in a file.
 -}
@@ -35,15 +35,15 @@ module Language.Rust.Data.Position (
   Located(..),
 ) where
 
-import GHC.Generics (Generic)
+import GHC.Generics       ( Generic )
 
-import Data.Data (Data)
-import Data.Typeable (Typeable)
-import Control.DeepSeq (NFData)
+import Control.DeepSeq    ( NFData )
+import Data.Data          ( Data )
+import Data.Typeable      ( Typeable )
 
-import Data.List.NonEmpty (NonEmpty(..))
-import Data.Monoid (Monoid(..))
-import Data.Semigroup (Semigroup(..))
+import Data.List.NonEmpty ( NonEmpty(..) )
+import Data.Monoid        ( Monoid(..) )
+import Data.Semigroup     ( Semigroup(..) )
 
 
 -- | A position in a source file. The row and column information is kept only for its convenience

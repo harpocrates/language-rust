@@ -5,7 +5,7 @@ Copyright   : (c) Alec Theriault, 2017
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
-Portability : portable
+Portability : GHC
 
 Selecting the right parser may require adding an annotation to avoid an 'Ambiguous type variable'
 error.
@@ -19,30 +19,52 @@ inp :: InputStream
 sourceFile :: SourceFile Span
 
 -}
-{-# LANGUAGE FlexibleInstances, DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Language.Rust.Parser (
   -- * Parsing
-  parse, parse', readSourceFile, readTokens, Parse(..), P, execParser, execParserTokens, initPos, Span,
+  parse,
+  parse',
+  readSourceFile,
+  readTokens,
+  Parse(..),
+  P,
+  execParser,
+  execParserTokens,
+  initPos,
+  Span,
+
   -- * Lexing
-  lexToken, lexNonSpace, lexTokens, translateLit,
+  lexToken,
+  lexNonSpace,
+  lexTokens,
+  translateLit,
+
   -- * Input stream
-  readInputStream, inputStreamToString, inputStreamFromString,
+  readInputStream,
+  inputStreamToString,
+  inputStreamFromString,
+
   -- * Error reporting
-  lexicalError, parseError, ParseFail,
+  lexicalError,
+  parseError,
+  ParseFail,
 ) where
 
 import Language.Rust.Syntax
-import Language.Rust.Data.InputStream (InputStream, readInputStream, inputStreamToString, inputStreamFromString)
-import Language.Rust.Data.Position (Position, Span, Spanned, initPos, prettyPosition)
-import Language.Rust.Parser.Internal
-import Language.Rust.Parser.Lexer (lexToken, lexNonSpace, lexTokens, lexicalError)
-import Language.Rust.Parser.Literals (translateLit)
-import Language.Rust.Parser.ParseMonad (P, execParser, parseError, pushToken)
 
-import Data.Typeable (Typeable)
-import Control.Exception (Exception, throw) 
-import Data.Foldable (traverse_)
+import Language.Rust.Data.InputStream  ( InputStream, readInputStream, inputStreamToString, inputStreamFromString )
+import Language.Rust.Data.Position     ( Position, Span, Spanned, initPos, prettyPosition )
+
+import Language.Rust.Parser.Internal
+import Language.Rust.Parser.Lexer      ( lexToken, lexNonSpace, lexTokens, lexicalError )
+import Language.Rust.Parser.Literals   ( translateLit )
+import Language.Rust.Parser.ParseMonad ( P, execParser, parseError, pushToken )
+
+import Control.Exception               ( Exception, throw )
+import Data.Foldable                   ( traverse_ )
+import Data.Typeable                   ( Typeable )
 
 -- | Parse something from an input stream (it is assumed the initial position is 'initPos')
 parse :: Parse a => InputStream -> Either (Position,String) a

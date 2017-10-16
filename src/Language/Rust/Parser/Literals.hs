@@ -15,15 +15,15 @@ module Language.Rust.Parser.Literals (
   translateLit
 ) where
 
-import Language.Rust.Syntax.Token
-import Language.Rust.Syntax.AST
+import Language.Rust.Syntax.Token ( LitTok(..) )
+import Language.Rust.Syntax.AST   ( IntRep(..), Lit(..), StrStyle(..), Suffix(..) )
 
-import Data.Char (chr, ord, isHexDigit, digitToInt, isSpace)
-import Data.List (unfoldr)
-import Data.Maybe (fromMaybe)
-import Data.Word (Word8)
+import Data.Char                  ( chr, digitToInt, ord, isHexDigit, isSpace )
+import Data.List                  ( unfoldr )
+import Data.Maybe                 ( fromMaybe )
+import Data.Word                  ( Word8 )
 
-import Text.Read (readMaybe)
+import Text.Read                  ( readMaybe )
 
 -- | Parse a valid 'LitTok' into a 'Lit'.
 translateLit :: LitTok -> Suffix -> a -> Lit a
@@ -45,26 +45,26 @@ unescapeChar :: Bool                    -- ^ multi-line strings allowed
              -> String                  -- ^ input string
              -> Maybe (Char, String)
 unescapeChar multiline ('\\':c:cs) = case c of
-       'n'  -> pure ('\n', cs)
-       'r'  -> pure ('\r', cs)
-       't'  -> pure ('\t', cs)
-       '\\' -> pure ('\\', cs)
-       '\'' -> pure ('\'', cs)
-       '"'  -> pure ('"',  cs)
-       '0'  -> pure ('\0', cs)
-       'x'  -> do (h,cs') <- readHex 2 cs; pure (chr h, cs')
-       'X'  -> do (h,cs') <- readHex 2 cs; pure (chr h, cs')
-       'U'  -> do (h,cs') <- readHex 8 cs; pure (chr h, cs')
-       'u'  -> case cs of
-                 '{':x1:'}':cs'                -> do (h,_)   <- readHex 1 [x1];                pure (chr h, cs')
-                 '{':x1:x2:'}':cs'             -> do (h,_)   <- readHex 2 [x1,x2];             pure (chr h, cs')
-                 '{':x1:x2:x3:'}':cs'          -> do (h,_)   <- readHex 3 [x1,x2,x3];          pure (chr h, cs')
-                 '{':x1:x2:x3:x4:'}':cs'       -> do (h,_)   <- readHex 4 [x1,x2,x3,x4];       pure (chr h, cs')
-                 '{':x1:x2:x3:x4:x5:'}':cs'    -> do (h,_)   <- readHex 5 [x1,x2,x3,x4,x5];    pure (chr h, cs')
-                 '{':x1:x2:x3:x4:x5:x6:'}':cs' -> do (h,_)   <- readHex 6 [x1,x2,x3,x4,x5,x6]; pure (chr h, cs')
-                 _                             -> do (h,cs') <- readHex 4 cs;                  pure (chr h, cs')
-       '\n' | multiline -> unescapeChar multiline $ dropWhile isSpace cs
-       _ -> error "unescape char: bad escape sequence"
+  'n'  -> pure ('\n', cs)
+  'r'  -> pure ('\r', cs)
+  't'  -> pure ('\t', cs)
+  '\\' -> pure ('\\', cs)
+  '\'' -> pure ('\'', cs)
+  '"'  -> pure ('"',  cs)
+  '0'  -> pure ('\0', cs)
+  'x'  -> do (h,cs') <- readHex 2 cs; pure (chr h, cs')
+  'X'  -> do (h,cs') <- readHex 2 cs; pure (chr h, cs')
+  'U'  -> do (h,cs') <- readHex 8 cs; pure (chr h, cs')
+  'u'  -> case cs of
+    '{':x1:'}':cs'                -> do (h,_)   <- readHex 1 [x1];                pure (chr h, cs')
+    '{':x1:x2:'}':cs'             -> do (h,_)   <- readHex 2 [x1,x2];             pure (chr h, cs')
+    '{':x1:x2:x3:'}':cs'          -> do (h,_)   <- readHex 3 [x1,x2,x3];          pure (chr h, cs')
+    '{':x1:x2:x3:x4:'}':cs'       -> do (h,_)   <- readHex 4 [x1,x2,x3,x4];       pure (chr h, cs')
+    '{':x1:x2:x3:x4:x5:'}':cs'    -> do (h,_)   <- readHex 5 [x1,x2,x3,x4,x5];    pure (chr h, cs')
+    '{':x1:x2:x3:x4:x5:x6:'}':cs' -> do (h,_)   <- readHex 6 [x1,x2,x3,x4,x5,x6]; pure (chr h, cs')
+    _                             -> do (h,cs') <- readHex 4 cs;                  pure (chr h, cs')
+  '\n' | multiline -> unescapeChar multiline $ dropWhile isSpace cs
+  _ -> error "unescape char: bad escape sequence"
 unescapeChar _ (c:cs) = Just (c, cs)
 unescapeChar _ [] = fail "unescape char: empty string"
 

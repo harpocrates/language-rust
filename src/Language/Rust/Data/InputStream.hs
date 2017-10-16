@@ -7,7 +7,11 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-These are the only functions that need to be implemented in order to use the parser. Whether this wraps 'ByteString' or 'String' depends on whether the @useByteStrings@ option is on or not (it is by default). Using 'ByteString' means better handling of weird characters ('takeByte' fails badly if you try to take a byte that doesn't fall on a character boundary), but it means incurring a dependency on the [utf8-string](https://hackage.haskell.org/package/utf8-string) package.
+These are the only functions that need to be implemented in order to use the parser. Whether this
+wraps 'ByteString' or 'String' depends on whether the @useByteStrings@ option is on or not (it is
+by default). Using 'ByteString' means better handling of weird characters ('takeByte' fails badly
+if you try to take a byte that doesn't fall on a character boundary), but it means incurring a
+dependency on the [utf8-string](https://hackage.haskell.org/package/utf8-string) package.
 -}
 {-# LANGUAGE CPP #-}
 
@@ -26,12 +30,12 @@ module Language.Rust.Data.InputStream (
   inputStreamToString,
   takeByte,
   takeChar,
-  takeChars,
+  peekChars,
 ) where
 
-import Data.Word (Word8)
-import Data.Coerce (coerce)
-import Data.String (IsString(..))
+import Data.Word   ( Word8 )
+import Data.Coerce ( coerce )
+import Data.String ( IsString(..) )
 import System.IO
 
 #ifdef USE_BYTESTRING
@@ -43,9 +47,11 @@ import qualified Data.Char as Char
 
 -- | Read a file into an 'InputStream'
 readInputStream :: FilePath -> IO InputStream
+{-# INLINE readInputStream #-}
 
 -- | Read an 'InputStream' from a 'Handle'
 hReadInputStream :: Handle -> IO InputStream
+{-# INLINE hReadInputStream #-}
 
 -- | Convert 'InputStream' to 'String'
 inputStreamToString :: InputStream -> String
@@ -53,6 +59,7 @@ inputStreamToString :: InputStream -> String
 
 -- | Convert a 'String' to an 'InputStream'
 inputStreamFromString :: String -> InputStream
+{-# INLINE inputStreamFromString #-}
 
 instance IsString InputStream where fromString = inputStreamFromString
 
@@ -70,12 +77,13 @@ takeChar :: InputStream -> (Char, InputStream)
 inputStreamEmpty :: InputStream -> Bool
 {-# INLINE inputStreamEmpty #-}
 
--- | Returns the first @n@characters of the given input stream, without removing them.
-takeChars :: Int -> InputStream -> String
-{-# INLINE takeChars #-}
+-- | Returns the first @n@ characters of the given input stream, without removing them.
+peekChars :: Int -> InputStream -> String
+{-# INLINE peekChars #-}
 
 -- | Returns the number of text lines in the given 'InputStream'
 countLines :: InputStream -> Int
+{-# INLINE countLines #-}
 
 #ifdef USE_BYTESTRING
 
@@ -84,7 +92,7 @@ newtype InputStream = IS BS.ByteString
 takeByte bs = (BS.head (coerce bs), coerce (BS.tail (coerce bs)))
 takeChar bs = maybe (error "takeChar: no char left") coerce (BE.uncons (coerce bs))
 inputStreamEmpty = BS.null . coerce
-takeChars n = BE.toString . BE.take n . coerce
+peekChars n = BE.toString . BE.take n . coerce
 readInputStream f = coerce <$> BS.readFile f
 hReadInputStream h = coerce <$> BS.hGetContents h
 inputStreamToString = BE.toString . coerce
@@ -100,7 +108,7 @@ takeByte (IS ~(c:str))
   | otherwise       = error "takeByte: not a latin-1 character"
 takeChar (IS ~(c:str)) = (c, IS str)
 inputStreamEmpty (IS str) = null str
-takeChars n (IS str) = take n str
+peekChars n (IS str) = take n str
 readInputStream f = IS <$> readFile f
 hReadInputStream h = IS <$> hGetContents h
 inputStreamToString = coerce

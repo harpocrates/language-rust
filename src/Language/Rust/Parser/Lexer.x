@@ -32,22 +32,26 @@ This sort of amguity where one tokens need to be broken up occurs for
 
 module Language.Rust.Parser.Lexer (
   -- * Lexing
-  lexToken, lexNonSpace, lexTokens, lexShebangLine,
+  lexToken,
+  lexNonSpace,
+  lexTokens,
+  lexShebangLine,
+
   -- * Tokens
   Token(..),
+
   -- * Error reporting
   lexicalError,
 ) where
 
+import Language.Rust.Data.Ident        ( mkIdent, Ident(..) )
 import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position
 import Language.Rust.Parser.ParseMonad
-import Language.Rust.Syntax.Token 
-import Language.Rust.Syntax.Ident (mkIdent, Ident(..))
+import Language.Rust.Syntax.Token
 
-import Data.Word (Word8)
-import Data.Char (chr)
-import Data.Functor (($>))
+import Data.Char                       ( chr )
+import Data.Word                       ( Word8 )
 
 -- Things to review:
 --   * improved error messages
@@ -1096,9 +1100,12 @@ literal lit = do
   inp <- getInput
   case alexScan (pos,inp) lits of
     AlexToken (pos',inp') len action -> do
-        tok <- action (takeChars len inp)
+        tok <- action (peekChars len inp)
         case tok of
-          IdentTok (Ident suf _) -> setPosition pos' *> setInput inp' $> LiteralTok lit (Just suf)
+          IdentTok (Ident suf _) -> do
+            setPosition pos'
+            setInput inp'
+            pure (LiteralTok lit (Just suf))
           _ -> pure (LiteralTok lit Nothing)
     _ -> pure (LiteralTok lit Nothing)
 
@@ -1157,7 +1164,7 @@ nextChar = do
     then pure Nothing
     else let (c,inp') = takeChar inp
              pos' = alexMove pos c
-         in pos' `seq` (setPosition pos' *> setInput inp' $> Just c)
+         in pos' `seq` (setPosition pos' *> setInput inp' *> pure (Just c))
 
 -- | Retrieve the next character (if there is one), without updating the
 -- parser state.
@@ -1230,7 +1237,7 @@ lexToken = do
         AlexToken (pos',inp') len action -> do
           setPosition pos'
           setInput inp'
-          tok <- action (takeChars len inp)
+          tok <- action (peekChars len inp)
           tok' <- swapToken tok
           pos'' <- getPosition
           return (Spanned tok' (Span pos pos''))
@@ -1258,7 +1265,7 @@ lexTokens lexer = do
 lexShebangLine :: P (Maybe String)
 lexShebangLine = do
   inp <- getInput
-  case takeChars 3 inp of
+  case peekChars 3 inp of
     '#':'!':r | r /= "[" -> Just <$> toNewline
     _ -> pure Nothing
   where

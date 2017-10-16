@@ -5,24 +5,33 @@ Copyright   : (c) Alec Theriault, 2017
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
-Portability : portable
+Portability : GHC
+
+Contains roughly the same stuff as @syntax::parse::token@ - data definitions for tokens.
 -}
-{-# LANGUAGE DeriveDataTypeable, DeriveGeneric, DeriveAnyClass #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module Language.Rust.Syntax.Token (
-  -- Contains roughly the same stuff as @syntax::parse::token@ - data definitions for tokens.
-  Token(..), spaceNeeded, Space(..), Delim(..), LitTok(..), AttrStyle(..)
+  Token(..),
+  spaceNeeded,
+  Space(..),
+  Delim(..),
+  LitTok(..),
+  AttrStyle(..),
 ) where
 
-import GHC.Generics (Generic)
-import Data.Maybe (fromMaybe)
-import Data.Data (Data)
-import Data.Typeable (Typeable)
-import Control.DeepSeq (NFData)
+import GHC.Generics                ( Generic )
 
-import Language.Rust.Syntax.Ident (Ident, Name)
-import Language.Rust.Data.Position (Span)
-import Language.Rust.Syntax.AST (Nonterminal, AttrStyle(..))
+import Control.DeepSeq             ( NFData )
+import Data.Data                   ( Data )
+import Data.Maybe                  ( fromMaybe )
+import Data.Typeable               ( Typeable )
+
+import Language.Rust.Data.Ident    ( Ident, Name )
+import Language.Rust.Data.Position ( Span )
+import Language.Rust.Syntax.AST    ( Nonterminal, AttrStyle(..) )
 
 -- | A general token (based on @syntax::parse::token::Token@).
 --

@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Exit if anything goes wrong
+set -e
+
 # Usage info
 if ! [ $# = 1 ]
 then

@@ -5,6 +5,7 @@ import Test.Framework (testGroup, Test)
 import Test.Framework.Providers.HUnit
 import Test.HUnit hiding (Test)
 
+import Language.Rust.Data.Ident
 import Language.Rust.Data.Position
 import Language.Rust.Syntax
 import Language.Rust.Pretty.Internal

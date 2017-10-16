@@ -3,6 +3,7 @@
 module Diff where
 
 import Data.Aeson
+import Language.Rust.Data.Ident
 import Language.Rust.Syntax
 import Language.Rust.Parser
 

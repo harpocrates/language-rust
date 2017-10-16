@@ -5,27 +5,31 @@ Copyright   : (c) Alec Theriault, 2017
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
-Portability : portable
+Portability : GHC
 
 Datatypes wrapping lists and non-empty lists designed for fast append (as opposed to prepend) 
 along with the usual class instances.
 -}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE FlexibleInstances, TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 #if __GLASGOW_HASKELL__ < 800
 {-# LANGUAGE FlexibleContexts #-}
 #endif
 
 module Language.Rust.Parser.Reversed (
-  Reversed(..), toNonEmpty, unsnoc
+  Reversed(..),
+  toNonEmpty,
+  unsnoc
 ) where
 
-import Data.Foldable
-import Data.Semigroup
+import Language.Rust.Data.Position
+
+import Data.Foldable          ( Foldable(toList) )
+import Data.Semigroup         ( Semigroup(..) )
+
 import qualified Data.List.NonEmpty as N
 import qualified GHC.Exts as G
-
-import Language.Rust.Data.Position
 
 -- | Wrap a data type where all the operations are reversed
 newtype Reversed f a = Reversed (f a)

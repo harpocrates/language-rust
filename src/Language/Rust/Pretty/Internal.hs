@@ -96,10 +96,11 @@ module Language.Rust.Pretty.Internal (
 import Language.Rust.Pretty.Literals
 import Language.Rust.Pretty.Util
 
+import Language.Rust.Data.Ident
 import Language.Rust.Data.Position
+
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
-import Language.Rust.Syntax.Ident
 
 import Data.Text.Prettyprint.Doc hiding ( (<+>), hsep, indent, vsep )
 

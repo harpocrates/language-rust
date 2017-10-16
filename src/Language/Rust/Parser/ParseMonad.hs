@@ -5,7 +5,7 @@ Copyright   : (c) Alec Theriault, 2017
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
-Portability : portable
+Portability : GHC
 
 Both the lexer and the parser run inside of the 'P' monad. As detailed in the section on 
 on [threaded-lexers](https://www.haskell.org/happy/doc/html/sec-monads.html#sec-lexers) in Happy's
@@ -17,22 +17,37 @@ instruction manual, the benefits of this are that:
 
 In our case, this shared information is held in 'PState'.
 -}
-{-# LANGUAGE Rank2Types, BangPatterns #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Language.Rust.Parser.ParseMonad (
   -- * Parsing monad
-  P, execParser, execParser', initPos, PState(..),
+  P,
+  execParser,
+  execParser',
+  initPos,
+  PState(..),
+
   -- * Monadic operations
-  getPState, setPState, getPosition, setPosition, getInput, setInput, popToken, pushToken, swapToken,
+  getPState,
+  setPState,
+  getPosition,
+  setPosition,
+  getInput,
+  setInput,
+  popToken,
+  pushToken,
+  swapToken,
+
   -- * Error reporting
   parseError,
 ) where
 
-import Language.Rust.Data.InputStream (InputStream)
-import Language.Rust.Data.Position (Spanned, Position, initPos)
-import Language.Rust.Syntax.Token (Token)
+import Language.Rust.Data.InputStream ( InputStream )
+import Language.Rust.Data.Position    ( Spanned, Position, initPos )
+import Language.Rust.Syntax.Token     ( Token )
 
-import Data.Maybe (listToMaybe)
+import Data.Maybe                     ( listToMaybe )
 
 -- | Parsing and lexing monad. A value of type @'P' a@ represents a parser that can be run (using
 -- 'execParser') to possibly produce a value of type @a@.
@@ -67,7 +82,6 @@ instance Monad P where
   m >>= k = P $ \ !s pOk pFailed ->
     let pOk' x s' = unParser (k x) s' pOk pFailed
     in unParser m s pOk' pFailed
-
 
   fail msg = P $ \ !s _ pFailed -> pFailed msg (curPos s)
 
@@ -137,5 +151,4 @@ popToken = P $ \ !s@PState{ pushedTokens = toks } pOk _ -> pOk (listToMaybe toks
 -- | Signal a syntax error.
 parseError :: Show b => b -> P a
 parseError b = fail ("Syntax error: the symbol `" ++ show b ++ "' does not fit here")
-
 

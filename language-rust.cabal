@@ -51,6 +51,7 @@ library
                        Language.Rust.Pretty
                        Language.Rust.Pretty.Internal
                        Language.Rust.Data.Position
+                       Language.Rust.Data.Ident
                        Language.Rust.Data.InputStream
   if flag(enableQuasiquotes)
     exposed-modules:   Language.Rust.Quote
@@ -62,7 +63,6 @@ library
                        Language.Rust.Pretty.Literals
                        Language.Rust.Pretty.Util
                        Language.Rust.Syntax.AST
-                       Language.Rust.Syntax.Ident
                        Language.Rust.Syntax.Token
 
   other-extensions:    FlexibleContexts

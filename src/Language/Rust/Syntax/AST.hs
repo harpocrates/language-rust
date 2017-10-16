@@ -5,7 +5,7 @@ Copyright   : (c) Alec Theriault, 2017
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
-Portability : portable
+Portability : GHC
 -}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveDataTypeable #-}
@@ -102,22 +102,23 @@ module Language.Rust.Syntax.AST (
   MacStmtStyle(..),
 ) where
 
-import {-# SOURCE #-} Language.Rust.Syntax.Token (Token, Delim)
-import Language.Rust.Syntax.Ident (Ident, Name)
+import Language.Rust.Data.Ident                  ( Ident, Name )
 import Language.Rust.Data.Position
+import {-# SOURCE #-} Language.Rust.Syntax.Token ( Delim, Token )
 
-import GHC.Generics (Generic, Generic1)
-import Data.Data (Data)
-import Data.Typeable (Typeable)
-import Control.DeepSeq (NFData)
+import GHC.Generics                              ( Generic, Generic1 )
 
-import Data.Word (Word8)
-import Data.Char (ord)
-import Data.List.NonEmpty (NonEmpty(..))
+import Control.DeepSeq                           ( NFData )
+import Data.Data                                 ( Data )
+import Data.Typeable                             ( Typeable )
 
-import Text.Read (Read(..))
-import Text.ParserCombinators.ReadPrec (lift)
-import Text.ParserCombinators.ReadP (choice, string)
+import Data.Char                                 ( ord )
+import Data.List.NonEmpty                        ( NonEmpty(..) )
+import Data.Word                                 ( Word8 )
+
+import Text.Read                                 ( Read(..) )
+import Text.ParserCombinators.ReadPrec           ( lift )
+import Text.ParserCombinators.ReadP              ( choice, string )
 
 -- $overview
 -- The abstract syntax tree(s) of the Rust language, based on the definitions in the @syntax::ast@

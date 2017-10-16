@@ -55,31 +55,35 @@ fn foo(mut x: i32) -> i32 {
 And now we have generated valid code.
 
 -}
-{-# LANGUAGE TypeOperators, OverloadedLists #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE OverloadedLists #-}
 
 module Language.Rust.Pretty.Resolve (
-  Resolve(..), Issue(..), Severity(..), runResolve 
+  Resolve(..),
+  Issue(..),
+  Severity(..),
+  runResolve,
 ) where
 
 import Language.Rust.Syntax
 
-import Language.Rust.Parser.ParseMonad (execParser)
-import Language.Rust.Parser.Lexer (lexTokens, lexToken)
-import Language.Rust.Data.Position (initPos, Spanned(..))
-import Language.Rust.Data.InputStream (inputStreamFromString)
+import Language.Rust.Data.Ident        ( Ident(..), mkIdent )
+import Language.Rust.Data.InputStream  ( inputStreamFromString )
+import Language.Rust.Data.Position     ( initPos, Spanned(..) )
 
-import Data.Dynamic (Dynamic, toDyn, Typeable)
-import Data.Maybe (fromJust)
-import Data.List (find)
-import Data.List.NonEmpty (NonEmpty(..))
-import qualified Data.List.NonEmpty as N
-import Data.Semigroup ((<>))
-import Control.Monad (when)
+import Language.Rust.Parser.Lexer      ( lexTokens, lexToken )
+import Language.Rust.Parser.ParseMonad ( execParser )
 
-
-import GHC.Generics
-
+import Control.Monad                   ( when )
 import Control.Monad.Trans.RWS
+
+import Data.Dynamic                    ( Dynamic, toDyn, Typeable )
+import Data.List                       ( find )
+import Data.List.NonEmpty              ( NonEmpty(..) )
+import qualified Data.List.NonEmpty as N
+import Data.Maybe                      ( fromJust )
+import Data.Semigroup                  ( (<>) )
+
 
 {-# ANN module "HLint: ignore Reduce duplication" #-}
 
@@ -161,29 +165,6 @@ class Resolve a where
                 (t, _, _) -> Right t
 
   resolveM :: a -> ResolveM a
-
-
-class GResolve f where
-  gResolveM :: f a -> ResolveM (f a)
-
-instance GResolve f => GResolve (M1 i c f) where
-  gResolveM (M1 x) = M1 <$> gResolveM x
-
-instance GResolve U1 where
-  gResolveM U1 = pure U1
-
-instance GResolve Par1 where
-  gResolveM = pure
-
-instance (GResolve f, GResolve g) => GResolve (f :*: g) where
-  gResolveM (l :*: r) = (:*:) <$> gResolveM l <*> gResolveM r
-
-instance (GResolve f, GResolve g) => GResolve (f :+: g) where
-  gResolveM (L1 l) = L1 <$> gResolveM l
-  gResolveM (R1 r) = R1 <$> gResolveM r
-
-instance (Typeable c, Resolve c) => GResolve (K1 i c) where
-  gResolveM (K1 x) = K1 <$> resolveM x
 
 
 -- | A valid sourcfile needs

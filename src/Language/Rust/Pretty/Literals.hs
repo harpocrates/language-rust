@@ -10,7 +10,7 @@ Portability : portable
 Functions for pretty-printing literals.
 -}
 {-# OPTIONS_HADDOCK hide, not-home #-}
-{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Language.Rust.Pretty.Literals (
   printLit
@@ -19,24 +19,24 @@ module Language.Rust.Pretty.Literals (
 import Language.Rust.Syntax.AST
 import Language.Rust.Pretty.Util
 
-import Data.Text.Prettyprint.Doc (hcat, annotate, (<>), Doc, pretty, group, hardline, flatAlt)
+import Data.Text.Prettyprint.Doc ( hcat, annotate, (<>), Doc, pretty, group, hardline, flatAlt )
 
-import Data.Char (intToDigit, ord, chr)
-import Data.Word (Word8)
+import Data.Char                 ( intToDigit, ord, chr )
+import Data.Word                 ( Word8 )
 
 -- | Print a literal (@print_literal@)
 printLit :: Lit a -> Doc a
 printLit lit = noIndent $ case lit of
-    (Str     str Cooked  s x) -> annotate x (hcat [ "\"", group (foldMap (escapeChar True) str), "\"", suf s ])
-    (Str     str (Raw m) s x) -> annotate x (hcat [ "r", pad m, "\"", string hardline str, "\"", pad m, suf s ])
-    (ByteStr str Cooked  s x) -> annotate x (hcat [ "b\"", group (foldMap (escapeByte True) str), "\"", suf s ])
-    (ByteStr str (Raw m) s x) -> annotate x (hcat [ "br", pad m, "\"", string hardline (map byte2Char str), "\"", pad m, suf s ])
-    (Char c s x)              -> annotate x (hcat [ "'",  escapeChar False c, "'", suf s ])
-    (Byte b s x)              -> annotate x (hcat [ "b'", escapeByte False b, "'", suf s ])
-    (Int b i s x)             -> annotate x (hcat [ printIntLit i b, suf s ])
-    (Float d s x)             -> annotate x (hcat [ pretty d,  suf s ])
-    (Bool True s x)           -> annotate x (hcat [ "true",  suf s ])
-    (Bool False s x)          -> annotate x (hcat [ "false", suf s ])
+    Str     str Cooked  s x -> annotate x (hcat [ "\"", group (foldMap (escapeChar True) str), "\"", suf s ])
+    Str     str (Raw m) s x -> annotate x (hcat [ "r", pad m, "\"", string hardline str, "\"", pad m, suf s ])
+    ByteStr str Cooked  s x -> annotate x (hcat [ "b\"", group (foldMap (escapeByte True) str), "\"", suf s ])
+    ByteStr str (Raw m) s x -> annotate x (hcat [ "br", pad m, "\"", string hardline (map byte2Char str), "\"", pad m, suf s ])
+    Char c s x              -> annotate x (hcat [ "'",  escapeChar False c, "'", suf s ])
+    Byte b s x              -> annotate x (hcat [ "b'", escapeByte False b, "'", suf s ])
+    Int b i s x             -> annotate x (hcat [ printIntLit i b, suf s ])
+    Float d s x             -> annotate x (hcat [ pretty d,  suf s ])
+    Bool True s x           -> annotate x (hcat [ "true",  suf s ])
+    Bool False s x          -> annotate x (hcat [ "false", suf s ])
   where
   pad :: Int -> Doc a
   pad m = pretty (replicate m '#')

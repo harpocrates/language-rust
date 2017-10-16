@@ -12,11 +12,9 @@ Using a pretty printer is as easy as calling 'pretty' or 'prettyAnn' on the AST 
 >>> :set -XOverloadedStrings
 >>> import Language.Rust.Syntax
 >>> import Language.Rust.Pretty
->>> decl = FnDecl [SelfRegion Nothing Immutable ()] (Just (Never ())) False ()
-decl :: FnDecl ()
->>> fn = Fn decl Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [] Normal ()) ()
-fn :: ItemKind ()
->>> pretty (Item "foo" [] fn PublicV ())
+>>> fn = Fn [] PublicV "foo" decl Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [] Normal ()) ()
+fn :: Item ()
+>>> pretty fn
 pub fn foo(&self) -> ! { }
 it :: Doc a
 
@@ -24,28 +22,37 @@ it :: Doc a
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 
 module Language.Rust.Pretty (
-  Pretty(..), pretty, PrettyAnnotated(..), prettyAnnotated, Resolve(..), Issue(..), Severity(..), 
-  runResolve, Doc, writeSourceFile
+  Pretty(..),
+  pretty,
+  PrettyAnnotated(..),
+  prettyAnnotated,
+  Resolve(..),
+  Issue(..),
+  Severity(..),
+  runResolve,
+  Doc,
+  writeSourceFile,
 ) where
 
+import Language.Rust.Data.Ident
 import Language.Rust.Data.Position
 
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
-import Language.Rust.Syntax.Ident
 
 import Language.Rust.Pretty.Internal
 import Language.Rust.Pretty.Resolve
 
-import Data.Text.Prettyprint.Doc (Doc)
+import System.IO                             ( Handle )
+import Data.Typeable                         ( Typeable )
+import Data.Text.Prettyprint.Doc.Render.Text ( renderIO )
+import Data.Text.Prettyprint.Doc             ( Doc )
 import qualified Data.Text.Prettyprint.Doc as PP
-import Data.Text.Prettyprint.Doc.Render.Text (renderIO)
-import System.IO (Handle)
-import Data.Typeable (Typeable)
 
 -- | Given a handle, write into it the given 'SourceFile' (with file width will be 100).
 writeSourceFile :: (Monoid a, Typeable a) => Handle -> SourceFile a -> IO ()
-writeSourceFile hdl = renderIO hdl . PP.layoutPretty (PP.LayoutOptions (PP.AvailablePerLine 100 1.0)) . pretty
+writeSourceFile hdl = renderIO hdl . PP.layoutPretty layout . pretty
+  where layout = PP.LayoutOptions (PP.AvailablePerLine 100 1.0)
 
 -- | Resolve and pretty print. When in doubt, this is probably the function you want to use for
 -- pretty-printing.

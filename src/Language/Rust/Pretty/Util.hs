@@ -24,12 +24,12 @@ neutral element for @<+>@, @hsep@, @<#>@, @vsep@, and @</>@.
 
 module Language.Rust.Pretty.Util where
 
-import Data.Monoid ((<>))
+import Data.Monoid ( (<>) )
 
 import qualified Data.Text.Prettyprint.Doc as PP
-import Data.Text.Prettyprint.Doc.Internal.Type (Doc(..))
+import Data.Text.Prettyprint.Doc.Internal.Type ( Doc(..) )
 
-import Language.Rust.Syntax.Token (Delim(..))
+import Language.Rust.Syntax.Token ( Delim(..) )
 
 -- | Indentation level
 n :: Int

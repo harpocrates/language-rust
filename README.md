@@ -1,9 +1,9 @@
 # Parser and pretty-printer for Rust [![Build Status][4]][5] [![Windows build status][7]][8]
 
 `language-rust` aspires to efficiently and accurately parse and pretty-print the [Rust language][0].
-The underlying AST structures are also intended to be as similar as possible to the `libsyntax` AST
-`rustc` uses itself. When `language-rust` and `rustc` have diverging AST, the divergence should be
-detailed in the documentation.
+The underlying AST structures are also intended to be as similar as possible to the [`libsyntax` AST
+`rustc`][10] uses itself. When `language-rust` and `rustc` have diverging AST, the divergence should
+be detailed in the documentation.
 
 A typical use looks like:
 
@@ -15,7 +15,7 @@ A typical use looks like:
 >>> import Language.Rust.Parser
 >>> let inp = inputStreamFromString "fn main () { println!(\"Hello world!\"); }"
 inp :: InputStream
->>> Right sourceFile = parse @(SourceFile Span) inp
+>>> let Right sourceFile = parse @(SourceFile Span) inp
 sourceFile :: SourceFile Span
 
 >>> -- Sample use of the pretty-printer
@@ -46,7 +46,9 @@ With the [Stack][1] tool installed, run
     stack build
 
 The second command is responsible for pulling in all of the dependencies (including executable
-tools like [Alex][2], [Happy][3], and GHC itself) and then compiling everything.
+tools like [Alex][2], [Happy][3], and GHC itself) and then compiling everything. If Stack complains
+about the version of Happy installed, you can explicitly install a recent one with `stack install
+happy-1.19.8`.
 
 ## Evolution of Rust
 
@@ -85,3 +87,4 @@ pretty-printing.
 [7]: https://ci.appveyor.com/api/projects/status/um8dxklqmubvn091/branch/master?svg=true
 [8]: https://ci.appveyor.com/project/harpocrates/language-rust/branch/master
 [9]: https://github.com/harpocrates/language-rust/issues
+[10]: https://github.com/rust-lang/rust/blob/master/src/libsyntax/ast.rs
