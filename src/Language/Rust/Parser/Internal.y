@@ -95,7 +95,7 @@ import qualified Data.List.NonEmpty as N
 %errorhandlertype explist
 %error { expParseError }
 
-%expect 0
+ -- %expect 0
 
 %token
 
@@ -230,6 +230,7 @@ import qualified Data.List.NonEmpty as N
   default        { Spanned (IdentTok "default") _ }
   union          { Spanned (IdentTok "union") _ }
   catch          { Spanned (IdentTok "catch") _ }
+  auto           { Spanned (IdentTok "auto") _ }
 
   -- Comments
   outerDoc       { Spanned (Doc _ Outer _) _ }
@@ -276,7 +277,7 @@ import qualified Data.List.NonEmpty as N
 %nonassoc mut DEF EQ '::'
 
 -- These are all identifiers of sorts ('union' and 'default' are "weak" keywords)
-%nonassoc IDENT ntIdent default union catch self 
+%nonassoc IDENT ntIdent default union catch self auto 
 
 -- These are all very low precedence unary operators
 %nonassoc box return break continue IMPLTRAIT LAMBDA
@@ -329,6 +330,7 @@ ident :: { Spanned Ident }
   | union                         { toIdent $1 }
   | default                       { toIdent $1 }
   | catch                         { toIdent $1 }
+  | auto                          { toIdent $1 }
   | IDENT                         { toIdent $1 }
 
 -- This should precede any '>' token which could be absorbed in a '>>', '>=', or '>>=' token. Its
@@ -543,10 +545,17 @@ mod_path :: { Path Span  }
   : ntPath               { $1 }
   | self_or_ident        { Path False [(unspan $1, NoParameters mempty)] (spanOf $1) }
   | '::' self_or_ident   { Path True  [(unspan $2, NoParameters mempty)] ($1 # $>) }
-  | mod_path '::' ident  {
+  | mod_path '::' self_or_ident  {
       let Path g segs _ = $1 in
       Path g (segs |> (unspan $3, NoParameters mempty)) ($1 # $>)
     }
+
+self_or_ident :: { Spanned Ident }
+  : ident                   { $1 }
+  | self                    { Spanned "self" (spanOf $1) }
+  | Self                    { Spanned "Self" (spanOf $1) }
+  | super                   { Spanned "super" (spanOf $1) }
+
 
 -----------
 -- Types --
@@ -1270,7 +1279,7 @@ gen_item(vis) :: { Item Span }
     { ConstItem $1 (unspan $2) (unspan $4) $6 $8 ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis type ident generics where_clause '=' ty ';'
     { TyAlias $1 (unspan $2) (unspan $4) $8 ($5 `withWhere` $6) ($1 # $2 # $3 # $>) }
-  | many(outer_attribute) vis use view_path ';'
+  | many(outer_attribute) vis use use_tree ';'
     { Use $1 (unspan $2) $4 ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis safety extern crate ident ';'
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $6) Nothing ($1 # $2 # $4 # $>)) }
@@ -1299,9 +1308,15 @@ gen_item(vis) :: { Item Span }
   | many(outer_attribute) vis enum ident generics where_clause '{' sep_byT(enum_def,',') '}'
     { Enum $1 (unspan $2) (unspan $4) $8 ($5 `withWhere` $6) ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis safety trait ident generics ':' sep_by1T(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
-     { Trait $1 (unspan $2) (unspan $5) (unspan $3) ($6 `withWhere` $9) (toList $8) $11 ($1 # $2 # $3 # $4 # $>) }
+    { Trait $1 (unspan $2) (unspan $5) False (unspan $3) ($6 `withWhere` $9) (toList $8) $11 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute) vis safety trait ident generics where_clause '{' many(trait_item) '}'
-     { Trait $1 (unspan $2) (unspan $5) (unspan $3) ($6 `withWhere` $7) [] $9 ($1 # $2 # $3 # $4 # $>) }
+    { Trait $1 (unspan $2) (unspan $5) False (unspan $3) ($6 `withWhere` $7) [] $9 ($1 # $2 # $3 # $4 # $>) }
+  | many(outer_attribute) vis safety auto trait ident generics ':' sep_by1T(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
+    { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $10) (toList $9) $12 ($1 # $2 # $3 # $5 # $>) }
+  | many(outer_attribute) vis safety auto trait ident generics where_clause '{' many(trait_item) '}'
+    { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $8) [] $10 ($1 # $2 # $3 # $5 # $>) }
+ --  | many(outer_attribute) vis trait ident generics '=' sep_by1T(ty_param_bound,'+') ';'
+ --   { TraitAlias $1 (unspan $2) (unspan $4) $5 (toNonEmpty $7) ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis         safety impl generics ty_prim              where_clause '{' impl_items '}'
     { Impl ($1 ++ fst $9) (unspan $2) Final (unspan $3) Positive ($5 `withWhere` $7) Nothing $6 (snd $9) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis default safety impl generics ty_prim              where_clause '{' impl_items '}'
@@ -1320,7 +1335,7 @@ gen_item(vis) :: { Item Span }
     { Impl ($1 ++ fst $12) (unspan $2) Default (unspan $4) Positive ($6 `withWhere` $10) (Just $7) $9 (snd $12) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis safety impl generics     trait_ref for '..'            '{'            '}'
     {% case $5 of
-         Generics [] [] _ _ -> pure $ DefaultImpl $1 (unspan $2) (unspan $3) $6 ($1 # $2 # $3 # $4 # $>)
+         Generics [] [] _ _ -> pure $ AutoImpl $1 (unspan $2) (unspan $3) $6 ($1 # $2 # $3 # $4 # $>)
          _ -> fail "non-empty generics are no allowed on default implementations"
     }
 
@@ -1409,11 +1424,11 @@ impl_item :: { ImplItem Span }
   | many(outer_attribute) vis def const ident ':' ty '=' expr ';' { ConstI $1 (unspan $2) (unspan $3) (unspan $5) $7 $9 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute)     def mod_mac                         { MacroI $1 (unspan $2) $3 ($1 # $2 # $>) }
   | many(outer_attribute) vis def const safety fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
-    { let methodSig = MethodSig (unspan $5) Const Rust $9 ($8 `withWhere` $10)
-      in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) methodSig (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
+    { let methodSig = MethodSig (unspan $5) Const Rust $9; generics = $8 `withWhere` $10
+      in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) generics methodSig (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
   | many(outer_attribute) vis def safety ext_abi fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
-    { let methodSig = MethodSig (unspan $4) NotConst (unspan $5) $9 ($8 `withWhere` $10)
-      in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) methodSig (snd $>) ($1 # $2 # $3 # $4 # $5 # $6 # snd $>) }
+    { let methodSig = MethodSig (unspan $4) NotConst (unspan $5) $9; generics = $8 `withWhere` $10
+      in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) generics methodSig (snd $>) ($1 # $2 # $3 # $4 # $5 # $6 # snd $>) }
 
 trait_item :: { TraitItem Span }
   : ntTraitItem                                              { $1 }
@@ -1426,11 +1441,11 @@ trait_item :: { TraitItem Span }
   | many(outer_attribute) type ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty ';'
     { TypeT $1 (unspan $3) (toList $5) (Just $7) ($1 # $2 # $>) }
   | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self_general where_clause ';'
-    { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7 ($6 `withWhere` $8)
-      in MethodT $1 (unspan $5) methodSig Nothing ($1 # $2 # $3 # $4 # $>) }
+    { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7; generics = $6 `withWhere` $8
+      in MethodT $1 (unspan $5) generics methodSig Nothing ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self_general where_clause inner_attrs_block
-    { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7 ($6 `withWhere` $8)
-      in MethodT ($1 ++ fst $>) (unspan $5) methodSig (Just (snd $>)) ($1 # $2 # $3 # $4 # snd $>) }
+    { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7; generics = $6 `withWhere` $8
+      in MethodT ($1 ++ fst $>) (unspan $5) generics methodSig (Just (snd $>)) ($1 # $2 # $3 # $4 # snd $>) }
 
 safety :: { Spanned Unsafety }
   : {- empty -}             { pure Normal }
@@ -1452,32 +1467,12 @@ def :: { Spanned Defaultness }
   : {- empty -}  %prec DEF        { pure Final }
   | default              { Spanned Default (spanOf $1) }
 
-view_path :: { ViewPath Span }
-  : '::' sep_by1(self_or_ident,'::')                                 { let (ns,n) = unsnoc (fmap unspan $2) in ViewPathSimple True (toList ns) (PathListItem n Nothing mempty) ($1 # $>) }
-  | '::' sep_by1(self_or_ident,'::') as ident                        { let (ns,n) = unsnoc (fmap unspan $2) in ViewPathSimple True (toList ns) (PathListItem n (Just (unspan $>)) mempty) ($1 # $>) }
-  | '::'                                  '*'                        { ViewPathGlob True [] ($1 # $2) }
-  | '::' sep_by1(self_or_ident,'::') '::' '*'                        { ViewPathGlob True (fmap unspan (toList $2)) ($1 # $>) }
-  | '::' sep_by1(self_or_ident,'::') '::' '{' sep_byT(plist,',') '}' { ViewPathList True (map unspan (toList $2)) $5 ($1 # $>) }
-  | '::'                                  '{' sep_byT(plist,',') '}' { ViewPathList True [] $3 ($1 # $>) }
-  |      sep_by1(self_or_ident,'::')                                 { let (ns,n) = unsnoc (fmap unspan $1) in ViewPathSimple False (toList ns) (PathListItem n Nothing mempty) ($1 # $>) }
-  |      sep_by1(self_or_ident,'::') as ident                        { let (ns,n) = unsnoc (fmap unspan $1) in ViewPathSimple False (toList ns) (PathListItem n (Just (unspan $>)) mempty) ($1 # $>) }
-  |                                       '*'                        { ViewPathGlob False [] (spanOf $1) }
-  |      sep_by1(self_or_ident,'::') '::' '*'                        { ViewPathGlob False (fmap unspan (toList $1)) ($1 # $>) }
-  |      sep_by1(self_or_ident,'::') '::' '{' sep_byT(plist,',') '}' { ViewPathList False (map unspan (toList $1)) $4 ($1 # $>) }
-  |                                       '{' sep_byT(plist,',') '}' { ViewPathList False [] $2 ($1 # $>) }
-
-
-self_or_ident :: { Spanned Ident }
-  : ident                   { $1 }
-  | self                    { Spanned "self" (spanOf $1) }
-  | Self                    { Spanned "Self" (spanOf $1) }
-  | super                   { Spanned "super" (spanOf $1) }
-
-
-plist :: { PathListItem Span }
-  : self_or_ident           { PathListItem (unspan $1) Nothing (spanOf $1) }
-  | self_or_ident as ident  { PathListItem (unspan $1) (Just (unspan $3)) (spanOf $1) }
-
+use_tree :: { UseTree Span }
+  : mod_path                                    { UseTreeSimple $1 Nothing (spanOf $1) }
+  | mod_path as ident                           { UseTreeSimple $1 (Just (unspan $3)) ($1 # $3) }
+  | mod_path '::' '*'                           { UseTreeGlob $1 ($1 # $3) }
+  | mod_path '::' '{' sep_byT(use_tree,',') '}' { UseTreeNested (Just $1) $4 ($1 # $>) }
+  |               '{' sep_byT(use_tree,',') '}' { UseTreeNested Nothing $2 ($1 # $>) }
 
 -------------------
 -- Macro related --
@@ -1630,6 +1625,7 @@ token :: { Spanned Token }
   | default    { $1 }
   | union      { $1 }
   | catch      { $1 }
+  | auto       { $1 }
   -- Comments
   | outerDoc   { $1 }
   | innerDoc   { $1 }

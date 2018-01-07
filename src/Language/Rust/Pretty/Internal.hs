@@ -76,7 +76,7 @@ module Language.Rust.Pretty.Internal (
   printPolarity,
   printStructField,
   printVariant,
-  printViewPath,
+  printUseTree,
   printVis,
   
   -- ** Blocks
@@ -600,8 +600,8 @@ printItem :: Item a -> Doc a
 printItem (ExternCrate as vis ident p x) = annotate x $ align $ printOuterAttrs as <#>
   hsep [ printVis vis, "extern", "crate", perhaps (\p' -> printCookedIdent p' <+> "as") p, printIdent ident <> ";" ]
 
-printItem (Use as vis vp x) = annotate x $ align $ printOuterAttrs as <#>
-  hsep [ printVis vis, "use", printViewPath vp <> ";" ]
+printItem (Use as vis ut x) = annotate x $ align $ printOuterAttrs as <#>
+  hsep [ printVis vis, "use", printUseTree ut <> ";" ]
 
 printItem (Static as vis ident ty m e x) = annotate x $ align $ printOuterAttrs as <#>
   hsep [ printVis vis, "static", printMutability m, printIdent ident <> ":", printType ty, "=", printExpr e <> ";" ]
@@ -634,8 +634,8 @@ printItem (StructItem as vis ident s g x) = annotate x $ align $ printOuterAttrs
 printItem (Union as vis ident s g x) = annotate x $ align $ printOuterAttrs as <#>
   hsep [ printVis vis, "union", printStruct s g ident True True ]
 
-printItem (Trait as vis ident u g tys i x) = annotate x $ align $ printOuterAttrs as <#> 
-  let leading = hsep [ printVis vis, printUnsafety u, "trait"
+printItem (Trait as vis ident a u g tys i x) = annotate x $ align $ printOuterAttrs as <#> 
+  let leading = hsep [ printVis vis, printUnsafety u, when a "auto", "trait"
                      , printIdent ident <> printGenerics g <> printBounds ":" tys
                      ]
       lagging = block Brace False mempty (printInnerAttrs as) (printTraitItem `map` i)
@@ -644,7 +644,12 @@ printItem (Trait as vis ident u g tys i x) = annotate x $ align $ printOuterAttr
                (\w -> vsep [leading, w, lagging])
                wc
 
-printItem (DefaultImpl as vis u t x) = annotate x $ align $ printOuterAttrs as <#> 
+printItem (TraitAlias as vis ident g bds x) = annotate x $ align $ printOuterAttrs as <#>
+  let leading = printVis vis <+> "trait" <+> printIdent ident <> printGenerics g
+  in group (leading <+> "=" <#> indent n (printBounds "=" (toList bds)))
+
+
+printItem (AutoImpl as vis u t x) = annotate x $ align $ printOuterAttrs as <#> 
   hsep [ printVis vis, printUnsafety u, "impl", printTraitRef t, "for", "..", "{ }" ]
 
 printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs as <#> 
@@ -669,7 +674,7 @@ printItem (MacroDef as i ts x) = annotate x $ align $ printOuterAttrs as <#>
 -- | Print a trait item (@print_trait_item@)
 printTraitItem :: TraitItem a -> Doc a
 printTraitItem (ConstT as ident ty expr x) = annotate x $ printOuterAttrs as <#> printAssociatedConst ident ty expr InheritedV
-printTraitItem (MethodT as ident sig body x) = annotate x $ printOuterAttrs as <#> printMethodSig ident sig InheritedV (fmap (\b -> (b, as)) body)
+printTraitItem (MethodT as ident g sig body x) = annotate x $ printOuterAttrs as <#> printMethodSig ident g sig InheritedV (fmap (\b -> (b, as)) body)
 printTraitItem (TypeT as ident bounds ty x) = annotate x $ printOuterAttrs as <#> printAssociatedType ident (Just bounds) ty
 printTraitItem (MacroT as m x) = annotate x $ printOuterAttrs as <#> printMac Paren m <> ";"
 
@@ -693,8 +698,8 @@ printFormalLifetimeList defs = "for" <> angles (align (fillSep (punctuate "," (p
 printImplItem :: ImplItem a -> Doc a
 printImplItem (ConstI as vis def ident ty expr x) = annotate x $ printOuterAttrs as <#>
   (printVis vis <+> printDef def <+> printAssociatedConst ident ty (Just expr) InheritedV)
-printImplItem (MethodI as vis def ident sig body x) = annotate x $ printOuterAttrs as <#>
-  (printVis vis <+> printDef def <+> printMethodSig ident sig InheritedV (Just (body, as)))
+printImplItem (MethodI as vis def ident g sig body x) = annotate x $ printOuterAttrs as <#>
+  (printVis vis <+> printDef def <+> printMethodSig ident g sig InheritedV (Just (body, as)))
 printImplItem (TypeI as vis def ident ty x) = annotate x $ printOuterAttrs as <#>
   (printVis vis <+> printDef def <+> printAssociatedType ident Nothing (Just ty))
 printImplItem (MacroI as def mac x) = annotate x $ printOuterAttrs as <#>
@@ -713,8 +718,8 @@ printAssociatedType ident bounds_m ty_m = "type" <+> (printIdent ident
   <> ";"
 
 -- | Print a method signature (@print_method_sig@)
-printMethodSig :: Ident -> MethodSig a -> Visibility a -> Maybe (Block a, [Attribute a]) -> Doc a
-printMethodSig ident (MethodSig unsafety constness abi decl generics)
+printMethodSig :: Ident -> Generics a -> MethodSig a -> Visibility a -> Maybe (Block a, [Attribute a]) -> Doc a
+printMethodSig ident generics (MethodSig unsafety constness abi decl)
   = printFn decl unsafety constness abi (Just ident) generics
 
 -- | Print an associated constant (@print_associated_const@)
@@ -958,19 +963,13 @@ printQPath (Path global segs x) (QSelf ty n) colons = hcat [ "<", printType ty <
 
   restDoc = printPath (Path False (N.fromList rest) x) colons
 
--- | Print a view path (@print_view_path@)
-printViewPath :: ViewPath a -> Doc a
-printViewPath (ViewPathSimple global segs end x) = annotate x (when global "::" <> hcat (punctuate "::" (map printIdent segs ++ [printPathListItem end])))
-printViewPath (ViewPathGlob global segs x) = annotate x (when global "::" <> hcat (punctuate "::" (map printIdent segs ++ ["*"])))
-printViewPath (ViewPathList global segs ends x) = annotate x (when global "::" <> hcat (punctuate "::" (map printIdent segs ++ [end])))
-  where
-  end = "{" <> hsep (punctuate "," (map printPathListItem ends)) <> "}"
-
--- | Print a path list item (the end of a view path)
-printPathListItem :: PathListItem a -> Doc a
-printPathListItem (PathListItem name (Just rename) _) = printIdent name <+> "as" <+> printIdent rename
-printPathListItem (PathListItem name Nothing _) = printIdent name
-
+-- | Print a use tree
+printUseTree :: UseTree a -> Doc a
+printUseTree (UseTreeSimple p Nothing x) = annotate x (printPath p True)
+printUseTree (UseTreeSimple p (Just i) x) = annotate x (printPath p True <+> "as" <+> printIdent i)
+printUseTree (UseTreeGlob p x) = annotate x (printPath p True <> "::*")
+printUseTree (UseTreeNested (Just p) n x) = annotate x (printPath p True <> "::{" <> hcat (punctuate ", " (map printUseTree n)) <> "}")
+printUseTree (UseTreeNested Nothing n x) = annotate x ("{" <> hcat (punctuate ", " (map printUseTree n)) <> "}")
 
 -- | Print a type parameters (@print_ty_param@)
 printTyParam :: TyParam a -> Doc a

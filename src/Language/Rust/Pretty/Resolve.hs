@@ -1101,7 +1101,7 @@ resolveItem t e@(ExternCrate as v i r x) = scope e $ do
 resolveItem t u@(Use as v p x) = scope u $ do
   as' <- traverse (resolveAttr OuterAttr) as
   v' <- resolveVisibility' t v
-  p' <- resolveViewPath p
+  p' <- resolveUseTree p
   pure (Use as' v' p' x)
 
 resolveItem t s@(Static as v i t' m e x) = scope s $ do
@@ -1180,20 +1180,28 @@ resolveItem t u@(Union as v i vd g x) = scope u $ do
   g' <- resolveGenerics g
   pure (Union as' v' i' vd' g' x)
 
-resolveItem t r@(Trait as v i u g bd is x) = scope r $ do
+resolveItem t r@(Trait as v i a u g bd is x) = scope r $ do
   as' <- traverse (resolveAttr OuterAttr) as
   v' <- resolveVisibility' t v
   i' <- resolveIdent i
   g' <- resolveGenerics g
   bd' <- traverse (resolveTyParamBound NoneBound) bd
   is' <- traverse resolveTraitItem is
-  pure (Trait as' v' i' u g' bd' is' x)
+  pure (Trait as' v' i' a u g' bd' is' x)
 
-resolveItem t i@(DefaultImpl as v u t' x) = scope i $ do
+resolveItem t r@(TraitAlias as v i g bd x) = scope r $ do
+  as' <- traverse (resolveAttr OuterAttr) as
+  v' <- resolveVisibility' t v
+  i' <- resolveIdent i
+  g' <- resolveGenerics g
+  bd' <- traverse (resolveTyParamBound NoneBound) bd
+  pure (TraitAlias as' v' i' g' bd' x)
+
+resolveItem t i@(AutoImpl as v u t' x) = scope i $ do
   as' <- traverse (resolveAttr OuterAttr) as
   v' <- resolveVisibility' t v
   t'' <- resolveTraitRef t'
-  pure (DefaultImpl as' v' u t'' x)
+  pure (AutoImpl as' v' u t'' x)
 
 resolveItem t i'@(Impl as v d u i g mt t' is x) = scope i' $ do
   as' <- traverse (resolveAttr EitherAttr) as
@@ -1336,12 +1344,13 @@ resolveTraitItem n@(ConstT as i t e x) = scope n $ do
   t' <- resolveTy AnyType t
   e' <- traverse (resolveExpr AnyExpr) e
   pure (ConstT as' i' t' e' x)
-resolveTraitItem n@(MethodT as i m b x) = scope n $ do
+resolveTraitItem n@(MethodT as i g m b x) = scope n $ do
   as' <- traverse (resolveAttr OuterAttr) as
   i' <- resolveIdent i
+  g' <- resolveGenerics g
   m' <- resolveMethodSig GeneralArg m 
   b' <- traverse resolveBlock b
-  pure (MethodT as' i' m' b' x)
+  pure (MethodT as' i' g' m' b' x)
 resolveTraitItem n@(TypeT as i bd t x) = scope n $ do
   as' <- traverse (resolveAttr OuterAttr) as
   i' <- resolveIdent i
@@ -1364,13 +1373,14 @@ resolveImplItem n@(ConstI as v d i t e x) = scope n $ do
   t' <- resolveTy AnyType t
   e' <- resolveExpr AnyExpr e
   pure (ConstI as' v' d i' t' e' x)
-resolveImplItem n@(MethodI as v d i m b x) = scope n $ do
+resolveImplItem n@(MethodI as v d i g m b x) = scope n $ do
   as' <- traverse (resolveAttr EitherAttr) as
   v' <- resolveVisibility v
   i' <- resolveIdent i
+  g' <- resolveGenerics g
   m' <- resolveMethodSig NamedArg m 
   b' <- resolveBlock b
-  pure (MethodI as' v' d i' m' b' x)
+  pure (MethodI as' v' d i' g' m' b' x)
 resolveImplItem n@(TypeI as v d i t x) = scope n $ do
   as' <- traverse (resolveAttr OuterAttr) as
   v' <- resolveVisibility v
@@ -1396,40 +1406,25 @@ instance (Typeable a, Monoid a) => Resolve (Visibility a) where resolveM = resol
 
 -- | A method signature is valid if the underlying components are
 resolveMethodSig :: (Typeable a, Monoid a) => ArgType -> MethodSig a -> ResolveM (MethodSig a)
-resolveMethodSig at m@(MethodSig u c a f g) = scope m (MethodSig u c a <$> resolveFnDecl AllowSelf at f <*> resolveGenerics g)
+resolveMethodSig at m@(MethodSig u c a f) = scope m (MethodSig u c a <$> resolveFnDecl AllowSelf at f)
 
 instance (Typeable a, Monoid a) => Resolve (MethodSig a) where resolveM = resolveMethodSig NamedArg
 
 -- | A view path is valid if the underlying components are
-resolveViewPath :: Typeable a => ViewPath a -> ResolveM (ViewPath a)
-resolveViewPath v@(ViewPathSimple b is p x) = scope v $ do
-  is' <- traverse resolveSelfSuperIdent is
-  p' <- resolvePathListItem p 
-  pure (ViewPathSimple b is' p' x)
-resolveViewPath v@(ViewPathGlob b is x) = scope v $ do
-  is' <- traverse resolveSelfSuperIdent is
-  pure (ViewPathGlob b is' x) 
-resolveViewPath v@(ViewPathList b is ps x) = scope v $ do
-  is' <- traverse resolveSelfSuperIdent is
-  ps' <- traverse resolvePathListItem ps
-  pure (ViewPathList b is' ps' x)
+resolveUseTree :: (Typeable a, Monoid a) => UseTree a -> ResolveM (UseTree a)
+resolveUseTree v@(UseTreeSimple p i x) = scope v $ do
+  p' <- resolvePath ModPath p 
+  i' <- traverse resolveIdent i
+  pure (UseTreeSimple p' i' x)
+resolveUseTree v@(UseTreeGlob p x) = scope v $ do
+  p' <- resolvePath ModPath p 
+  pure (UseTreeGlob p' x) 
+resolveUseTree v@(UseTreeNested p ns x) = scope v $ do
+  p' <- traverse (resolvePath ModPath) p
+  ns' <- traverse resolveUseTree ns
+  pure (UseTreeNested p' ns' x)
 
-instance Typeable a => Resolve (ViewPath a) where resolveM = resolveViewPath
-
--- | A path list item is valid if the underlying components are
-resolvePathListItem :: Typeable a => PathListItem a -> ResolveM (PathListItem a)
-resolvePathListItem p@(PathListItem n r x) = scope p $ do
-  n' <- resolveSelfSuperIdent n
-  r' <- traverse resolveIdent r
-  pure (PathListItem n' r' x)
-
-instance Typeable a => Resolve (PathListItem a) where resolveM = resolvePathListItem
-
--- | Accept valid identifiers, as well as identifiers that are 'super' or 'self'
-resolveSelfSuperIdent :: Ident -> ResolveM Ident
-resolveSelfSuperIdent i@(Ident "self" _) = pure i
-resolveSelfSuperIdent i@(Ident "super" _) = pure i
-resolveSelfSuperIdent i = resolveIdent i
+instance (Typeable a, Monoid a) => Resolve (UseTree a) where resolveM = resolveUseTree
 
 
 -------------------

@@ -11,7 +11,7 @@ import Control.Monad (when, unless)
 
 import Text.Read (readMaybe)
 import Data.String (fromString)
-import Data.List.NonEmpty ((<|))
+import qualified Data.List.NonEmpty as N
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Semigroup ((<>))
 import qualified Data.Text as T
@@ -101,15 +101,16 @@ instance Show a => Diffable (Item a) where
         i === (val ! "ident")
         v' === (n' ! "fields" ! 0)
         g === (n' ! "fields" ! 1)
-      ("Trait", Trait as v i u g bd is _) -> do
+      ("Trait", Trait as v i a u g bd is _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
         i === (val ! "ident")
-        u === (n' ! "fields" ! 0)
-        g === (n' ! "fields" ! 1)
-        bd === (n' ! "fields" ! 2)
-        is === (n' ! "fields" ! 3)
-      ("DefaultImpl", DefaultImpl as v u tr _) -> do
+        IsAuto a === (n' ! "fields" ! 0)
+        u === (n' ! "fields" ! 1)
+        g === (n' ! "fields" ! 2)
+        bd === (n' ! "fields" ! 3)
+        is === (n' ! "fields" ! 4)
+      ("AutoImpl", AutoImpl as v u tr _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
         mkIdent "" === (val ! "ident")
@@ -137,7 +138,14 @@ instance Show a => Diffable (Item a) where
         i === (val ! "ident")
         tt === (n' ! "fields" ! 0 ! "tokens")
       _ -> diff "different items" item val
-  
+ 
+newtype IsAuto = IsAuto Bool deriving (Show, Eq)
+
+instance Diffable IsAuto where
+  IsAuto True === "Yes" = pure ()
+  IsAuto False === "No" = pure ()
+  item === val = diff "different auto" item val
+
 instance Diffable ImplPolarity where
   Positive === "Positive" = pure ()
   Negative === "Negative" = pure ()
@@ -152,9 +160,10 @@ instance Show a => Diffable (TraitItem a) where
         i === (val ! "ident")
         t === (n' ! "fields" ! 0)
         me ===(n' ! "fields" ! 1)
-      ("Method", MethodT as i m mb _) -> do
+      ("Method", MethodT as i g m mb _) -> do
         as === (val ! "attrs")
         i === (val ! "ident")
+        g === (val ! "generics")
         m === (n' ! "fields" ! 0)
         mb === (n' ! "fields" ! 1)
       ("Type", TypeT as i bd mt _) -> do
@@ -178,11 +187,12 @@ instance Show a => Diffable (ImplItem a) where
         i === (val ! "ident")
         t === (n' ! "fields" ! 0)
         e ===(n' ! "fields" ! 1)
-      ("Method", MethodI as v d i m b _) -> do
+      ("Method", MethodI as v d i g m b _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
         d === (val ! "defaultness")
         i === (val ! "ident")
+        g === (val ! "generics")
         m === (n' ! "fields" ! 0)
         b === (n' ! "fields" ! 1)
       ("Type", TypeI as v d i t _) -> do
@@ -198,10 +208,9 @@ instance Show a => Diffable (ImplItem a) where
       _ -> diff "different impl item" item val
       
 instance Show a => Diffable (MethodSig a) where
-  MethodSig u c a decl g === val = do
+  MethodSig u c a decl === val = do
     u === (val ! "unsafety")
     a === (val ! "abi")
-    g === (val ! "generics")
     c === (val ! "constness")
     decl === (val ! "decl")
 
@@ -250,50 +259,32 @@ instance Show a => Diffable (ForeignItem a) where
         (m == Mutable) === (n' ! "fields" ! 1)
       _ -> diff "different foreign item" f val
 
-instance Show a => Diffable (ViewPath a) where
+instance Show a => Diffable (UseTree a) where
   v === val = do
-    let n' = val ! "node"
-    case (n' ! "variant", v) of
-      ("ViewPathGlob", ViewPathGlob g is _) -> do
-        v' <- jsonDrop (if g || glbl is then 1 else 0) (n' ! "fields" ! 0 ! "segments")
-        map ViewPathIdent is === v' 
-      ("ViewPathList", ViewPathList g is pl _) -> do
-        v' <- jsonDrop (if g || glbl is then 1 else 0) (n' ! "fields" ! 0 ! "segments")
-        map ViewPathIdent is === v' 
-        pl === (n' ! "fields" ! 1)
-      ("ViewPathSimple", ViewPathSimple g is (PathListItem n (Just r) _) _) -> do
-        r === (n' ! "fields" ! 0)
-        v' <- jsonDrop (if g || glbl is then 1 else 0) (n' ! "fields" ! 1 ! "segments")
-        map ViewPathIdent (is ++ [n]) === v' 
-      ("ViewPathSimple", ViewPathSimple g is (PathListItem n Nothing _) _) -> do
-        n === (n' ! "fields" ! 0)
-        v' <- jsonDrop (if g || glbl is then 1 else 0) (n' ! "fields" ! 1 ! "segments")
-        map ViewPathIdent (is ++ [n]) === v' 
-      _ -> diff "different view path" v val
-    where
-    
-    glbl :: [Ident] -> Bool
-    glbl (Ident "self" _ : _) = False
-    glbl (Ident "super" _ : _) = False
-    glbl _ = True
+    case (val ! "kind", v) of
+      ("Glob", UseTreeGlob p _) -> p === (val ! "prefix")
+      (n', _) -> case (n' ! "variant", v) of
+        ("Simple", UseTreeSimple p i _) -> do
+          p === (val ! "prefix")
+          let l = case (i, p) of
+                    (Nothing, Path _ s _) -> fst (N.last s)
+                    (Just i', _) -> i'
+          l === (n' ! "fields" ! 0)
+        ("Nested", UseTreeNested p ns  _) -> do
+          case p of
+            Just p' -> p' === (val ! "prefix")
+            Nothing -> pure () -- TODO
+          map UseTreePair ns === (n' ! "fields" ! 0)
+        _ -> diff "different view path" v val
 
-    jsonDrop :: Int -> Value -> IO Value
-    jsonDrop i (Data.Aeson.Array v') = pure $ Data.Aeson.Array (V.drop i v')
-    jsonDrop i val' = diff "cannot use 'jsonDrop' on non-array" i val'
+newtype UseTreePair a = UseTreePair (UseTree a)
 
-newtype ViewPathIdent = ViewPathIdent Ident deriving (Show)
+instance Show (UseTreePair a) where
+  show _ = "Some use tree"
 
-instance Diffable ViewPathIdent where
-  ViewPathIdent i === val = do
-      when (Null /= val ! "parameters") $
-        diff "view path identifier has parameters" i val
-      i === (val ! "identifier")
-
-instance Show a => Diffable (PathListItem a) where
-  PathListItem n r _ === val = do
-    n === (val ! "node" ! "name")
-    r === (val ! "node" ! "rename")
-
+instance Show a => Diffable (UseTreePair a) where
+  UseTreePair ut === val = ut === (val ! 0)
+  
 instance Show a => Diffable (FnDecl a) where
   FnDecl as out v _ === val = do
     -- Check inputs
@@ -723,9 +714,12 @@ instance Show a => Diffable (QSelf a) where
     p === (val ! "position")
 
 instance Show a => Diffable (Path a) where
-  Path g segs _ === val = do
-    let segs' = if g then ("{{root}}", NoParameters undefined) <| segs else segs
-    fmap PathPair segs' === (val ! "segments")
+  Path _ segs _ === val = do
+    let val' = case val ! "segments" of
+                 j@(Data.Aeson.Array v) | j ! 0 ! "identifier" == "{{root}}" -> Data.Aeson.Array (V.drop 1 v)
+                 j -> j
+    
+    fmap PathPair segs === val'
 
 newtype PathPair a = PathPair (Ident, PathParameters a) deriving (Show)
 instance Show a => Diffable (PathPair a) where

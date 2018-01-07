@@ -26,7 +26,6 @@ module Language.Rust.Syntax.AST (
   
   -- ** Paths
   Path(..),
-  PathListItem(..),
   PathParameters(..),
   QSelf(..),
   
@@ -85,7 +84,7 @@ module Language.Rust.Syntax.AST (
   StructField(..),
   Variant(..),
   VariantData(..),
-  ViewPath(..),
+  UseTree(..),
   Visibility(..),
   Constness(..),
   MethodSig(..),
@@ -499,7 +498,7 @@ data ImplItem a
   -- | Methods
   --
   -- Example: @fn area(&self) -> f64 { 1f64 }@
-  | MethodI [Attribute a] (Visibility a) Defaultness Ident (MethodSig a) (Block a) a
+  | MethodI [Attribute a] (Visibility a) Defaultness Ident (Generics a) (MethodSig a) (Block a) a
   -- | Associated types
   --
   -- Example: @type N = i32@
@@ -510,7 +509,7 @@ data ImplItem a
 
 instance Located a => Located (ImplItem a) where
   spanOf (ConstI _ _ _ _ _ _ s) = spanOf s
-  spanOf (MethodI _ _ _ _ _ _ s) = spanOf s
+  spanOf (MethodI _ _ _ _ _ _ _ s) = spanOf s
   spanOf (TypeI _ _ _ _ _ s) = spanOf s
   spanOf (MacroI _ _ _ s) = spanOf s
 
@@ -531,7 +530,7 @@ data Item a
   = ExternCrate [Attribute a] (Visibility a) Ident (Maybe Ident) a
   -- | use declaration (@use@ or @pub use@) item.
   -- Examples: @use foo;@, @use foo::bar;@, or @use foo::bar as FooBar;@
-  | Use [Attribute a] (Visibility a) (ViewPath a) a
+  | Use [Attribute a] (Visibility a) (UseTree a) a
   -- | static item (@static@ or @pub static@).
   -- Examples: @static FOO: i32 = 42;@ or @static FOO: &'static str = "bar";@
   | Static [Attribute a] (Visibility a) Ident (Ty a) Mutability (Expr a) a
@@ -561,12 +560,15 @@ data Item a
   | Union [Attribute a] (Visibility a) Ident (VariantData a) (Generics a) a
   -- | trait declaration (@trait@ or @pub trait@).
   -- Example: @trait Foo { .. }@ or @trait Foo\<T\> { .. }@
-  | Trait [Attribute a] (Visibility a) Ident Unsafety (Generics a) [TyParamBound a] [TraitItem a] a
+  | Trait [Attribute a] (Visibility a) Ident Bool Unsafety (Generics a) [TyParamBound a] [TraitItem a] a
+  -- | trait alias
+  -- Example: @trait Foo = Bar + Quux;@
+  | TraitAlias [Attribute a] (Visibility a) Ident (Generics a) (NonEmpty (TyParamBound a)) a
   -- | default implementation
   -- [(RFC for impl
   -- specialization)](https://github.com/rust-lang/rfcs/blob/master/text/1210-impl-specialization.md)
   -- Examples: @impl Trait for .. {}@ or @impl\<T\> Trait\<T\> for .. {}@
-  | DefaultImpl [Attribute a] (Visibility a) Unsafety (TraitRef a) a
+  | AutoImpl [Attribute a] (Visibility a) Unsafety (TraitRef a) a
   -- | implementation
   -- Example: @impl\<A\> Foo\<A\> { .. }@ or @impl\<A\> Trait for Foo\<A\> { .. }@
   | Impl [Attribute a] (Visibility a) Defaultness Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a] a
@@ -590,8 +592,9 @@ instance Located a => Located (Item a) where
   spanOf (Enum _ _ _ _ _ s) = spanOf s
   spanOf (StructItem _ _ _ _ _ s) = spanOf s
   spanOf (Union _ _ _ _ _ s) = spanOf s
-  spanOf (Trait _ _ _ _ _ _ _ s) = spanOf s
-  spanOf (DefaultImpl _ _ _ _ s) = spanOf s
+  spanOf (Trait _ _ _ _ _ _ _ _ s) = spanOf s
+  spanOf (TraitAlias _ _ _ _ _ s) = spanOf s
+  spanOf (AutoImpl _ _ _ _ s) = spanOf s
   spanOf (Impl _ _ _ _ _ _ _ _ _ s) = spanOf s
   spanOf (MacItem _ _ _ s) = spanOf s
   spanOf (MacroDef _ _ _ s) = spanOf s
@@ -718,7 +721,7 @@ data MacStmtStyle
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | Represents a method's signature in a trait declaration, or in an implementation.
-data MethodSig a = MethodSig Unsafety Constness Abi (FnDecl a) (Generics a) deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data MethodSig a = MethodSig Unsafety Constness Abi (FnDecl a) deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 -- | Encodes whether something can be updated or changed (@syntax::ast::Mutability@).
 data Mutability = Mutable | Immutable deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
@@ -804,13 +807,6 @@ data Path a = Path Bool (NonEmpty (Ident, PathParameters a)) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Path a) where spanOf (Path _ _ s) = spanOf s
-
--- | Manage the terminal segments in (non-glob) 'ViewPath's (@syntax::ast::PathListItem@). The first
--- argument is the actual name of the element and the second is its optional rename.
-data PathListItem a = PathListItem Ident (Maybe Ident) a
-  deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
-
-instance Located a => Located (PathListItem a) where spanOf (PathListItem _ _ s) = spanOf s
 
 -- | Parameters on a path segment (@syntax::ast::PathParameters@).
 data PathParameters a
@@ -950,7 +946,7 @@ data TraitItem a
   -- | Method with optional body
   --
   -- Example: @fn area(&self) -> f64;@
-  | MethodT [Attribute a] Ident (MethodSig a) (Maybe (Block a)) a
+  | MethodT [Attribute a] Ident (Generics a) (MethodSig a) (Maybe (Block a)) a
   -- | Associated types
   --
   -- Example: @type N: fmt::Display;@
@@ -961,7 +957,7 @@ data TraitItem a
 
 instance Located a => Located (TraitItem a) where
   spanOf (ConstT _ _ _ _ s) = spanOf s
-  spanOf (MethodT _ _ _ _ s) = spanOf s
+  spanOf (MethodT _ _ _ _ _ s) = spanOf s
   spanOf (TypeT _ _ _ _ s) = spanOf s
   spanOf (MacroT _ _ s) = spanOf s
 
@@ -1079,26 +1075,26 @@ instance Located a => Located (VariantData a) where
   spanOf (TupleD _ s) = spanOf s
   spanOf (UnitD s) = spanOf s
 
--- | Paths used in 'Use' items (@ast::syntax::ViewPath@).
-data ViewPath a
+-- | Paths used in 'Use' items (@ast::syntax::UseTree@).
+data UseTree a
   -- | A regular mod path, or a mod path ending in an @as@.
   --
   -- Examples: @foo::bar::baz as quux@ or just @foo::bar::baz@
-  = ViewPathSimple Bool [Ident] (PathListItem a) a
+  = UseTreeSimple (Path a) (Maybe Ident) a
   -- | A regular mod path ending in a glob pattern
   --
   -- Example: @foo::bar::*@
-  | ViewPathGlob Bool [Ident] a
+  | UseTreeGlob (Path a) a
   -- | A regular mod path ending in a list of identifiers or renamed identifiers.
   --
   -- Example: @foo::bar::{a,b,c as d}@
-  | ViewPathList Bool [Ident] [PathListItem a] a
+  | UseTreeNested (Maybe (Path a)) [UseTree a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
-instance Located a => Located (ViewPath a) where
-  spanOf (ViewPathSimple _ _ _ s) = spanOf s
-  spanOf (ViewPathGlob _ _ s) = spanOf s
-  spanOf (ViewPathList _ _ _ s) = spanOf s
+instance Located a => Located (UseTree a) where
+  spanOf (UseTreeSimple _ _ s) = spanOf s
+  spanOf (UseTreeGlob _ s) = spanOf s
+  spanOf (UseTreeNested _ _ s) = spanOf s
 
 -- | The visibility modifier dictates from where one can access something
 -- (@ast::syntax::Visibility@). [RFC about adding restricted
