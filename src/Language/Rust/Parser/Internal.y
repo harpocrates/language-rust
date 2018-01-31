@@ -453,15 +453,15 @@ qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
   : '<' qual_path_suf(segs)                    { let Spanned x _ = $2 in Spanned x ($1 # $2) }
   | lt_ty_qual_path as ty_path '>' '::' segs   {
       let Path g segsTy x = $3 in
-      Spanned (QSelf (unspan $1) (length segsTy), Path g (segsTy <> unspan $6) x) ($1 # $>)
+      Spanned (QSelf (unspan $1) (length segsTy), Path g (segsTy <> toList $6) x) ($1 # $>)
     }
 
 -- Basically a qualified path, but ignoring the very first '<' token
 qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
-  : ty '>' '::' segs                { Spanned (QSelf $1 0, Path False (unspan $4) (spanOf $4)) ($1 # $>) }
+  : ty '>' '::' segs                { Spanned (QSelf $1 0, Path False (toList $4) (spanOf $4)) ($1 # $>) }
   | ty as ty_path '>' '::' segs     {
       let Path g segsTy x = $3 in
-      Spanned (QSelf $1 (length segsTy), Path g (segsTy <> unspan $6) x) ($1 # $>) 
+      Spanned (QSelf $1 (length segsTy), Path g (segsTy <> toList $6) x) ($1 # $>) 
     }
 
 -- Usually qual_path_suf is for... type paths! This consumes these but with a starting '<<' token.
@@ -494,48 +494,50 @@ binding :: { (Ident, Ty Span) }
 -- parse_path(PathStyle::Type)
 ty_path :: { Path Span }
   : ntPath                                   { $1 }
-  | path_segments_without_colons             { Path False (unspan $1) (spanOf $1) }
-  | '::' path_segments_without_colons        { Path True (unspan $2) ($1 # $2) }
+  | path_segments_without_colons             { Path False $1 (spanOf $1) }
+  | '::' path_segments_without_colons        { Path True $2 ($1 # $2) }
 
 ty_qual_path :: { Spanned (QSelf Span, Path Span) }
   : qual_path(path_segments_without_colons)  { $1 }
 
 -- parse_path_segments_without_colons()
-path_segments_without_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
-  : sep_by1(path_segment_without_colons, '::') %prec SEG  { sequence (toNonEmpty $1) }
+path_segments_without_colons :: { [PathSegment Span] }
+  : sep_by1(path_segment_without_colons, '::') %prec SEG  { toList $1 }
 
 -- No corresponding function - see path_segments_without_colons
-path_segment_without_colons :: { Spanned (Ident, PathParameters Span) }
-  : self_or_ident path_parameter1                    { Spanned (unspan $1, $2) ($1 # $>) }
+path_segment_without_colons :: { PathSegment Span }
+  : self_or_ident path_parameter                     { PathSegment (unspan $1) $2 ($1 # $>) }
 
-path_parameter1 :: { PathParameters Span }
-  : generic_values                           { let (lts, tys, bds) = unspan $1 in AngleBracketed lts tys bds (spanOf $1) }
-  | '(' sep_byT(ty,',') ')'                  { Parenthesized $2 Nothing ($1 # $>) }
-  | '(' sep_byT(ty,',') ')' '->' ty_no_plus  { Parenthesized $2 (Just $>) ($1 # $>) }
-  | {- empty -}                  %prec IDENT { NoParameters mempty }
+path_parameter  :: { Maybe (PathParameters Span) }
+  : generic_values                           { let (lts, tys, bds) = unspan $1
+                                               in Just (AngleBracketed lts tys bds (spanOf $1)) }
+  | '(' sep_byT(ty,',') ')'                  { Just (Parenthesized $2 Nothing ($1 # $>)) }
+  | '(' sep_byT(ty,',') ')' '->' ty_no_plus  { Just (Parenthesized $2 (Just $>) ($1 # $>)) }
+  | {- empty -}                  %prec IDENT { Nothing }
 
 
 -- Expression related:
 -- parse_path(PathStyle::Expr)
 expr_path :: { Path Span }
   : ntPath                                   { $1 }
-  | path_segments_with_colons                { Path False (unspan $1) (spanOf $1) }
-  | '::' path_segments_with_colons           { Path True (unspan $2) ($1 # $2) }
+  | path_segments_with_colons                { Path False (toList $1) (spanOf $1) }
+  | '::' path_segments_with_colons           { Path True (toList $2) ($1 # $2) }
 
 expr_qual_path :: { Spanned (QSelf Span, Path Span) }
   : qual_path(path_segments_with_colons)     { $1 }
 
 -- parse_path_segments_with_colons()
-path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
+path_segments_with_colons :: { Reversed NonEmpty (PathSegment Span) }
   : self_or_ident
-    { Spanned [(unspan $1, NoParameters mempty)] (spanOf $1) }
+    { [PathSegment (unspan $1) Nothing (spanOf $1)] }
   | path_segments_with_colons '::' self_or_ident
-    { Spanned (unspan $1 |> (unspan $3, NoParameters mempty)) ($1 # $>) }
+    { $1 <> [PathSegment (unspan $3) Nothing (spanOf $3)] }
   | path_segments_with_colons '::' generic_values
     {%
-      case (N.last (unspan $1), unspan $3) of
-        ((i, NoParameters{}), (lts, tys, bds)) -> let seg = (i, AngleBracketed lts tys bds (spanOf $3))
-                                                  in pure $ Spanned (N.init (unspan $1) |: seg) ($1 # $3)
+      case (unsnoc $1, unspan $3) of
+        ((rst, PathSegment i Nothing x), (lts, tys, bds)) ->
+          let seg = PathSegment i (Just (AngleBracketed lts tys bds (spanOf $3))) (x # $3)
+          in pure $ snoc rst seg 
         _ -> fail "invalid path segment in expression path"
     }
 
@@ -543,11 +545,11 @@ path_segments_with_colons :: { Spanned (NonEmpty (Ident, PathParameters Span)) }
 -- parse_path(PathStyle::Mod)
 mod_path :: { Path Span  }
   : ntPath               { $1 }
-  | self_or_ident        { Path False [(unspan $1, NoParameters mempty)] (spanOf $1) }
-  | '::' self_or_ident   { Path True  [(unspan $2, NoParameters mempty)] ($1 # $>) }
+  | self_or_ident        { Path False [PathSegment (unspan $1) Nothing (spanOf $1)] (spanOf $1) }
+  | '::' self_or_ident   { Path True  [PathSegment (unspan $2) Nothing (spanOf $2)] ($1 # $>) }
   | mod_path '::' self_or_ident  {
       let Path g segs _ = $1 in
-      Path g (segs |> (unspan $3, NoParameters mempty)) ($1 # $>)
+      Path g (segs <> [PathSegment (unspan $3) Nothing (spanOf $3) ]) ($1 # $3)
     }
 
 self_or_ident :: { Spanned Ident }
@@ -743,8 +745,8 @@ arg_self_general :: { Arg Span }
   | mut self ':' ty       { SelfExplicit $4 Mutable ($1 # $>) }
   | arg_general           {
       case $1 of
-        Arg Nothing (PathTy Nothing (Path False [("self", NoParameters _)] _) _) x -> SelfValue Immutable x
-        Arg Nothing (Rptr l m (PathTy Nothing (Path False [("self", NoParameters _)] _) _) _) x -> SelfRegion l m x
+        Arg Nothing (PathTy Nothing (Path False [PathSegment "self" Nothing _] _) _) x -> SelfValue Immutable x
+        Arg Nothing (Rptr l m (PathTy Nothing (Path False [PathSegment "self" Nothing _] _) _) _) x -> SelfRegion l m x
         _ -> $1
     }
 
@@ -789,8 +791,8 @@ pat :: { Pat Span }
   |               ident '@' pat     { IdentP (ByValue Immutable) (unspan $1) (Just $3) ($1 # $>) }
   | expr_path                       {
        case $1 of
-         Path False ((i, NoParameters _) :| []) _ -> IdentP (ByValue Immutable) i Nothing (spanOf $1)
-         _                                        -> PathP Nothing $1 (spanOf $1)
+         Path False [PathSegment i Nothing _] _ -> IdentP (ByValue Immutable) i Nothing (spanOf $1)
+         _                                      -> PathP Nothing $1 (spanOf $1)
     }
   | expr_qual_path                  { PathP (Just (fst (unspan $1))) (snd (unspan $1)) ($1 # $>) }
   | lit_or_path '...' lit_or_path   { RangeP $1 $3 ($1 # $>) }
@@ -1205,7 +1207,7 @@ vis_union_nonblock_expr :: { Expr Span }
 
 union_expr :: { Expr Span }
   : pub_or_inherited union         {%
-      noVis $1 (PathExpr [] Nothing (Path False [("union", NoParameters mempty)] (spanOf $1)) (spanOf $1))
+      noVis $1 (PathExpr [] Nothing (Path False [PathSegment "union" Nothing (spanOf $2)] (spanOf $1)) (spanOf $1))
     }
 
 
@@ -1460,8 +1462,10 @@ vis :: { Spanned (Visibility Span) }
   | pub           %prec VIS { Spanned PublicV (spanOf $1) }
   | pub '(' crate ')'       { Spanned CrateV ($1 # $4) }
   | pub '(' in mod_path ')' { Spanned (RestrictedV $4) ($1 # $5) }
-  | pub '(' super ')'       { Spanned (RestrictedV (Path False [("super", NoParameters mempty)] (spanOf $3))) ($1 # $4) }
-  | pub '(' self ')'        { Spanned (RestrictedV (Path False [("self", NoParameters mempty)] (spanOf $3))) ($1 # $4) }
+  | pub '(' super ')'       { Spanned (RestrictedV (Path False [PathSegment "super" Nothing (spanOf
+  $3)] (spanOf $3))) ($1 # $4) }
+  | pub '(' self ')'        { Spanned (RestrictedV (Path False [PathSegment "self" Nothing (spanOf
+  $3)] (spanOf $3))) ($1 # $4) }
 
 def :: { Spanned Defaultness }
   : {- empty -}  %prec DEF        { pure Final }
@@ -1471,8 +1475,11 @@ use_tree :: { UseTree Span }
   : mod_path                                    { UseTreeSimple $1 Nothing (spanOf $1) }
   | mod_path as ident                           { UseTreeSimple $1 (Just (unspan $3)) ($1 # $3) }
   | mod_path '::' '*'                           { UseTreeGlob $1 ($1 # $3) }
-  | mod_path '::' '{' sep_byT(use_tree,',') '}' { UseTreeNested (Just $1) $4 ($1 # $>) }
-  |               '{' sep_byT(use_tree,',') '}' { UseTreeNested Nothing $2 ($1 # $>) }
+  |          '::' '*'                           { UseTreeGlob (Path True [] (spanOf $1)) ($1 # $2) }
+  |               '*'                           { UseTreeGlob (Path False [] mempty) (spanOf $1) }
+  | mod_path '::' '{' sep_byT(use_tree,',') '}' { UseTreeNested $1 $4 ($1 # $>) }
+  |          '::' '{' sep_byT(use_tree,',') '}' { UseTreeNested (Path True [] (spanOf $1)) $3 ($1 # $>) }
+  |               '{' sep_byT(use_tree,',') '}' { UseTreeNested (Path False [] mempty) $2 ($1 # $>) }
 
 -------------------
 -- Macro related --
@@ -1774,7 +1781,7 @@ noSafety _ _ = fail "safety is not allowed here"
 
 -- | Make a macro item, which may be a 'MacroDef'
 macroItem :: [Attribute Span] -> (Maybe Ident) -> Mac Span -> Span -> Item Span
-macroItem as (Just i) (Mac (Path False [("macro_rules", NoParameters _)] _) tts _) x = MacroDef as i tts x
+macroItem as (Just i) (Mac (Path False [PathSegment "macro_rules" Nothing _] _) tts _) x = MacroDef as i tts x
 macroItem as i mac x = MacItem as i mac x
 
 -- | Add attributes to an expression

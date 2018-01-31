@@ -20,7 +20,8 @@ along with the usual class instances.
 module Language.Rust.Parser.Reversed (
   Reversed(..),
   toNonEmpty,
-  unsnoc
+  unsnoc,
+  snoc,
 ) where
 
 import Language.Rust.Data.Position
@@ -69,3 +70,9 @@ toNonEmpty (Reversed xs) = N.reverse xs
 {-# INLINE unsnoc #-}
 unsnoc :: Reversed N.NonEmpty a -> (Reversed [] a, a)
 unsnoc (Reversed (x N.:| xs)) = (Reversed xs, x)
+
+-- | Add an element to the end of a reversed sequence to produce a non-empty
+-- reversed sequence
+{-# INLINE snoc #-}
+snoc :: Reversed [] a -> a -> Reversed N.NonEmpty a
+snoc (Reversed xs) x = Reversed (x N.:| xs)

@@ -3,7 +3,7 @@ module PrettyTest (prettySuite) where
 
 import Test.Framework (testGroup, Test)
 import Test.Framework.Providers.HUnit
-import Test.HUnit hiding (Test)
+import Test.HUnit hiding (Test, Path)
 
 import Language.Rust.Data.Ident
 import Language.Rust.Data.Position
@@ -26,35 +26,39 @@ prettySuite = testGroup "pretty suite"
 
 -- | Common types to make tests more straightforward
 i32, f64, usize :: Ty ()
-i32 = PathTy Nothing (Path False [("i32", NoParameters ())] ()) ()
-f64 = PathTy Nothing (Path False [("f64", NoParameters ())] ()) ()
-usize = PathTy Nothing (Path False [("usize", NoParameters ())] ()) ()
+i32 = PathTy Nothing (Path False [PathSegment "i32" Nothing ()] ()) ()
+f64 = PathTy Nothing (Path False [PathSegment "f64" Nothing ()] ()) ()
+usize = PathTy Nothing (Path False [PathSegment "usize" Nothing ()] ()) ()
 
 -- | Common path segments to make tests more straightforward
-std, vec, veci32, debug, println :: (Ident, PathParameters ())
-std = ("std", NoParameters ())
-vec = ("vec", NoParameters ())
-veci32 = ("Vec", AngleBracketed [] [i32] [] ())
-debug = ("Debug", NoParameters ())
-println = ("println", NoParameters ())
+std, vec, veci32, debug, println :: PathSegment ()
+std = PathSegment "std" Nothing ()
+vec = PathSegment "vec" Nothing ()
+veci32 = PathSegment "Vec" (Just (AngleBracketed [] [i32] [] ())) ()
+debug = PathSegment "Debug" Nothing ()
+println = PathSegment "println" Nothing ()
+
+-- | Common paths
+point :: Path ()
+point = Path False [PathSegment "Point" Nothing ()] ()
 
 -- | Type parameter bounds to make tests more straightforward
 debug', lt, iterator :: TyParamBound ()
 debug' = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [debug] ())) ()) None ()
 lt = RegionTyParamBound (Lifetime "lt" ()) ()
-iterator = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [("Iterator", AngleBracketed [] [] [(mkIdent "Item",i32)] ())] ())) ()) None ()
+iterator = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Iterator" (Just (AngleBracketed [] [] [(mkIdent "Item",i32)] ())) ()] ())) ()) None ()
 
 -- | Short expressions to make tests more straightforward
 _1, _2, foo, bar :: Expr ()
 _1 = Lit [] (Int Dec 1 Unsuffixed ()) ()
 _2 = Lit [cfgO] (Int Dec 2 Unsuffixed ()) ()
-foo = PathExpr [] Nothing (Path False [("foo", NoParameters ())] ()) ()
-bar = PathExpr [] Nothing (Path False [("bar", NoParameters ())] ()) ()
+foo = PathExpr [] Nothing (Path False [PathSegment "foo" Nothing ()] ()) ()
+bar = PathExpr [] Nothing (Path False [PathSegment "bar" Nothing ()] ()) ()
 
 -- | Attributes to make tests more straightforward
 cfgI, cfgO :: Attribute ()
-cfgI = Attribute Inner (Path False [("cfgi", NoParameters ())] ()) (Stream []) ()
-cfgO = Attribute Outer (Path False [("cfgo", NoParameters ())] ()) (Stream []) ()
+cfgI = Attribute Inner (Path False [PathSegment "cfgi" Nothing ()] ()) (Stream []) ()
+cfgO = Attribute Outer (Path False [PathSegment "cfgo" Nothing ()] ()) (Stream []) ()
 
 
 -- | Blocks to make tests more straightforward
@@ -104,32 +108,32 @@ prettyPatterns = testGroup "printing patterns"
   , testFlatten "ref x" (printPat (IdentP (ByRef Immutable) (mkIdent "x") Nothing ()))
   , testFlatten "mut x" (printPat (IdentP (ByValue Mutable) (mkIdent "x") Nothing ()))
   , testFlatten "ref mut x" (printPat (IdentP (ByRef Mutable) (mkIdent "x") Nothing ()))
-  , testFlatten "Point { .. }" (printPat (StructP (Path False [("Point", NoParameters ())] ()) [] True ()))
-  , testFlatten "Point { x, y: y1 }" (printPat (StructP (Path False [("Point", NoParameters ())] ())
+  , testFlatten "Point { .. }" (printPat (StructP point [] True ()))
+  , testFlatten "Point { x, y: y1 }" (printPat (StructP point
                                                [ FieldPat Nothing x ()
                                                , FieldPat (Just "y") (IdentP (ByValue Immutable) "y1" Nothing ()) () ]
                                                False ()))
-  , testFlatten "Point { x, .. }" (printPat (StructP (Path False [("Point", NoParameters ())] ())
+  , testFlatten "Point { x, .. }" (printPat (StructP point
                                                [ FieldPat Nothing x () ]
                                                True ())) 
-  , testFlatten "Point(x)" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
+  , testFlatten "Point(x)" (printPat (TupleStructP point
                                               [ x ] Nothing ()))
-  , testFlatten "Point()" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
+  , testFlatten "Point()" (printPat (TupleStructP point
                                               [] Nothing ()))
-  , testFlatten "Point(..)" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
+  , testFlatten "Point(..)" (printPat (TupleStructP point
                                               [] (Just 0) ()))
-  , testFlatten "Point(x, ..)" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
+  , testFlatten "Point(x, ..)" (printPat (TupleStructP point
                                               [ x ] (Just 1) ()))
-  , testFlatten "Point(.., x)" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
+  , testFlatten "Point(.., x)" (printPat (TupleStructP point
                                               [ x ] (Just 0) ()))
-  , testFlatten "Point(x, _, .., _, x)" (printPat (TupleStructP (Path False [("Point", NoParameters ())] ())
+  , testFlatten "Point(x, _, .., _, x)" (printPat (TupleStructP point
                                               [ x, WildP (), WildP (), x ] (Just 2) ()))
-  , testFlatten "math::PI" (printPat (PathP Nothing (Path False [ ("math", NoParameters ())
-                                                                , ("PI", NoParameters ()) ] ()) ()))
+  , testFlatten "math::PI" (printPat (PathP Nothing (Path False [ PathSegment "math" Nothing ()
+                                                                , PathSegment "PI" Nothing () ] ()) ()))
   , testFlatten "<i32 as a(i32, i32)>::b::<'lt>::AssociatedItem"
-                (printPat (PathP (Just (QSelf i32 1)) (Path False [ ("a", Parenthesized [i32, i32] Nothing ())
-                                                                  , ("b", AngleBracketed [Lifetime  "lt" ()] [] [] ())
-                                                                  , ("AssociatedItem", NoParameters ())
+                (printPat (PathP (Just (QSelf i32 1)) (Path False [ PathSegment "a" (Just (Parenthesized [i32, i32] Nothing ())) ()
+                                                                  , PathSegment "b" (Just (AngleBracketed [Lifetime  "lt" ()] [] [] ())) ()
+                                                                  , PathSegment "AssociatedItem" Nothing ()
                                                                   ] ()) ()))
   , testFlatten "(x, ref mut y, box z)" (printPat (TupleP [ x
                                                           , IdentP (ByRef Mutable) "y" Nothing ()
@@ -160,8 +164,8 @@ prettyPatterns = testGroup "printing patterns"
   , testFlatten "[1, ..]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ] (Just (WildP ())) [] ()))
   , testFlatten "[1, x..]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ] (Just x) [] ()))
 
-  , testFlatten "vecPat!(foo)" (printPat (MacP (Mac (Path False [("vecPat", NoParameters ())] ())
-                                                   (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) ()))
+  , testFlatten "vec!(foo)" (printPat (MacP (Mac (Path False [vec] ())
+                                                 (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) ()))
   ]
 
 -- | Test pretty-printing of types (flattened). 
@@ -190,7 +194,7 @@ prettyTypes = testGroup "printing types"
   , testFlatten "typeof(1i32)" (printType (Typeof (Lit [] (Int Dec 1 I32 ()) ()) ()))
   , testFlatten "_" (printType (Infer ()))
   , testFlatten "HList![ &str, bool, Vec<i32> ]"
-                (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ()) (Stream
+                (printType (MacTy (Mac (Path False [PathSegment "HList" Nothing ()] ()) (Stream
                                        [ Tree (Token mempty Ampersand)
                                        , Tree (Token mempty (IdentTok (mkIdent "str")))
                                        , Tree (Token mempty Comma)
@@ -204,7 +208,7 @@ prettyTypes = testGroup "printing types"
                                        ())
                            ()))
   , testFlatten "HList![ &str, bool, Vec<i32> ]"
-                (printType (MacTy (Mac (Path False [("HList", NoParameters ())] ()) (Stream
+                (printType (MacTy (Mac (Path False [PathSegment "HList" Nothing ()] ()) (Stream
                                        [ Tree (Token (Span (Position 8 1 8) (Position 9 1 9)) Ampersand)
                                        , Tree (Token (Span (Position 9 1 9) (Position 12 1 12)) (IdentTok "str"))
                                        , Tree (Token (Span (Position 12 1 12) (Position 13 1 13)) Comma)
@@ -228,14 +232,14 @@ prettyAttributes :: Test
 prettyAttributes = testGroup "printing attributes"
   [ testFlatten "#![cfgi]" (printAttr cfgI True) 
   , testFlatten "#[cfgo]" (printAttr cfgO True)
-  , testFlatten "#[derive(Eq, Ord, 1)]" (printAttr (Attribute Outer (Path False [("derive", NoParameters ())] ()) (Tree (Delimited mempty Paren (Stream
+  , testFlatten "#[derive(Eq, Ord, 1)]" (printAttr (Attribute Outer (Path False [PathSegment "derive" Nothing ()] ()) (Tree (Delimited mempty Paren (Stream
                                                           [ Tree (Token mempty (IdentTok "Eq"))
                                                           , Tree (Token mempty Comma)
                                                           , Tree (Token mempty (IdentTok "Ord"))
                                                           , Tree (Token mempty Comma)
                                                           , Tree (Token mempty (LiteralTok (IntegerTok "1") Nothing))
                                                           ]))) ()) True)
-  , testFlatten "#[feature = \"foo\"]" (printAttr (Attribute Outer (Path False [("feature", NoParameters ())] ()) (Stream
+  , testFlatten "#[feature = \"foo\"]" (printAttr (Attribute Outer (Path False [PathSegment "feature" Nothing ()] ()) (Stream
                                                           [ Tree (Token mempty Equal)
                                                           , Tree (Token mempty (LiteralTok (StrTok "foo") Nothing))
                                                           ]) ()) True)
@@ -329,14 +333,14 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "continue 'foo" (printExpr (Continue [] (Just (Lifetime "foo" ())) ()))
   , testFlatten "return" (printExpr (Ret [] Nothing ()))
   , testFlatten "return foo" (printExpr (Ret [] (Just foo) ()))
-  , testFlatten "print!(foo)" (printExpr (MacExpr [] (Mac (Path False [("print", NoParameters ())] ())
+  , testFlatten "print!(foo)" (printExpr (MacExpr [] (Mac (Path False [PathSegment "print" Nothing ()] ())
                                        (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) ()))
-  , testFlatten "foo { }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [] Nothing ()))
-  , testFlatten "foo { x: 1 }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") (Just _1) ()] Nothing ()))
-  , testFlatten "#[cfgo] foo { #![cfgi] x: 1 }" (printExpr (Struct [cfgO,cfgI] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") (Just _1) ()] Nothing ()))
-  , testFlatten "foo { x: 1, y: 1 }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") (Just _1) (), Field (mkIdent "y") (Just _1) ()] Nothing ()))
-  , testFlatten "foo { x: 1, y: 1, ..bar }" (printExpr (Struct [] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") (Just _1) (), Field (mkIdent "y") (Just _1) ()] (Just bar) ()))
-  , testFlatten "#[cfgo] foo { #![cfgi] x, y, ..bar }" (printExpr (Struct [cfgO,cfgI] (Path False [("foo", NoParameters ())] ()) [Field (mkIdent "x") Nothing (), Field (mkIdent "y") Nothing ()] (Just bar) ()))
+  , testFlatten "foo { }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [] Nothing ()))
+  , testFlatten "foo { x: 1 }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [Field (mkIdent "x") (Just _1) ()] Nothing ()))
+  , testFlatten "#[cfgo] foo { #![cfgi] x: 1 }" (printExpr (Struct [cfgO,cfgI] (Path False [PathSegment "foo" Nothing ()] ()) [Field (mkIdent "x") (Just _1) ()] Nothing ()))
+  , testFlatten "foo { x: 1, y: 1 }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [Field (mkIdent "x") (Just _1) (), Field (mkIdent "y") (Just _1) ()] Nothing ()))
+  , testFlatten "foo { x: 1, y: 1, ..bar }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [Field (mkIdent "x") (Just _1) (), Field (mkIdent "y") (Just _1) ()] (Just bar) ()))
+  , testFlatten "#[cfgo] foo { #![cfgi] x, y, ..bar }" (printExpr (Struct [cfgO,cfgI] (Path False [PathSegment "foo" Nothing ()] ()) [Field (mkIdent "x") Nothing (), Field (mkIdent "y") Nothing ()] (Just bar) ()))
   , testFlatten "[foo; 1]" (printExpr (Repeat [] foo _1 ()))
   , testFlatten "#[cfgo] [#![cfgi] foo; 1]" (printExpr (Repeat [cfgI, cfgO] foo _1 ()))
   , testFlatten "(foo?)" (printExpr (ParenExpr [] (Try [] foo ()) ()))
@@ -349,9 +353,12 @@ prettyItems = testGroup "printing items"
   [ testFlatten "extern crate \"rustc-serialize\" as rustc_serialize;" (printItem (ExternCrate [] InheritedV (mkIdent "rustc_serialize") (Just (mkIdent "rustc-serialize")) ()))
   , testFlatten "pub extern crate rustc_serialize;" (printItem (ExternCrate [] PublicV (mkIdent "rustc_serialize") Nothing ()))
   , testFlatten "#[cfgo] pub extern crate rustc_serialize;" (printItem (ExternCrate [cfgO] PublicV (mkIdent "rustc_serialize") Nothing ()))
-  , testFlatten "use std::vec as baz;" (printItem (Use [] InheritedV (ViewPathSimple False ["std"] (PathListItem "vec" (Just "baz") ()) ()) ()))
-  , testFlatten "use std::vec::*;" (printItem (Use [] InheritedV (ViewPathGlob False ["std","vec"] ()) ()))
-  , testFlatten "use std::vec::{a as b, c};" (printItem (Use [] InheritedV (ViewPathList False ["std","vec"] [PathListItem (mkIdent "a") (Just (mkIdent "b")) (), PathListItem (mkIdent "c") Nothing ()] ()) ()))
+  , testFlatten "use std::vec as baz;" (printItem (Use [] InheritedV (UseTreeSimple (Path False [std,vec] ()) (Just "baz") ()) ()))
+  , testFlatten "use std::vec::*;" (printItem (Use [] InheritedV (UseTreeGlob (Path False [std,vec] ()) ()) ()))
+  , testFlatten "use std::vec::{a as b, c};" (printItem (Use [] InheritedV (UseTreeNested (Path False [std,vec] ())
+                                                                                          [ UseTreeSimple (Path False [PathSegment "a" Nothing ()] ()) (Just "b") ()
+                                                                                          , UseTreeSimple (Path False [PathSegment "c" Nothing ()] ()) Nothing ()
+                                                                                          ] ()) ()))
   , testFlatten "static mut foo: i32 = 1;" (printItem (Static [] InheritedV (mkIdent "foo") i32 Mutable _1 ()))
   , testFlatten "static foo: i32 = 1;" (printItem (Static [] InheritedV (mkIdent "foo") i32 Immutable _1 ()))
   , testFlatten "const foo: i32 = 1;" (printItem (ConstItem [] InheritedV (mkIdent "foo") i32 _1 ()))
@@ -387,12 +394,12 @@ prettyItems = testGroup "printing items"
                 (printItem (Impl [] InheritedV Final Normal Positive
                       (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())
                       Nothing
-                      (PathTy Nothing (Path False [("GenVal", AngleBracketed [] [PathTy Nothing (Path False [(mkIdent "T", NoParameters ())] ()) ()] [] ())] ()) ())
+                      (PathTy Nothing (Path False [PathSegment "GenVal" (Just (AngleBracketed [] [PathTy Nothing (Path False [PathSegment "T" Nothing ()] ()) ()] [] ())) ()] ()) ())
                       [ MethodI [] InheritedV Final (mkIdent "value")
                           (Generics [] [] (WhereClause [] ()) ())
                           (MethodSig Normal NotConst Rust
                                       (FnDecl [SelfRegion Nothing Mutable ()]
-                                              (Just (Rptr Nothing Immutable (PathTy Nothing (Path False [(mkIdent "T", NoParameters ())] ()) ()) ())) 
+                                              (Just (Rptr Nothing Immutable (PathTy Nothing (Path False [PathSegment "T" Nothing ()] ()) ()) ())) 
                                               False ())) 
                           retBlk
                           ()

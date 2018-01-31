@@ -11,7 +11,6 @@ import Control.Monad (when, unless)
 
 import Text.Read (readMaybe)
 import Data.String (fromString)
-import qualified Data.List.NonEmpty as N
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Semigroup ((<>))
 import qualified Data.Text as T
@@ -267,13 +266,11 @@ instance Show a => Diffable (UseTree a) where
         ("Simple", UseTreeSimple p i _) -> do
           p === (val ! "prefix")
           let l = case (i, p) of
-                    (Nothing, Path _ s _) -> fst (N.last s)
+                    (Nothing, Path _ s _) -> let PathSegment i' _ _ = last s in i'
                     (Just i', _) -> i'
           l === (n' ! "fields" ! 0)
         ("Nested", UseTreeNested p ns  _) -> do
-          case p of
-            Just p' -> p' === (val ! "prefix")
-            Nothing -> pure () -- TODO
+          p === (val ! "prefix")
           map UseTreePair ns === (n' ! "fields" ! 0)
         _ -> diff "different view path" v val
 
@@ -713,22 +710,21 @@ instance Show a => Diffable (QSelf a) where
     t === (val ! "ty")
     p === (val ! "position")
 
+-- TODO: use gbl to determine crate root
 instance Show a => Diffable (Path a) where
-  Path _ segs _ === val = do
+  Path g segs _ === val = do
     let val' = case val ! "segments" of
                  j@(Data.Aeson.Array v) | j ! 0 ! "identifier" == "{{root}}" -> Data.Aeson.Array (V.drop 1 v)
                  j -> j
     
-    fmap PathPair segs === val'
+    segs === val'
 
-newtype PathPair a = PathPair (Ident, PathParameters a) deriving (Show)
-instance Show a => Diffable (PathPair a) where
-  PathPair (i, pp) === val = do
+instance Show a => Diffable (PathSegment a) where
+  PathSegment i pp _ === val = do
       i === (val ! "identifier")
       pp === (val ! "parameters")
 
 instance Show a => Diffable (PathParameters a) where
-  n@(NoParameters _) === val = when (val /= Data.Aeson.Null) (diff "expected no parameters" n val) 
   p === val =
     case (val ! "variant", p) of
       ("AngleBracketed", AngleBracketed lts tys bds _) -> do

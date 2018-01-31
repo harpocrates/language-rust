@@ -303,24 +303,24 @@ instance Show PathType where
 --   * it has path parameters of the wrong type
 --   * it has identifiers not meant for paths
 --
+-- TODO: guard against no path segments...
 resolvePath :: (Typeable a, Monoid a) => PathType -> Path a -> ResolveM (Path a)
 resolvePath t p@(Path g segs x) = scope p $
-    if all (isParamsForPath t . snd) segs
+    if null [ () | PathSegment _ (Just a) _ <- segs, not (isParamsForPath t a) ]
       then Path g <$> traverse resolveSeg segs <*> pure x 
       else err p "path parameter is not valid for this type of path"
   where
-  resolveSeg :: (Typeable a, Monoid a) => (Ident, PathParameters a) -> ResolveM (Ident, PathParameters a)
-  resolveSeg (i, a) = do
+  resolveSeg :: (Typeable a, Monoid a) => PathSegment a -> ResolveM (PathSegment a)
+  resolveSeg (PathSegment i a x') = do
     i' <- case i of
             Ident "self" _ -> pure i
             Ident "Self" _ -> pure i
             Ident "super" _ -> pure i
             _ -> resolveIdent i
-    a' <- resolvePathParameters a
-    pure (i',a')
+    a' <- traverse resolvePathParameters a
+    pure (PathSegment i' a' x')
 
   isParamsForPath :: PathType -> PathParameters a -> Bool
-  isParamsForPath t' NoParameters{}   = t' `elem` ([TypePath, ExprPath, ModPath] :: [PathType])
   isParamsForPath t' AngleBracketed{} = t' `elem` ([TypePath, ExprPath] :: [PathType])
   isParamsForPath t' Parenthesized{}  = t' `elem` ([TypePath] :: [PathType])
 
@@ -331,7 +331,6 @@ instance (Typeable a, Monoid a) => Resolve (Path a) where
 
 -- | A path parameter can be invalid if any of its constituent components are invalid
 resolvePathParameters :: (Typeable a, Monoid a) => PathParameters a -> ResolveM (PathParameters a)
-resolvePathParameters (NoParameters x) = pure (NoParameters x)
 resolvePathParameters p@(AngleBracketed lts tys bds x) = scope p $ do
   lts' <- traverse resolveLifetime lts
   tys' <- traverse (resolveTy AnyType) tys
@@ -500,8 +499,8 @@ resolveArg GeneralArg a@(Arg p t x) = scope a $ do
 
 -- | Check whether an argument is one of the "self"-alike forms
 isSelfAlike :: Arg a -> Bool
-isSelfAlike (Arg Nothing (PathTy Nothing (Path False [(Ident "self" _, NoParameters _)] _) _) _) = True
-isSelfAlike (Arg Nothing (Rptr _ _ (PathTy Nothing (Path False [(Ident "self" _, NoParameters _)] _) _) _) _) = True
+isSelfAlike (Arg Nothing (PathTy Nothing (Path False [PathSegment (Ident "self" _) Nothing _] _) _) _) = True
+isSelfAlike (Arg Nothing (Rptr _ _ (PathTy Nothing (Path False [PathSegment (Ident "self" _) Nothing _] _) _) _) _) = True
 isSelfAlike _ = False
 
 instance (Typeable a, Monoid a) => Resolve (Arg a) where resolveM = resolveArg NamedArg
@@ -552,8 +551,8 @@ resolvePat p@(PathP q@(Just (QSelf _ i)) p'@(Path g s x) x')
   | i < 0 || i >= length s = scope p (err p "index given by QSelf is outside the possible range")
   | i == 0 = scope p (PathP <$> traverse resolveQSelf q <*> resolvePath ExprPath p' <*> pure x)
   | otherwise = scope p $ do
-      tyP@(Path _ tyPSegs _) <-   resolvePath TypePath $ Path g     (N.fromList (N.take i s)) mempty
-      exprP@(Path _ exprPSegs _) <- resolvePath ExprPath $ Path False (N.fromList (N.drop i s)) x
+      tyP@(Path _ tyPSegs _) <-   resolvePath TypePath $ Path g (take i s) mempty
+      exprP@(Path _ exprPSegs _) <- resolvePath ExprPath $ Path False (drop i s) x
       q' <- traverse resolveQSelf q
       pure (PathP q' (Path g (tyPSegs <> exprPSegs) x) x')
 -- TupleP
@@ -890,8 +889,8 @@ resolveExprP _ _ p@(PathExpr as q@(Just (QSelf _ i)) p'@(Path g s x) x')
       pure (PathExpr as' q' p'' x)
   | otherwise = scope p $ do
       as' <- traverse (resolveAttr OuterAttr) as
-      tyP@(Path _ tyPSegs _) <-   resolvePath TypePath $ Path g     (N.fromList (N.take i s)) mempty
-      exprP@(Path _ exprPSegs _) <- resolvePath ExprPath $ Path False (N.fromList (N.drop i s)) x
+      tyP@(Path _ tyPSegs _) <-   resolvePath TypePath $ Path g (take i s) mempty
+      exprP@(Path _ exprPSegs _) <- resolvePath ExprPath $ Path False (drop i s) x
       q' <- traverse resolveQSelf q
       pure (PathExpr as' q' (Path g (tyPSegs <> exprPSegs) x) x') 
 resolveExprP _ _ i@(Lit as l x) = scope i $ do
@@ -1420,7 +1419,7 @@ resolveUseTree v@(UseTreeGlob p x) = scope v $ do
   p' <- resolvePath ModPath p 
   pure (UseTreeGlob p' x) 
 resolveUseTree v@(UseTreeNested p ns x) = scope v $ do
-  p' <- traverse (resolvePath ModPath) p
+  p' <- resolvePath ModPath p
   ns' <- traverse resolveUseTree ns
   pure (UseTreeNested p' ns' x)
 

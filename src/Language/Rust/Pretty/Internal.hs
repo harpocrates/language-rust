@@ -107,8 +107,6 @@ import Data.Text.Prettyprint.Doc hiding ( (<+>), hsep, indent, vsep )
 import Data.Maybe               ( maybeToList, fromMaybe )
 import Data.Foldable            ( toList )
 import Data.List                ( unfoldr )
-import Data.List.NonEmpty       ( NonEmpty(..) )
-import qualified Data.List.NonEmpty as N
 
 -- | Print a source file
 printSourceFile :: SourceFile a -> Doc a
@@ -738,8 +736,8 @@ printPolarity Positive = mempty
 printVis :: Visibility a -> Doc a
 printVis PublicV = "pub"
 printVis CrateV = "pub(crate)"
-printVis (RestrictedV path@(Path False (("super", NoParameters _) :| _) _)) = "pub(" <> printPath path False <> ")"
-printVis (RestrictedV path@(Path False (("self", NoParameters _) :| _) _)) = "pub(" <> printPath path False <> ")"
+printVis (RestrictedV path@(Path False [PathSegment "super" Nothing _] _)) = "pub(" <> printPath path False <> ")"
+printVis (RestrictedV path@(Path False [PathSegment "self" Nothing _] _)) = "pub(" <> printPath path False <> ")"
 printVis (RestrictedV path) = "pub(" <> "in" <+> printPath path False <> ")"
 printVis InheritedV = mempty
 
@@ -932,7 +930,6 @@ printTraitRef (TraitRef path) = printPath path False
 
 -- | Print a path parameter and signal whether its generic (if any) should start with a colon (@print_path_parameters@)
 printPathParameters :: PathParameters a -> Bool -> Doc a
-printPathParameters (NoParameters x) _ = annotate x mempty
 printPathParameters (Parenthesized ins out x) colons = annotate x $
   when colons "::" <> parens (commas ins printType) <+> perhaps (\t -> "->" <+> printType t) out
 printPathParameters (AngleBracketed lts tys bds x) colons = annotate x (when colons "::" <> "<" <> hsep (punctuate "," (lts' ++ tys' ++ bds')) <> ">")
@@ -945,31 +942,35 @@ printPathParameters (AngleBracketed lts tys bds x) colons = annotate x (when col
 -- | Print a path, specifiying explicitly whether to include colons (@::@) before generics
 -- or not (so expression style or type style generics) (@print_path@)
 printPath :: Path a -> Bool -> Doc a
-printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (punctuate "::" (printSegment `map` N.toList segs)))
-  where
-  printSegment :: (Ident, PathParameters a) -> Doc a
-  printSegment (ident,parameters) = printIdent ident <> printPathParameters parameters colons
+printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (punctuate "::" (map (`printSegment` colons) segs)))
+
+-- | Print a path segment
+printSegment :: PathSegment a -> Bool -> Doc a
+printSegment (PathSegment i ps x) colons = annotate x (printIdent i <> params)
+  where params = perhaps (\p -> printPathParameters p colons) ps
+
 
 -- | Print a qualified path, specifiying explicitly whether to include colons (@::@) before
 -- generics or not (so expression style or type style generics) (@print_qpath@)
 printQPath :: Path a -> QSelf a -> Bool -> Doc a
 printQPath (Path global segs x) (QSelf ty n) colons = hcat [ "<", printType ty <+> aliasedDoc, ">", "::", restDoc ]
   where
-  (aliased, rest) = N.splitAt n segs
+  (aliased, rest) = splitAt n segs
   
   aliasedDoc = case aliased of
                  [] -> mempty
-                 (s:ss) -> "as" <+> printPath (Path global (s :| ss) x) False
+                 segs -> "as" <+> printPath (Path global segs x) False
 
-  restDoc = printPath (Path False (N.fromList rest) x) colons
+  restDoc = printPath (Path False rest x) colons
 
 -- | Print a use tree
 printUseTree :: UseTree a -> Doc a
 printUseTree (UseTreeSimple p Nothing x) = annotate x (printPath p True)
 printUseTree (UseTreeSimple p (Just i) x) = annotate x (printPath p True <+> "as" <+> printIdent i)
+printUseTree (UseTreeGlob p@(Path _ [] _) x) = annotate x (printPath p True <> "*")
 printUseTree (UseTreeGlob p x) = annotate x (printPath p True <> "::*")
-printUseTree (UseTreeNested (Just p) n x) = annotate x (printPath p True <> "::{" <> hcat (punctuate ", " (map printUseTree n)) <> "}")
-printUseTree (UseTreeNested Nothing n x) = annotate x ("{" <> hcat (punctuate ", " (map printUseTree n)) <> "}")
+printUseTree (UseTreeNested p@(Path _ [] _) n x) = annotate x (printPath p True <> "{" <> hcat (punctuate ", " (map printUseTree n)) <> "}")
+printUseTree (UseTreeNested p n x) = annotate x (printPath p True <> "::{" <> hcat (punctuate ", " (map printUseTree n)) <> "}")
 
 -- | Print a type parameters (@print_ty_param@)
 printTyParam :: TyParam a -> Doc a

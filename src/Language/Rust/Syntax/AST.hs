@@ -27,6 +27,7 @@ module Language.Rust.Syntax.AST (
   -- ** Paths
   Path(..),
   PathParameters(..),
+  PathSegment(..),
   QSelf(..),
   
   -- ** Attributes
@@ -803,7 +804,7 @@ instance Located a => Located (Pat a) where
 -- The 'Bool' argument identifies whether the path is relative or absolute.
 --
 -- Example: @std::cmp::PartialEq@
-data Path a = Path Bool (NonEmpty (Ident, PathParameters a)) a
+data Path a = Path Bool [PathSegment a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Path a) where spanOf (Path _ _ s) = spanOf s
@@ -821,16 +822,18 @@ data PathParameters a
   --
   -- Example: @(A,B) -\> C@ in a path segment @Foo(A,B) -\> C@
   | Parenthesized [Ty a] (Maybe (Ty a)) a
-  -- | No parameters. Note that in @syntax::ast::PathParameters@, this variant does not exist - it
-  -- is considered a subcase of 'AngleBracketed'. However, I want to be able to distinguish between
-  -- @foo<>@ and @foo@ for faithful pretty-printing purposes.
-  | NoParameters a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (PathParameters a) where
   spanOf (AngleBracketed _ _ _ s) = spanOf s
   spanOf (Parenthesized _ _ s) = spanOf s
-  spanOf (NoParameters s) = spanOf s
+
+-- | Segment of a path (@syntax::ast::PathSegment@).
+data PathSegment a
+  = PathSegment Ident (Maybe (PathParameters a)) a
+  deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+
+instance Located a => Located (PathSegment a) where spanOf (PathSegment _ _ s) = spanOf s
 
 -- | Trait ref parametrized over lifetimes introduced by a @for@ (@syntax::ast::PolyTraitRef@).
 --
@@ -1088,7 +1091,7 @@ data UseTree a
   -- | A regular mod path ending in a list of identifiers or renamed identifiers.
   --
   -- Example: @foo::bar::{a,b,c as d}@
-  | UseTreeNested (Maybe (Path a)) [UseTree a] a
+  | UseTreeNested (Path a) [UseTree a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (UseTree a) where
