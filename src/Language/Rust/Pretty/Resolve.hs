@@ -375,7 +375,6 @@ data TyType
   | NoSumType      -- ^ Any type except for 'TraitObject' with a '+'
   | PrimParenType  -- ^ Types not starting with '<' or '(', or paren types with no sum types inside
   | NoForType      -- ^ Non-sum types not starting with a 'for'
-  | ReturnType     -- ^ Type in a return type position
 
 -- | Resolve a given type, and a constraint on it (see the parser 'Internal.y' for more details on
 -- these cases). 
@@ -383,7 +382,6 @@ resolveTy :: (Typeable a, Monoid a) => TyType -> Ty a -> ResolveM (Ty a)
 -- TraitObject
 resolveTy NoSumType     o@(TraitObject b _) | length b > 1 = scope o (correct "added parens around trait object type" *> resolveTy NoSumType (ParenTy o mempty))
 resolveTy NoForType     o@TraitObject{} = scope o (correct "added parens around trait object type" *> resolveTy NoForType (ParenTy o mempty))
-resolveTy ReturnType    o@TraitObject{} = scope o (correct "added parens around trait object type" *> resolveTy ReturnType (ParenTy o mempty))
 resolveTy _             o@(TraitObject bds@(TraitTyParamBound{} :| _) x)
   = scope o (TraitObject <$> traverse (resolveTyParamBound ModBound) bds <*> pure x)
 resolveTy _             o@TraitObject{} = scope o (err o "first bound in trait object should be a trait bound")
@@ -394,8 +392,7 @@ resolveTy _             p@(ParenTy ty' x) = scope p (ParenTy <$> resolveTy AnyTy
 resolveTy PrimParenType t@TupTy{} = scope t (correct "added parens around tuple type" *> resolveTy PrimParenType (ParenTy t mempty))
 resolveTy _             t@(TupTy tys x) = scope t (TupTy <$> traverse (resolveTy AnyType) tys <*> pure x)
 -- ImplTrait
-resolveTy ReturnType    i@(ImplTrait bds x) = scope i (ImplTrait <$> traverse (resolveTyParamBound ModBound) bds <*> pure x) 
-resolveTy _             i@ImplTrait{} = scope i $ err i "impl trait types are only allowed as return types"
+resolveTy _             i@(ImplTrait bds x) = scope i (ImplTrait <$> traverse (resolveTyParamBound ModBound) bds <*> pure x)
 -- PathTy
 resolveTy PrimParenType p@(PathTy (Just _) _ _) = scope p (correct "added parents around path type" *> resolveTy PrimParenType (ParenTy p mempty))
 resolveTy _             p@(PathTy q p'@(Path _ s _) x) = scope p $
@@ -435,7 +432,7 @@ resolveFnDecl :: (Typeable a, Monoid a) => FnDeclType -> ArgType -> FnDecl a -> 
 resolveFnDecl fn _  f@(FnDecl (s : _) _ _ _)  | isSelfArg s && fn /= AllowSelf = scope f (err f "self argument is not allowed in this function declaration")
 resolveFnDecl _  _  f@(FnDecl (_ : as) _ _ _) | any isSelfArg as = scope f (err f "self arguments must always be the first arguments")
 resolveFnDecl fn _  f@(FnDecl _ _ True _)     | fn /= VarNoSelf = scope f (err f "this function declaration cannot be variadic")
-resolveFnDecl _  at f@(FnDecl as o v x) = scope f (FnDecl <$> traverse (resolveArg at) as <*> traverse (resolveTy ReturnType) o <*> pure v <*> pure x)
+resolveFnDecl _  at f@(FnDecl as o v x) = scope f (FnDecl <$> traverse (resolveArg at) as <*> traverse (resolveTy AnyType) o <*> pure v <*> pure x)
 
 -- | Check whether an argument is one of the "self" forms
 isSelfArg :: Arg a -> Bool
@@ -1006,7 +1003,7 @@ isBlockLike BlockExpr{} = True
 isBlockLike _ = False
 
 resolveLbl :: Typeable a => Label a -> ResolveM (Label a)
-resolveLbl l@(Label n x) = scope l (resolveIdent (mkIdent n) *> pure l)
+resolveLbl l@(Label n _) = scope l (resolveIdent (mkIdent n) *> pure l)
 
 -- | Wrap an expression in parens if the condition given holds
 parenE :: (Typeable a, Monoid a) => Bool -> ResolveM (Expr a) -> ResolveM (Expr a)
@@ -1244,7 +1241,7 @@ resolveForeignItem _ f@(ForeignStatic as v i t m x) = scope f $ do
   i' <- resolveIdent i
   t' <- resolveTy AnyType t
   pure (ForeignStatic as' v' i' t' m x)
-resolveForeignItem _ f@(ForeignTy as v i _) = scope f $ do
+resolveForeignItem _ f@(ForeignTy as v i x) = scope f $ do
   as' <- traverse (resolveAttr OuterAttr) as
   v' <- resolveVisibility v
   i' <- resolveIdent i

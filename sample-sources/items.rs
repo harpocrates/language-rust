@@ -53,6 +53,7 @@ mod bar {
   }
 
   trait Foo = Bar + Baz;
+  trait Foo<'a,N> = Bar<'a,N> + Baz + 'a;
 
   fn foo<T: ?Sized>(x: &T) { }
   struct Foo<T: Send + ?Sized + Sync> { field: Box<T> }

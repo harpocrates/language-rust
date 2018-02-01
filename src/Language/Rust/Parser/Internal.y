@@ -72,7 +72,7 @@ import qualified Data.List.NonEmpty as N
 -- in order to document the parsers, we have to alias them
 %name parseLit lit
 %name parseAttr export_attribute
-%name parseTy export_ty
+%name parseTy ty
 %name parsePat pat
 %name parseStmt stmt
 %name parseExpr expr
@@ -208,8 +208,6 @@ import qualified Data.List.NonEmpty as N
   where          { Spanned (IdentTok "where") _ }
   while          { Spanned (IdentTok "while") _ }
   do             { Spanned (IdentTok "do") _ }
-  yield          { Spanned (IdentTok "yield") _ }
-  dyn            { Spanned (IdentTok "dyn") _ }
 
   -- Keywords reserved for future use
   abstract       { Spanned (IdentTok "abstract") _ }
@@ -232,6 +230,8 @@ import qualified Data.List.NonEmpty as N
   union          { Spanned (IdentTok "union") _ }
   catch          { Spanned (IdentTok "catch") _ }
   auto           { Spanned (IdentTok "auto") _ }
+  yield          { Spanned (IdentTok "yield") _ }
+  dyn            { Spanned (IdentTok "dyn") _ }
 
   -- Comments
   outerDoc       { Spanned (Doc _ Outer _) _ }
@@ -278,7 +278,7 @@ import qualified Data.List.NonEmpty as N
 %nonassoc mut DEF EQ '::'
 
 -- These are all identifiers of sorts ('union' and 'default' are "weak" keywords)
-%nonassoc IDENT ntIdent default union catch self auto 
+%nonassoc IDENT ntIdent default union catch self auto dyn
 
 -- These are all very low precedence unary operators
 %nonassoc box return yield break continue IMPLTRAIT LAMBDA
@@ -630,6 +630,8 @@ no_for_ty_prim :: { Ty Span }
   | '[' ty ';' expr ']'              { Array $2 $4 ($1 # $>) }
   | '?' trait_ref                    { TraitObject [TraitTyParamBound (PolyTraitRef [] $2 (spanOf $2)) Maybe ($1 # $2)] ($1 # $2) }
   | '?' for_lts trait_ref            { TraitObject [TraitTyParamBound (PolyTraitRef (unspan $2) $3 ($2 # $3)) Maybe ($1 # $3)] ($1 # $3) }
+  | impl sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait (toNonEmpty $2) ($1 # $2) }
+  | dyn  sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { TraitObject (toNonEmpty $2) ($1 # $2) }
 
 -- All (non-sum) types starting with a 'for'
 for_ty_no_plus :: { Ty Span }
@@ -641,10 +643,6 @@ for_ty_no_plus :: { Ty Span }
       let poly = PolyTraitRef (unspan $1) $2 ($1 # $2) in
       TraitObject [TraitTyParamBound poly None ($1 # $2)] ($1 # $2)
     }
-
-impl_ty :: { Ty Span }
-  : impl sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait (toNonEmpty $2) ($1 # $2) }
---  | dyn  sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { TraitObject (toNonEmpty $2) ($1 # $2) }
 
 -- An optional lifetime followed by an optional mutability
 lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
@@ -697,11 +695,8 @@ abi :: { Abi }
   | {- empty -}     { C }
 
 -- parse_ret_ty
--- Note that impl traits are still at RFC stage - they may eventually become accepted in more places
--- than just return types.
 ret_ty :: { Maybe (Ty Span) }
   : '->' ty_no_plus                                  { Just $2 }
-  | '->' impl_ty                                     { Just $2 }
   | {- empty -}                                      { Nothing }
 
 -- parse_poly_trait_ref()
@@ -1617,7 +1612,6 @@ token :: { Spanned Token }
   | pub        { $1 }
   | ref        { $1 }
   | return     { $1 }
-  | yield      { $1 }
   | Self       { $1 }
   | self       { $1 }
   | static     { $1 }
@@ -1651,6 +1645,8 @@ token :: { Spanned Token }
   | union      { $1 }
   | catch      { $1 }
   | auto       { $1 }
+  | yield      { $1 }
+  | dyn        { $1 }
   -- Comments
   | outerDoc   { $1 }
   | innerDoc   { $1 }
@@ -1677,12 +1673,6 @@ export_block :: { Block Span }
   : ntBlock                                                { $1 }
   | safety '{' '}'                                         { Block [] (unspan $1) ($1 # $2 # $>) }
   | safety '{' stmts_possibly_no_semi '}'                  { Block [ s | Just s <- $3 ] (unspan $1) ($1 # $2 # $>) }
-
--- Any type, including trait types with plus and impl trait types
-export_ty :: { Ty Span }
-  : ty                               { $1 }
-  | impl_ty                          { $1 }
-
 
 {
 -- | Parser for literals.
