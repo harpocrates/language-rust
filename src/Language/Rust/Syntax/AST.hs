@@ -48,7 +48,9 @@ module Language.Rust.Syntax.AST (
   Arm(..),
   UnOp(..),
   BinOp(..),
+  Label(..),
   CaptureBy(..),
+  Movability(..),
   Field(..),
   RangeLimits(..),
   
@@ -335,17 +337,17 @@ data Expr a
   -- | if-let expression with an optional else block (example: @if let Some(x) = None { () }@)
   | IfLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Expr a)) a
   -- | while loop, with an optional label (example: @'lbl: while 1 == 1 { break 'lbl }@)
-  | While [Attribute a] (Expr a) (Block a) (Maybe (Lifetime a)) a
+  | While [Attribute a] (Expr a) (Block a) (Maybe (Label a)) a
   -- | while-let loop, with an optional label (example: @while let Some(x) = None { x }@)
-  | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Lifetime a)) a
+  | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Label a)) a
   -- | for loop, with an optional label (example: @for i in 1..10 { println!("{}",i) }@)
-  | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Lifetime a)) a
+  | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Label a)) a
   -- | conditionless loop (can be exited with 'Break', 'Continue', or 'Ret')
-  | Loop [Attribute a] (Block a) (Maybe (Lifetime a)) a
+  | Loop [Attribute a] (Block a) (Maybe (Label a)) a
   -- | match block
   | Match [Attribute a] (Expr a) [Arm a] a
   -- | closure (example: @move |a, b, c| { a + b + c }@)
-  | Closure [Attribute a] CaptureBy (FnDecl a) (Expr a) a
+  | Closure [Attribute a] Movability CaptureBy (FnDecl a) (Expr a) a
   -- | (possibly unsafe) block (example: @unsafe { 1 }@)
   | BlockExpr [Attribute a] (Block a) a
   -- | a catch block (example: @do catch { 1 }@)
@@ -368,9 +370,9 @@ data Expr a
   | AddrOf [Attribute a] Mutability (Expr a) a
   -- | @break@ with an optional label and expression denoting what to break out of and what to
   -- return (example: @break 'lbl 1@) 
-  | Break [Attribute a] (Maybe (Lifetime a)) (Maybe (Expr a)) a
+  | Break [Attribute a] (Maybe (Label a)) (Maybe (Expr a)) a
   -- | @continue@ with an optional label (example: @continue@)
-  | Continue [Attribute a] (Maybe (Lifetime a)) a
+  | Continue [Attribute a] (Maybe (Label a)) a
   -- | @return@ with an optional value to be returned (example: @return 1@)
   | Ret [Attribute a] (Maybe (Expr a)) a
   -- | macro invocation before expansion
@@ -383,6 +385,8 @@ data Expr a
   | ParenExpr [Attribute a] (Expr a) a
   -- | sugar for error handling with @Result@ (example: @parsed_result?@)
   | Try [Attribute a] (Expr a) a
+  -- | a @yield@ with an optional value to yielf (example: @yield 1@)
+  | Yield [Attribute a] (Maybe (Expr a)) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Expr a) where
@@ -404,7 +408,7 @@ instance Located a => Located (Expr a) where
   spanOf (ForLoop _ _ _ _ _ s) = spanOf s
   spanOf (Loop _ _ _ s) = spanOf s
   spanOf (Match _ _ _ s) = spanOf s
-  spanOf (Closure _ _ _ _ s) = spanOf s
+  spanOf (Closure _ _ _ _ _ s) = spanOf s
   spanOf (BlockExpr _ _ s) = spanOf s
   spanOf (Catch _ _ s) = spanOf s
   spanOf (Assign _ _ _ s) = spanOf s
@@ -423,6 +427,7 @@ instance Located a => Located (Expr a) where
   spanOf (Repeat _ _ _ s) = spanOf s
   spanOf (ParenExpr _ _ s) = spanOf s
   spanOf (Try _ _ s) = spanOf s
+  spanOf (Yield _ _ s) = spanOf s
 
 -- | Field in a struct literal expression (@syntax::ast::Field@).
 --
@@ -462,12 +467,17 @@ data ForeignItem a
   -- | Foreign static variable, optionally mutable
   --
   -- Example: @static mut bar: i32;@ in @extern "C" { static mut bar: i32; }@
-  | ForeignStatic [Attribute a] (Visibility a) Ident (Ty a) Mutability a 
+  | ForeignStatic [Attribute a] (Visibility a) Ident (Ty a) Mutability a
+  -- | Foreign type
+  --
+  -- Example: @type Boo;@
+  | ForeignTy [Attribute a] (Visibility a) Ident a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (ForeignItem a) where
   spanOf (ForeignFn _ _ _ _ _ s) = spanOf s
   spanOf (ForeignStatic _ _ _ _ _ s) = spanOf s
+  spanOf (ForeignTy _ _ _ s) = spanOf s
 
 -- | Represents lifetimes and type parameters attached to a declaration of a functions, enums,
 -- traits, etc. (@syntax::ast::Generics@). Note that lifetime definitions are always required to be
@@ -565,11 +575,6 @@ data Item a
   -- | trait alias
   -- Example: @trait Foo = Bar + Quux;@
   | TraitAlias [Attribute a] (Visibility a) Ident (Generics a) (NonEmpty (TyParamBound a)) a
-  -- | default implementation
-  -- [(RFC for impl
-  -- specialization)](https://github.com/rust-lang/rfcs/blob/master/text/1210-impl-specialization.md)
-  -- Examples: @impl Trait for .. {}@ or @impl\<T\> Trait\<T\> for .. {}@
-  | AutoImpl [Attribute a] (Visibility a) Unsafety (TraitRef a) a
   -- | implementation
   -- Example: @impl\<A\> Foo\<A\> { .. }@ or @impl\<A\> Trait for Foo\<A\> { .. }@
   | Impl [Attribute a] (Visibility a) Defaultness Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a] a
@@ -595,10 +600,15 @@ instance Located a => Located (Item a) where
   spanOf (Union _ _ _ _ _ s) = spanOf s
   spanOf (Trait _ _ _ _ _ _ _ _ s) = spanOf s
   spanOf (TraitAlias _ _ _ _ _ s) = spanOf s
-  spanOf (AutoImpl _ _ _ _ s) = spanOf s
   spanOf (Impl _ _ _ _ _ _ _ _ _ s) = spanOf s
   spanOf (MacItem _ _ _ s) = spanOf s
   spanOf (MacroDef _ _ _ s) = spanOf s
+
+-- | Used to annotate loops, breaks, continues, etc.
+data Label a = Label Name a
+  deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+
+instance Located a => Located (Label a) where spanOf (Label _ s) = spanOf s
 
 -- | A lifetime is a name for a scope in a program (@syntax::ast::Lifetime@). One of the novel
 -- features of Rust is that code can be parametrized over lifetimes. Syntactically, they are like
@@ -723,6 +733,9 @@ data MacStmtStyle
 
 -- | Represents a method's signature in a trait declaration, or in an implementation.
 data MethodSig a = MethodSig Unsafety Constness Abi (FnDecl a) deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+
+-- | The movability of a generator / closure literal (@syntax::ast::Movability@).
+data Movability = Immovable | Movable deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | Encodes whether something can be updated or changed (@syntax::ast::Mutability@).
 data Mutability = Mutable | Immutable deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)

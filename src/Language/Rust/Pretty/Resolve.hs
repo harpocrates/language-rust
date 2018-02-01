@@ -710,25 +710,29 @@ resolveExprP p c r@(Ret as me x) = scope r $ parenE (p > 0) $ do
   as' <- traverse (resolveAttr OuterAttr) as
   me' <- traverse (resolveExprP 0 (rhs c)) me
   pure (Ret as' me' x)
+resolveExprP p c r@(Yield as me x) = scope r $ parenE (p > 0) $ do
+  as' <- traverse (resolveAttr OuterAttr) as
+  me' <- traverse (resolveExprP 0 (rhs c)) me
+  pure (Yield as' me' x)
 resolveExprP p c b@(Break as ml me x) = scope b $ parenE (p > 0) $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  ml' <- traverse resolveLifetime ml
+  ml' <- traverse resolveLbl ml
   me' <- traverse (resolveExprP 0 (rhs c)) me
   pure (Break as' ml' me' x) 
 resolveExprP p _ c@(Continue as ml x) = scope c $ parenE (p > 0) $ do 
   as' <- traverse (resolveAttr OuterAttr) as
-  ml' <- traverse resolveLifetime ml
+  ml' <- traverse resolveLbl ml
   pure (Continue as' ml' x)
 -- Closures
-resolveExprP _ _ c@(Closure _ _ (FnDecl _ _ True _) _ _) = scope c (err c "closures can never be variadic")
-resolveExprP p c e@(Closure as cb fn@(FnDecl _ ret _ _) b x) = scope c $
+resolveExprP _ _ c@(Closure _ _ _ (FnDecl _ _ True _) _ _) = scope c (err c "closures can never be variadic")
+resolveExprP p c e@(Closure as m cb fn@(FnDecl _ ret _ _) b x) = scope c $
     case (c, ret, b) of
       (NoStructExpr,      Just _, BlockExpr{}) -> parenthesize e
       (NoStructBlockExpr, Just _, BlockExpr{}) -> parenthesize e
-      (NoStructExpr,      Just _, _          ) -> parenthesize (Closure as cb fn (asBlock b) x) 
-      (NoStructBlockExpr, Just _, _          ) -> parenthesize (Closure as cb fn (asBlock b) x)
+      (NoStructExpr,      Just _, _          ) -> parenthesize (Closure as m cb fn (asBlock b) x) 
+      (NoStructBlockExpr, Just _, _          ) -> parenthesize (Closure as m cb fn (asBlock b) x)
       (_,                 Just _, BlockExpr{}) -> resolved AnyExpr
-      (_,                 Just _, _          ) -> parenthesize (Closure as cb fn (asBlock b) x)
+      (_,                 Just _, _          ) -> parenthesize (Closure as m cb fn (asBlock b) x)
       _                                         -> resolved (rhs c)
   where
   asBlock ex = BlockExpr [] (Block [NoSemi ex mempty] Normal mempty) mempty
@@ -737,7 +741,7 @@ resolveExprP p c e@(Closure as cb fn@(FnDecl _ ret _ _) b x) = scope c $
     as' <- traverse (resolveAttr OuterAttr) as
     fn' <- resolveFnDecl NoSelf NamedArg fn
     b' <- resolveExprP 0 c' b
-    pure (Closure as' cb fn' b' x)
+    pure (Closure as' m cb fn' b' x)
 -- Assignment/in-place expressions
 resolveExprP p c a@(Assign as l r x) = scope a $ parenE (p > 1) $ do
   as' <- traverse (resolveAttr OuterAttr) as
@@ -959,26 +963,26 @@ resolveExprP _ _ w@(While as e b l x) = scope w $ do
   as' <- traverse (resolveAttr EitherAttr) as
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
-  l' <- traverse resolveLifetime l
+  l' <- traverse resolveLbl l
   pure (While as' e' b' l' x)
 resolveExprP _ _ w@(WhileLet as p' e b l x) = scope w $ do
   as' <- traverse (resolveAttr EitherAttr) as
   p'' <- resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
-  l' <- traverse resolveLifetime l
+  l' <- traverse resolveLbl l
   pure (WhileLet as' p'' e' b' l' x)
 resolveExprP _ _ f@(ForLoop as p' e b l x) = scope f $ do
   as' <- traverse (resolveAttr EitherAttr) as
   p'' <- resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
-  l' <- traverse resolveLifetime l
+  l' <- traverse resolveLbl l
   pure (ForLoop as' p'' e' b' l' x)
 resolveExprP _ _ o@(Loop as b l x) = scope o $ do
   as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
-  l' <- traverse resolveLifetime l
+  l' <- traverse resolveLbl l
   pure (Loop as' b' l' x)
 resolveExprP _ _ m@(Match as e ar x) = scope m $ do
   as' <- traverse (resolveAttr EitherAttr) as
@@ -1000,6 +1004,9 @@ isBlockLike WhileLet{} = True
 isBlockLike Match{} = True
 isBlockLike BlockExpr{} = True
 isBlockLike _ = False
+
+resolveLbl :: Typeable a => Label a -> ResolveM (Label a)
+resolveLbl l@(Label n x) = scope l (resolveIdent (mkIdent n) *> pure l)
 
 -- | Wrap an expression in parens if the condition given holds
 parenE :: (Typeable a, Monoid a) => Bool -> ResolveM (Expr a) -> ResolveM (Expr a)
@@ -1196,12 +1203,6 @@ resolveItem t r@(TraitAlias as v i g bd x) = scope r $ do
   bd' <- traverse (resolveTyParamBound NoneBound) bd
   pure (TraitAlias as' v' i' g' bd' x)
 
-resolveItem t i@(AutoImpl as v u t' x) = scope i $ do
-  as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
-  t'' <- resolveTraitRef t'
-  pure (AutoImpl as' v' u t'' x)
-
 resolveItem t i'@(Impl as v d u i g mt t' is x) = scope i' $ do
   as' <- traverse (resolveAttr EitherAttr) as
   v' <- resolveVisibility' t v
@@ -1243,6 +1244,11 @@ resolveForeignItem _ f@(ForeignStatic as v i t m x) = scope f $ do
   i' <- resolveIdent i
   t' <- resolveTy AnyType t
   pure (ForeignStatic as' v' i' t' m x)
+resolveForeignItem _ f@(ForeignTy as v i _) = scope f $ do
+  as' <- traverse (resolveAttr OuterAttr) as
+  v' <- resolveVisibility v
+  i' <- resolveIdent i
+  pure (ForeignTy as' v' i' x)
 
 instance (Typeable a, Monoid a) => Resolve (ForeignItem a) where resolveM = resolveForeignItem C
 

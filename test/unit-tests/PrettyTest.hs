@@ -3,7 +3,7 @@ module PrettyTest (prettySuite) where
 
 import Test.Framework (testGroup, Test)
 import Test.Framework.Providers.HUnit
-import Test.HUnit hiding (Test, Path)
+import Test.HUnit hiding (Test, Path, Label)
 
 import Language.Rust.Data.Ident
 import Language.Rust.Data.Position
@@ -286,16 +286,16 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "if let foo = 1 { return 1; }" (printExpr (IfLet [] (IdentP (ByValue Immutable) (mkIdent "foo") Nothing ()) _1 retBlk Nothing ()))
   , testFlatten "if let foo = 1 { return 1; } else { return 1; }" (printExpr (IfLet [] (IdentP (ByValue Immutable) (mkIdent "foo") Nothing ()) _1 retBlk (Just (BlockExpr [] retBlk ())) ()))
   , testFlatten "while foo { foo = 1 }" (printExpr (While [] foo assBlk Nothing ()))
-  , testFlatten "'lbl: while foo { foo = 1 }" (printExpr (While [] foo assBlk (Just (Lifetime "lbl" ())) ()))
+  , testFlatten "'lbl: while foo { foo = 1 }" (printExpr (While [] foo assBlk (Just (Label "lbl" ())) ()))
   , testFlatten "#[cfgo] while foo { #![cfgi] foo = 1 }" (printExpr (While [cfgI,cfgO] foo assBlk Nothing ()))
   , testFlatten "while let foo = 1 { foo = 1 }" (printExpr (WhileLet [] (IdentP (ByValue Immutable) (mkIdent "foo") Nothing ()) _1 assBlk Nothing ()))
-  , testFlatten "'lbl: while let foo = 1 { foo = 1 }" (printExpr (WhileLet [] (IdentP (ByValue Immutable) (mkIdent "foo") Nothing ()) _1 assBlk (Just (Lifetime "lbl" ())) ()))
+  , testFlatten "'lbl: while let foo = 1 { foo = 1 }" (printExpr (WhileLet [] (IdentP (ByValue Immutable) (mkIdent "foo") Nothing ()) _1 assBlk (Just (Label "lbl" ())) ()))
   , testFlatten "#[cfgo] while let foo = 1 { #![cfgi] foo = 1 }" (printExpr (WhileLet [cfgO,cfgI] (IdentP (ByValue Immutable) (mkIdent "foo") Nothing ()) _1 assBlk Nothing ()))
   , testFlatten "for foo in bar { foo = 1 }" (printExpr (ForLoop [] (IdentP (ByValue Immutable) (mkIdent "foo") Nothing ()) bar assBlk Nothing ()))
-  , testFlatten "'lbl: for foo in bar { foo = 1 }" (printExpr (ForLoop [] (IdentP (ByValue Immutable) (mkIdent "foo") Nothing ()) bar assBlk (Just (Lifetime "lbl" ())) ()))
+  , testFlatten "'lbl: for foo in bar { foo = 1 }" (printExpr (ForLoop [] (IdentP (ByValue Immutable) (mkIdent "foo") Nothing ()) bar assBlk (Just (Label "lbl" ())) ()))
   , testFlatten "#[cfgo] for foo in bar { #![cfgi] foo = 1 }" (printExpr (ForLoop [cfgO,cfgI] (IdentP (ByValue Immutable) (mkIdent "foo") Nothing ()) bar assBlk Nothing ()))
   , testFlatten "loop { foo = 1 }" (printExpr (Loop [] assBlk Nothing ()))
-  , testFlatten "'lbl: loop { foo = 1 }" (printExpr (Loop [] assBlk (Just (Lifetime "lbl" ())) ()))
+  , testFlatten "'lbl: loop { foo = 1 }" (printExpr (Loop [] assBlk (Just (Label "lbl" ())) ()))
   , testFlatten "#[cfgo] loop { #![cfgi] foo = 1 }" (printExpr (Loop [cfgO,cfgI] assBlk Nothing ()))
   , testFlatten "match foo { }" (printExpr (Match [] foo [] ())) 
   , testFlatten "match foo { _ => 1 }" (printExpr (Match [] foo [Arm [] [WildP ()] Nothing _1 ()] ())) 
@@ -303,10 +303,16 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "match foo { _ => { return 1; } }" (printExpr (Match [] foo [Arm [] [WildP ()] Nothing (BlockExpr [] retBlk ()) ()] ())) 
   , testFlatten "match foo { _ => { return 1; }, _ | _ if foo => 1 }" (printExpr (Match [] foo [Arm [] [WildP ()] Nothing (BlockExpr [] retBlk ()) (), Arm [] [WildP (), WildP ()] (Just foo) _1 ()] ())) 
   , testFlatten "move |x: i32| { return 1; }"
-                (printExpr (Closure [] Value (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) 
+                (printExpr (Closure [] Movable Value (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) 
+                                    (BlockExpr [] retBlk ()) ()))
+  , testFlatten "static move |x: i32| { return 1; }"
+                (printExpr (Closure [] Immovable Value (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) 
                                     (BlockExpr [] retBlk ()) ()))
   , testFlatten "|x: i32| -> i32 { return 1; }"
-                (printExpr (Closure [] Ref (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ()) 
+                (printExpr (Closure [] Movable Ref (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ()) 
+                                    (BlockExpr [] retBlk ()) ()))
+  , testFlatten "static |x: i32| -> i32 { return 1; }"
+                (printExpr (Closure [] Immovable Ref (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ()) 
                                     (BlockExpr [] retBlk ()) ()))
   , testFlatten "#[cfgo] { #![cfgi] return 1; }" (printExpr (BlockExpr [cfgI,cfgO] retBlk ()))
   , testFlatten "{ return 1; }" (printExpr (BlockExpr [] retBlk ()))
@@ -327,10 +333,10 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "#[cfgo] &mut foo" (printExpr (AddrOf [cfgO] Mutable foo ()))
   , testFlatten "break" (printExpr (Break [] Nothing Nothing ()))
   , testFlatten "break 1" (printExpr (Break [] Nothing (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) ()))
-  , testFlatten "break 'foo" (printExpr (Break [] (Just (Lifetime "foo" ())) Nothing ()))
-  , testFlatten "break 'foo 1" (printExpr (Break [] (Just (Lifetime "foo" ())) (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) ()))
+  , testFlatten "break 'foo" (printExpr (Break [] (Just (Label "foo" ())) Nothing ()))
+  , testFlatten "break 'foo 1" (printExpr (Break [] (Just (Label "foo" ())) (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) ()))
   , testFlatten "continue" (printExpr (Continue [] Nothing ()))
-  , testFlatten "continue 'foo" (printExpr (Continue [] (Just (Lifetime "foo" ())) ()))
+  , testFlatten "continue 'foo" (printExpr (Continue [] (Just (Label "foo" ())) ()))
   , testFlatten "return" (printExpr (Ret [] Nothing ()))
   , testFlatten "return foo" (printExpr (Ret [] (Just foo) ()))
   , testFlatten "print!(foo)" (printExpr (MacExpr [] (Mac (Path False [PathSegment "print" Nothing ()] ())
@@ -385,8 +391,6 @@ prettyItems = testGroup "printing items"
   , testFlatten "struct red { x: i32 }" (printItem (StructItem [] InheritedV (mkIdent "red") (StructD [StructField (Just (mkIdent "x")) InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ()) ()))
   , testFlatten "union red { x: i32 }" (printItem (Union [] InheritedV (mkIdent "red") (StructD [StructField (Just (mkIdent "x")) InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ()) ()))
   , testFlatten "union red { x: i32 }" (printItem (Union [] InheritedV (mkIdent "red") (StructD [StructField (Just (mkIdent "x")) InheritedV i32 [] ()] ()) (Generics [] [] (WhereClause [] ()) ()) ()))
-  , testFlatten "impl std::Debug for .. { }" (printItem (AutoImpl [] InheritedV Normal (TraitRef (Path False [std,debug] ())) ()))
-  , testFlatten "unsafe impl Debug for .. { }" (printItem (AutoImpl [] InheritedV Unsafe (TraitRef (Path False [debug] ())) ()))
   , testFlatten "impl Debug for i32 { }" (printItem (Impl [] InheritedV Final Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [debug] ()))) i32 [] ()))
   , testFlatten "default impl Debug for i32 { }" (printItem (Impl [] InheritedV Default Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [debug] ()))) i32 [] ()))
   , testFlatten "pub impl !Debug for i32 where 'lt: 'gt { }" (printItem (Impl [] PublicV Final Normal Negative (Generics [] [] (WhereClause [RegionPredicate (Lifetime "lt" ()) [Lifetime "gt" ()] ()] ()) ()) (Just (TraitRef (Path False [debug] ()))) i32 [] ()))

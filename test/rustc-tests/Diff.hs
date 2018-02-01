@@ -109,12 +109,12 @@ instance Show a => Diffable (Item a) where
         g === (n' ! "fields" ! 2)
         bd === (n' ! "fields" ! 3)
         is === (n' ! "fields" ! 4)
-      ("AutoImpl", AutoImpl as v u tr _) -> do
+      ("TraitAlias", TraitAlias as v i g bd _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
-        mkIdent "" === (val ! "ident")
-        u === (n' ! "fields" ! 0)
-        tr === (n' ! "fields" ! 1)
+        i === (val ! "ident")
+        g === (n' ! "fields" ! 0)
+        bd === (n' ! "fields" ! 1)
       ("Impl", Impl as v d u p g mtr t is _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
@@ -242,21 +242,25 @@ instance Show a => Diffable (StructField a) where
 
 instance Show a => Diffable (ForeignItem a) where
   f === val = do
-    let n' = val ! "node"
-    case (n' ! "variant", f) of
-      ("Fn", ForeignFn as v i d g _) -> do
+    case (val ! "node", f) of
+      ("Ty", ForeignTy as v i _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
         i === (val ! "ident")
-        d === (n' ! "fields" ! 0) 
-        g === (n' ! "fields" ! 1)
-      ("Static", ForeignStatic as v i t m _) -> do
-        as === (val ! "attrs")
-        v === (val ! "vis")
-        i === (val ! "ident")
-        t === (n' ! "fields" ! 0)
-        (m == Mutable) === (n' ! "fields" ! 1)
-      _ -> diff "different foreign item" f val
+      (n', _) -> case (n' ! "variant", f) of
+        ("Fn", ForeignFn as v i d g _) -> do
+          as === (val ! "attrs")
+          v === (val ! "vis")
+          i === (val ! "ident")
+          d === (n' ! "fields" ! 0) 
+          g === (n' ! "fields" ! 1)
+        ("Static", ForeignStatic as v i t m _) -> do
+          as === (val ! "attrs")
+          v === (val ! "vis")
+          i === (val ! "ident")
+          t === (n' ! "fields" ! 0)
+          (m == Mutable) === (n' ! "fields" ! 1)
+        _ -> diff "different foreign item" f val
 
 instance Show a => Diffable (UseTree a) where
   v === val = do
@@ -345,10 +349,17 @@ instance Diffable Abi where
 
 instance Show a => Diffable (Generics a) where
   Generics lts tys whr _ === val = do
-    lts === (val ! "lifetimes")
-    tys === (val ! "ty_params")
+    (map LifetimeParam lts ++ map TypeParam tys) === (val ! "params")
     whr === (val ! "where_clause")
 
+data Param a = TypeParam (TyParam a) | LifetimeParam (LifetimeDef a) deriving (Show)
+
+instance Show a => Diffable (Param a) where
+  p === val = 
+    case (val ! "variant", p) of
+      ("Lifetime", LifetimeParam ldef) -> ldef === (val ! "fields" ! 0)
+      ("Type", TypeParam typ) -> typ === (val ! "fields" ! 0)
+      _ -> diff "different generic param" p val
 
 instance Show a => Diffable (LifetimeDef a) where
   LifetimeDef as l bd _ === val = do
@@ -370,7 +381,7 @@ instance Show a => Diffable (WherePredicate a) where
   w === val =
     case (val ! "variant", w) of
       ("BoundPredicate", BoundPredicate ls t bds _) -> do
-        ls === (val ! "fields" ! 0 ! "bound_lifetimes")
+        map LifetimeParam ls === (val ! "fields" ! 0 ! "bound_generic_params")
         t === (val ! "fields" ! 0 ! "bounded_ty")
         bds === (val ! "fields" ! 0 ! "bounds")
       ("RegionPredicate", RegionPredicate l bs _) -> do
@@ -666,7 +677,7 @@ instance Show a => Diffable (Ty a) where
           ("BareFn", BareFn u a lts decl _) -> do
             u === (n ! "fields" ! 0 ! "unsafety")
             a === (n ! "fields" ! 0 ! "abi")
-            lts === (n ! "fields" ! 0 ! "lifetimes")
+            map LifetimeParam lts === (n ! "fields" ! 0 ! "generic_params")
             decl === (n ! "fields" ! 0 ! "decl")
           ("TraitObject", TraitObject bds _) ->
             bds === (n ! "fields" ! 0)
@@ -689,7 +700,7 @@ instance Show a => Diffable (TyParamBound a) where
 
 instance Show a => Diffable (PolyTraitRef a) where
   PolyTraitRef lts tr _ === val = do
-    lts === (val ! "bound_lifetimes")
+    map LifetimeParam lts === (val ! "bound_generic_params")
     tr === (val ! "trait_ref")
 
 instance Show a => Diffable (TraitRef a) where
@@ -816,40 +827,41 @@ instance Show a => Diffable (Expr a) where
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
         b === (n ! "fields" ! 1)
-        fmap Lbl l === (n ! "fields" ! 2)
+        l === (n ! "fields" ! 2)
       ("WhileLet", WhileLet as p e b l _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         p === (n ! "fields" ! 0)
         e === (n ! "fields" ! 1)
         b === (n ! "fields" ! 2)
-        fmap Lbl l === (n ! "fields" ! 3)
+        l === (n ! "fields" ! 3)
       ("Continue", Continue as l _) -> do
         NullList as === (val ! "attrs" ! "_field0")
-        fmap Lbl l === (n ! "fields" ! 0)
+        l === (n ! "fields" ! 0)
       ("Break", Break as l e _) -> do
         NullList as === (val ! "attrs" ! "_field0")
-        fmap Lbl l === (n ! "fields" ! 0)
+        l === (n ! "fields" ! 0)
         e === (n ! "fields" ! 1)
       ("ForLoop", ForLoop as p e b l _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         p === (n ! "fields" ! 0)
         e === (n ! "fields" ! 1)
         b === (n ! "fields" ! 2)
-        fmap Lbl l === (n ! "fields" ! 3)
+        l === (n ! "fields" ! 3)
       ("Loop", Loop as b l _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         b === (n ! "fields" ! 0)
-        fmap Lbl l === (n ! "fields" ! 1)
+        l === (n ! "fields" ! 1)
       ("Range", Range as l h rl _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         l === (n ! "fields" ! 0)
         h === (n ! "fields" ! 1)
         rl === (n ! "fields" ! 2) 
-      ("Closure", Closure as c decl e _) -> do
+      ("Closure", Closure as m c decl e _) -> do
         NullList as === (val ! "attrs" ! "_field0")
+        m === (n ! "fields" ! 1)
         c === (n ! "fields" ! 0)
-        decl === (n ! "fields" ! 1)
-        e === (n ! "fields" ! 2)
+        decl === (n ! "fields" ! 2)
+        e === (n ! "fields" ! 3)
       ("Assign", Assign as l r _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         l === (n ! "fields" ! 0)
@@ -878,6 +890,9 @@ instance Show a => Diffable (Expr a) where
       ("Ret", Ret as e _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
+      ("Yield", Yield as e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
+        e === (n ! "fields" ! 0)
       ("Mac", MacExpr as m _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         m === (n ! "fields" ! 0)
@@ -903,14 +918,18 @@ instance Show a => Diffable (Expr a) where
     where
     n = val ! "node"
 
-newtype Lbl a = Lbl (Lifetime a) deriving (Show)
-instance Show a => Diffable (Lbl a) where
-  Lbl (Lifetime n _) === val = ("'" <> mkIdent n) === (val ! "node")
+instance Show a => Diffable (Label a) where
+  Label n _ === val = ("'" <> mkIdent n) === (val ! "ident")
 
 instance Diffable CaptureBy where
   Value === "Value" = pure ()
   Ref   === "Ref" = pure ()
   c     === val = diff "different capture by" c val
+
+instance Diffable Movability where
+  Immovable === "Static" = pure ()
+  Movable   === "Movable" = pure ()
+  m         === val = diff "different movability" m val
 
 
 instance Diffable RangeLimits where
@@ -1003,13 +1022,13 @@ instance Diffable Suffix where
   Unsuffixed === "Unsuffixed" = pure ()
   F32 === "F32" = pure ()
   F64 === "F64" = pure ()
-  Is === val   | val ! "fields" == Data.Aeson.Array ["Is"]   = pure () 
+  Is === val   | val ! "fields" == Data.Aeson.Array ["Isize"]   = pure () 
   I8 === val   | val ! "fields" == Data.Aeson.Array ["I8"]   = pure () 
   I16 === val  | val ! "fields" == Data.Aeson.Array ["I16"]  = pure () 
   I32 === val  | val ! "fields" == Data.Aeson.Array ["I32"]  = pure () 
   I64 === val  | val ! "fields" == Data.Aeson.Array ["I64"]  = pure () 
   I128 === val | val ! "fields" == Data.Aeson.Array ["I128"] = pure () 
-  Us === val   | val ! "fields" == Data.Aeson.Array ["Us"]   = pure () 
+  Us === val   | val ! "fields" == Data.Aeson.Array ["Usize"]   = pure () 
   U8 === val   | val ! "fields" == Data.Aeson.Array ["U8"]   = pure () 
   U16 === val  | val ! "fields" == Data.Aeson.Array ["U16"]  = pure () 
   U32 === val  | val ! "fields" == Data.Aeson.Array ["U32"]  = pure () 

@@ -379,7 +379,9 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     ForLoop as pat e blk lbl x  -> annotate x (hsep [ printLbl lbl, "for", printPat pat, "in", printExpr e, printBlockWithAttrs True blk as ])
     Loop as blk lbl x           -> annotate x (hsep [ printLbl lbl, "loop", printBlockWithAttrs True blk as ])
     Match as e arms x           -> annotate x (hsep [ "match", printExpr e, block Brace False "," (printInnerAttrs as) (printArm `map` arms) ])
-    Closure _ cap decl body x   -> annotate x (when (cap == Value) "move" <+> printFnBlockArgs decl <+> printExpr body)
+    Closure _ s cap decl body x -> annotate x (hsep [ when (s == Immovable) "static"
+                                                    , when (cap == Value) "move"
+                                                    , printFnBlockArgs decl <+> printExpr body])
     BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs True blk attrs)
     Catch attrs blk x           -> annotate x ("do catch" <+> printBlockWithAttrs True blk attrs)
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
@@ -391,9 +393,10 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     PathExpr _ Nothing path x   -> annotate x (printPath path True)
     PathExpr _ (Just qs) path x -> annotate x (printQPath path qs True)
     AddrOf _ mut e x            -> annotate x ("&" <> printMutability mut <+> printExpr e)
-    Break _ brk e x             -> annotate x ("break" <+> perhaps printLifetime brk <+> perhaps printExpr e)
-    Continue _ cont x           -> annotate x ("continue" <+> perhaps printLifetime cont)
+    Break _ brk e x             -> annotate x ("break" <+> printLbl' brk <+> perhaps printExpr e)
+    Continue _ cont x           -> annotate x ("continue" <+> printLbl' cont)
     Ret _ result x              -> annotate x ("return" <+> perhaps printExpr result)
+    Yield _ result x            -> annotate x ("yield" <+> perhaps printExpr result)
     MacExpr _ m x               -> annotate x (printMac Paren m)
     Struct as p fs Nothing x    -> annotate x (printPath p True <+> block Brace True "," (printInnerAttrs as) (printField `map` fs))
     Struct as p fs (Just d) x   -> let body = [ printField f <> "," | f <- fs ] ++ [ ".." <> printExpr d ] 
@@ -402,7 +405,8 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     ParenExpr attrs e x         -> annotate x (parens (printInnerAttrs attrs <+> printExpr e))
     Try{}                       -> chainedMethodCalls expr False id
   where
-  printLbl = perhaps (\i -> printLifetime i <> ":")
+  printLbl = perhaps (\(Label n x) -> annotate x ("'" <> printName n) <> ":")
+  printLbl' = perhaps (\(Label n x) -> annotate x ("'" <> printName n))
   glue = if isInline then (<+>) else (</>)
 
   -- | From an expression, seperate the first non-method-call from the list of method call suffixes
@@ -462,7 +466,7 @@ expressionAttrs (WhileLet as _ _ _ _ _) = as
 expressionAttrs (ForLoop as _ _ _ _ _) = as
 expressionAttrs (Loop as _ _ _) = as
 expressionAttrs (Match as _ _ _) = as
-expressionAttrs (Closure as _ _ _ _) = as
+expressionAttrs (Closure as _ _ _ _ _) = as
 expressionAttrs (BlockExpr as _ _) = as
 expressionAttrs (Catch as _ _) = as
 expressionAttrs (Assign as _ _ _) = as
@@ -481,6 +485,7 @@ expressionAttrs (Struct as _ _ _ _) = as
 expressionAttrs (Repeat as _ _ _) = as
 expressionAttrs (ParenExpr as _ _) = as
 expressionAttrs (Try as _ _) = as
+expressionAttrs (Yield as _ _) = as
 
 -- | Print a field
 printField :: Field a -> Doc a
@@ -644,11 +649,7 @@ printItem (Trait as vis ident a u g tys i x) = annotate x $ align $ printOuterAt
 
 printItem (TraitAlias as vis ident g bds x) = annotate x $ align $ printOuterAttrs as <#>
   let leading = printVis vis <+> "trait" <+> printIdent ident <> printGenerics g
-  in group (leading <+> "=" <#> indent n (printBounds "=" (toList bds)))
-
-
-printItem (AutoImpl as vis u t x) = annotate x $ align $ printOuterAttrs as <#> 
-  hsep [ printVis vis, printUnsafety u, "impl", printTraitRef t, "for", "..", "{ }" ]
+  in group (leading <#> indent n (printBounds "=" (toList bds)) <> ";")
 
 printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs as <#> 
   let generics = case g of { Generics [] [] _ _ -> mempty; _ -> printGenerics g }
@@ -747,6 +748,8 @@ printForeignItem (ForeignFn attrs vis ident decl generics x) = annotate x $
   printOuterAttrs attrs <#> printFn decl Normal NotConst Rust (Just ident) generics vis Nothing
 printForeignItem (ForeignStatic attrs vis ident ty mut x) = annotate x $
   printOuterAttrs attrs <#> printVis vis <+> "static" <+> printMutability mut <+> printIdent ident <> ":" <+> printType ty <> ";"
+printForeignItem (ForeignTy attrs vis ident x) = annotate x $
+  printOuterAttrs attrs <#> printVis vis <+> "type" <+> printIdent ident <> ";"
 
 -- | Print a struct definition (@print_struct@)
 printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a

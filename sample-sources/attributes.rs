@@ -146,9 +146,6 @@ trait Trait {
   foo!();
 }
 
-#[defaultimpl_outer]
-impl Trait for .. { }
-
 
 #[impl_outer]
 impl Impls {

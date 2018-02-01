@@ -19,6 +19,7 @@ mod bar {
     fn foo<T>(x: int) -> int;
     static x: int;
     static mut x: *mut int;
+    type C;
   }
 
   type Foo = Bar<u8>;
@@ -51,14 +52,14 @@ mod bar {
     foo!{}
   }
 
+  trait Foo = Bar + Baz;
+
   fn foo<T: ?Sized>(x: &T) { }
   struct Foo<T: Send + ?Sized + Sync> { field: Box<T> }
   trait Bar { type Baz: ?Sized; }
 
   struct Bleh<T, U> where T: Copy, U: Sized; 
   
-  impl Trait for .. {}
-  impl Trait<T> for .. {}
   impl<A> Foo<A> {
     const ID: i32 = 1;
     fn area(&self) -> f64 { 1f64 }

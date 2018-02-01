@@ -208,6 +208,8 @@ import qualified Data.List.NonEmpty as N
   where          { Spanned (IdentTok "where") _ }
   while          { Spanned (IdentTok "while") _ }
   do             { Spanned (IdentTok "do") _ }
+  yield          { Spanned (IdentTok "yield") _ }
+  dyn            { Spanned (IdentTok "dyn") _ }
 
   -- Keywords reserved for future use
   abstract       { Spanned (IdentTok "abstract") _ }
@@ -224,7 +226,6 @@ import qualified Data.List.NonEmpty as N
   typeof         { Spanned (IdentTok "typeof") _ }
   unsized        { Spanned (IdentTok "unsized") _ }
   virtual        { Spanned (IdentTok "virtual") _ }
-  yield          { Spanned (IdentTok "yield") _ }
 
   -- Weak keywords, have special meaning only in specific contexts.
   default        { Spanned (IdentTok "default") _ }
@@ -280,7 +281,11 @@ import qualified Data.List.NonEmpty as N
 %nonassoc IDENT ntIdent default union catch self auto 
 
 -- These are all very low precedence unary operators
-%nonassoc box return break continue IMPLTRAIT LAMBDA
+%nonassoc box return yield break continue IMPLTRAIT LAMBDA
+
+-- 'static' needs to have higher precedenc than 'LAMBDA' so that statements starting in static get
+-- considered as static items, and not a static lambda
+%nonassoc static
 
 -- These are the usual arithmetic precedences. 'UNARY' is introduced here for '*', '!', '-', '&'
 %right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%='
@@ -331,6 +336,7 @@ ident :: { Spanned Ident }
   | default                       { toIdent $1 }
   | catch                         { toIdent $1 }
   | auto                          { toIdent $1 }
+  | dyn                           { toIdent $1 }
   | IDENT                         { toIdent $1 }
 
 -- This should precede any '>' token which could be absorbed in a '>>', '>=', or '>>=' token. Its
@@ -638,6 +644,7 @@ for_ty_no_plus :: { Ty Span }
 
 impl_ty :: { Ty Span }
   : impl sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait (toNonEmpty $2) ($1 # $2) }
+--  | dyn  sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { TraitObject (toNonEmpty $2) ($1 # $2) }
 
 -- An optional lifetime followed by an optional mutability
 lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
@@ -916,17 +923,23 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   -- low precedence prefix expressions
   | return                           { Ret [] Nothing (spanOf $1) }
   | return rhs                       { Ret [] (Just $2) ($1 # $2) }
+  | yield                            { Yield [] Nothing (spanOf $1) }
+  | yield rhs                        { Yield [] (Just $2) ($1 # $2) }
   | continue                         { Continue [] Nothing (spanOf $1) }
-  | continue lifetime                { Continue [] (Just $2) ($1 # $2) }
+  | continue label                   { Continue [] (Just $2) ($1 # $2) }
   | break                            { Break [] Nothing Nothing (spanOf $1) }
-  | break          rhs               { Break [] Nothing (Just $2) ($1 # $2) }
-  | break lifetime                   { Break [] (Just $2) Nothing ($1 # $2) }
-  | break lifetime rhs   %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
+  | break       rhs                  { Break [] Nothing (Just $2) ($1 # $2) }
+  | break label                      { Break [] (Just $2) Nothing ($1 # $2) }
+  | break label rhs      %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
   -- lambda expressions
-  | move lambda_args rhs   %prec LAMBDA
-    { Closure [] Value (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
-  |      lambda_args rhs   %prec LAMBDA
-    { Closure [] Ref   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $>) }
+  | static move lambda_args rhs   %prec LAMBDA
+    { Closure [] Immovable Value (FnDecl (unspan $3) Nothing False (spanOf $3)) $> ($1 # $>) }
+  |        move lambda_args rhs   %prec LAMBDA
+    { Closure [] Movable Value (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
+  | static      lambda_args rhs   %prec LAMBDA
+    { Closure [] Immovable Ref   (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
+  |             lambda_args rhs   %prec LAMBDA
+    { Closure [] Movable Ref   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $>) }
 
 -- Variant of 'gen_expression' which only constructs expressions starting with another expression.
 left_gen_expression(lhs,rhs,rhs2) :: { Expr Span }
@@ -1084,6 +1097,10 @@ blockpostfix_expr :: { Expr Span }
 
 -- Finally, what remains is the more mundane definitions of particular types of expressions.
 
+-- labels on loops
+label :: { Label Span }
+  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _)) s = $1 in Label l s }
+
 -- Literal expressions (composed of just literals)
 lit_expr :: { Expr Span }
   : lit                                                 { Lit [] $1 (spanOf $1) }
@@ -1098,21 +1115,21 @@ block_expr :: { Expr Span }
 
 -- Any expression ending in a '{ ... }' block except a block itself.
 block_like_expr :: { Expr Span }
-  : if_expr                                                         { $1 }
-  |              loop                            inner_attrs_block  { let (as,b) = $> in Loop as b Nothing ($1 # b) }
-  | lifetime ':' loop                            inner_attrs_block  { let (as,b) = $> in Loop as b (Just $1) ($1 # b) }
-  |              for pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $2 $4 b Nothing ($1 # b) }
-  | lifetime ':' for pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $4 $6 b (Just $1) ($1 # b) }
-  |              while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $2 b Nothing ($1 # b) }
-  | lifetime ':' while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $4 b (Just $1) ($1 # b) }
-  |              while let pat '=' nostruct_expr inner_attrs_block  { let (as,b) = $> in WhileLet as $3 $5 b Nothing ($1 # b) }
-  | lifetime ':' while let pat '=' nostruct_expr inner_attrs_block  { let (as,b) = $> in WhileLet as $5 $7 b (Just $1) ($1 # b) }
-  | match nostruct_expr '{'                  '}'                    { Match [] $2 [] ($1 # $>) }
-  | match nostruct_expr '{' inner_attrs      '}'                    { Match (toList $4) $2 [] ($1 # $>) }
-  | match nostruct_expr '{'             arms '}'                    { Match [] $2 $4 ($1 # $>) }
-  | match nostruct_expr '{' inner_attrs arms '}'                    { Match (toList $4) $2 $5 ($1 # $>) }
-  | expr_path '!' '{' token_stream '}'                              { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
-  | do catch inner_attrs_block                                      { let (as,b) = $> in Catch as b ($1 # b) }
+  : if_expr                                                      { $1 }
+  |           loop                            inner_attrs_block  { let (as,b) = $> in Loop as b Nothing ($1 # b) }
+  | label ':' loop                            inner_attrs_block  { let (as,b) = $> in Loop as b (Just $1) ($1 # b) }
+  |           for pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $2 $4 b Nothing ($1 # b) }
+  | label ':' for pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $4 $6 b (Just $1) ($1 # b) }
+  |           while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $2 b Nothing ($1 # b) }
+  | label ':' while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $4 b (Just $1) ($1 # b) }
+  |           while let pat '=' nostruct_expr inner_attrs_block  { let (as,b) = $> in WhileLet as $3 $5 b Nothing ($1 # b) }
+  | label ':' while let pat '=' nostruct_expr inner_attrs_block  { let (as,b) = $> in WhileLet as $5 $7 b (Just $1) ($1 # b) }
+  | match nostruct_expr '{'                  '}'                 { Match [] $2 [] ($1 # $>) }
+  | match nostruct_expr '{' inner_attrs      '}'                 { Match (toList $4) $2 [] ($1 # $>) }
+  | match nostruct_expr '{'             arms '}'                 { Match [] $2 $4 ($1 # $>) }
+  | match nostruct_expr '{' inner_attrs arms '}'                 { Match (toList $4) $2 $5 ($1 # $>) }
+  | expr_path '!' '{' token_stream '}'                           { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
+  | do catch inner_attrs_block                                   { let (as,b) = $> in Catch as b ($1 # b) }
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }
@@ -1168,10 +1185,14 @@ paren_expr :: { Expr Span }
 
 -- Closure ending in blocks
 lambda_expr_block :: { Expr Span }
-  : move lambda_args '->' ty_no_plus block
-    { Closure [] Value (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |      lambda_args '->' ty_no_plus block
-    { Closure [] Ref   (FnDecl (unspan $1) (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  : static move lambda_args '->' ty_no_plus block
+    { Closure [] Immovable Value (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  |        move lambda_args '->' ty_no_plus block
+    { Closure [] Movable Value (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  | static      lambda_args '->' ty_no_plus block
+    { Closure [] Immovable Ref   (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  |             lambda_args '->' ty_no_plus block
+    { Closure [] Movable Ref   (FnDecl (unspan $1) (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
 
 -- Lambda expression arguments block
 lambda_args :: { Spanned [Arg Span] }
@@ -1317,8 +1338,8 @@ gen_item(vis) :: { Item Span }
     { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $10) (toList $9) $12 ($1 # $2 # $3 # $5 # $>) }
   | many(outer_attribute) vis safety auto trait ident generics where_clause '{' many(trait_item) '}'
     { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $8) [] $10 ($1 # $2 # $3 # $5 # $>) }
- --  | many(outer_attribute) vis trait ident generics '=' sep_by1T(ty_param_bound,'+') ';'
- --   { TraitAlias $1 (unspan $2) (unspan $4) $5 (toNonEmpty $7) ($1 # $2 # $3 # $>) }
+  | many(outer_attribute) vis safety trait ident generics '=' sep_by1T(ty_param_bound,'+') ';'
+    {% noSafety $3 (TraitAlias $1 (unspan $2) (unspan $5) $6 (toNonEmpty $8) ($1 # $2 # $3 # $>)) }
   | many(outer_attribute) vis         safety impl generics ty_prim              where_clause '{' impl_items '}'
     { Impl ($1 ++ fst $9) (unspan $2) Final (unspan $3) Positive ($5 `withWhere` $7) Nothing $6 (snd $9) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis default safety impl generics ty_prim              where_clause '{' impl_items '}'
@@ -1335,11 +1356,6 @@ gen_item(vis) :: { Item Span }
     { Impl ($1 ++ fst $11) (unspan $2) Final (unspan $3) Positive ($5 `withWhere` $9) (Just $6) $8 (snd $11) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis default safety impl generics     trait_ref for ty where_clause '{' impl_items '}'
     { Impl ($1 ++ fst $12) (unspan $2) Default (unspan $4) Positive ($6 `withWhere` $10) (Just $7) $9 (snd $12) ($1 # $2 # $3 # $4 # $5 # $>) }
-  | many(outer_attribute) vis safety impl generics     trait_ref for '..'            '{'            '}'
-    {% case $5 of
-         Generics [] [] _ _ -> pure $ AutoImpl $1 (unspan $2) (unspan $3) $6 ($1 # $2 # $3 # $4 # $>)
-         _ -> fail "non-empty generics are no allowed on default implementations"
-    }
 
 -- Most general type of item
 mod_item :: { Item Span }
@@ -1365,6 +1381,8 @@ foreign_item :: { ForeignItem Span }
     { ForeignStatic $1 (unspan $2) (unspan $5) $7 Mutable ($1 # $2 # $>) }
   | many(outer_attribute) vis fn ident generics fn_decl(arg_named) where_clause ';'
     { ForeignFn $1 (unspan $2) (unspan $4) $6 ($5 `withWhere` $7) ($1 # $2 # $>) }
+  | many(outer_attribute) vis type ident ';'
+    { ForeignTy $1 (unspan $2) (unspan $4) ($1 # $2 # $>) }
 
 -- parse_generics
 -- Leaves the WhereClause empty
@@ -1599,6 +1617,7 @@ token :: { Spanned Token }
   | pub        { $1 }
   | ref        { $1 }
   | return     { $1 }
+  | yield      { $1 }
   | Self       { $1 }
   | self       { $1 }
   | static     { $1 }
@@ -1627,7 +1646,6 @@ token :: { Spanned Token }
   | typeof     { $1 }
   | unsized    { $1 }
   | virtual    { $1 }
-  | yield      { $1 }
   -- Weak keywords, have special meaning only in specific contexts.
   | default    { $1 }
   | union      { $1 }
@@ -1804,7 +1822,7 @@ addAttrs as (WhileLet as' p e b l s) = WhileLet (as ++ as') p e b l s
 addAttrs as (ForLoop as' p e b l s)  = ForLoop (as ++ as') p e b l s
 addAttrs as (Loop as' b l s)         = Loop (as ++ as') b l s
 addAttrs as (Match as' e a s)        = Match (as ++ as') e a s
-addAttrs as (Closure as' c f e s)    = Closure (as ++ as') c f e s
+addAttrs as (Closure as' m c f e s)  = Closure (as ++ as') m c f e s
 addAttrs as (BlockExpr as' b s)      = BlockExpr (as ++ as') b s
 addAttrs as (Catch as' b s)          = Catch (as ++ as') b s
 addAttrs as (Assign as' e1 e2 s)     = Assign (as ++ as') e1 e2 s
@@ -1823,6 +1841,7 @@ addAttrs as (Struct as' p f e a)     = Struct (as ++ as') p f e a
 addAttrs as (Repeat as' e1 e2 s)     = Repeat (as ++ as') e1 e2 s
 addAttrs as (ParenExpr as' e s)      = ParenExpr (as ++ as') e s
 addAttrs as (Try as' e s)            = Try (as ++ as') e s
+addAttrs as (Yield as' e s)          = Yield (as ++ as') e s
 
 
 -- | Given a 'LitTok' token that is expected to result in a valid literal, construct the associated

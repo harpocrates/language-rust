@@ -17,6 +17,7 @@ fn main() {
   let x: T; 
   let x: <Vec<T> as SomeTrait>::SomeType;
   let x: Bound1 + Bound2 + 'static;
+  let x: dyn Bound1 + Bound2 + 'static;
   let x: (i32);
   let x: typeof(1i32);
   let x: _;

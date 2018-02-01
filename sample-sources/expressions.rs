@@ -16,15 +16,17 @@ fn main() {
   if let y = true { };
   while true { }
   'l: while true { }
-  while let y = true { continue; }
-  'l: while let y = true { continue 'l; }
+  while let None = None { continue; }
+  'l: while let None = None { continue 'l; }
   for i in 1.. { }
   'l: for i in 1..10 { }
   loop { break; }
   'l: loop { break 'l 1; }
   match x { _ => () }
   let x = move |a,b,c| { a + b + c };
+  let x = static move |a,b,c| { a + b + c };
   let f = |_||x, y| x+y;
+  let f = static |_||x, y| x+y;
   let x = { 1 };
   let x = unsafe { 1 };
   a = 1;
@@ -45,6 +47,8 @@ fn main() {
   let x = do catch { 1 };
   return 0;
   return;
+  yield 0;
+  yield;
 
   match true {
     true => move | | { 1 },
