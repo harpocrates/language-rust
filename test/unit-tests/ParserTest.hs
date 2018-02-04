@@ -399,6 +399,16 @@ parserTypes = testGroup "parsing types"
            (PathTy Nothing (Path False [PathSegment "Fn" (Just (Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Object" Nothing ()] ())) ()) None ()
              , TraitTyParamBound (PolyTraitRef [] (TraitRef send) ()) None ()] ()) ()) ())) ())) ()] ()) ())
   , testP "foo![ x ]" (MacTy (Mac (Path False [PathSegment "foo" Nothing ()] ()) (Tree (Token (Span (Position 6 1 6) (Position 7 1 7)) (IdentTok "x")))  ()) ())
+  , testP "impl Debug + Clone"
+             (ImplTrait
+                 [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
+                 , TraitTyParamBound (PolyTraitRef [] (TraitRef clone) ()) None ()
+                 ] ())
+  , testP "dyn Debug + Clone"
+             (TraitObject
+                 [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
+                 , TraitTyParamBound (PolyTraitRef [] (TraitRef clone) ()) None ()
+                 ] ()) 
   ]
 
 

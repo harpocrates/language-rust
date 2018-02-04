@@ -43,6 +43,7 @@ instance Eq Ident where
   i1 == i2 = hash i1 == hash i2 && name i1 == name i2
   i1 /= i2 = hash i1 /= hash i2 || name i1 /= name i2
 
+-- | Uses 'hash' to short-circuit
 instance Ord Ident where
   compare i1 i2 = case compare i1 i2 of
                     EQ -> compare (name i1) (name i2)

@@ -7,7 +7,7 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-Using a pretty printer is as easy as calling 'pretty' or 'prettyAnn' on the AST node of interest.
+Using a pretty printer is as easy as calling 'pretty' or 'prettyAnnotated' on the AST node of interest.
 
 >>> :set -XOverloadedStrings
 >>> import Language.Rust.Syntax

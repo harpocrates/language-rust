@@ -281,7 +281,7 @@ import qualified Data.List.NonEmpty as N
 %nonassoc IDENT ntIdent default union catch self auto dyn
 
 -- These are all very low precedence unary operators
-%nonassoc box return yield break continue IMPLTRAIT LAMBDA
+%nonassoc box return yield break continue for IMPLTRAIT LAMBDA
 
 -- 'static' needs to have higher precedenc than 'LAMBDA' so that statements starting in static get
 -- considered as static items, and not a static lambda
@@ -479,18 +479,30 @@ lt_ty_qual_path :: { Spanned (Ty Span) }
 
 -- parse_generic_args() but with the '<' '>'
 generic_values :: { Spanned ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
-  : '<' sep_by1(lifetime,',')  ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned (toList $2,      toList $4, toList $6) ($1 # $>) }
-  | '<' sep_by1(lifetime,',')  ',' sep_by1T(ty,',')                          gt '>' { Spanned (toList $2,      toList $4, []       ) ($1 # $>) }
-  | '<' sep_by1(lifetime,',')  ','                     sep_by1T(binding,',') gt '>' { Spanned (toList $2,      [],        toList $4) ($1 # $>) }
-  | '<' sep_by1T(lifetime,',')                                               gt '>' { Spanned (toList $2,      [],        []       ) ($1 # $>) }
-  | '<'                            sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned ([],             toList $2, toList $4) ($1 # $>) }
-  | '<'                            sep_by1T(ty,',')                          gt '>' { Spanned ([],             toList $2, []       ) ($1 # $>) }
-  | '<'                                                sep_by1T(binding,',') gt '>' { Spanned ([],             [],        toList $2) ($1 # $>) }
-  | '<'                                                                      gt '>' { Spanned ([],             [],        []       ) ($1 # $>) }
-  | lt_ty_qual_path            ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>' { Spanned ([], unspan $1 : toList $3, toList $5) ($1 # $>) }
-  | lt_ty_qual_path            ',' sep_by1T(ty,',')                          gt '>' { Spanned ([], unspan $1 : toList $3, []       ) ($1 # $>) }
-  | lt_ty_qual_path                                ',' sep_by1T(binding,',') gt '>' { Spanned ([],            [unspan $1],toList $3) ($1 # $>) }
-  | lt_ty_qual_path                                                          gt '>' { Spanned ([],            [unspan $1],[]       ) ($1 # $>) }
+  : '<' sep_by1(lifetime,',')  ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>'
+    { Spanned (toList $2,      toList $4, toList $6) ($1 # $>) }
+  | '<' sep_by1(lifetime,',')  ',' sep_by1T(ty,',')                          gt '>'
+    { Spanned (toList $2,      toList $4, []       ) ($1 # $>) }
+  | '<' sep_by1(lifetime,',')  ','                     sep_by1T(binding,',') gt '>'
+    { Spanned (toList $2,      [],        toList $4) ($1 # $>) }
+  | '<' sep_by1T(lifetime,',')                                               gt '>'
+    { Spanned (toList $2,      [],        []       ) ($1 # $>) }
+  | '<'                            sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>'
+    { Spanned ([],             toList $2, toList $4) ($1 # $>) }
+  | '<'                            sep_by1T(ty,',')                          gt '>'
+    { Spanned ([],             toList $2, []       ) ($1 # $>) }
+  | '<'                                                sep_by1T(binding,',') gt '>'
+    { Spanned ([],             [],        toList $2) ($1 # $>) }
+  | '<'                                                                      gt '>'
+    { Spanned ([],             [],        []       ) ($1 # $>) }
+  | lt_ty_qual_path            ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>'
+    { Spanned ([], unspan $1 : toList $3, toList $5) ($1 # $>) }
+  | lt_ty_qual_path            ',' sep_by1T(ty,',')                          gt '>'
+    { Spanned ([], unspan $1 : toList $3, []       ) ($1 # $>) }
+  | lt_ty_qual_path                                ',' sep_by1T(binding,',') gt '>'
+    { Spanned ([],            [unspan $1],toList $3) ($1 # $>) }
+  | lt_ty_qual_path                                                          gt '>'
+    { Spanned ([],            [unspan $1],[]       ) ($1 # $>) }
 
 binding :: { (Ident, Ty Span) }
   : ident '=' ty                             { (unspan $1, $3) }

@@ -198,12 +198,30 @@ instance Read Abi where
 -- | An argument in a function header (@syntax::ast::Arg@, except with @SelfKind@ and @ExplicitSelf@
 -- inlined).
 --
--- Example: @bar: usize@ as in @fn foo(bar: usize)@
+-- Example: @x: usize@, @self@, @mut self@, @&self@, @&'lt mut self@, @mut self: Foo@ as in
+--
+-- @
+-- trait Foo {
+--   // Regular argument
+--   fn new(x: usize) -> Foo;
+--   
+--   // Self argument, by value
+--   fn foo(self) -> i32;
+--   fn bar(mut self);
+--
+--   // Self argument, by reference
+--   fn baz(&self) -> Bar<'lt>;
+--   fn qux(&'lt mut self) -> Bar<'lt>;
+--
+--   // Explicit self argument
+--   fn quux(mut self: Foo);
+-- }
+-- @
 data Arg a
-  = Arg (Maybe (Pat a)) (Ty a) a                   -- ^ @x: i32@, @(&x, &y): (&i32, &i32)@, @i32@
-  | SelfValue Mutability a                         -- ^ @self@, @mut self@
-  | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ @&'lt self@, @&'lt mut self@
-  | SelfExplicit (Ty a) Mutability a               -- ^ @self: i32@, @mut self: i32@
+  = Arg (Maybe (Pat a)) (Ty a) a                   -- ^ Regular argument 
+  | SelfValue Mutability a                         -- ^ Self argument, by value 
+  | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ Self argument, by reference
+  | SelfExplicit (Ty a) Mutability a               -- ^ Explicit self argument
   deriving (Eq, Ord, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Arg a) where
@@ -215,7 +233,15 @@ instance Located a => Located (Arg a) where
 -- | An arm of a 'Match' expression (@syntax::ast::Arm@). An arm has at least one patten, possibly a
 -- guard expression, and a body expression.
 --
--- Example: @_ if 1 == 1 => { println!("match!") }@ as in @match n { _ if 1 == 1 => { println!("match!") } }@
+-- Example: @n if n % 4 == 3 => { println!("{} % 4 = 3", n) }@ as in
+--
+-- @
+-- match n {
+--   n if n % 4 == 3 => { println!("{} % 4 = 3", n) }
+--   n if n % 4 == 1 => { println!("{} % 4 = 1", n) }
+--   _ => println!("{} % 2 = 0", n)
+-- }
+-- @
 data Arm a = Arm [Attribute a] (NonEmpty (Pat a)) (Maybe (Expr a)) (Expr a) a
   deriving (Eq, Ord, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
@@ -224,9 +250,14 @@ instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
 -- | 'Attribute's are annotations for other AST nodes (@syntax::ast::Attribute@). Note that
 -- doc-comments are promoted to attributes.
 --
--- Example: @#[repr(C)]@ in @#[derive(Clone, Copy)] struct Complex { re: f32, im: f32 }@
+-- Example: @#[derive(Copy,Clone)]@ as in
+--
+-- @
+-- #[derive(Clone, Copy)]
+-- struct Complex { re: f32, im: f32 }
+-- @
 data Attribute a
-  -- | Regular attributes starting with '#'.
+  -- | Regular attributes of the form '#[...]'
   = Attribute AttrStyle (Path a) TokenStream a
   -- | Doc comment attributes. The 'Bool' argument identifies if the comment is inline or not, and
   -- the 'Name' contains the actual doc comment content.
@@ -241,7 +272,7 @@ instance Located a => Located (Attribute a) where
 -- describe the node that contains them (@syntax::ast::AttrStyle@). These two cases need to be
 -- distinguished only for pretty-printing - they are otherwise fundamentally equivalent.
 --
--- Example: @#[repr(C)]@ is an outer attribute while @#![repr(C)]@ is an inner one
+-- Example: @#[repr(C)]@ is an outer attribute while @#![feature(slice_patterns)]@ is an inner one
 data AttrStyle = Outer | Inner deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | Binary operators, used in the 'Binary' and 'AssignOp' constructors of 'Expr'

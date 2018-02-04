@@ -94,7 +94,7 @@ minPos p1@(Position a1 _ _) p2@(Position a2 _ _) = if a1 < a2 then p1 else p2
 initPos :: Position
 initPos = Position 0 1 0
 
--- | Advance columnn a certain number of times.
+-- | Advance column a certain number of times.
 {-# INLINE incPos #-}
 incPos :: Position -> Int -> Position
 incPos NoPosition _ = NoPosition
