@@ -2,7 +2,7 @@
 {-|
 Module      : Language.Rust.Parser.Internal
 Description : Rust parser
-Copyright   : (c) Alec Theriault, 2017
+Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -60,7 +60,7 @@ import Language.Rust.Parser.Literals   ( translateLit )
 import Language.Rust.Parser.Reversed
 
 import Data.Foldable                   ( toList )
-import Data.List                       ( (\\), isSubsequenceOf )
+import Data.List                       ( (\\), isSubsequenceOf, sort )
 import Data.Semigroup                  ( (<>) )
 
 import Text.Read                       ( readMaybe )
@@ -95,7 +95,7 @@ import qualified Data.List.NonEmpty as N
 %errorhandlertype explist
 %error { expParseError }
 
- -- %expect 0
+%expect 0
 
 %token
 
@@ -278,7 +278,7 @@ import qualified Data.List.NonEmpty as N
 %nonassoc mut DEF EQ '::'
 
 -- These are all identifiers of sorts ('union' and 'default' are "weak" keywords)
-%nonassoc IDENT ntIdent default union catch self auto dyn
+%nonassoc IDENT ntIdent default union catch self Self super auto dyn
 
 -- These are all very low precedence unary operators
 %nonassoc box return yield break continue for IMPLTRAIT LAMBDA
@@ -423,8 +423,8 @@ inner_attribute :: { Attribute Span }
   | innerDoc                                  { let Spanned (Doc str _ l) x = $1 in SugaredDoc Inner l str x }
 
 -- TODO: for some precedence related reason, using 'some' here doesn't work
-inner_attrs :: { NonEmpty (Attribute Span) }
-  : inner_attrs inner_attribute               { $1 |> $2 }
+inner_attrs :: { Reversed NonEmpty (Attribute Span) }
+  : inner_attrs inner_attribute               { let Reversed xs = $1 in Reversed ($2 <| xs) }
   | inner_attribute                           { [$1] }
 
 
@@ -561,6 +561,9 @@ path_segments_with_colons :: { Reversed NonEmpty (PathSegment Span) }
 
 -- Mod related:
 -- parse_path(PathStyle::Mod)
+--
+-- TODO: This is O(n^2) in the segment length! I haven't been able to make the grammar work out in
+--       order to refactor this nicely
 mod_path :: { Path Span  }
   : ntPath               { $1 }
   | self_or_ident        { Path False [PathSegment (unspan $1) Nothing (spanOf $1)] (spanOf $1) }
@@ -1436,7 +1439,8 @@ where_predicate :: { WherePredicate Span }
   : lifetime                                               { RegionPredicate $1 [] (spanOf $1) }
   | lifetime ':' sep_by1T(lifetime,'+')                    { RegionPredicate $1 (toList $3) ($1 # $3) }
   | no_for_ty                                     %prec EQ { BoundPredicate [] $1 [] (spanOf $1) }
-  | no_for_ty '=' ty                                       { EqPredicate $1 $3 ($1 # $3) }
+  | no_for_ty '='  ty                                      { EqPredicate $1 $3 ($1 # $3) }
+  | no_for_ty '==' ty                                      { EqPredicate $1 $3 ($1 # $3) }
   | no_for_ty ':' sep_by1T(ty_param_bound_mod,'+')         { BoundPredicate [] $1 (toList $3) ($1 # $3) }
   | for_lts no_for_ty                                      { BoundPredicate (unspan $1) $2 [] ($1 # $2) }
   | for_lts no_for_ty ':' sep_by1T(ty_param_bound_mod,'+') { BoundPredicate (unspan $1) $2 (toList $4) ($1 # $>) }
@@ -1738,7 +1742,7 @@ parseGenerics :: P (Generics Span)
 -- | Generate a nice looking error message based on expected tokens
 expParseError :: (Spanned Token, [String]) -> P a
 expParseError (Spanned t _, exps) = fail $ "Syntax error: unexpected `" ++ show t ++ "'" ++
-    case go exps [] replacements of
+    case go (sort exps) [] replacements of
       []       -> ""
       [s]      -> " (expected " ++ s ++ ")"
       [s2,s1]  -> " (expected " ++ s1 ++ " or " ++ s2 ++ ")"
@@ -1752,27 +1756,57 @@ expParseError (Spanned t _, exps) = fail $ "Syntax error: unexpected `" ++ show 
     | rep `isSubsequenceOf` es = go (es \\ rep) (msg : msgs) rs
     | otherwise = go es msgs rs
 
-  ignore = words "ntItem ntBlock ntStmt ntPat ntExpr ntTy ntIdent ntPath ntTT\
+  ignore = words "ntItem ntBlock ntStmt ntPat ntExpr ntTy ntIdent ntPath ntTT \
                   ntArm ntImplItem ntTraitItem ntGenerics ntWhereClause ntArg ntLit"
 
-  replacements =
-    [ (words "byte char int float str byteStr rawStr rawByteStr", "a literal"       )
-    , (words "byte",                                              "a byte"          )
-    , (words "char",                                              "a character"     )
-    , (words "int",                                               "an int"          )
-    , (words "float",                                             "a float"         )
-    , (words "str",                                               "a string"        )
-    , (words "byteStr",                                           "a byte string"   )
-    , (words "rawStr",                                            "a raw string"    )
-    , (words "rawByteStr",                                        "a raw bytestring")
-    
-    , (words "outerDoc innerDoc",                                 "a doc"           )
-    , (words "outerDoc",                                          "an outer doc"    )
-    , (words "innerDoc",                                          "an inner doc"    )
+  replacements = map (\(ks,v) -> (sort ks,v)) $
+    [ (expr,                              "an expression"   )
 
-    , (words "IDENT",                                             "an identifier"   )
-    , (words "LIFETIME",                                          "a lifetime"      )
+    , (lit,                               "a literal"       )
+    , (boolLit,                           "a boolean"       )
+    , (byteLit,                           "a byte"          )
+    , (charLit,                           "a character"     )
+    , (intLit,                            "an int"          )
+    , (floatLit,                          "a float"         )
+    , (strLit,                            "a string"        )
+    , (byteStrLit,                        "a byte string"   )
+    , (rawStrLit,                         "a raw string"    )
+    , (rawByteStrLit,                     "a raw bytestring")
+    
+    , (doc,                               "a doc"           )
+    , (outerDoc,                          "an outer doc"    )
+    , (innerDoc,                          "an inner doc"    )
+
+    , (identifier,                        "an identifier"   )
+    , (lifetime,                          "a lifetime"      )
     ]
+
+  expr :: [String]
+  expr = lit ++ identifier ++ lifetime ++
+                words "'<' '!' '-' '*' '&' '|' '...' '..=' '..' '::' \
+                       '||' '&&' '<<' '(' '[' '{' box break continue \
+                       for if loop match move return Self self       \
+                       static super unsafe while do default union    \
+                       catch auto yield dyn"
+
+  lit = boolLit ++ byteLit ++ charLit ++ intLit ++ floatLit ++ strLit ++
+        byteStrLit ++ rawStrLit ++ rawByteStrLit
+  boolLit       = words "true false"
+  byteLit       = words "byte"
+  charLit       = words "char"
+  intLit        = words "int"
+  floatLit      = words "float"
+  strLit        = words "str"
+  byteStrLit    = words "byteStr"
+  rawStrLit     = words "rawStr"
+  rawByteStrLit = words "rawByteStr"
+ 
+  doc = outerDoc ++ innerDoc
+  outerDoc = words "outerDoc"
+  innerDoc = words "innerDoc"
+
+  identifier = words "IDENT"
+  lifetime = words "LIFETIME"
 
 -- | Convert an 'IdentTok' into an 'Ident'
 toIdent :: Spanned Token -> Spanned Ident

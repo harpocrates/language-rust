@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Parser.Reversed
 Description : Parsing literals
-Copyright   : (c) Alec Theriault, 2017
+Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental

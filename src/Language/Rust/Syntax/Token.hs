@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Syntax.Token
 Description : Token definitions
-Copyright   : (c) Alec Theriault, 2017
+Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -118,12 +118,13 @@ data Space
   | Comment     -- ^ comment (either inline or not)
   deriving (Eq, Ord, Show, Enum, Bounded, Data, Typeable, Generic, NFData)
 
+-- TODO: BANISH NoDelim! (or rather: distinguish DelimToken from Delim, as rustc does)
 -- | A delimiter token (@syntax::parse::token::DelimToken@)
 data Delim
   = Paren   -- ^ round parenthesis: @(@ or @)@
   | Bracket -- ^ square bracket: @[@ or @]@
   | Brace   -- ^ curly brace: @{@ or @}@
-  | NoDelim -- ^ empty delimiter             -- TODO: BANISH! (or rather: distinguish DelimToken from Delim, as rustc does)
+  | NoDelim -- ^ empty delimiter
   deriving (Eq, Ord, Enum, Bounded, Show, Data, Typeable, Generic, NFData)
 
 -- | A literal token (@syntax::parse::token::Lit@)

@@ -44,14 +44,12 @@ testP inp y = testCase inp $ do
     Right y @=? parseNoSpans parser inps
   
     -- resolve test
-    Right y @=? resolve y
+    Right y @=? either (\(ResolveFail _ msg) -> Left msg) Right (resolve y)
   
     -- re-parse the result of printing resolve
-    Right y @=? case resolve y of
-                  Left msg -> Left (NoPosition, msg)
-                  Right y' -> do
-                    let inp' = show (pretty y')
-                    parseNoSpans parser (inputStreamFromString inp')
+    Right y @=? case pretty y of
+                  Left (ResolveFail _ msg) -> Left msg
+                  Right inp' -> parseNoSpans parser (inputStreamFromString (show inp')) 
   
     -- check that the sub-spans re-parse correctly
     let Right y' = parse inps
@@ -104,8 +102,10 @@ checkSubterms inp y = checkTerm inp y *> gmapQl (*>) (pure ()) (checkSubterms in
  
 
 -- | Turn an InputStream into either an error or a parse.
-parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either (Position,String) (f ())
-parseNoSpans p inp = void <$> execParser p inp initPos
+parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either String (f ())
+parseNoSpans p inp = case void <$> execParser p inp initPos of
+                       Left (ParseFail _ msg) -> Left msg
+                       Right y -> Right y
 
 
 -- | Test parsing of literals.

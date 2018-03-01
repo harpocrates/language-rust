@@ -2,7 +2,7 @@
 {-|
 Module      : Language.Rust.Parser.Lexer
 Description : Rust lexer
-Copyright   : (c) Alec Theriault, 2017
+Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -20,14 +20,14 @@ needs to "break apart" tokens, it never has to think about putting them together
 easily figure out that @&&&x&&&y@ parses as @&(&(&x)) && (&y)@ and not @&(&(&x)) & (&(&y))@ even if
 bitwise conjunctions bind more tightly that logical conjunctions. 
 
-This sort of amguity where one tokens need to be broken up occurs for
+This sort of amguity where one token need to be broken up by the parser occurs for
 
    * @&&@ in patterns like @&&mut x@
    * @||@ in closures with no arguments like @|| x@
    * @<<@ in qualified type paths like @FromIterator\<\<A as IntoIterator\>::Item\>@
    * @>>@ in qualified paths like @\<Self as Foo\<T\>\>::Bar@
-   * @>=@ possibly in equality predicates like @F\<A\>=i32@ (not yet in Rust)
-   * @>>=@ possibly in equality predicates?
+   * @>=@ in equality predicates like @F\<A\>=i32@
+   * @>>=@ in equality predicates like @F\<G\<A\>\>=i32@ 
 -}
 
 module Language.Rust.Parser.Lexer (

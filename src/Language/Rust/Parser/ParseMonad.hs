@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Parser.ParseMonad
 Description : Parsing monad for lexer/parser
-Copyright   : (c) Alec Theriault, 2017
+Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -19,6 +19,7 @@ In our case, this shared information is held in 'PState'.
 -}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Language.Rust.Parser.ParseMonad (
   -- * Parsing monad
@@ -40,14 +41,17 @@ module Language.Rust.Parser.ParseMonad (
   swapToken,
 
   -- * Error reporting
+  ParseFail(..),
   parseError,
 ) where
 
-import Language.Rust.Data.InputStream ( InputStream )
-import Language.Rust.Data.Position    ( Spanned, Position, initPos )
-import Language.Rust.Syntax.Token     ( Token )
+import Language.Rust.Data.InputStream  ( InputStream )
+import Language.Rust.Data.Position     ( Spanned, Position, initPos, prettyPosition )
+import Language.Rust.Syntax.Token      ( Token )
 
-import Data.Maybe                     ( listToMaybe )
+import Control.Exception               ( Exception )
+import Data.Maybe                      ( listToMaybe )
+import Data.Typeable                   ( Typeable )
 
 -- | Parsing and lexing monad. A value of type @'P' a@ represents a parser that can be run (using
 -- 'execParser') to possibly produce a value of type @a@.
@@ -85,18 +89,28 @@ instance Monad P where
 
   fail msg = P $ \ !s _ pFailed -> pFailed msg (curPos s)
 
+
+-- | Exceptions that occur during parsing
+data ParseFail = ParseFail Position String deriving (Eq, Typeable)
+
+instance Show ParseFail where
+  showsPrec p (ParseFail pos msg) = showParen (p >= 11) (showString err)
+    where err = unwords [ "parse failure at", prettyPosition pos, "(" ++ msg ++ ")" ]
+
+instance Exception ParseFail
+
 -- | Execute the given parser on the supplied input stream at the given start position, returning
 -- either the position of an error and the error message, or the value parsed.
-execParser :: P a -> InputStream -> Position -> Either (Position,String) a
+execParser :: P a -> InputStream -> Position -> Either ParseFail a
 execParser p input pos = execParser' p input pos id
 
 -- | Generalized version of 'execParser' that expects an extra argument that lets you hot-swap a
 -- token that was just lexed before it gets passed to the parser.
-execParser' :: P a -> InputStream -> Position -> (Token -> Token) -> Either (Position,String) a
+execParser' :: P a -> InputStream -> Position -> (Token -> Token) -> Either ParseFail a
 execParser' parser input pos swap = unParser parser
                                      initialState
                                      (\result _ -> Right result)
-                                     (\message errPos -> Left (errPos, message))
+                                     (\message errPos -> Left (ParseFail errPos message))
   where initialState = PState
           { curPos = pos
           , curInput = input
@@ -105,7 +119,7 @@ execParser' parser input pos swap = unParser parser
           , swapFunction = swap
           }
 
--- | Swap a token using the swap function
+-- | Swap a token using the swap function.
 swapToken :: Token -> P Token
 swapToken t = P $ \ !s@PState{ swapFunction = f } pOk _ -> pOk (f $! t) s
 
@@ -129,17 +143,18 @@ getPosition = curPos <$> getPState
 setPosition :: Position -> P ()
 setPosition pos = modifyPState $ \ s -> s{ curPos = pos }
 
--- | Retrieve the current 'InputStream' of the parser
+-- | Retrieve the current 'InputStream' of the parser.
 getInput :: P InputStream
 getInput = curInput <$> getPState 
 
--- | Update the current 'InputStream' of the parser
+-- | Update the current 'InputStream' of the parser.
 setInput :: InputStream -> P ()
 setInput i = modifyPState $ \s -> s{ curInput = i }
 
 -- | Manually push a @'Spanned' 'Token'@. This turns out to be useful when parsing tokens that need
--- to be broken up. For example, when seeing a 'GreaterEqual' token but only expecting a 'Greater'
--- token, one can consume the 'GreaterEqual' token and push back a 'Equal' token.
+-- to be broken up. For example, when seeing a 'Language.Rust.Syntax.GreaterEqual' token but only
+-- expecting a 'Language.Rust.Syntax.Greater' token, one can consume the
+-- 'Language.Rust.Syntax.GreaterEqual' token and push back an 'Language.Rust.Syntax.Equal' token.
 pushToken :: Spanned Token -> P ()
 pushToken tok = modifyPState $ \s@PState{ pushedTokens = toks } -> s{ pushedTokens = tok : toks }
 

@@ -10,8 +10,8 @@ license:             BSD3
 license-file:        LICENSE
 author:              Alec Theriault
 maintainer:          alec.theriault@gmail.com
-copyright:           (c) 2017 Alec Theriault
-stability:           alpha
+copyright:           (c) 2017-2018 Alec Theriault
+stability:           provisional
 bug-reports:         https://github.com/harpocrates/language-rust/issues
 category:            Language
 build-type:          Simple

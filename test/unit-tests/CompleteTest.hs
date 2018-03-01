@@ -6,8 +6,8 @@ import Test.Framework.Providers.HUnit
 import Test.HUnit hiding (Test)
 
 import Language.Rust.Syntax (SourceFile)
-import Language.Rust.Parser (parse, Span, inputStreamFromString)
-import Language.Rust.Pretty (pretty)
+import Language.Rust.Parser (parse, Span, inputStreamFromString, ParseFail(..))
+import Language.Rust.Pretty (pretty')
 
 import Data.Text.Prettyprint.Doc (layoutPretty, LayoutOptions(..), PageWidth(..))
 import Data.Text.Prettyprint.Doc.Render.String (renderShowS)
@@ -426,12 +426,12 @@ testComplete name inp = testCase name $ do
   -- Parse the file
   x :: SourceFile Span
     <- case parse (inputStreamFromString inp) of
-         Left (pos,msg) -> fail $ show pos ++ " " ++ msg
+         Left (ParseFail pos msg) -> fail $ show pos ++ " " ++ msg
          Right x -> pure x
 
   -- Pretty-print it
   let opts = LayoutOptions (AvailablePerLine 50 1.0)
-      inp' = renderShowS (layoutPretty opts (pretty x)) ""
+      inp' = renderShowS (layoutPretty opts (pretty' x)) ""
   
   -- Assert that the input and output are the same
   inp @=? inp'

@@ -1,6 +1,6 @@
 {-|
 Module      : Language.Rust.Pretty.Resolve
-Copyright   : (c) Alec Theriault, 2017
+Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -59,10 +59,10 @@ And now we have generated valid code.
 {-# LANGUAGE OverloadedLists #-}
 
 module Language.Rust.Pretty.Resolve (
-  Resolve(..),
+  Resolve(resolve, resolve', resolveVerbose),
   Issue(..),
   Severity(..),
-  runResolve,
+  ResolveFail(..),
 ) where
 
 import Language.Rust.Syntax
@@ -74,6 +74,7 @@ import Language.Rust.Data.Position     ( initPos, Spanned(..) )
 import Language.Rust.Parser.Lexer      ( lexTokens, lexToken )
 import Language.Rust.Parser.ParseMonad ( execParser )
 
+import Control.Exception               ( throw, Exception )
 import Control.Monad                   ( when )
 import Control.Monad.Trans.RWS
 
@@ -83,7 +84,6 @@ import Data.List.NonEmpty              ( NonEmpty(..) )
 import qualified Data.List.NonEmpty as N
 import Data.Maybe                      ( fromJust )
 import Data.Semigroup                  ( (<>) )
-
 
 {-# ANN module "HLint: ignore Reduce duplication" #-}
 
@@ -117,11 +117,6 @@ data Issue = Issue
 --
 type ResolveM = RWS [Dynamic] [Issue] Severity
 
--- | Run a resolve monad, getting back the altered syntax tree, the highest 'Severity' of issues,
--- and the list of 'Issue's found.
-runResolve :: ResolveM a -> (a, Severity, [Issue])
-runResolve r = runRWS r [] Clean
-
 -- | Log an 'Issue'
 logIssue :: String   -- ^ description of the issue
          -> Severity -- ^ severity of the issue
@@ -147,27 +142,64 @@ err x desc = (desc `logIssue` Error) *> pure x
 scope :: Typeable a => a -> ResolveM b -> ResolveM b
 scope x = local (toDyn x :)
 
--- | Types that can have underlying invariants which can be checked and possibly corrected. 
+-- | Exceptions that occur during resolving
+data ResolveFail = ResolveFail [Dynamic] String deriving (Typeable)
+
+-- | Does not show context information
+instance Show ResolveFail where
+  showsPrec p (ResolveFail _ msg) = showParen (p >= 11) (showString err)
+    where err = unwords [ "invalid AST", "(" ++ msg ++ ")" ]
+
+instance Exception ResolveFail
+
+
+-- | Since it is possible to have well-typed Haskell expressions which represent invalid Rust ASTs,
+-- it is convenient to fix, warn, or fail ASTs before printing them. The 'Resolve' typeclass
+-- provides such a facility.
+--
+-- A non-exhaustive list of the more obvious issues it covers:
+--
+--   * missing parens
+--   * invalid identifiers
+--   * invalid paths (for example, generic arguments on a module path)
+--   * inner attributes on things that support only outer attributes (and vice-versa)
+--
 class Resolve a where
   -- | Convert some value to its /resolved/ form. Informally, resolving a value involves checking
-  -- that its invariants hold and, if they don't, report an error message or dajust the value so
+  -- that its invariants hold and, if they don't, report an error message or adjust the value so
   -- that the invariant holds.
   --
   -- Formally, we can say that a value that is an instance of 'Parse' and 'Pretty' is resolved if
   -- @parse . pretty@ is an identity operation on it.
   --
-  -- prop> parse . pretty . resolve == id
-  --
   -- We further expect that 'resolve' be an identity operation on any output of @parse@.
-  resolve :: a -> Either String a
-  resolve x = case runResolve (resolveM x) of
-                (_, Error, issues) -> Left $ description (fromJust (find (\i -> severity i == Error) issues))
+  resolve :: a -> Either ResolveFail a
+  resolve x = case runRWS (resolveM x) [] Clean of
+                (_, Error, issues) ->
+                  let Issue desc _ locs = fromJust (find (\i -> severity i == Error) issues)
+                  in Left (ResolveFail locs desc)
                 (t, _, _) -> Right t
 
+  -- | Same as 'resolve', but throws a 'ResolveFail' exception if it cannot resolve. Although
+  -- this function should not be used, it summarizes nicely the laws around 'Resolve':
+  --
+  -- prop> parse' . pretty' . resolve' == id
+  -- prop> resolve' . parse' = parse'
+  --
+  resolve' :: a -> a
+  resolve' = either throw id . resolve
+
+  -- | Run resolution and get back the altered syntax tree, the highest 'Severity' of issues, and
+  -- the list of issues found. This allows you to see what corrections were applied to the tree.
+  -- If the output severity is 'Error', the syntax tree returned will still be invalid.
+  resolveVerbose :: a -> (a, Severity, [Issue])
+  resolveVerbose x = runRWS (resolveM x) [] Clean
+
+  -- | Internal recursive helper
   resolveM :: a -> ResolveM a
 
 
--- | A valid sourcfile needs
+-- | A valid sourcefile needs
 --
 --   * the shebang to be one-line not conflicting with attributes
 --   * the attributes to be inner

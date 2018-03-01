@@ -176,6 +176,6 @@ testCode :: String -> [Token] -> Test
 testCode inp toks = testCase inp $ Right toks @=? lexTokensNoSpans (inputStreamFromString inp)
 
 -- | Turn an InputStream into either an error or a list of tokens.
-lexTokensNoSpans :: InputStream -> Either (Position,String) [Token]
+lexTokensNoSpans :: InputStream -> Either ParseFail [Token]
 lexTokensNoSpans inp = map unspan <$> execParser (lexTokens lexToken) inp initPos
 

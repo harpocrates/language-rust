@@ -13,13 +13,13 @@ import Data.ByteString.Lazy.Char8 (unpack)
 import Data.Aeson (decode', Value)
 
 import Language.Rust.Parser (readSourceFile)
-import Language.Rust.Pretty (prettyUnresolved, Resolve(..), Issue(..), Severity(Clean), runResolve)
+import Language.Rust.Pretty (prettyUnresolved, Resolve(..), Issue(..), Severity(Clean))
 import Language.Rust.Syntax (SourceFile)
 
 import System.Directory (getCurrentDirectory, getTemporaryDirectory, listDirectory, doesFileExist)
 import System.Process (withCreateProcess, proc, CreateProcess(..), StdStream(..), callProcess, readProcess)
 import System.FilePath ((</>), takeFileName)
-import System.IO (withFile, IOMode(WriteMode))
+import System.IO (withFile, IOMode(WriteMode,ReadMode))
 
 import Data.Time.Clock (utctDay, getCurrentTime)
 import Data.Time.Calendar (fromGregorian, showGregorian, diffDays)
@@ -78,7 +78,7 @@ prettySourceFile path ast = do
 resolveDiff :: (Monoid a, Typeable a) => SourceFile a -> IO ()
 resolveDiff ast = when (sev /= Clean) $
                     error ("Resolve thinks there is (are) some " ++ show sev ++ "\n" ++ msgs)
-  where (_, sev, iss) = runResolve (resolveM ast)
+  where (_, sev, iss) = resolveVerbose ast
         msgs = unlines [ "  " ++ show sev' ++ " " ++ desc | Issue desc sev' _ <- iss ]
 
 
@@ -125,7 +125,7 @@ instance Testlike DiffRunning DiffResult DiffTest where
 
   runTest TestOptions{ topt_timeout = K timeout } (DiffTest file) = runImprovingIO $
     step timeout ParsingReference (getJsonAST file) $ \parsedRustc ->
-      step timeout ParsingImplementation (evaluate =<< readSourceFile file) $ \parsedOurs ->
+      step timeout ParsingImplementation (evaluate =<< withFile file ReadMode readSourceFile) $ \parsedOurs ->
         step timeout ParsingDiffing (parsedOurs === parsedRustc) $ \_ ->
           step timeout PrintingParsed (prettySourceFile file parsedOurs) $ \tmpFile ->
             step timeout ReparsingReference (getJsonAST tmpFile) $ \reparsedRustc ->

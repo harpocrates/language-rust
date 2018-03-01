@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Data.Position
 Description : Positions and spans in files
-Copyright   : (c) Alec Theriault, 2017
+Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -54,7 +54,16 @@ data Position = Position {
     col :: {-# UNPACK #-} !Int             -- ^ column in the source file.
   }
   | NoPosition
-  deriving (Eq, Ord, Show, Data, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Data, Typeable, Generic, NFData)
+
+-- | Field names are shown
+instance Show Position where
+  showsPrec _ NoPosition = showString "NoPosition"
+  showsPrec p (Position a r c) = showParen (p >= 11) 
+                                           ( showString "Position"
+                                           . showString " " . showsPrec 11 a
+                                           . showString " " . showsPrec 11 r
+                                           . showString " " . showsPrec 11 c )
 
 -- | Pretty print a 'Position'
 prettyPosition :: Position -> String
@@ -116,7 +125,15 @@ incOffset p@Position{ absoluteOffset = a } offset = p { absoluteOffset = a + off
 -- | Spans represent a contiguous region of code, delimited by two 'Position's. The endpoints are
 -- inclusive. Analogous to the information encoded in a selection.
 data Span = Span { lo, hi :: !Position }
-  deriving (Eq, Ord, Show, Data, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Data, Typeable, Generic, NFData)
+
+-- | Field names are not shown 
+instance Show Span where
+  showsPrec p (Span l h) = showParen (p >= 11) 
+                                     ( showString "Span"
+                                     . showString " " . showsPrec 11 l
+                                     . showString " " . showsPrec 11 h )
+
 
 -- | Check if a span is a subset of another span
 subsetOf :: Span -> Span -> Bool

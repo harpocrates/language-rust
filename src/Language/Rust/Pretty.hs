@@ -1,37 +1,64 @@
 {-|
 Module      : Language.Rust.Pretty
 Description : Pretty printing
-Copyright   : (c) Alec Theriault, 2017
+Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-Using a pretty printer is as easy as calling 'pretty' or 'prettyAnnotated' on the AST node of interest.
+This module provides functions for turning ASTs into values of type 'Doc'. These values can then be
+rendered into concrete string types using functions from the @prettyprinter@ package. This has some
+advantages over printing plain old strings:
 
->>> :set -XOverloadedStrings
->>> import Language.Rust.Syntax
->>> import Language.Rust.Pretty
->>> fn = Fn [] PublicV "foo" decl Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [] Normal ()) ()
-fn :: Item ()
->>> pretty fn
-pub fn foo(&self) -> ! { }
-it :: Doc a
+  * /Backend independent/: you can use a variety of existing backends to efficiently render to all
+    sorts of formats like 'Data.Text.Text', 'String', HTML, and terminal.
+
+  * /Dynamic layouts/: the AST will render differently depending on the desired page width 
+
+        >>> :set -XTypeApplications -XOverloadedStrings
+        >>> import Language.Rust.Parser
+        >>> import Data.Text.Prettyprint.Doc.Util ( putDocW )
+        >>> let src = parse' @(SourceFile Span) "fn foo(x: i32, y: i32, z: i32) -> i32 { x - y + z }"
+        >>> let doc = pretty' src <> "\n"
+        >>> putDocW 80 doc
+        fn foo(x: i32, y: i32, z: i32) -> i32 {
+            x - y + z
+        }
+        >>> putDocW 10 doc
+        fn foo(
+          x: i32,
+          y: i32,
+          z: i32,
+        ) -> i32 {
+          x - y + z
+        }
+
+  * /Annotations/: Depending on the backend you are using to render the 'Doc', annotations can
+    determine colours, styling, links, etc.
 
 -}
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 
 module Language.Rust.Pretty (
-  Pretty(..),
+  -- * Printing
   pretty,
-  PrettyAnnotated(..),
+  pretty',
   prettyAnnotated,
+  prettyAnnotated',
+  writeSourceFile,
+  writeTokens,
+  Pretty(..),
+  PrettyAnnotated(..),
+  Doc,
+  
+  -- * Resolving
   Resolve(..),
+
+  -- * Error reporting
+  ResolveFail(..),
   Issue(..),
   Severity(..),
-  runResolve,
-  Doc,
-  writeSourceFile,
 ) where
 
 import Language.Rust.Data.Ident
@@ -49,27 +76,72 @@ import Data.Text.Prettyprint.Doc.Render.Text ( renderIO )
 import Data.Text.Prettyprint.Doc             ( Doc )
 import qualified Data.Text.Prettyprint.Doc as PP
 
--- | Given a handle, write into it the given 'SourceFile' (with file width will be 100).
+import Control.Exception                     ( throw )
+
+-- | Resolve (see the 'Resolve' typeclass) and pretty print something.
+--
+-- >>> let one = Lit [] (Int Dec 1 Unsuffixed ()) ()
+-- >>> let two = Lit [] (Int Dec 2 Unsuffixed ()) ()
+-- >>> let three = Lit [] (Int Dec 3 Unsuffixed ()) ()
+-- >>> let bogusVar = PathExpr [] Nothing (Path False [PathSegment "let" Nothing ()] ()) ()
+-- >>> pretty (Binary [] MulOp (Binary [] AddOp one two ()) three ())
+-- Right (1 + 2) * 3
+-- >>> pretty (Binary [] AddOp one bogusVar ())
+-- Left (invalid AST (identifier is a keyword))
+-- 
+pretty :: (Resolve a, Pretty a) => a -> Either ResolveFail (Doc b)
+pretty = fmap prettyUnresolved . resolve
+
+-- | Same as 'pretty', but throws a 'ResolveFail' exception on invalid ASTs. This function is
+-- intended for situations in which you are already stuck catching exceptions - otherwise you should
+-- prefer 'pretty'.
+--
+-- >>> let one = Lit [] (Int Dec 1 Unsuffixed ()) ()
+-- >>> let two = Lit [] (Int Dec 2 Unsuffixed ()) ()
+-- >>> let three = Lit [] (Int Dec 3 Unsuffixed ()) ()
+-- >>> let bogusVar = PathExpr [] Nothing (Path False [PathSegment "let" Nothing ()] ()) ()
+-- >>> pretty' (Binary [] MulOp (Binary [] AddOp one two ()) three ())
+-- (1 + 2) * 3
+-- >>> pretty' (Binary [] AddOp one bogusVar ())
+-- *** Exception: invalid AST (identifier is a keyword))
+--
+pretty' :: (Resolve a, Pretty a) => a -> Doc b
+pretty' = either throw id . pretty
+
+-- | Resolve (see the 'Resolve' typeclass) and pretty print something with annotations. Read more
+-- about annotations in "Data.Text.Prettyprint.Doc".
+--
+-- prop> fmap Data.Text.Prettyprint.Doc.noAnnotate . prettyAnnotated = pretty
+--
+prettyAnnotated :: (Resolve (f a), PrettyAnnotated f) => f a -> Either ResolveFail (Doc a)
+prettyAnnotated = fmap prettyAnnUnresolved . resolve
+
+-- | Same as 'prettyAnnotated', but throws a 'ResolveFail' exception on invalid ASTs. This function
+-- is intended for situations in which you are already stuck catching exceptions - otherwise you
+-- should prefer 'prettyAnnotated'.
+--
+-- prop> Data.Text.Prettyprint.Doc.noAnnotate . prettyAnnotated' = pretty'
+--
+prettyAnnotated' :: (Resolve (f a), PrettyAnnotated f) => f a -> Doc a
+prettyAnnotated' = either throw id . prettyAnnotated
+
+-- | Given a handle to a file, write a 'SourceFile' in with a desired width of 100 characters.
 writeSourceFile :: (Monoid a, Typeable a) => Handle -> SourceFile a -> IO ()
-writeSourceFile hdl = renderIO hdl . PP.layoutPretty layout . pretty
+writeSourceFile hdl = renderIO hdl . PP.layoutPretty layout . prettyAnnotated'
   where layout = PP.LayoutOptions (PP.AvailablePerLine 100 1.0)
 
--- | Resolve and pretty print. When in doubt, this is probably the function you want to use for
--- pretty-printing.
-pretty :: (Resolve a, Pretty a) => a -> Doc b
-pretty x = case resolve x of
-             Left desc -> error ("Failed to resolve: " ++ desc)
-             Right y -> prettyUnresolved y
+-- | Given a handle to a file, write a 'SourceFile' in with a desired width of 100 characters.
+--
+-- The 'Span' associated with the tokens (if present) will be used as a hint to for spacing
+-- out the tokens.
+writeTokens :: Handle -> [Spanned Token] -> IO ()
+writeTokens hdl = renderIO hdl . PP.layoutPretty layout . pretty' . Stream . map mkTT
+  where layout = PP.LayoutOptions (PP.AvailablePerLine 100 1.0)
+        mkTT (Spanned s t) = Tree (Token t s)
 
--- | Resolve and pretty print with annotations.
-prettyAnnotated :: (Resolve (f a), PrettyAnnotated f) => f a -> Doc a
-prettyAnnotated x = case resolve x of
-                      Left desc -> error ("Failed to resolve: " ++ desc)
-                      Right y -> prettyAnnUnresolved y
-
--- | Represents things that can be pretty printed
+-- | Describes things that can be pretty printed
 class Pretty a where
-  -- | Pretty-print the given value
+  -- | Pretty print the given value without resolving it.
   prettyUnresolved :: a -> Doc b
 
 instance Pretty Abi                where prettyUnresolved = printAbi
@@ -121,7 +193,8 @@ instance Pretty Span               where prettyUnresolved = PP.pretty . prettySp
 
 -- | Similar to 'Pretty', but for types which are parametrized over an annotation type.
 class PrettyAnnotated p where
-  -- | Pretty-print the given value, adding annotations in the 'Doc' whenever possible.
+  -- | Pretty print the given value without resolving it, adding annotations in the 'Doc' whenever
+  -- possible.
   prettyAnnUnresolved :: p a -> Doc a
 
 -- | This instance prints attributes inline

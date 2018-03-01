@@ -1,26 +1,22 @@
 {-|
 Module      : Language.Rust.Parser
 Description : Parsing and lexing
-Copyright   : (c) Alec Theriault, 2017
+Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : GHC
 
-Selecting the right parser may require adding an annotation to avoid an 'Ambiguous type variable'
-error.
+Selecting the right parser may require adding an annotation or using @-XTypeApplications@ to avoid
+an "Ambiguous type variable" error.
 
->>> :set -XTypeApplications
->>> import Language.Rust.Syntax
->>> import Language.Rust.Parser
->>> inp <- readInputStream "hello_world.rs"
-inp :: InputStream
->>> Right sourceFile = parse @(SourceFile Span) inp
-sourceFile :: SourceFile Span
+Using 'Control.Monad.void' (as in the examples below) uses the fact that most AST nodes are
+instances of 'Functor' to discard the 'Span' annotation that is attached to most parsed AST nodes.
+Conversely, if you wish to extract the 'Span' annotation, the 'Language.Rust.Syntax.AST.Located'
+typeclass provides a 'Language.Rust.Syntax.AST.spanOf' method.
 
 -}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 
 module Language.Rust.Parser (
   -- * Parsing
@@ -43,120 +39,108 @@ module Language.Rust.Parser (
 
   -- * Input stream
   readInputStream,
+  hReadInputStream,
   inputStreamToString,
   inputStreamFromString,
 
   -- * Error reporting
   lexicalError,
   parseError,
-  ParseFail,
+  ParseFail(..),
 ) where
 
 import Language.Rust.Syntax
 
-import Language.Rust.Data.InputStream  ( InputStream, readInputStream, inputStreamToString, inputStreamFromString )
-import Language.Rust.Data.Position     ( Position, Span, Spanned, initPos, prettyPosition )
+import Language.Rust.Data.InputStream
+import Language.Rust.Data.Position     ( Position, Span, Spanned, initPos )
 
 import Language.Rust.Parser.Internal
 import Language.Rust.Parser.Lexer      ( lexToken, lexNonSpace, lexTokens, lexicalError )
 import Language.Rust.Parser.Literals   ( translateLit )
-import Language.Rust.Parser.ParseMonad ( P, execParser, parseError, pushToken )
+import Language.Rust.Parser.ParseMonad ( P, execParser, parseError, pushToken, ParseFail(..) )
 
-import Control.Exception               ( Exception, throw )
+import Control.Exception               ( throw )
 import Data.Foldable                   ( traverse_ )
-import Data.Typeable                   ( Typeable )
+import System.IO                       ( Handle )
 
--- | Parse something from an input stream (it is assumed the initial position is 'initPos')
-parse :: Parse a => InputStream -> Either (Position,String) a
+-- | Parse something from an input stream (it is assumed the initial position is 'initPos').
+--
+-- >>> :set -XOverloadedStrings -XTypeApplications
+-- >>> fmap void $ parse @(Expr Span) "x + 1"
+-- Right (Binary [] AddOp (PathExpr [] Nothing (Path False [PathSegment x Nothing ()] ()) ())
+--                        (Lit [] (Int Dec 1  ()) ())
+--                        ())
+-- >>> fmap void $ parse @(Expr Span) "x + "
+-- Left (parse failure at 1:4 (Syntax error: unexpected `<EOF>' (expected an expression)))
+--
+parse :: Parse a => InputStream -> Either ParseFail a
 parse is = execParser parser is initPos
 
 -- | Same as 'parse', but throws a 'ParseFail' exception if it cannot parse. This function is
 -- intended for situations in which you are already stuck catching exceptions - otherwise you should
 -- prefer 'parse'.
+--
+-- >>> :set -XOverloadedStrings -XTypeApplications
+-- >>> void $ parse @(Expr Span) "x + 1"
+-- Binary [] AddOp (PathExpr [] Nothing (Path False [PathSegment x Nothing ()] ()) ())
+--                 (Lit [] (Int Dec 1  ()) ())
+--                 ()
+-- >>> void $ parse @(Expr Span) "x + "
+-- *** Exception: parse failure at 1:4 (Syntax error: unexpected `<EOF>' (expected an expression))
+--
 parse' :: Parse a => InputStream -> a
-parse' is = case execParser parser is initPos of
-              Left (pos, msg) -> throw (ParseFail pos msg)
-              Right x -> x
+parse' = either throw id . parse
 
 -- | Same as 'execParser', but working from a list of tokens instead of an 'InputStream'.
-execParserTokens :: P a -> [Spanned Token] -> Position -> Either (Position,String) a
+execParserTokens :: P a -> [Spanned Token] -> Position -> Either ParseFail a
 execParserTokens p toks = execParser (pushTokens toks *> p) (inputStreamFromString "")
   where pushTokens = traverse_ pushToken . reverse
 
--- | Given a path pointing to a Rust source file, read that file and parse it into a 'SourceFile'
-readSourceFile :: FilePath -> IO (SourceFile Span)
-readSourceFile fileName = parse' <$> readInputStream fileName
+-- | Given a handle to a Rust source file, read that file and parse it into a 'SourceFile'
+--
+-- >>> writeFile "empty_main.rs" "fn main() { }"
+-- >>> fmap void $ withFile "empty_main.rs" ReadMode readSourceFile
+-- SourceFile Nothing [] [Fn [] InheritedV main
+--                           (FnDecl [] Nothing False ())
+--                           Normal NotConst Rust
+--                           (Generics [] [] (WhereClause [] ()) ())
+--                           (Block [] Normal ()) ()]
+--
+readSourceFile :: Handle -> IO (SourceFile Span)
+readSourceFile hdl = parse' <$> hReadInputStream hdl
 
 -- | Given a path pointing to a Rust source file, read that file and lex it (ignoring whitespace)
-readTokens :: FilePath -> IO [Spanned Token]
-readTokens fileName = do
-  inp <- readInputStream fileName
+--
+-- >>> writeFile "empty_main.rs" "fn main() { }"
+-- >>> withFile "empty_main.rs" ReadMode readTokens
+-- [fn,main,(,),{,}]
+--
+readTokens :: Handle -> IO [Spanned Token]
+readTokens hdl = do
+  inp <- hReadInputStream hdl
   case execParser (lexTokens lexNonSpace) inp initPos of
-    Left (pos, msg) -> throw (ParseFail pos msg)
+    Left pf -> throw pf
     Right x -> pure x
-
--- | Exceptions that occur during parsing
-data ParseFail = ParseFail Position String deriving (Eq, Typeable)
-
-instance Show ParseFail where
-  show (ParseFail pos msg) = unwords [ "parse failure at", prettyPosition pos, "(" ++ msg ++ ")" ]
-
-instance Exception ParseFail
-  
 
 -- | Describes things that can be parsed
 class Parse a where
   -- | Complete parser (fails if not all of the input is consumed)
   parser :: P a
 
-instance Parse (Lit Span) where
-  parser = parseLit
-
-instance Parse (Attribute Span) where
-  parser = parseAttr
-
-instance Parse (Ty Span) where
-  parser = parseTy 
-
-instance Parse (Pat Span) where
-  parser = parsePat
-
-instance Parse (Expr Span) where
-  parser = parseExpr
-
-instance Parse (Stmt Span) where
-  parser = parseStmt
-
-instance Parse (Item Span) where
-  parser = parseItem
-
-instance Parse (SourceFile Span) where
-  parser = parseSourceFile
-
-instance Parse TokenTree where
-  parser = parseTt
-
-instance Parse TokenStream where
-  parser = parseTokenStream
-
-instance Parse (Block Span) where
-  parser = parseBlock
-
-instance Parse (ImplItem Span) where
-  parser = parseImplItem 
-
-instance Parse (TraitItem Span) where
-  parser = parseTraitItem
-
-instance Parse (TyParam Span) where
-  parser = parseTyParam
-
-instance Parse (LifetimeDef Span) where
-  parser = parseLifetimeDef
-
-instance Parse (Generics Span) where
-  parser = parseGenerics
-
-instance Parse (WhereClause Span) where
-  parser = parseWhereClause
-
+instance Parse (Lit Span)         where parser = parseLit
+instance Parse (Attribute Span)   where parser = parseAttr
+instance Parse (Ty Span)          where parser = parseTy 
+instance Parse (Pat Span)         where parser = parsePat
+instance Parse (Expr Span)        where parser = parseExpr
+instance Parse (Stmt Span)        where parser = parseStmt
+instance Parse (Item Span)        where parser = parseItem
+instance Parse (SourceFile Span)  where parser = parseSourceFile
+instance Parse TokenTree          where parser = parseTt
+instance Parse TokenStream        where parser = parseTokenStream
+instance Parse (Block Span)       where parser = parseBlock
+instance Parse (ImplItem Span)    where parser = parseImplItem 
+instance Parse (TraitItem Span)   where parser = parseTraitItem
+instance Parse (TyParam Span)     where parser = parseTyParam
+instance Parse (LifetimeDef Span) where parser = parseLifetimeDef
+instance Parse (Generics Span)    where parser = parseGenerics
+instance Parse (WhereClause Span) where parser = parseWhereClause

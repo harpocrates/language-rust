@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Syntax.AST
 Description : Non-token AST definitions
-Copyright   : (c) Alec Theriault, 2017
+Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -13,8 +13,6 @@ Portability : GHC
 {-# LANGUAGE DeriveAnyClass #-}
 
 module Language.Rust.Syntax.AST (
-  -- $overview
-  
   -- ** Top level
   SourceFile(..),
   
@@ -122,12 +120,6 @@ import Text.Read                                 ( Read(..) )
 import Text.ParserCombinators.ReadPrec           ( lift )
 import Text.ParserCombinators.ReadP              ( choice, string )
 
--- $overview
--- The abstract syntax tree(s) of the Rust language, based on the definitions in the @syntax::ast@
--- crate of @rustc@ whenever possible. Unfortunately, since the internals of @rustc@ are not exposed
--- themselves, there are no official docs for them - the current working docs
--- are [here](https://manishearth.github.io/rust-internals-docs/syntax/ast/index.html).
-
 -- | ABIs support by Rust's foreign function interface (@syntax::abi::Abi@). Note that of these,
 -- only 'Rust', 'C', 'System', 'RustIntrinsic', 'RustCall', and 'PlatformIntrinsic' and 'Unadjusted'
 -- are cross-platform - all the rest are platform-specific.
@@ -210,8 +202,8 @@ instance Read Abi where
 --   fn bar(mut self);
 --
 --   // Self argument, by reference
---   fn baz(&self) -> Bar<'lt>;
---   fn qux(&'lt mut self) -> Bar<'lt>;
+--   fn baz(&self) -> Bar\<'lt\>;
+--   fn qux(&'lt mut self) -> Bar\<'lt\>;
 --
 --   // Explicit self argument
 --   fn quux(mut self: Foo);
@@ -257,7 +249,7 @@ instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
 -- struct Complex { re: f32, im: f32 }
 -- @
 data Attribute a
-  -- | Regular attributes of the form '#[...]'
+  -- | Regular attributes of the form @#[...]@
   = Attribute AttrStyle (Path a) TokenStream a
   -- | Doc comment attributes. The 'Bool' argument identifies if the comment is inline or not, and
   -- the 'Name' contains the actual doc comment content.
@@ -480,7 +472,13 @@ instance Located a => Located (FieldPat a) where spanOf (FieldPat _ _ s) = spanO
 -- | Header (not the body) of a function declaration (@syntax::ast::FnDecl@). The 'Bool' argument
 -- indicates whether the header is variadic (so whether the argument list ends in @...@).
 --
--- Example: @(bar: i32) -> ()@ in @fn foo(bar: i32) -> ()@
+-- Example: @(bar: i32) -> i32@ as in
+--
+-- @
+-- fn foo(bar: i32) -> i32 {
+--   bar + 2
+-- }
+-- @
 data FnDecl a = FnDecl [Arg a] (Maybe (Ty a)) Bool a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -489,15 +487,15 @@ instance Located a => Located (FnDecl a) where spanOf (FnDecl _ _ _ s) = spanOf 
 -- | An item within an extern block (@syntax::ast::ForeignItem@ with @syntax::ast::ForeignItemKind@
 -- inlined).
 --
--- Example: @static ext: u8@ in @extern "C" { static ext: u8 }@
+-- Example: @static ext: u8@ in @extern \"C\" { static ext: u8 }@
 data ForeignItem a
   -- | Foreign function
   --
-  -- Example: @fn foo(x: i32);@ in @extern "C" { fn foo(x: i32); }@
+  -- Example: @fn foo(x: i32);@ in @extern \"C\" { fn foo(x: i32); }@
   = ForeignFn [Attribute a] (Visibility a) Ident (FnDecl a) (Generics a) a
   -- | Foreign static variable, optionally mutable
   --
-  -- Example: @static mut bar: i32;@ in @extern "C" { static mut bar: i32; }@
+  -- Example: @static mut bar: i32;@ in @extern \"C\" { static mut bar: i32; }@
   | ForeignStatic [Attribute a] (Visibility a) Ident (Ty a) Mutability a
   -- | Foreign type
   --
@@ -518,8 +516,13 @@ instance Located a => Located (ForeignItem a) where
 -- not compact - the lifetimes and type parameters occur by themselves between @\<@ and @\>@ then a
 -- bit further the where clause occurs after a @where@.
 --
--- Example: @\<\'a, \'b: \'c, T: \'a\>@ and @where Option\<T\>: Copy@
--- in @fn nonsense\<\'a, \'b: \'c, T: \'a\>(x: i32) -\> i32 where Option\<T\>: Copy { 1 }@.
+-- Example: @\<\'a, \'b: \'c, T: \'a\>@ and @where Option\<T\>: Copy@ as in
+--
+-- @
+-- fn nonsense\<\'a, \'b: \'c, T: \'a\>(x: i32) -\> i32
+-- where Option\<T\>: Copy { 
+--   1
+-- }@.
 data Generics a = Generics [LifetimeDef a] [TyParam a] (WhereClause a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -531,21 +534,31 @@ instance Located a => Located (Generics a) where spanOf (Generics _ _ _ s) = spa
 
 -- | An item within an impl (@syntax::ast::ImplItem@ with @syntax::ast::ImplItemKind@ inlined).
 --
--- Example: @const x: i32 = 1;@ in @impl MyTrait { const x: i32 = 1; }@
+-- Examples:
+--
+-- @
+-- impl MyTrait {
+--   // Associated constant
+--   const ID: i32 = 1;
+--
+--   // Method
+--   fn area(&self) -> f64 { 1f64 }
+--
+--   // Associated type
+--   type N = i32;
+--
+--   // Call to a macro
+--   foo!{}
+-- }
+-- @
 data ImplItem a
-  -- | Associated constants
-  --
-  -- Example: @const ID: i32 = 1;@
+  -- | Associated constant
   = ConstI [Attribute a] (Visibility a) Defaultness Ident (Ty a) (Expr a) a
-  -- | Methods
-  --
-  -- Example: @fn area(&self) -> f64 { 1f64 }@
+  -- | Method
   | MethodI [Attribute a] (Visibility a) Defaultness Ident (Generics a) (MethodSig a) (Block a) a
-  -- | Associated types
-  --
-  -- Example: @type N = i32@
+  -- | Associated type
   | TypeI [Attribute a] (Visibility a) Defaultness Ident (Ty a) a
-  -- | Call to a macro
+  -- | Macro call
   | MacroI [Attribute a] Defaultness (Mac a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -662,7 +675,7 @@ data LifetimeDef a = LifetimeDef [Attribute a] (Lifetime a) [Lifetime a] a
 instance Located a => Located (LifetimeDef a) where spanOf (LifetimeDef _ _ _ s) = spanOf s
 
 -- | This is the fundamental unit of parsing - it represents the contents of one source file. It is
--- composed of an optional shebang line, inner attributes that follow, and then the mod items.
+-- composed of an optional shebang line, inner attributes that follow, and then the module items.
 --
 -- Example:
 --
@@ -881,7 +894,7 @@ instance Located a => Located (PathSegment a) where spanOf (PathSegment _ _ s) =
 
 -- | Trait ref parametrized over lifetimes introduced by a @for@ (@syntax::ast::PolyTraitRef@).
 --
--- Example: @for\<\'a, 'b\> Foo\<&\'a Bar\>@ 
+-- Example: @for\<\'a,'b\> Foo\<&\'a Bar\>@ 
 data PolyTraitRef a = PolyTraitRef [LifetimeDef a] (TraitRef a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -985,18 +998,30 @@ data TraitBoundModifier = None | Maybe deriving (Eq, Ord, Enum, Bounded, Show, T
 -- @syntax::ast::TraitItemKind@ inlined), possibly including a default implementation. A trait item
 -- is either required (meaning it doesn't have an implementation, just a signature) or provided
 -- (meaning it has a default implementation).
+--
+-- Examples:
+--
+-- @
+-- trait MyTrait {
+--   // Associated constant
+--   const ID: i32 = 1;
+--
+--   // Method
+--   fn area(&self) -> f64;
+--
+--   // Associated type
+--   type N: fmt::Display;
+--
+--   // Call to a macro
+--   foo!{}
+-- }
+-- @
 data TraitItem a
   -- | Associated constants
-  --
-  -- Example: @const ID: i32 = 1;@
   = ConstT [Attribute a] Ident (Ty a) (Maybe (Expr a)) a
   -- | Method with optional body
-  --
-  -- Example: @fn area(&self) -> f64;@
   | MethodT [Attribute a] Ident (Generics a) (MethodSig a) (Maybe (Block a)) a
-  -- | Associated types
-  --
-  -- Example: @type N: fmt::Display;@
+  -- | Possibly abstract associated types
   | TypeT [Attribute a] Ident [TyParamBound a] (Maybe (Ty a)) a
   -- | Call to a macro
   | MacroT [Attribute a] (Mac a) a
@@ -1111,10 +1136,25 @@ data Variant a = Variant Ident [Attribute a] (VariantData a) (Maybe (Expr a)) a
 instance Located a => Located (Variant a) where spanOf (Variant _ _ _ _ s) = spanOf s
 
 -- | Main payload in a 'Variant' (@syntax::ast::VariantData@).
+--
+-- Examples:
+--
+-- @
+-- enum Foo {
+--   // Struct variant
+--   Bar { x: f64 },
+--
+--   // Tuple variant
+--   Baz(i32, i32),
+--
+--   // Unit variant
+--   Qux,
+-- }
+-- @
 data VariantData a
-  = StructD [StructField a] a -- ^ struct variant (example: @Bar { .. }@ as in @enum Foo { Bar { .. } }@)
-  | TupleD [StructField a] a  -- ^ tuple variant (exmaple: @Bar(..)@ as in enum @Foo { Bar(..) }@)
-  | UnitD a                   -- ^ unit variant (example @Bar@ as in @enum Foo { Bar = .. }@)
+  = StructD [StructField a] a -- ^ Struct variant
+  | TupleD [StructField a] a  -- ^ Tuple variant
+  | UnitD a                   -- ^ Unit variant
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (VariantData a) where
@@ -1123,18 +1163,26 @@ instance Located a => Located (VariantData a) where
   spanOf (UnitD s) = spanOf s
 
 -- | Paths used in 'Use' items (@ast::syntax::UseTree@).
+--
+-- Examples:
+--
+-- @
+-- // Simple use paths
+-- use foo::bar::baz as quux;
+-- use foo::bar::baz;
+--
+-- // Glob use paths
+-- use foo::bar::*;
+--
+-- // Nested use paths
+-- use foo::bar::{a, b, c::quux as d}
+-- @
 data UseTree a
-  -- | A regular mod path, or a mod path ending in an @as@.
-  --
-  -- Examples: @foo::bar::baz as quux@ or just @foo::bar::baz@
+  -- | Simple path, optionally ending in an @as@
   = UseTreeSimple (Path a) (Maybe Ident) a
-  -- | A regular mod path ending in a glob pattern
-  --
-  -- Example: @foo::bar::*@
+  -- | Path ending in a glob pattern
   | UseTreeGlob (Path a) a
-  -- | A regular mod path ending in a list of identifiers or renamed identifiers.
-  --
-  -- Example: @foo::bar::{a,b,c as d}@
+  -- | Path ending in a list of more paths 
   | UseTreeNested (Path a) [UseTree a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -1161,7 +1209,11 @@ data Visibility a
 -- Note that while 'WhereClause' is a field of 'Generic', not all uses of generics are coupled with
 -- a where clause. In those cases, we leave the list of predicates empty.
 --
--- Example:  @where Option\<T\>: Debug@ in @impl\<T\> PrintInOption for T where Option\<T\>: Debug@
+-- Example:  @where Option\<T\>: Debug@ as in
+--
+-- @
+-- impl\<T\> PrintInOption for T where Option\<T\>: Debug { }
+-- @
 data WhereClause a = WhereClause [WherePredicate a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
