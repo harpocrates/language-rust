@@ -107,6 +107,7 @@ import Data.Text.Prettyprint.Doc hiding ( (<+>), hsep, indent, vsep )
 import Data.Maybe               ( maybeToList, fromMaybe )
 import Data.Foldable            ( toList )
 import Data.List                ( unfoldr )
+import qualified Data.List.NonEmpty as N
 
 -- | Print a source file
 printSourceFile :: SourceFile a -> Doc a
@@ -136,7 +137,8 @@ printType (TupTy [elt] x)       = annotate x (block Paren True ""  mempty [ prin
 printType (TupTy elts x)        = annotate x (block Paren True "," mempty (printType `map` elts))
 printType (PathTy Nothing p x)  = annotate x (printPath p False)
 printType (PathTy (Just q) p x) = annotate x (printQPath p q False)
-printType (TraitObject bs x)    = annotate x (printBounds mempty (toList bs))
+printType (TraitObject bs x)    = let prefix = if null (N.tail bs) then "dyn" else mempty
+                                  in annotate x (printBounds prefix (toList bs))
 printType (ImplTrait bs x)      = annotate x (printBounds "impl" (toList bs))
 printType (ParenTy ty x)        = annotate x ("(" <> printType ty <> ")")
 printType (Typeof e x)          = annotate x ("typeof" <> block Paren True mempty mempty [ printExpr e ])
@@ -373,9 +375,9 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
                                    in annotate x (hsep [ f e, "as", printType ty ])
     TypeAscription _ e ty x     -> annotate x (printExpr e <> ":" <+> printType ty)
     If _ test blk els x         -> annotate x (hsep [ "if", printExpr test, printBlock blk, printElse els ])
-    IfLet _ pat e blk els x     -> annotate x (hsep [ "if let", printPat pat, "=", printExpr e, printBlock blk, printElse els ])
+    IfLet _ pats e blk els x    -> annotate x (hsep [ "if let", printPats pats, "=", printExpr e, printBlock blk, printElse els ])
     While as test blk lbl x     -> annotate x (hsep [ printLbl lbl, "while", printExpr test, printBlockWithAttrs True blk as ])
-    WhileLet as p e blk lbl x   -> annotate x (hsep [ printLbl lbl, "while let", printPat p, "=", printExpr e, printBlockWithAttrs True blk as ])
+    WhileLet as ps e blk lbl x  -> annotate x (hsep [ printLbl lbl, "while let", printPats ps, "=", printExpr e, printBlockWithAttrs True blk as ])
     ForLoop as pat e blk lbl x  -> annotate x (hsep [ printLbl lbl, "for", printPat pat, "in", printExpr e, printBlockWithAttrs True blk as ])
     Loop as blk lbl x           -> annotate x (hsep [ printLbl lbl, "loop", printBlockWithAttrs True blk as ])
     Match as e arms x           -> annotate x (hsep [ "match", printExpr e, block Brace False "," (printInnerAttrs as) (printArm `map` arms) ])
@@ -506,10 +508,13 @@ printFnBlockArgs (FnDecl args ret _ x) = annotate x ("|" <> args' <> "|" <+> ret
 -- | Print the arm of a match expression (@print_arm@)
 printArm :: Arm a -> Doc a
 printArm (Arm as pats guard body x) = annotate x $ printOuterAttrs as
-  </> group (foldr1 (\a b -> a <+> "|" <#> b) (printPat `map` toList pats))
+  </> printPats pats 
   <+> perhaps (\e -> "if" <+> printExpr e) guard
   <+> "=>"
   <+> printExpr body
+
+printPats :: Foldable f => f (Pat a) -> Doc a
+printPats pats = group (foldr1 (\a b -> a <+> "|" <#> b) (printPat `map` toList pats))
 
 -- | Print a block
 printBlock :: Block a -> Doc a
@@ -532,7 +537,7 @@ printBlockWithAttrs b (Block stmts rules x) as = annotate x (printUnsafety rules
 printElse :: Maybe (Expr a) -> Doc a
 printElse Nothing = mempty
 printElse (Just (If _ e t s x))      = annotate x (hsep [ "else if", printExpr e, printBlock t, printElse s ])
-printElse (Just (IfLet _ p e t s x)) = annotate x (hsep [ "else if let", printPat p, "=", printExpr e, printBlock t, printElse s ])
+printElse (Just (IfLet _ p e t s x)) = annotate x (hsep [ "else if let", printPats p, "=", printExpr e, printBlock t, printElse s ])
 printElse (Just (BlockExpr _ blk x)) = annotate x (hsep [ "else", printBlock blk ])
 printElse _ = error "printElse saw `if` with a weird alternative"
 

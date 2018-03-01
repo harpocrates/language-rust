@@ -421,14 +421,16 @@ instance Diffable MacStmtStyle where
   sty          === val         = diff "different styles" sty val
 
 instance Show a => Diffable (Visibility a) where
-  PublicV === "Public" = pure ()
-  CrateV  === val@Object{} = mkIdent "Crate" === (val ! "variant")
-  CrateV  === "Crate" = pure ()
-  RestrictedV p === val = do
-    mkIdent "Restricted" === (val ! "variant")
-    p === (val ! "fields" ! 0) 
-  InheritedV === "Inherited" = pure ()
-  v === val = diff "different visibilities" v val
+  a === val =
+    case (a, val ! "node") of
+      (PublicV, "Public") -> pure ()
+      (CrateV, val'@Object{}) -> mkIdent "Crate" === (val' ! "variant")
+      (CrateV, "Crate") -> pure ()
+      (RestrictedV p, val') -> do
+        mkIdent "Restricted" === (val' ! "variant")
+        p === (val' ! "fields" ! 0) 
+      (InheritedV, "Inherited") -> pure ()
+      (_, val') -> diff "different visibilities" a val'
 
 instance Show a => Diffable (Attribute a) where
   a === val =

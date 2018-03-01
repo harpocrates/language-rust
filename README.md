@@ -15,12 +15,12 @@ A typical use looks like:
 >>> import Language.Rust.Parser
 >>> let inp = inputStreamFromString "fn main () { println!(\"Hello world!\"); }"
 inp :: InputStream
->>> let Right sourceFile = parse @(SourceFile Span) inp
+>>> let sourceFile = parse' @(SourceFile Span) inp
 sourceFile :: SourceFile Span
 
 >>> -- Sample use of the pretty-printer
 >>> import Language.Rust.Pretty
->>> pretty sourceFile
+>>> pretty' sourceFile
 fn main() {
   println!("Hello world!");
 }

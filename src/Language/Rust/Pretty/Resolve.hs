@@ -147,8 +147,8 @@ data ResolveFail = ResolveFail [Dynamic] String deriving (Typeable)
 
 -- | Does not show context information
 instance Show ResolveFail where
-  showsPrec p (ResolveFail _ msg) = showParen (p >= 11) (showString err)
-    where err = unwords [ "invalid AST", "(" ++ msg ++ ")" ]
+  showsPrec p (ResolveFail _ msg) = showParen (p >= 11) (showString expl)
+    where expl = unwords [ "invalid AST", "(" ++ msg ++ ")" ]
 
 instance Exception ResolveFail
 
@@ -226,10 +226,10 @@ resolveIdent :: Ident -> ResolveM Ident
 resolveIdent i@(Ident s _) =
     scope i $ case toks of
                 Right [Spanned (IdentTok i') _]
-                   | i /= i' -> err i "identifier does not lex properly"
-                   | i `elem` keywords -> err i "identifier is a keyword"
+                   | i /= i' -> err i ("identifier `" ++ s ++ "' does not lex properly")
+                   | i `elem` keywords -> err i ("identifier `" ++ s ++ "' is a keyword")
                    | otherwise -> pure i
-                _ -> err i "identifier does not lex properly"
+                _ -> err i ("identifier `" ++ s ++ "' does not lex properly")
 
   where
 
@@ -321,12 +321,14 @@ instance Resolve (Lit a) where resolveM = resolveLit
 -- different underlying invariants.
 data PathType
   = ModPath
+  | UsePath -- ^ similar to 'ModPath', but can have no segments
   | TypePath
   | ExprPath
   deriving (Eq)
 
 instance Show PathType where
   show ModPath = "mod path"
+  show UsePath = "use tree path"
   show TypePath = "type path"
   show ExprPath = "expression path"
 
@@ -337,6 +339,7 @@ instance Show PathType where
 --
 -- TODO: guard against no path segments...
 resolvePath :: (Typeable a, Monoid a) => PathType -> Path a -> ResolveM (Path a)
+resolvePath t p@(Path _ [] _) | t /= UsePath = scope p $ err p "path must have at least one segment"
 resolvePath t p@(Path g segs x) = scope p $
     if null [ () | PathSegment _ (Just a) _ <- segs, not (isParamsForPath t a) ]
       then Path g <$> traverse resolveSeg segs <*> pure x 
@@ -391,6 +394,7 @@ instance (Typeable a, Monoid a) => Resolve (QSelf a) where resolveM = resolveQSe
 resolveLifetime :: Typeable a => Lifetime a -> ResolveM (Lifetime a)
 resolveLifetime l@(Lifetime n _)
   | n == "static" = pure l 
+  | n == "_" = pure l 
   | otherwise = scope l (resolveIdent (mkIdent n) *> pure l)
 
 instance Typeable a => Resolve (Lifetime a) where resolveM = resolveLifetime
@@ -580,8 +584,8 @@ resolvePat p@(PathP q@(Just (QSelf _ i)) p'@(Path g s x) x')
   | i < 0 || i >= length s = scope p (err p "index given by QSelf is outside the possible range")
   | i == 0 = scope p (PathP <$> traverse resolveQSelf q <*> resolvePath ExprPath p' <*> pure x)
   | otherwise = scope p $ do
-      tyP@(Path _ tyPSegs _) <-   resolvePath TypePath $ Path g (take i s) mempty
-      exprP@(Path _ exprPSegs _) <- resolvePath ExprPath $ Path False (drop i s) x
+      Path _ tyPSegs   _ <- resolvePath TypePath $ Path g (take i s) mempty
+      Path _ exprPSegs _ <- resolvePath ExprPath $ Path False (drop i s) x
       q' <- traverse resolveQSelf q
       pure (PathP q' (Path g (tyPSegs <> exprPSegs) x) x')
 -- TupleP
@@ -922,8 +926,8 @@ resolveExprP _ _ p@(PathExpr as q@(Just (QSelf _ i)) p'@(Path g s x) x')
       pure (PathExpr as' q' p'' x)
   | otherwise = scope p $ do
       as' <- traverse (resolveAttr OuterAttr) as
-      tyP@(Path _ tyPSegs _) <-   resolvePath TypePath $ Path g (take i s) mempty
-      exprP@(Path _ exprPSegs _) <- resolvePath ExprPath $ Path False (drop i s) x
+      Path _ tyPSegs   _ <- resolvePath TypePath $ Path g (take i s) mempty
+      Path _ exprPSegs _ <- resolvePath ExprPath $ Path False (drop i s) x
       q' <- traverse resolveQSelf q
       pure (PathExpr as' q' (Path g (tyPSegs <> exprPSegs) x) x') 
 resolveExprP _ _ i@(Lit as l x) = scope i $ do
@@ -978,7 +982,7 @@ resolveExprP p c i@(If as e b es x) = scope i $ do
   pure (If as' e' b' es' x)
 resolveExprP p c i@(IfLet as p' e b es x) = scope i $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  p'' <- resolvePat p'
+  p'' <- traverse resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   es' <- case es of
@@ -996,7 +1000,7 @@ resolveExprP _ _ w@(While as e b l x) = scope w $ do
   pure (While as' e' b' l' x)
 resolveExprP _ _ w@(WhileLet as p' e b l x) = scope w $ do
   as' <- traverse (resolveAttr EitherAttr) as
-  p'' <- resolvePat p'
+  p'' <- traverse resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   l' <- traverse resolveLbl l
@@ -1451,10 +1455,10 @@ resolveUseTree v@(UseTreeSimple p i x) = scope v $ do
   i' <- traverse resolveIdent i
   pure (UseTreeSimple p' i' x)
 resolveUseTree v@(UseTreeGlob p x) = scope v $ do
-  p' <- resolvePath ModPath p 
+  p' <- resolvePath UsePath p 
   pure (UseTreeGlob p' x) 
 resolveUseTree v@(UseTreeNested p ns x) = scope v $ do
-  p' <- resolvePath ModPath p
+  p' <- resolvePath UsePath p
   ns' <- traverse resolveUseTree ns
   pure (UseTreeNested p' ns' x)
 

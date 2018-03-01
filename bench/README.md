@@ -12,7 +12,7 @@ Benchmarks how much memory is allocated by the runtime when parsing the files in
 `sample-sources` directory at the project root. Resulting information is stored in a JSON file in
 the `allocations` folder (automatically created in this directory).
 
-## `timimng-benchmarks`
+## `timing-benchmarks`
 
 Benchmark how long it takes to parse the files inside the `sample-sources` directory. Resulting
 information is stored in a JSON file in the `timings` folder (automatically created in this

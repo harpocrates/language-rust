@@ -19,8 +19,7 @@ same problem shows up for @hsep@, @<#>@, @vsep@, @</>@, etc.
 My solution has been to redefine my versions of these functions which _do_ treat 'mempty' as a
 neutral element for @<+>@, @hsep@, @<#>@, @vsep@, and @</>@.
 -}
-{-# OPTIONS_HADDOCK hide, not-home #-}
-{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Language.Rust.Pretty.Util where
 

@@ -6,3 +6,6 @@
 * Parser module (using Alex and Happy)
 * Pretty-printing module (using Wadler's prettier)
 * Resolving module for validating ASTs
+* Unit testsuite
+* Difference testsuite
+* Benchmarks

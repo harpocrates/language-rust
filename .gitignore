@@ -1,3 +1,9 @@
+# Cabal related files
+cabal.project.local
+dist/
+dist-newstyle/
+resources/
+
 # Stack related files
 .stack-work/
 stack.yaml

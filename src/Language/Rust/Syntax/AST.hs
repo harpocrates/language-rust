@@ -358,11 +358,11 @@ data Expr a
   -- type of the @if@ is inferred to be @()@. (example: @if 1 == 2 { (1,1) } else { (2,2) }@
   | If [Attribute a] (Expr a) (Block a) (Maybe (Expr a)) a
   -- | if-let expression with an optional else block (example: @if let Some(x) = None { () }@)
-  | IfLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Expr a)) a
+  | IfLet [Attribute a] (NonEmpty (Pat a)) (Expr a) (Block a) (Maybe (Expr a)) a
   -- | while loop, with an optional label (example: @'lbl: while 1 == 1 { break 'lbl }@)
   | While [Attribute a] (Expr a) (Block a) (Maybe (Label a)) a
   -- | while-let loop, with an optional label (example: @while let Some(x) = None { x }@)
-  | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Label a)) a
+  | WhileLet [Attribute a] (NonEmpty (Pat a)) (Expr a) (Block a) (Maybe (Label a)) a
   -- | for loop, with an optional label (example: @for i in 1..10 { println!("{}",i) }@)
   | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Label a)) a
   -- | conditionless loop (can be exited with 'Break', 'Continue', or 'Ret')

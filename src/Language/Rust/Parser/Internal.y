@@ -1132,8 +1132,8 @@ block_like_expr :: { Expr Span }
   | label ':' for pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $4 $6 b (Just $1) ($1 # b) }
   |           while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $2 b Nothing ($1 # b) }
   | label ':' while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $4 b (Just $1) ($1 # b) }
-  |           while let pat '=' nostruct_expr inner_attrs_block  { let (as,b) = $> in WhileLet as $3 $5 b Nothing ($1 # b) }
-  | label ':' while let pat '=' nostruct_expr inner_attrs_block  { let (as,b) = $> in WhileLet as $5 $7 b (Just $1) ($1 # b) }
+  |           while let pats '=' nostruct_expr inner_attrs_block { let (as,b) = $> in WhileLet as $3 $5 b Nothing ($1 # b) }
+  | label ':' while let pats '=' nostruct_expr inner_attrs_block { let (as,b) = $> in WhileLet as $5 $7 b (Just $1) ($1 # b) }
   | match nostruct_expr '{'                  '}'                 { Match [] $2 [] ($1 # $>) }
   | match nostruct_expr '{' inner_attrs      '}'                 { Match (toList $4) $2 [] ($1 # $>) }
   | match nostruct_expr '{'             arms '}'                 { Match [] $2 $4 ($1 # $>) }
@@ -1144,7 +1144,7 @@ block_like_expr :: { Expr Span }
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }
   : if             nostruct_expr block else_expr        { If [] $2 $3 $4 ($1 # $3 # $>) }
-  | if let pat '=' nostruct_expr block else_expr        { IfLet [] $3 $5 $6 $7 ($1 # $6 # $>) }
+  | if let pats '=' nostruct_expr block else_expr       { IfLet [] $3 $5 $6 $7 ($1 # $6 # $>) }
 
 else_expr :: { Maybe (Expr Span) }
   : else block                                          { Just (BlockExpr [] $2 (spanOf $2)) }
@@ -1156,10 +1156,11 @@ else_expr :: { Maybe (Expr Span) }
 arms :: { [Arm Span] }
   : ntArm                                               { [$1] }
   | ntArm arms                                          { $1 : $2 }
-  | many(outer_attribute)     sep_by1(pat,'|') arm_guard '=>' expr_arms
-    { let (e,as) = $> in (Arm $1 (toNonEmpty $2) $3 e ($1 # $2 # e) : as) }
-  | many(outer_attribute) '|' sep_by1(pat,'|') arm_guard '=>' expr_arms
-    { let (e,as) = $> in (Arm $1 (toNonEmpty $3) $4 e ($1 # $2 # e) : as) }
+  | many(outer_attribute) pats arm_guard '=>' expr_arms { let (e,as) = $> in (Arm $1 $2 $3 e ($1 # $2 # e) : as) }
+
+pats :: { NonEmpty (Pat Span) }
+  : '|' sep_by1(pat,'|')   { toNonEmpty $2 }
+  |     sep_by1(pat,'|')   { toNonEmpty $1 }
 
 arm_guard :: { Maybe (Expr Span) }
   : {- empty -}  { Nothing }
@@ -1231,14 +1232,17 @@ vis_safety_block :: { Expr Span }
        in noVis $1 e
     }
 
--- an expression starting with 'union' (as an identifier) that won't cause conflicts with stmts
-vis_union_nonblock_expr :: { Expr Span }
-  : union_expr                                                { $1 }
-  | left_gen_expression(vis_union_nonblock_expr, expr, expr) { $1 }
+-- an expression starting with 'union' or 'default' (as identifiers) that won't cause conflicts with stmts
+vis_union_def_nonblock_expr :: { Expr Span }
+  : union_default_expr                                               { $1 }
+  | left_gen_expression(vis_union_def_nonblock_expr, expr, expr) { $1 }
 
-union_expr :: { Expr Span }
+union_default_expr :: { Expr Span }
   : pub_or_inherited union         {%
       noVis $1 (PathExpr [] Nothing (Path False [PathSegment "union" Nothing (spanOf $2)] (spanOf $1)) (spanOf $1))
+    }
+  | pub_or_inherited default         {%
+      noVis $1 (PathExpr [] Nothing (Path False [PathSegment "default" Nothing (spanOf $2)] (spanOf $1)) (spanOf $1))
     }
 
 
@@ -1253,7 +1257,7 @@ stmt :: { Stmt Span }
   | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
   | many(outer_attribute) block_like_expr ';'              { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
   | many(outer_attribute) blockpostfix_expr ';'            { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
-  | many(outer_attribute) vis_union_nonblock_expr ';'      { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) } 
+  | many(outer_attribute) vis_union_def_nonblock_expr ';'  { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) } 
   | many(outer_attribute) block_like_expr    %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
   | many(outer_attribute) vis_safety_block ';'             { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
   | many(outer_attribute) vis_safety_block   %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }

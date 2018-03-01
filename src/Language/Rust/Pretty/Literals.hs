@@ -9,7 +9,6 @@ Portability : portable
 
 Functions for pretty-printing literals.
 -}
-{-# OPTIONS_HADDOCK hide, not-home #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Language.Rust.Pretty.Literals (
