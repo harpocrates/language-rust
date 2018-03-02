@@ -35,4 +35,4 @@ install:
   - cabal configure
 
 script:
-  - cabal test unit-tests
+  - cabal test

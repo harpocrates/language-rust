@@ -3,7 +3,7 @@
 import Criterion
 import Criterion.Main (defaultConfig)
 import Criterion.Types (anMean, reportAnalysis, timeLimit, anOutlierVar, ovEffect, OutlierEffect(Moderate))
-import Statistics.Resampling.Bootstrap (Estimate(..))
+import Statistics.Types (Estimate(..), ConfInt(..))
 
 import Control.Monad (filterM)
 import Control.Exception (catch, throwIO)
@@ -58,7 +58,7 @@ main = do
                                                    , "upper bound" .= u
                                                    ]
                        | (name,report) <- reports
-                       , let Estimate m l u _ = anMean (reportAnalysis report)
+                       , let Estimate m (ConfInt l u _) = anMean (reportAnalysis report)
                        , ovEffect (anOutlierVar (reportAnalysis report)) < Moderate
                        ]
   for_ [ name | (name,report) <- reports, ovEffect (anOutlierVar (reportAnalysis report)) >= Moderate ] $ \n ->

@@ -1,5 +1,5 @@
 name:                language-rust
-version:             0.1.0.26
+version:             0.1.1.26
 
 synopsis:            Parsing and pretty printing of Rust code
 description:         Language Rust is a library for the analysis of Rust code. It includes a
@@ -79,21 +79,21 @@ library
                      , BangPatterns
                      , CPP
 
-  build-depends:       base >=4.8 && <5.0
-                     , prettyprinter >=1.0
-                     , transformers >=0.4 && <0.6
-                     , array >=0.5 && <0.6
-                     , deepseq >=1.1
+  build-depends:       base                 >=4.8  && <5.0
+                     , prettyprinter        >=1.0  && <2.0
+                     , transformers         >=0.4  && <0.6
+                     , array                >=0.5  && <0.6
+                     , deepseq              >=1.1  && <1.5
   if impl(ghc < 8)
-    build-depends:     semigroups >=0.18
+    build-depends:     semigroups           >=0.18
 
   if flag(useByteStrings)
     cpp-options:       -DUSE_BYTESTRING
-    build-depends:     utf8-string >=1.0
-                     , bytestring >=0.10
+    build-depends:     utf8-string          >=1.0
+                     , bytestring           >=0.10
 
   if flag(enableQuasiquotes)
-    build-depends:     template-haskell >=2.10
+    build-depends:     template-haskell     >=2.10
 
 
 test-suite unit-tests
@@ -113,12 +113,13 @@ test-suite unit-tests
 
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
-  build-depends:       base >=4.8 && <5.0
-                     , HUnit >=1.3.0.0
-                     , prettyprinter >=1.0
-                     , test-framework >=0.8.0
-                     , test-framework-hunit >= 0.3.0
+  build-depends:       HUnit                >=1.3.0.0
+                     , test-framework       >=0.8.0
+                     , test-framework-hunit >=0.3.0
+
                      , language-rust
+                     , base
+                     , prettyprinter
 
 test-suite rustc-tests
   hs-source-dirs:      test/rustc-tests
@@ -136,21 +137,22 @@ test-suite rustc-tests
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
   
-  build-depends:       base >=4.8 && <5.0
-                     , process >= 1.3
-                     , prettyprinter >=1.1
-                     , bytestring >=0.10
-                     , aeson >= 0.11.0.0
-                     , directory >=1.2.5.0
-                     , filepath >=1.4.0.0
-                     , test-framework >=0.8.0
-                     , vector >=0.10.0
-                     , text >=1.2.0
+  build-depends:       process              >=1.3
+                     , bytestring           >=0.10
+                     , aeson                >=0.11.0.0
+                     , directory            >=1.2.5.0
+                     , filepath             >=1.4.0.0
+                     , test-framework       >=0.8.0
+                     , vector               >=0.10.0
+                     , text                 >=1.2.0
                      , unordered-containers >=0.2.7
+                     , time                 >=1.2.0.0
+
                      , language-rust
-                     , time >=1.2.0.0
+                     , base
+                     , prettyprinter        >=1.1
   if impl(ghc < 8)
-    build-depends:     semigroups >=0.18
+    build-depends:     semigroups           >=0.18
 
 benchmark timing-benchmarks
   hs-source-dirs:      bench/timing-benchmarks
@@ -161,15 +163,16 @@ benchmark timing-benchmarks
 
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
-  build-depends:       base >=4.8 && <5.0
-                     , process >= 1.3
-                     , bytestring >=0.10
-                     , directory >= 1.2.5.0
-                     , filepath >= 1.4.0.0
+  build-depends:       process              >=1.3
+                     , bytestring           >=0.10
+                     , aeson                >=0.11.0.0
+                     , directory            >=1.2.5.0
+                     , filepath             >=1.4.0.0
+                     , criterion            >=1.1.1.0
+                     , statistics           >=0.14.0
+
                      , language-rust
-                     , criterion >=1.1.1.0
-                     , statistics
-                     , aeson >= 0.11.0.0
+                     , base
 
 benchmark allocation-benchmarks
   hs-source-dirs:      bench/allocation-benchmarks
@@ -181,12 +184,13 @@ benchmark allocation-benchmarks
 
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
-  build-depends:       base >=4.8 && <5.0
-                     , process >= 1.3
-                     , bytestring >=0.10
-                     , directory >=1.2.5.0
-                     , filepath >=1.4.0.0
+  build-depends:       process              >=1.3
+                     , bytestring           >=0.10
+                     , aeson                >=0.11.0.0
+                     , directory            >=1.2.5.0
+                     , filepath             >=1.4.0.0
+                     , weigh                >=0.0.6
+
                      , language-rust
-                     , weigh >=0.0.4
-                     , aeson >= 0.11.0.0
+                     , base
 

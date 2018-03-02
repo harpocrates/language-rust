@@ -16,10 +16,11 @@ import Language.Rust.Parser (readSourceFile)
 import Language.Rust.Pretty (prettyUnresolved, Resolve(..), Issue(..), Severity(Clean))
 import Language.Rust.Syntax (SourceFile)
 
-import System.Directory (getCurrentDirectory, getTemporaryDirectory, listDirectory, doesFileExist)
+import System.Directory (getCurrentDirectory, getTemporaryDirectory, listDirectory, doesFileExist, findExecutable)
 import System.Process (withCreateProcess, proc, CreateProcess(..), StdStream(..), callProcess, readProcess)
 import System.FilePath ((</>), takeFileName)
 import System.IO (withFile, IOMode(WriteMode,ReadMode))
+import System.Exit (exitSuccess)
 
 import Data.Time.Clock (utctDay, getCurrentTime)
 import Data.Time.Calendar (fromGregorian, showGregorian, diffDays)
@@ -37,6 +38,12 @@ main = do
   today <- utctDay <$> getCurrentTime
   when (diffDays today lastDay > 32) $
     putStrLn $ "\x1b[33m" ++ "\nThe version of `rustc' the tests will try to use is older than 1 month" ++ "\x1b[0m"
+
+  -- Don't bother running the tests if you don't have `rustup` or `rustc` installed.
+  missingProgs <- any null <$> traverse findExecutable ["rustup","rustc"]
+  when missingProgs $ do 
+    putStrLn $ "Could not find `rustup`/`rustc`, so skipping these tests"
+    exitSuccess
 
   -- Setting `rustc` version to the right nightly, just in this directory
   callProcess "rustup" ["override", "set", "nightly-" ++ showGregorian lastDay]

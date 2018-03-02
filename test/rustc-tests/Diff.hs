@@ -725,7 +725,7 @@ instance Show a => Diffable (QSelf a) where
 
 -- TODO: use gbl to determine crate root
 instance Show a => Diffable (Path a) where
-  Path g segs _ === val = do
+  Path _ segs _ === val = do
     let val' = case val ! "segments" of
                  j@(Data.Aeson.Array v) | j ! 0 ! "identifier" == "{{root}}" -> Data.Aeson.Array (V.drop 1 v)
                  j -> j
