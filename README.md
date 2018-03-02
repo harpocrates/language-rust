@@ -1,4 +1,4 @@
-# Parser and pretty printer for Rust [![Build Status][4]][5] [![Windows build status][7]][8]
+# Parser and pretty printer for Rust [![Build Status][4]][5] [![Windows build status][7]][8] [![Hackage Version][11]][12]
 
 `language-rust` aspires to efficiently and accurately parse and pretty print the [Rust language][0].
 The underlying AST structures are also intended to be as similar as possible to the [`libsyntax` AST
@@ -89,3 +89,5 @@ pretty printing.
 [8]: https://ci.appveyor.com/project/harpocrates/language-rust/branch/master
 [9]: https://github.com/harpocrates/language-rust/issues
 [10]: https://github.com/rust-lang/rust/blob/master/src/libsyntax/ast.rs
+[11]: https://img.shields.io/hackage/v/language-rust.svg
+[12]: https://hackage.haskell.org/package/language-rust
