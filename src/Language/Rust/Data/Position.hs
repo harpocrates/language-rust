@@ -56,7 +56,7 @@ data Position = Position {
   | NoPosition
   deriving (Eq, Ord, Data, Typeable, Generic, NFData)
 
--- | Field names are shown
+-- | Field names are not shown
 instance Show Position where
   showsPrec _ NoPosition = showString "NoPosition"
   showsPrec p (Position a r c) = showParen (p >= 11) 

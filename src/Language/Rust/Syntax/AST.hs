@@ -113,12 +113,9 @@ import Data.Data                                 ( Data )
 import Data.Typeable                             ( Typeable )
 
 import Data.Char                                 ( ord )
+import Data.List                                 ( partition )
 import Data.List.NonEmpty                        ( NonEmpty(..) )
 import Data.Word                                 ( Word8 )
-
-import Text.Read                                 ( Read(..) )
-import Text.ParserCombinators.ReadPrec           ( lift )
-import Text.ParserCombinators.ReadP              ( choice, string )
 
 -- | ABIs support by Rust's foreign function interface (@syntax::abi::Abi@). Note that of these,
 -- only 'Rust', 'C', 'System', 'RustIntrinsic', 'RustCall', and 'PlatformIntrinsic' and 'Unadjusted'
@@ -145,47 +142,7 @@ data Abi
   | RustCall
   | PlatformIntrinsic
   | Unadjusted
-  deriving (Eq, Ord, Enum, Bounded, Typeable, Data, Generic, NFData)
-
-instance Show Abi where
-  show Cdecl = "cdecl"
-  show Stdcall = "stdcall"
-  show Fastcall = "fastcall"
-  show Vectorcall = "vectorcall"
-  show Aapcs = "aapcs"
-  show Win64 = "win64"
-  show SysV64 = "sysv64"
-  show PtxKernel = "ptx-kernel"
-  show Msp430Interrupt = "msp430-interrupt"
-  show X86Interrupt = "x86-interrupt"
-  show Rust = "Rust"
-  show C = "C"
-  show System = "system"
-  show RustIntrinsic = "rust-intrinsic"
-  show RustCall = "rust-call"
-  show PlatformIntrinsic = "platform-intrinsic"
-  show Unadjusted = "unadjusted"
-
-instance Read Abi where
-  readPrec = lift $ choice
-    [ string "cdecl" *> pure Cdecl
-    , string "stdcall" *> pure Stdcall
-    , string "fastcall" *> pure Fastcall
-    , string "vectorcall" *> pure Vectorcall
-    , string "aapcs" *> pure Aapcs
-    , string "win64" *> pure Win64
-    , string "sysv64" *> pure SysV64
-    , string "ptx-kernel" *> pure PtxKernel
-    , string "msp430-interrupt" *> pure Msp430Interrupt
-    , string "x86-interrupt" *> pure X86Interrupt
-    , string "Rust" *> pure Rust
-    , string "C" *> pure C
-    , string "system" *> pure System
-    , string "rust-intrinsic" *> pure RustIntrinsic
-    , string "rust-call" *> pure RustCall
-    , string "platform-intrinsic" *> pure PlatformIntrinsic
-    , string "unadjusted" *> pure Unadjusted
-    ]
+  deriving (Eq, Ord, Show, Read, Enum, Bounded, Typeable, Data, Generic, NFData)
 
 -- | An argument in a function header (@syntax::ast::Arg@, except with @SelfKind@ and @ExplicitSelf@
 -- inlined).
@@ -260,9 +217,10 @@ instance Located a => Located (Attribute a) where
   spanOf (Attribute _ _ _ s) = spanOf s
   spanOf (SugaredDoc _ _ _ s) = spanOf s
 
--- | Distinguishes between attributes that decorate what follows them and attributes that are
--- describe the node that contains them (@syntax::ast::AttrStyle@). These two cases need to be
--- distinguished only for pretty-printing - they are otherwise fundamentally equivalent.
+-- | Distinguishes between attributes that are associated with the node that follows them and
+-- attributes that are associated with the node that contains them (@syntax::ast::AttrStyle@).
+-- These two cases need to be distinguished only for pretty printing - they are otherwise
+-- fundamentally equivalent.
 --
 -- Example: @#[repr(C)]@ is an outer attribute while @#![feature(slice_patterns)]@ is an inner one
 data AttrStyle = Outer | Inner deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
@@ -323,7 +281,7 @@ data CaptureBy
 -- Example: @const@ in @const fn inc(x: i32) -> i32 { x + 1 }@
 data Constness = Const | NotConst deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
--- | 'ImplItem's can be marked @default@ (@syntax::ast::Defaultness@).  
+-- | An 'ImplItem' can be marked @default@ (@syntax::ast::Defaultness@).  
 data Defaultness = Default | Final deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | Expression (@syntax::ast::Expr@). Note that Rust pushes into expressions an unusual number
@@ -404,11 +362,11 @@ data Expr a
   | Struct [Attribute a] (Path a) [Field a] (Maybe (Expr a)) a
   -- | array literal constructed from one repeated element (example: @[1; 5]@)
   | Repeat [Attribute a] (Expr a) (Expr a) a
-  -- | no-op: used solely so we can pretty-print faithfully
+  -- | no-op: used solely so we can pretty print faithfully
   | ParenExpr [Attribute a] (Expr a) a
   -- | sugar for error handling with @Result@ (example: @parsed_result?@)
   | Try [Attribute a] (Expr a) a
-  -- | a @yield@ with an optional value to yielf (example: @yield 1@)
+  -- | @yield@ with an optional value to yield (example: @yield 1@)
   | Yield [Attribute a] (Maybe (Expr a)) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -512,8 +470,8 @@ instance Located a => Located (ForeignItem a) where
 -- traits, etc. (@syntax::ast::Generics@). Note that lifetime definitions are always required to be
 -- before the type parameters.
 --
--- This one AST node is also a bit weird: it is the only node that whose source representation is
--- not compact - the lifetimes and type parameters occur by themselves between @\<@ and @\>@ then a
+-- This one AST node is also a bit weird: it is the only node whose source representation is not
+-- compact - the lifetimes and type parameters occur by themselves between @\<@ and @\>@ then a
 -- bit further the where clause occurs after a @where@.
 --
 -- Example: @\<\'a, \'b: \'c, T: \'a\>@ and @where Option\<T\>: Copy@ as in
@@ -704,25 +662,7 @@ data Suffix
   | Is | I8 | I16 | I32 | I64 | I128 
   | Us | U8 | U16 | U32 | U64 | U128
   |                 F32 | F64
-  deriving (Eq, Ord, Enum, Bounded, Typeable, Data, Generic, NFData)  
-
--- | renders suffixes faithfully to their source form 
-instance Show Suffix where
-  show Unsuffixed = ""
-  show Is = "isize"
-  show I8 = "i8"
-  show I16 = "i16"
-  show I32 = "i32"
-  show I64 = "i64"
-  show I128 = "i128"
-  show Us = "usize"
-  show U8 = "u8"
-  show U16 = "u16"
-  show U32 = "u32"
-  show U64 = "u64"
-  show U128 = "u128"
-  show F32 = "f32"
-  show F64 = "f64"
+  deriving (Eq, Ord, Show, Enum, Bounded, Typeable, Data, Generic, NFData)  
 
 -- | Literals in Rust (@syntax::ast::Lit@). As discussed in 'Suffix', Rust AST is designed to parse
 -- suffixes for all literals, even if they are currently only valid on 'Int' and 'Float' literals.
@@ -745,11 +685,11 @@ instance Located a => Located (Lit a) where
   spanOf (Float _ _ s) = spanOf s
   spanOf (Bool _ _ s) = spanOf s
 
--- | Smart constructor for 'ByteStr'
+-- | Smart constructor for 'ByteStr'.
 byteStr :: String -> StrStyle -> Suffix -> a -> Lit a
 byteStr s = ByteStr (map (fromIntegral . ord) s)
 
--- | Extract the suffix from a 'Lit'
+-- | Extract the suffix from a 'Lit'.
 suffix :: Lit a -> Suffix
 suffix (Str _ _ s _) = s
 suffix (ByteStr _ _ s _) = s
@@ -759,8 +699,8 @@ suffix (Int _ _ s _) = s
 suffix (Float _ s _) = s
 suffix (Bool _ s _) = s 
 
--- | The base of the number in an @Int@ literal can be binary (like @0b1100@), octal (like @0o14@),
--- decimal (like @12@), or hexadecimal (like @0xc@).
+-- | The base of the number in an @Int@ literal can be binary (e.g. @0b1100@), octal (e.g. @0o14@),
+-- decimal (e.g. @12@), or hexadecimal (e.g. @0xc@).
 data IntRep = Bin | Oct | Dec | Hex deriving (Eq, Ord, Show, Enum, Bounded, Typeable, Data, Generic, NFData)
 
 -- | Represents a macro invocation (@syntax::ast::Mac@). The 'Path' indicates which macro is being
@@ -948,8 +888,8 @@ data StructField a = StructField (Maybe Ident) (Visibility a) (Ty a) [Attribute 
 
 instance Located a => Located (StructField a) where spanOf (StructField _ _ _ _ s) = spanOf s
 
--- | An abstract sequence of tokens, organized into a sequence (e.g. stream) of 'TokenTree's, which
--- are themselves a single 'Token' or a 'Delimited' subsequence of tokens.
+-- | An abstract sequence of tokens, organized into a sequence (e.g. stream) of 'TokenTree', each of
+-- which is a single 'Token' or a 'Delimited' subsequence of tokens.
 data TokenStream
   = Tree TokenTree              -- ^ a single token or a single set of delimited tokens
   | Stream [TokenStream]        -- ^ stream of streams of tokens
@@ -972,7 +912,7 @@ instance Located TokenStream where
 
 -- | When the parser encounters a macro call, it parses what follows as a 'Delimited' token tree.
 -- Basically, token trees let you store raw tokens or 'Sequence' forms inside of balanced
--- parens or braces or brackets. This is a very loose structure, such that all sorts of different
+-- parens, braces, or brackets. This is a very loose structure, such that all sorts of different
 -- AST-fragments can be passed to syntax extensions using a uniform type.
 data TokenTree
   -- | A single token
@@ -1040,7 +980,7 @@ instance Located a => Located (TraitRef a) where spanOf (TraitRef p) = spanOf p
 
 -- | Types (@syntax::ast::Ty@).
 data Ty a
-  -- | variable-length slice (example: @[T]@)
+  -- | variable length slice (example: @[T]@)
   = Slice (Ty a) a
   -- | fixed length array (example: @[T; n]@)
   | Array (Ty a) (Expr a) a
@@ -1062,7 +1002,7 @@ data Ty a
   -- [RFC](https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md))
   -- (example: @impl Bound1 + Bound2 + Bound3@).
   | ImplTrait (NonEmpty (TyParamBound a)) a
-  -- | no-op; kept solely so that we can pretty-print faithfully
+  -- | no-op; kept solely so that we can pretty print faithfully
   | ParenTy (Ty a) a
   -- | typeof, currently unsupported in @rustc@ (example: @typeof(1)@)
   | Typeof (Expr a) a
@@ -1088,7 +1028,7 @@ instance Located a => Located (Ty a) where
   spanOf (Infer s) = spanOf s
   spanOf (MacTy _ s) = spanOf s
 
--- | type parameter definition used in 'Generics' (@syntax::ast::TyParam@). Note that each
+-- | Type parameter definition used in 'Generics' (@syntax::ast::TyParam@). Note that each
 -- parameter can have any number of (lifetime or trait) bounds, as well as possibly a default type.
 data TyParam a = TyParam [Attribute a] Ident [TyParamBound a] (Maybe (Ty a)) a
    deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
@@ -1106,11 +1046,13 @@ instance Located a => Located (TyParamBound a) where
   spanOf (TraitTyParamBound _ _ s) = spanOf s
   spanOf (RegionTyParamBound _ s) = spanOf s
 
--- | Partion a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and 'RegionTyParamBound' variants.
+-- | Partition a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and
+-- 'RegionTyParamBound' variants.
 partitionTyParamBounds :: [TyParamBound a] -> ([TyParamBound a], [TyParamBound a])
-partitionTyParamBounds [] = ([],[])
-partitionTyParamBounds (tpb@TraitTyParamBound{} : ts) = let ~(tpbs,rpbs) = partitionTyParamBounds ts in (tpb:tpbs,rpbs)
-partitionTyParamBounds (rpb@RegionTyParamBound{} : ts) = let ~(tpbs,rpbs) = partitionTyParamBounds ts in (tpbs,rpb:rpbs)
+partitionTyParamBounds = partition isTraitBound
+  where
+    isTraitBound TraitTyParamBound{} = True
+    isTraitBound RegionTyParamBound{} = False
 
 -- | Unary operators, used in the 'Unary' constructor of 'Expr' (@syntax::ast::UnOp@).
 --

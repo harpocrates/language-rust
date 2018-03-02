@@ -99,7 +99,7 @@ prettyLiterals = testGroup "printing literals"
   , testFlatten "true" (printLit (Bool True Unsuffixed ()))
   ]
 
--- | Test pretty-printing of patterns (flattened).
+-- | Test pretty printing of patterns (flattened).
 prettyPatterns :: Test
 prettyPatterns = testGroup "printing patterns"
   [ testFlatten "_" (printPat (WildP ()))
@@ -168,7 +168,7 @@ prettyPatterns = testGroup "printing patterns"
                                                  (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) ()))
   ]
 
--- | Test pretty-printing of types (flattened). 
+-- | Test pretty printing of types (flattened). 
 prettyTypes :: Test
 prettyTypes = testGroup "printing types"
   [ testFlatten "i32" (printType i32)
@@ -227,7 +227,7 @@ prettyTypes = testGroup "printing types"
                 (printType (BareFn Unsafe C [] (FnDecl [Arg Nothing i32 ()] (Just i32) False ()) ()))
   ]
     
--- | Test pretty-printing of attributes (flattened).
+-- | Test pretty printing of attributes (flattened).
 prettyAttributes :: Test
 prettyAttributes = testGroup "printing attributes"
   [ testFlatten "#![cfgi]" (printAttr cfgI True) 
@@ -246,7 +246,7 @@ prettyAttributes = testGroup "printing attributes"
   , testFlatten "/** some comment */" (printAttr (SugaredDoc Outer True " some comment " ()) True)
   ]
   
--- | Test pretty-printing of expressions (flattened). 
+-- | Test pretty printing of expressions (flattened). 
 prettyExpressions :: Test
 prettyExpressions = testGroup "printing expressions"
   [ testFlatten "foo" (printExpr foo) 
@@ -353,7 +353,7 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "foo?" (printExpr (Try [] foo ()))
   ]
 
--- | Test pretty-printing of items (flattened)
+-- | Test pretty printing of items (flattened)
 prettyItems :: Test
 prettyItems = testGroup "printing items"
   [ testFlatten "extern crate \"rustc-serialize\" as rustc_serialize;" (printItem (ExternCrate [] InheritedV (mkIdent "rustc_serialize") (Just (mkIdent "rustc-serialize")) ()))
@@ -453,7 +453,7 @@ prettyItems = testGroup "printing items"
                       ()))
   ]
 
--- | Test pretty-printing of statements (flattened). 
+-- | Test pretty printing of statements (flattened). 
 prettyStatements :: Test
 prettyStatements = testGroup "printing statements"
   [ testFlatten "#[cfgo] let _;" (printStmt (Local (WildP ()) Nothing Nothing [cfgO] ()))

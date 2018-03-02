@@ -1,9 +1,9 @@
 name:                language-rust
-version:             0.1.0.0
+version:             0.1.0.26
 
 synopsis:            Parsing and pretty printing of Rust code
-description:         Language Rust is a well tested library for converting Rust source code into
-                     and out of abstract syntax trees.
+description:         Language Rust is a library for the analysis of Rust code. It includes a
+                     complete, well tested parser and pretty printer. 
 
 homepage:            https://github.com/harpocrates/language-rust
 license:             BSD3
@@ -48,6 +48,7 @@ library
                        Language.Rust.Parser
                        Language.Rust.Parser.ParseMonad
                        Language.Rust.Parser.Lexer
+                       Language.Rust.Parser.Internal
                        Language.Rust.Pretty
                        Language.Rust.Pretty.Internal
                        Language.Rust.Data.Position
@@ -56,8 +57,7 @@ library
   if flag(enableQuasiquotes)
     exposed-modules:   Language.Rust.Quote
  
-  other-modules:       Language.Rust.Parser.Internal
-                       Language.Rust.Parser.Literals
+  other-modules:       Language.Rust.Parser.Literals
                        Language.Rust.Parser.Reversed
                        Language.Rust.Pretty.Resolve
                        Language.Rust.Pretty.Literals

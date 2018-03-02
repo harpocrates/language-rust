@@ -7,12 +7,13 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-Functions for pretty-printing literals.
+Functions for pretty printing literals.
 -}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Language.Rust.Pretty.Literals (
-  printLit
+  printLit,
+  printLitSuffix,
 ) where
 
 import Language.Rust.Syntax.AST
@@ -41,7 +42,25 @@ printLit lit = noIndent $ case lit of
   pad m = pretty (replicate m '#')
 
   suf :: Suffix -> Doc a
-  suf = pretty . show
+  suf = printLitSuffix 
+
+-- | Print literal suffix
+printLitSuffix :: Suffix -> Doc a
+printLitSuffix Unsuffixed = mempty
+printLitSuffix Is = "isize"
+printLitSuffix I8 = "i8"
+printLitSuffix I16 = "i16"
+printLitSuffix I32 = "i32"
+printLitSuffix I64 = "i64"
+printLitSuffix I128 = "i128"
+printLitSuffix Us = "usize"
+printLitSuffix U8 = "u8"
+printLitSuffix U16 = "u16"
+printLitSuffix U32 = "u32"
+printLitSuffix U64 = "u64"
+printLitSuffix U128 = "u128"
+printLitSuffix F32 = "f32"
+printLitSuffix F64 = "f64"
 
 -- | Print an integer literal
 printIntLit :: Integer -> IntRep -> Doc a

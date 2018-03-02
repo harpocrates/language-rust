@@ -6,9 +6,11 @@ Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
+/NOTE:/ the following uses hithero unimplemented antiquoting syntax
+
 An AST and its text form /should/ be completely isomorphic, with @parse@ and @pretty@ being the
 functions allowing you to go back and forth between these forms. Unfortunately, this cannot really
-be the case. The AST form can express programs which cannot be literally pretty-printed and still
+be the case. The AST form can express programs which cannot be literally pretty printed and still
 make sense. Sometimes, extra parens or semicolons need to be added.
 
 == Simple example
@@ -32,7 +34,7 @@ parsed @1 * (2 + 3)@. This is where 'resolve' steps in.
 
 == More involved example
 
-From the above, it is tempting to say: your pretty-printer should be smarter! However, things are
+From the above, it is tempting to say: your pretty printer should be smarter! However, things are
 not always so simple. Consider the less obvious example:
 
 >>> fnBody = [expr| { let y = x; x += 1; y } + x |]
@@ -44,7 +46,7 @@ fn foo(mut x: i32) -> i32 {
 
 This is clearly not the desired output - this won't compile with @rustc@ because of an invariant in
 blocks: if the block ends in an expression, that expression cannot start with a block. To fix this,
-we call 'resolve' on the AST before pretty-printing it.
+we call 'resolve' on the AST before pretty printing it.
 
 >>> Right fn' = resolve fn
 >>> pretty fn'
@@ -91,7 +93,7 @@ import Data.Semigroup                  ( (<>) )
 --  * See where attributes are not allowed
 --  * resolve in a better monad (`type ResolveM a = ReaderT [Doc] (Except ErrorType a)`)
 
--- | Diagnostic for how severe an 'Issue' is 
+-- | Diagnostic for how severe an 'Issue' is.
 data Severity
   = Clean      -- ^ Everything is normal (this variant is returned when there was nothing to resolve)
   | Warning    -- ^ There is something fishy looking (AST is valid, but may not be what you expect)
@@ -99,20 +101,24 @@ data Severity
   | Error      -- ^ The AST was invalid in some way that could not be automatically fixed
   deriving (Eq, Ord, Enum, Bounded, Show)
 
--- | Localized information about an issue in a syntax tree
+-- | Localized information about an issue in a syntax tree.
 data Issue = Issue
-  { description :: String    -- ^ Description of the issue
-  , severity :: !Severity    -- ^ Severity of the issue
-  -- | The first element in this list is the syntax tree where the issue occurs. The next elements
+  { description :: String
+  -- ^ Description of the issue
+  
+  , severity :: !Severity
+  -- ^ Severity of the issue
+
+  , location :: [Dynamic]
+  -- ^ The first element in this list is the syntax tree where the issue occurs. The next elements
   -- are increasingly zoomed out syntax trees centered on the first element. In lieu of positional
   -- information, this provides a next best way of debugging exactly where the problem is.
-  , location :: [Dynamic]
   } deriving (Show)
 
 -- | Monad in which to resolve a syntax tree.
 --
---   * Reader is '[Dynamic]' storing the path from root to the current syntax tree node
---   * Writer is '[Issue]' accumulating issues met through the traversal
+--   * Reader is @['Dynamic']@ storing the path from root to the current syntax tree node
+--   * Writer is @['Issue']@ accumulating issues met through the traversal
 --   * State is 'Severity' accumulating the most severe 'Issue' found so far in the traversal
 --
 type ResolveM = RWS [Dynamic] [Issue] Severity
@@ -142,7 +148,9 @@ err x desc = (desc `logIssue` Error) *> pure x
 scope :: Typeable a => a -> ResolveM b -> ResolveM b
 scope x = local (toDyn x :)
 
--- | Exceptions that occur during resolving
+-- | Exceptions that occur during resolving. Unlike parse errors, we don't have positional
+-- information. Instead, we try to provide some context via a list of syntax trees which
+-- let you "zoom out" from the problematic node.
 data ResolveFail = ResolveFail [Dynamic] String deriving (Typeable)
 
 -- | Does not show context information
@@ -169,10 +177,10 @@ class Resolve a where
   -- that its invariants hold and, if they don't, report an error message or adjust the value so
   -- that the invariant holds.
   --
-  -- Formally, we can say that a value that is an instance of 'Parse' and 'Pretty' is resolved if
-  -- @parse . pretty@ is an identity operation on it.
-  --
-  -- We further expect that 'resolve' be an identity operation on any output of @parse@.
+  -- A value of a type satsifying 'Language.Rust.Parser.Parse' and 'Language.Rust.Pretty.Pretty'
+  -- is resolved if @'Language.Rust.Parser.parse' . 'Language.Rust.Pretty.pretty'@ is an identity
+  -- operation on it. We further expect that 'resolve' be an identity operation on any output of
+  -- 'Language.Rust.Parser.parse'.
   resolve :: a -> Either ResolveFail a
   resolve x = case runRWS (resolveM x) [] Clean of
                 (_, Error, issues) ->

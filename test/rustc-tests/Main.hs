@@ -101,7 +101,7 @@ instance Show DiffRunning where
   show ParsingReference = "Parsing using `rustc'"
   show ParsingImplementation = "Parsing using our parser"
   show ParsingDiffing = "Comparing the two parsed outputs"
-  show PrintingParsed = "Pretty-printing the parsed syntax tree"
+  show PrintingParsed = "Pretty printing the parsed syntax tree"
   show ReparsingReference = "Reparsing using `rustc'"
   show ReparsingDiffing = "Comparing to the reparsed output"
   show ResolveInvariant = "Checking that the parsed output is unchanged by `resolve'"

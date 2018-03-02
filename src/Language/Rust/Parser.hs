@@ -10,10 +10,17 @@ Portability : GHC
 Selecting the right parser may require adding an annotation or using @-XTypeApplications@ to avoid
 an "Ambiguous type variable" error.
 
-Using 'Control.Monad.void' (as in the examples below) uses the fact that most AST nodes are
+Using 'Control.Monad.void' (as in the examples below) exploits the fact that most AST nodes are
 instances of 'Functor' to discard the 'Span' annotation that is attached to most parsed AST nodes.
 Conversely, if you wish to extract the 'Span' annotation, the 'Language.Rust.Syntax.AST.Located'
 typeclass provides a 'Language.Rust.Syntax.AST.spanOf' method.
+
+The examples below assume the following GHCi flags and imports:
+
+>>> :set -XTypeApplications -XOverloadedStrings
+>>> import Language.Rust.Syntax.AST
+>>> import Control.Monad ( void )
+>>> import System.IO
 
 -}
 {-# LANGUAGE FlexibleInstances #-}
@@ -65,11 +72,11 @@ import System.IO                       ( Handle )
 
 -- | Parse something from an input stream (it is assumed the initial position is 'initPos').
 --
--- >>> :set -XOverloadedStrings -XTypeApplications
 -- >>> fmap void $ parse @(Expr Span) "x + 1"
--- Right (Binary [] AddOp (PathExpr [] Nothing (Path False [PathSegment x Nothing ()] ()) ())
---                        (Lit [] (Int Dec 1  ()) ())
+-- Right (Binary [] AddOp (PathExpr [] Nothing (Path False [PathSegment "x" Nothing ()] ()) ())
+--                        (Lit [] (Int Dec 1 Unsuffixed ()) ())
 --                        ())
+--
 -- >>> fmap void $ parse @(Expr Span) "x + "
 -- Left (parse failure at 1:4 (Syntax error: unexpected `<EOF>' (expected an expression)))
 --
@@ -80,12 +87,12 @@ parse is = execParser parser is initPos
 -- intended for situations in which you are already stuck catching exceptions - otherwise you should
 -- prefer 'parse'.
 --
--- >>> :set -XOverloadedStrings -XTypeApplications
--- >>> void $ parse @(Expr Span) "x + 1"
--- Binary [] AddOp (PathExpr [] Nothing (Path False [PathSegment x Nothing ()] ()) ())
---                 (Lit [] (Int Dec 1  ()) ())
+-- >>> void $ parse' @(Expr Span) "x + 1"
+-- Binary [] AddOp (PathExpr [] Nothing (Path False [PathSegment "x" Nothing ()] ()) ())
+--                 (Lit [] (Int Dec 1 Unsuffixed ()) ())
 --                 ()
--- >>> void $ parse @(Expr Span) "x + "
+--
+-- >>> void $ parse' @(Expr Span) "x + "
 -- *** Exception: parse failure at 1:4 (Syntax error: unexpected `<EOF>' (expected an expression))
 --
 parse' :: Parse a => InputStream -> a
@@ -100,7 +107,7 @@ execParserTokens p toks = execParser (pushTokens toks *> p) (inputStreamFromStri
 --
 -- >>> writeFile "empty_main.rs" "fn main() { }"
 -- >>> fmap void $ withFile "empty_main.rs" ReadMode readSourceFile
--- SourceFile Nothing [] [Fn [] InheritedV main
+-- SourceFile Nothing [] [Fn [] InheritedV "main"
 --                           (FnDecl [] Nothing False ())
 --                           Normal NotConst Rust
 --                           (Generics [] [] (WhereClause [] ()) ())

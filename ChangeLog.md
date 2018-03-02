@@ -1,11 +1,11 @@
 # Revision history for language-rust
 
-## 0.1.0.0  -- YYYY-mm-dd
+## 0.1.0.26  -- 2018-03-01
 
-* First version. Released on an unsuspecting world.
 * Parser module (using Alex and Happy)
-* Pretty-printing module (using Wadler's prettier)
+* Pretty printing module
 * Resolving module for validating ASTs
 * Unit testsuite
 * Difference testsuite
-* Benchmarks
+* Allocation benchmarks
+* Timing benchmarks

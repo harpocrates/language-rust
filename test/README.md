@@ -11,12 +11,12 @@ $ stack test              --test-arguments "--help"               # learn about 
 
 ## `unit-tests` 
 
-These are mostly regression/coverage style tests. They cover lexing, parsing, and pretty-printing.
+These are mostly regression/coverage style tests. They cover lexing, parsing, and pretty printing.
 The case for parsing is actually a bit more involved: on top of just checking that inputs parse
 correctly, it also checks that:
 
   * resolving the parsed AST does nothing
-  * pretty-printing the AST and then re-parsing does nothing
+  * pretty printing the AST and then re-parsing does nothing
   * parsing substrings of the input corresponding to the span of sub-ASTs does nothing to those
     sub-ASTs
 
@@ -31,7 +31,7 @@ nightly) to get a JSON of the AST, then parse the same file on our side, and fin
 differences between the two. Specifically, these tests check that:
 
   * we parse the same thing as `rustc`
-  * pretty-printing the AST and then reparsing it doesn't change anything
+  * pretty printing the AST and then reparsing it doesn't change anything
 
 Any test source files should be placed in the `sample-sources` directory at the project root.
 

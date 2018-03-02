@@ -37,6 +37,11 @@ advantages over printing plain old strings:
   * /Annotations/: Depending on the backend you are using to render the 'Doc', annotations can
     determine colours, styling, links, etc.
 
+The examples below assume the following GHCi flag and import:
+
+>>> :set -XOverloadedStrings
+>>> import Language.Rust.Syntax.AST
+
 -}
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 
@@ -87,7 +92,7 @@ import Control.Exception                     ( throw )
 -- >>> pretty (Binary [] MulOp (Binary [] AddOp one two ()) three ())
 -- Right (1 + 2) * 3
 -- >>> pretty (Binary [] AddOp one bogusVar ())
--- Left (invalid AST (identifier is a keyword))
+-- Left (invalid AST (identifier `let' is a keyword))
 -- 
 pretty :: (Resolve a, Pretty a) => a -> Either ResolveFail (Doc b)
 pretty = fmap prettyUnresolved . resolve
@@ -103,7 +108,7 @@ pretty = fmap prettyUnresolved . resolve
 -- >>> pretty' (Binary [] MulOp (Binary [] AddOp one two ()) three ())
 -- (1 + 2) * 3
 -- >>> pretty' (Binary [] AddOp one bogusVar ())
--- *** Exception: invalid AST (identifier is a keyword))
+-- *** Exception: invalid AST (identifier `let' is a keyword))
 --
 pretty' :: (Resolve a, Pretty a) => a -> Doc b
 pretty' = either throw id . pretty
@@ -132,14 +137,14 @@ writeSourceFile hdl = renderIO hdl . PP.layoutPretty layout . prettyAnnotated'
 
 -- | Given a handle to a file, write a 'SourceFile' in with a desired width of 100 characters.
 --
--- The 'Span' associated with the tokens (if present) will be used as a hint to for spacing
--- out the tokens.
+-- The 'Span' associated with the tokens (if present) will be used as a hint for laying out and
+-- spacing the tokens.
 writeTokens :: Handle -> [Spanned Token] -> IO ()
 writeTokens hdl = renderIO hdl . PP.layoutPretty layout . pretty' . Stream . map mkTT
   where layout = PP.LayoutOptions (PP.AvailablePerLine 100 1.0)
         mkTT (Spanned s t) = Tree (Token t s)
 
--- | Describes things that can be pretty printed
+-- | Describes things that can be pretty printed.
 class Pretty a where
   -- | Pretty print the given value without resolving it.
   prettyUnresolved :: a -> Doc b
@@ -149,6 +154,7 @@ instance Pretty BindingMode        where prettyUnresolved = printBindingMode
 instance Pretty BinOp              where prettyUnresolved = printBinOp
 instance Pretty Ident              where prettyUnresolved = printIdent
 instance Pretty ImplPolarity       where prettyUnresolved = printPolarity
+instance Pretty Suffix             where prettyUnresolved = printLitSuffix
 instance Pretty LitTok             where prettyUnresolved = printLitTok
 instance Pretty Mutability         where prettyUnresolved = printMutability
 instance Pretty RangeLimits        where prettyUnresolved = printRangeLimits

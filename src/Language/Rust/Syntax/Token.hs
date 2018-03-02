@@ -29,7 +29,7 @@ import Data.Data                   ( Data )
 import Data.Maybe                  ( fromMaybe )
 import Data.Typeable               ( Typeable )
 
-import Language.Rust.Data.Ident    ( Ident, Name )
+import Language.Rust.Data.Ident    ( Ident(name), Name )
 import Language.Rust.Data.Position ( Span )
 import Language.Rust.Syntax.AST    ( Nonterminal, AttrStyle(..) )
 
@@ -119,7 +119,7 @@ data Space
   deriving (Eq, Ord, Show, Enum, Bounded, Data, Typeable, Generic, NFData)
 
 -- TODO: BANISH NoDelim! (or rather: distinguish DelimToken from Delim, as rustc does)
--- | A delimiter token (@syntax::parse::token::DelimToken@)
+-- | A delimiter token (@syntax::parse::token::DelimToken@).
 data Delim
   = Paren   -- ^ round parenthesis: @(@ or @)@
   | Bracket -- ^ square bracket: @[@ or @]@
@@ -140,7 +140,7 @@ data LitTok
   deriving (Eq, Ord, Show, Data, Typeable, Generic, NFData)
 
 
--- | Check whether a space is needed between two tokens to avoid confusion
+-- | Check whether a space is needed between two tokens to avoid confusion.
 spaceNeeded :: Token -> Token -> Bool
 -- conflicts with 'GreaterEqual'
 spaceNeeded Greater Equal = True
@@ -357,7 +357,7 @@ instance Show Token where
   show (LiteralTok (ByteStrTok n) s) = "b\"" ++ n ++ "\"" ++ fromMaybe "" s
   show (LiteralTok (ByteStrRawTok n i) s) = "br" ++ replicate i '#' ++ "\"" ++ n ++ "\"" ++ replicate i '#' ++ fromMaybe "" s
   -- Name components
-  show (IdentTok i) = show i
+  show (IdentTok i) = name i
   show Underscore = "_"
   show (LifetimeTok l) = "'" ++ show l
   show (Space Whitespace _) = "<whitespace>"

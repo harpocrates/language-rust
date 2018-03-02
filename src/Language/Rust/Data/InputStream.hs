@@ -8,8 +8,8 @@ Stability   : experimental
 Portability : portable
 
 These are the only functions that need to be implemented in order to use the parser. Whether this
-wraps 'ByteString' or 'String' depends on whether the @useByteStrings@ option is on or not (it is
-by default). Using 'ByteString' means better handling of weird characters ('takeByte' for plain old
+wraps 'BS.ByteString' or 'String' depends on whether the @useByteStrings@ option is on or not (it is
+by default). Using 'BS.ByteString' means better handling of weird characters ('takeByte' for plain
 'String' fails badly if you try to take a byte that doesn't fall on a character boundary), but it
 means incurring a dependency on the [utf8-string](https://hackage.haskell.org/package/utf8-string)
 package.

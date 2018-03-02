@@ -2,7 +2,7 @@
 The name of this module is very slightly misleading - on top of just asserting correct parses, it
 also checks that calling 'resolve' on the parsed output is a NOP and that re-parsing the printed
 output is the same. This doesn't fully check that 'resolve' works - but it does provide some checks
-that it isn't grossly broken. Plus it adds some more pretty-printing checks!
+that it isn't grossly broken. Plus it adds some more pretty printing checks!
 -}
 {-# LANGUAGE OverloadedStrings, OverloadedLists, UnicodeSyntax, FlexibleContexts, ScopedTypeVariables #-}
 module ParserTest (parserSuite) where

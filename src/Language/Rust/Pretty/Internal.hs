@@ -1,13 +1,13 @@
 {-|
 Module      : Language.Rust.Pretty.Internal
-Description : Rust pretty-printer
+Description : Rust pretty printer
 Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-The pretty-printing facilities in this file are re-exported to 'Language.Rust.Pretty' via the
+The pretty printing facilities in this file are re-exported to 'Language.Rust.Pretty' via the
 'Pretty' and 'PrettyAnnotated' classes. There may be invariants in this module that are not properly
 documented. 
 -}
@@ -38,6 +38,7 @@ module Language.Rust.Pretty.Internal (
   
   -- ** Literals
   printLit,
+  printLitSuffix,
   printLitTok,
   
   -- ** Expressions
@@ -907,7 +908,27 @@ printFnHeaderInfo u c a v = hsep [ printVis v, case c of { Const -> "const"; _ -
 -- | Print the ABI
 printAbi :: Abi -> Doc a
 printAbi Rust = mempty
-printAbi abi = "extern" <+> "\"" <> pretty (show abi) <> "\""
+printAbi abi = "extern" <+> "\"" <> root abi <> "\""
+  where
+    root :: Abi -> Doc a
+    root Cdecl = "cdecl"
+    root Stdcall = "stdcall"
+    root Fastcall = "fastcall"
+    root Vectorcall = "vectorcall"
+    root Aapcs = "aapcs"
+    root Win64 = "win64"
+    root SysV64 = "sysv64"
+    root PtxKernel = "ptx-kernel"
+    root Msp430Interrupt = "msp430-interrupt"
+    root X86Interrupt = "x86-interrupt"
+    root Rust = "Rust"
+    root C = "C"
+    root System = "system"
+    root RustIntrinsic = "rust-intrinsic"
+    root RustCall = "rust-call"
+    root PlatformIntrinsic = "platform-intrinsic"
+    root Unadjusted = "unadjusted"
+
  
 -- | Print the interior of a module given the list of items and attributes in it (@print_mod@)
 printMod :: Ident -> Maybe [Item a] -> [Attribute a] -> Doc a

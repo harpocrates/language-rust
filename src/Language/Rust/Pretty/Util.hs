@@ -1,16 +1,16 @@
 {-|
 Module      : Language.Rust.Pretty.Util
-Description : Pretty-printing utilities
+Description : pretty printing utilities
 Copyright   : (c) Alec Theriault, 2017-2018
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-This module contains a variety of utility functions for pretty-printing. Most of these require
+This module contains a variety of utility functions for pretty printing. Most of these require
 inspecting the internal structure of 'Doc'.
 
-Wadler's take on pretty-printing is super useful because it allows us to print thinks like blocks
+Wadler's take on pretty printing is super useful because it allows us to print thinks like blocks
 much more nicely (see [this](http://stackoverflow.com/a/41424946/3072788)) that Hughes'.
 Unfortunately, unlike Hughes', Wadler does not have 'mempty' as the identity of @<+>@ - the
 space between the arguments of @<+>@ does not go away even if either argument is empty. The

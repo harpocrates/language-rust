@@ -704,7 +704,23 @@ ty_param_bound_mod :: { TyParamBound Span }
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Abi }
   : str             {% case unspan $1 of
-                         (LiteralTok (StrTok s) Nothing) -> maybe (parseError $1 {- "invalid ABI" -}) pure (readMaybe s)
+                         LiteralTok (StrTok "cdecl") Nothing ->              pure Cdecl             
+                         LiteralTok (StrTok "stdcall") Nothing ->            pure Stdcall          
+                         LiteralTok (StrTok "fastcall") Nothing ->           pure Fastcall         
+                         LiteralTok (StrTok "vectorcall") Nothing ->         pure Vectorcall       
+                         LiteralTok (StrTok "aapcs") Nothing ->              pure Aapcs            
+                         LiteralTok (StrTok "win64") Nothing ->              pure Win64            
+                         LiteralTok (StrTok "sysv64") Nothing ->             pure SysV64           
+                         LiteralTok (StrTok "ptx-kernel") Nothing ->         pure PtxKernel        
+                         LiteralTok (StrTok "msp430-interrupt") Nothing ->   pure Msp430Interrupt  
+                         LiteralTok (StrTok "x86-interrupt") Nothing ->      pure X86Interrupt     
+                         LiteralTok (StrTok "Rust") Nothing ->               pure Rust             
+                         LiteralTok (StrTok "C") Nothing ->                  pure C                
+                         LiteralTok (StrTok "system") Nothing ->             pure System           
+                         LiteralTok (StrTok "rust-intrinsic") Nothing ->     pure RustIntrinsic    
+                         LiteralTok (StrTok "rust-call") Nothing ->          pure RustCall         
+                         LiteralTok (StrTok "platform-intrinsic") Nothing -> pure PlatformIntrinsic
+                         LiteralTok (StrTok "unadjusted") Nothing ->         pure Unadjusted       
                          _ -> parseError $1 {- "invalid ABI" -}
                     }
   | {- empty -}     { C }
@@ -1728,19 +1744,19 @@ parseTraitItem :: P (TraitItem Span)
 -- | Parser for token trees.
 parseTt :: P TokenTree
 
--- | Parser for token streams
+-- | Parser for token streams.
 parseTokenStream :: P TokenStream
 
--- | Parser for lifetime definitions
+-- | Parser for lifetime definitions.
 parseLifetimeDef :: P (LifetimeDef Span)
 
--- | Parser for a type parameter
+-- | Parser for a type parameter.
 parseTyParam :: P (TyParam Span)
 
--- | Parser for a where clause
+-- | Parser for a where clause.
 parseWhereClause :: P (WhereClause Span)
 
--- | Parser for generics (although 'WhereClause' is always empty here)
+-- | Parser for generics (although 'WhereClause' is always empty here).
 parseGenerics :: P (Generics Span)
 
 -- | Generate a nice looking error message based on expected tokens

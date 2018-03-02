@@ -32,8 +32,9 @@ data Ident
           , hash :: {-# UNPACK #-} !Int  -- ^ hash for quick comparision
           } deriving (Data, Typeable, Generic, NFData)
 
+-- | Shows the identifier as a string (for use with @-XOverloadedStrings@)
 instance Show Ident where
-  show = name
+  show = show . name
 
 instance IsString Ident where
   fromString = mkIdent

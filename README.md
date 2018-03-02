@@ -1,9 +1,8 @@
-# Parser and pretty-printer for Rust [![Build Status][4]][5] [![Windows build status][7]][8]
+# Parser and pretty printer for Rust [![Build Status][4]][5] [![Windows build status][7]][8]
 
-`language-rust` aspires to efficiently and accurately parse and pretty-print the [Rust language][0].
+`language-rust` aspires to efficiently and accurately parse and pretty print the [Rust language][0].
 The underlying AST structures are also intended to be as similar as possible to the [`libsyntax` AST
-`rustc`][10] uses itself. When `language-rust` and `rustc` have diverging AST, the divergence should
-be detailed in the documentation.
+that `rustc`][10] itself uses.
 
 A typical use looks like:
 
@@ -18,7 +17,7 @@ inp :: InputStream
 >>> let sourceFile = parse' @(SourceFile Span) inp
 sourceFile :: SourceFile Span
 
->>> -- Sample use of the pretty-printer
+>>> -- Sample use of the pretty printer
 >>> import Language.Rust.Pretty
 >>> pretty' sourceFile
 fn main() {
@@ -52,8 +51,10 @@ happy-1.19.8`.
 
 ## Evolution of Rust
 
-As Rust evolves, so will `language-rust`. We will make a best effort to support unstable features
-from nightly as they come out, but in general will only target compatibility with stable.
+As Rust evolves, so will `language-rust`. A best effort will be made to support unstable features
+from nightly as they come out, but only compatibility with stable is guaranteed. The last component
+of the version number indicates the nightly Rust compiler version against which tests were run. For
+example, `0.1.0.26` is tested against `rustc 1.26.0-nightly`.
 
 ## Bugs
 
@@ -62,7 +63,7 @@ Please report any bugs to the [github issue tracker][9].
 ### Parser
 
 Any difference between what is accepted by the `rustc` parser and the `language-rust` parser
-indicates
+indicates one of
 
   * a bug in `language-rust` (this is almost always the case)
   * a bug in `rustc`
@@ -71,11 +72,11 @@ indicates
 If the AST/parser of `rustc` changes, the `rustc-tests` test suite should start failing - it
 compares the JSON AST debug output of `rustc` to our parsed AST.
 
-### Pretty-printer
+### Pretty printer
 
-For the pretty-printer, bugs are a bit tougher to list exhaustively. Suggestions for better layout
+For the pretty printer, bugs are a bit tougher to list exhaustively. Suggestions for better layout
 algorithms are most welcome! The [`fmt-rfcs`][6] repo is loosely used as the reference for "correct"
-pretty-printing.
+pretty printing.
 
 [0]: https://www.rust-lang.org/en-US/
 [1]: https://docs.haskellstack.org/en/stable/README/

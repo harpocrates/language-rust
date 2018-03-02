@@ -429,7 +429,7 @@ testComplete name inp = testCase name $ do
          Left (ParseFail pos msg) -> fail $ show pos ++ " " ++ msg
          Right x -> pure x
 
-  -- Pretty-print it
+  -- Pretty print it
   let opts = LayoutOptions (AvailablePerLine 50 1.0)
       inp' = renderShowS (layoutPretty opts (pretty' x)) ""
   
