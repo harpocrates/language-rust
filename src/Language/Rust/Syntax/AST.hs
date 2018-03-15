@@ -115,6 +115,7 @@ import Data.Typeable                             ( Typeable )
 import Data.Char                                 ( ord )
 import Data.List                                 ( partition )
 import Data.List.NonEmpty                        ( NonEmpty(..) )
+import Data.Semigroup                            ( Semigroup(..) )
 import Data.Word                                 ( Word8 )
 
 -- | ABIs support by Rust's foreign function interface (@syntax::abi::Abi@). Note that of these,
@@ -489,6 +490,17 @@ whereClause :: Generics a -> WhereClause a
 whereClause (Generics _ _ wc _) = wc
 
 instance Located a => Located (Generics a) where spanOf (Generics _ _ _ s) = spanOf s
+
+instance Semigroup a => Semigroup (Generics a) where
+  Generics lt1 tp1 wc1 x1 <> Generics lt2 tp2 wc2 x2 = Generics lts tps wcs xs
+    where lts = lt1 ++ lt2
+          tps = tp1 ++ tp2
+          wcs = wc1 <> wc2
+          xs  = x1 <> x2
+
+instance (Semigroup a, Monoid a) => Monoid (Generics a) where
+  mappend = (<>)
+  mempty = Generics [] [] mempty mempty
 
 -- | An item within an impl (@syntax::ast::ImplItem@ with @syntax::ast::ImplItemKind@ inlined).
 --
@@ -1160,6 +1172,13 @@ data WhereClause a = WhereClause [WherePredicate a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (WhereClause a) where spanOf (WhereClause _ s) = spanOf s
+
+instance Semigroup a => Semigroup (WhereClause a) where
+  WhereClause wp1 x1 <> WhereClause wp2 x2 = WhereClause (wp1 ++ wp2) (x1 <> x2)
+
+instance (Semigroup a, Monoid a) => Monoid (WhereClause a) where
+  mappend = (<>)
+  mempty = WhereClause [] mempty
 
 -- | An individual predicate in a 'WhereClause' (@syntax::ast::WherePredicate@).
 data WherePredicate a
