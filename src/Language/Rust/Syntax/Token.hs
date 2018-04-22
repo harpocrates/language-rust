@@ -99,7 +99,6 @@ data Token
   
   -- Name components
   | IdentTok Ident        -- ^ an arbitrary identifier (something like @x@ or @foo@ or @and_then@)
-  | Underscore            -- ^ @_@ token
   | LifetimeTok Ident     -- ^ a lifetime (something like @\'a@ or @\'static@)
   | Space Space Name      -- ^ whitespace
   | Doc String !AttrStyle !Bool
@@ -273,11 +272,9 @@ spaceNeeded Equal GreaterGreaterEqual = True
 
 -- conflicts with 'LiteralTok'
 spaceNeeded LiteralTok{} IdentTok{} = True 
-spaceNeeded LiteralTok{} Underscore = True
 
 -- conflicts with 'IdentTok'
 spaceNeeded IdentTok{} IdentTok{} = True
-spaceNeeded IdentTok{} Underscore = True
 
 -- conflicts with 'Shebang'
 spaceNeeded Pound Exclamation = True
@@ -358,7 +355,6 @@ instance Show Token where
   show (LiteralTok (ByteStrRawTok n i) s) = "br" ++ replicate i '#' ++ "\"" ++ n ++ "\"" ++ replicate i '#' ++ fromMaybe "" s
   -- Name components
   show (IdentTok i) = name i
-  show Underscore = "_"
   show (LifetimeTok l) = "'" ++ show l
   show (Space Whitespace _) = "<whitespace>"
   show (Space Comment n) = "/*" ++ show n ++ " */"

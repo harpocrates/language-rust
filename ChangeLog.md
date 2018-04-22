@@ -1,5 +1,8 @@
 # Revision history for language-rust
 
+## 0.2.0.27  -- 2018-04-22
+
+* Bump Rust version
 
 ## 0.1.1.26  -- 2018-03-02
 

@@ -238,8 +238,8 @@ import qualified Data.List.NonEmpty as N
   innerDoc       { Spanned (Doc _ Inner _) _ }
 
   -- Identifiers.
+  '_'            { Spanned (IdentTok "_") _ }
   IDENT          { Spanned IdentTok{} _ }
-  '_'            { Spanned Underscore _ }
 
   -- Lifetimes.
   LIFETIME       { Spanned (LifetimeTok _) _ }
@@ -278,7 +278,7 @@ import qualified Data.List.NonEmpty as N
 %nonassoc mut DEF EQ '::'
 
 -- These are all identifiers of sorts ('union' and 'default' are "weak" keywords)
-%nonassoc IDENT ntIdent default union catch self Self super auto dyn
+%nonassoc IDENT ntIdent default union catch self Self super auto dyn crate
 
 -- These are all very low precedence unary operators
 %nonassoc box return yield break continue for IMPLTRAIT LAMBDA
@@ -575,6 +575,7 @@ mod_path :: { Path Span  }
 
 self_or_ident :: { Spanned Ident }
   : ident                   { $1 }
+  | crate                   { Spanned "crate" (spanOf $1) }
   | self                    { Spanned "self" (spanOf $1) }
   | Self                    { Spanned "Self" (spanOf $1) }
   | super                   { Spanned "super" (spanOf $1) }
@@ -585,7 +586,7 @@ self_or_ident :: { Spanned Ident }
 -----------
 
 lifetime :: { Lifetime Span }
-  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _)) s = $1 in Lifetime l s }
+  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _ _)) s = $1 in Lifetime l s }
 
 -- parse_trait_ref()
 trait_ref :: { TraitRef Span }
@@ -1125,7 +1126,7 @@ blockpostfix_expr :: { Expr Span }
 
 -- labels on loops
 label :: { Label Span }
-  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _)) s = $1 in Label l s }
+  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _ _)) s = $1 in Label l s }
 
 -- Literal expressions (composed of just literals)
 lit_expr :: { Expr Span }
@@ -1510,6 +1511,7 @@ vis :: { Spanned (Visibility Span) }
   : {- empty -}   %prec VIS { Spanned InheritedV mempty }
   | pub           %prec VIS { Spanned PublicV (spanOf $1) }
   | pub '(' crate ')'       { Spanned CrateV ($1 # $4) }
+  | crate                   { Spanned CrateV (spanOf $1) }
   | pub '(' in mod_path ')' { Spanned (RestrictedV $4) ($1 # $5) }
   | pub '(' super ')'       { Spanned (RestrictedV (Path False [PathSegment "super" Nothing (spanOf
   $3)] (spanOf $3))) ($1 # $4) }
@@ -1903,8 +1905,8 @@ addAttrs as (Yield as' e s)          = Yield (as ++ as') e s
 -- | Given a 'LitTok' token that is expected to result in a valid literal, construct the associated
 -- literal. Note that this should _never_ fail on a token produced by the lexer.
 lit :: Spanned Token -> Lit Span
-lit (Spanned (IdentTok (Ident "true" _)) s) = Bool True Unsuffixed s
-lit (Spanned (IdentTok (Ident "false" _)) s) = Bool False Unsuffixed s
+lit (Spanned (IdentTok (Ident "true" False _)) s) = Bool True Unsuffixed s
+lit (Spanned (IdentTok (Ident "false" False _)) s) = Bool False Unsuffixed s
 lit (Spanned (LiteralTok litTok suffix_m) s) = translateLit litTok suffix s
   where
     suffix = case suffix_m of

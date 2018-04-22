@@ -914,6 +914,7 @@ import Data.Word                       ( Word8 )
   | \xdb40 [\xdd00-\xddee]
 
 @ident             = @xid_start @xid_continue*
+@raw_ident         = r \# @ident
 
 @lifetime          = \' @ident
 
@@ -1041,7 +1042,6 @@ $white+         { \s -> pure (Space Whitespace s)  }
 "}"             { token (CloseDelim Brace) }      
 "#"             { token Pound }     
 "$"             { token Dollar }     
-"_"             { token Underscore }
 
 @lit_integer    { \i -> literal (IntegerTok i) }
 @lit_float      { \f -> literal (FloatTok   f) }
@@ -1070,6 +1070,7 @@ $white+         { \s -> pure (Space Whitespace s)  }
 <lits> @ident   { \s -> pure (IdentTok (mkIdent s)) }
 
 \?              { token Question }
+@raw_ident      { \s -> pure (IdentTok ((mkIdent (drop 2 s)){ raw = True })) } 
 @ident          { \s -> pure (IdentTok (mkIdent s)) } 
 @lifetime       { \s -> (pure (LifetimeTok (mkIdent (tail s))) :: P Token) }
 
@@ -1102,7 +1103,7 @@ literal lit = do
     AlexToken (pos',inp') len action -> do
         tok <- action (peekChars len inp)
         case tok of
-          IdentTok (Ident suf _) -> do
+          IdentTok (Ident suf False _) -> do
             setPosition pos'
             setInput inp'
             pure (LiteralTok lit (Just suf))

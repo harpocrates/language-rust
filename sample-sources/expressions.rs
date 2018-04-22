@@ -1,6 +1,5 @@
 fn main() {
   let x = box "foo";
-  let x = y <- 1;
   let x = [1,2,3];
   let x = foo(1,2,x);
   let x = x.foo::<Bar, Baz>(a, b, c, d);
@@ -49,6 +48,7 @@ fn main() {
   return;
   yield 0;
   yield;
+  let r#return = 0;
 
   match true {
     true => move | | { 1 },

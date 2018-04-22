@@ -29,6 +29,7 @@ import Data.Semigroup     ( Semigroup(..) )
 -- | An identifier
 data Ident
   = Ident { name :: Name                 -- ^ payload of the identifier
+          , raw :: Bool                  -- ^ whether the identifier is raw
           , hash :: {-# UNPACK #-} !Int  -- ^ hash for quick comparision
           } deriving (Data, Typeable, Generic, NFData)
 
@@ -41,26 +42,28 @@ instance IsString Ident where
 
 -- | Uses 'hash' to short-circuit
 instance Eq Ident where
-  i1 == i2 = hash i1 == hash i2 && name i1 == name i2
-  i1 /= i2 = hash i1 /= hash i2 || name i1 /= name i2
+  i1 == i2 = hash i1 == hash i2 && name i1 == name i2 && raw i1 == raw i2
+  i1 /= i2 = hash i1 /= hash i2 || name i1 /= name i2 || raw i1 /= raw i2
 
 -- | Uses 'hash' to short-circuit
 instance Ord Ident where
   compare i1 i2 = case compare i1 i2 of
-                    EQ -> compare (name i1) (name i2)
+                    EQ -> compare (raw i1, name i1) (raw i2, name i2)
                     rt -> rt
 
+-- | "Forgets" about whether either argument was raw
 instance Monoid Ident where
   mappend = (<>)
   mempty = mkIdent ""
 
+-- | "Forgets" about whether either argument was raw
 instance Semigroup Ident where
-  Ident n1 _ <> Ident n2 _ = mkIdent (n1 <> n2)
+  Ident n1 _ _ <> Ident n2 _  _ = mkIdent (n1 <> n2)
 
 
 -- | Smart constructor for making an 'Ident'.
 mkIdent :: String -> Ident
-mkIdent s = Ident s (hashString s)
+mkIdent s = Ident s False (hashString s)
 
 -- | Hash a string into an 'Int'
 hashString :: String -> Int

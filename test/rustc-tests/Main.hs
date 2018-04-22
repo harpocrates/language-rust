@@ -34,7 +34,7 @@ import Test.Framework.Providers.API
 main :: IO ()
 main = do
   -- Check last time `rustc` version was bumped
-  let lastDay = fromGregorian 2018 2 28
+  let lastDay = fromGregorian 2018 4 19
   today <- utctDay <$> getCurrentTime
   when (diffDays today lastDay > 32) $
     putStrLn $ "\x1b[33m" ++ "\nThe version of `rustc' the tests will try to use is older than 1 month" ++ "\x1b[0m"

@@ -220,7 +220,7 @@ instance Diffable Defaultness where
 
 instance Show a => Diffable (Variant a) where
   Variant i as d e _ === val = do
-    i === (val ! "node" ! "name")
+    i === (val ! "node" ! "ident")
     as === (val ! "node" ! "attrs")
     d === (val ! "node" ! "data")
     e === (val ! "node" ! "disr_expr")
@@ -269,10 +269,7 @@ instance Show a => Diffable (UseTree a) where
       (n', _) -> case (n' ! "variant", v) of
         ("Simple", UseTreeSimple p i _) -> do
           p === (val ! "prefix")
-          let l = case (i, p) of
-                    (Nothing, Path _ s _) -> let PathSegment i' _ _ = last s in i'
-                    (Just i', _) -> i'
-          l === (n' ! "fields" ! 0)
+          i === (n' ! "fields" ! 0)
         ("Nested", UseTreeNested p ns  _) -> do
           p === (val ! "prefix")
           map UseTreePair ns === (n' ! "fields" ! 0)
@@ -476,7 +473,7 @@ instance Show a => Diffable (Pat a) where
           ("Mac", MacP m _) -> m === (val' ! "fields" ! 0)
           ("Ident", IdentP bm i m _) -> do
             bm === (val' ! "fields" ! 0)
-            i === (val' ! "fields" ! 1 ! "node")
+            i === (val' ! "fields" ! 1)
             m === (val' ! "fields" ! 2)
           ("Ref", RefP p m _) -> do
             p === (val' ! "fields" ! 0)
@@ -548,7 +545,6 @@ instance Diffable Token where
   Semicolon === "Semi" = pure ()
   Tilde === "Tilde" = pure ()
   EqualEqual === "EqEq" = pure ()
-  Underscore === "Underscore" = pure ()
   At === "At" = pure ()
   Pound === "Pound" = pure ()
   PipePipe === "OrOr" = pure ()
@@ -629,13 +625,13 @@ instance Show a => Diffable (FieldPat a) where
 instance Show a => Diffable (Field a) where
   Field i me _ === val = do 
     isNothing me === (val ! "is_shorthand")
-    i === (val ! "ident" ! "node")
+    i === (val ! "ident")
     unless (isNothing me) $
       me === (val ! "expr")
 
 instance Diffable Ident where
-  Ident i _ === String s | fromString i == s = pure ()
-  ident'    === val = diff "identifiers are different" ident' val
+  Ident i _ _ === String s | fromString i == s = pure ()
+  ident'      === val = diff "identifiers are different" ident' val
 
 -- | The empty identifier is invalid
 invalidIdent :: Ident
@@ -727,14 +723,14 @@ instance Show a => Diffable (QSelf a) where
 instance Show a => Diffable (Path a) where
   Path _ segs _ === val = do
     let val' = case val ! "segments" of
-                 j@(Data.Aeson.Array v) | j ! 0 ! "identifier" == "{{root}}" -> Data.Aeson.Array (V.drop 1 v)
+                 j@(Data.Aeson.Array v) | not (V.null v) && j ! 0 ! "ident" == "{{root}}" -> Data.Aeson.Array (V.drop 1 v)
                  j -> j
     
     segs === val'
 
 instance Show a => Diffable (PathSegment a) where
   PathSegment i pp _ === val = do
-      i === (val ! "identifier")
+      i === (val ! "ident")
       pp === (val ! "parameters")
 
 instance Show a => Diffable (PathParameters a) where
@@ -788,7 +784,7 @@ instance Show a => Diffable (Expr a) where
         es === (n ! "fields" ! 1)
       ("MethodCall", MethodCall as o i tys es _) -> do
         NullList as === (val ! "attrs" ! "_field0")
-        i === (n ! "fields" ! 0 ! "identifier")
+        i === (n ! "fields" ! 0 ! "ident")
         let tys' = n ! "fields" ! 0 ! "parameters"
         tys === if (tys' == Data.Aeson.Null)
                  then tys'
@@ -876,11 +872,11 @@ instance Show a => Diffable (Expr a) where
       ("Field", FieldAccess as e i _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
-        i === (n ! "fields" ! 1 ! "node")
-      ("TupField", TupField as e i _) -> do
+        i === (n ! "fields" ! 1)
+      ("Field", TupField as e i _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
-        i === (n ! "fields" ! 1 ! "node")
+        mkIdent (show i) === (n ! "fields" ! 1)
       ("Index", Language.Rust.Syntax.Index as e1 e2 _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e1 === (n ! "fields" ! 0)

@@ -1,5 +1,5 @@
 name:                language-rust
-version:             0.1.1.26
+version:             0.2.0.27
 
 synopsis:            Parsing and pretty printing of Rust code
 description:         Language Rust is a library for the analysis of Rust code. It includes a

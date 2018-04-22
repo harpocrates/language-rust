@@ -124,7 +124,8 @@ printName = pretty
 
 -- | Print an identifier
 printIdent :: Ident -> Doc a
-printIdent (Ident s _) = pretty s
+printIdent (Ident s False _) = pretty s
+printIdent (Ident s True _) = "r#" <> pretty s
 
 -- | Print a type (@print_type@ with @print_ty_fn@ inlined)
 -- Types are expected to always be only one line
@@ -278,7 +279,6 @@ printToken (CloseDelim NoDelim) = ""
 printToken (LiteralTok l s) = noIndent $ printLitTok l <> perhaps printName s
 -- Name components
 printToken (IdentTok i) = printIdent i
-printToken Underscore = "_"
 printToken (LifetimeTok i) = "'" <> printIdent i
 printToken (Space Whitespace _) = " "
 printToken (Space Comment n) = "/*" <> printName n <> " */"
@@ -599,8 +599,8 @@ printAttr (SugaredDoc Outer False c x) _ = annotate x (flatAlt ("///" <> pretty 
 
 -- | Print an identifier as is, or as cooked string if containing a hyphen
 printCookedIdent :: Ident -> Doc a
-printCookedIdent ident@(Ident str _)
-  | '-' `elem` str = printStr Cooked str
+printCookedIdent ident@(Ident str raw _)
+  | '-' `elem` str && not raw = printStr Cooked str
   | otherwise = printIdent ident 
 
 
