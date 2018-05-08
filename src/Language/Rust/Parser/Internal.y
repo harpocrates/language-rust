@@ -1778,8 +1778,8 @@ expParseError (Spanned t _, exps) = fail $ "Syntax error: unexpected `" ++ show 
     | rep `isSubsequenceOf` es = go (es \\ rep) (msg : msgs) rs
     | otherwise = go es msgs rs
 
-  ignore = words "ntItem ntBlock ntStmt ntPat ntExpr ntTy ntIdent ntPath ntTT \
-                  ntArm ntImplItem ntTraitItem ntGenerics ntWhereClause ntArg ntLit"
+  ignore = words "ntItem ntBlock ntStmt ntPat ntExpr ntTy ntIdent ntPath ntTT" ++
+           words "ntArm ntImplItem ntTraitItem ntGenerics ntWhereClause ntArg ntLit"
 
   replacements = map (\(ks,v) -> (sort ks,v)) $
     [ (expr,                              "an expression"   )
@@ -1805,11 +1805,11 @@ expParseError (Spanned t _, exps) = fail $ "Syntax error: unexpected `" ++ show 
 
   expr :: [String]
   expr = lit ++ identifier ++ lifetime ++
-                words "'<' '!' '-' '*' '&' '|' '...' '..=' '..' '::' \
-                       '||' '&&' '<<' '(' '[' '{' box break continue \
-                       for if loop match move return Self self       \
-                       static super unsafe while do default union    \
-                       catch auto yield dyn"
+         words "'<' '!' '-' '*' '&' '|' '...' '..=' '..' '::'" ++
+         words "'||' '&&' '<<' '(' '[' '{' box break continue" ++
+         words "for if loop match move return Self self      " ++
+         words "static super unsafe while do default union   " ++
+         words "catch auto yield dyn"
 
   lit = boolLit ++ byteLit ++ charLit ++ intLit ++ floatLit ++ strLit ++
         byteStrLit ++ rawStrLit ++ rawByteStrLit
