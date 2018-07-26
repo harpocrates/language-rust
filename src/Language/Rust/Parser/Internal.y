@@ -454,7 +454,7 @@ string :: { Lit Span }
 -----------
 
 -- parse_qualified_path(PathStyle::Type)
--- qual_path :: Spanned (NonEmpty (Ident, PathParameters Span)) -> P (Spanned (QSelf Span, Path Span))
+-- qual_path :: Spanned (NonEmpty (Ident, GenericArgs Span)) -> P (Spanned (QSelf Span, Path Span))
 qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
   : '<' qual_path_suf(segs)                    { let Spanned x _ = $2 in Spanned x ($1 # $2) }
   | lt_ty_qual_path as ty_path '>' '::' segs   {
@@ -524,9 +524,9 @@ path_segments_without_colons :: { [PathSegment Span] }
 
 -- No corresponding function - see path_segments_without_colons
 path_segment_without_colons :: { PathSegment Span }
-  : self_or_ident path_parameter                     { PathSegment (unspan $1) $2 ($1 # $>) }
+  : self_or_ident generic_args               { PathSegment (unspan $1) $2 ($1 # $>) }
 
-path_parameter  :: { Maybe (PathParameters Span) }
+generic_args :: { Maybe (GenericArgs Span) }
   : generic_values                           { let (lts, tys, bds) = unspan $1
                                                in Just (AngleBracketed lts tys bds (spanOf $1)) }
   | '(' sep_byT(ty,',') ')'                  { Just (Parenthesized $2 Nothing ($1 # $>)) }
@@ -644,8 +644,8 @@ no_for_ty_prim :: { Ty Span }
   | fn fn_decl(arg_general)                       { BareFn Normal Rust [] $> ($1 # $>) }
   | typeof '(' expr ')'              { Typeof $3 ($1 # $>) }
   | '[' ty ';' expr ']'              { Array $2 $4 ($1 # $>) }
-  | '?' trait_ref                    { TraitObject [TraitTyParamBound (PolyTraitRef [] $2 (spanOf $2)) Maybe ($1 # $2)] ($1 # $2) }
-  | '?' for_lts trait_ref            { TraitObject [TraitTyParamBound (PolyTraitRef (unspan $2) $3 ($2 # $3)) Maybe ($1 # $3)] ($1 # $3) }
+  | '?' trait_ref                    { TraitObject [TraitBound (PolyTraitRef [] $2 (spanOf $2)) Maybe ($1 # $2)] ($1 # $2) }
+  | '?' for_lts trait_ref            { TraitObject [TraitBound (PolyTraitRef (unspan $2) $3 ($2 # $3)) Maybe ($1 # $3)] ($1 # $3) }
   | impl sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait (toNonEmpty $2) ($1 # $2) }
   | dyn  sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { TraitObject (toNonEmpty $2) ($1 # $2) }
 
@@ -657,7 +657,7 @@ for_ty_no_plus :: { Ty Span }
   | for_lts fn fn_decl(arg_general)                   { BareFn Normal Rust (unspan $1) $> ($1 # $>) }
   | for_lts trait_ref                                 {
       let poly = PolyTraitRef (unspan $1) $2 ($1 # $2) in
-      TraitObject [TraitTyParamBound poly None ($1 # $2)] ($1 # $2)
+      TraitObject [TraitBound poly None ($1 # $2)] ($1 # $2)
     }
 
 -- An optional lifetime followed by an optional mutability
@@ -688,19 +688,19 @@ fn_decl_with_self_named :: { FnDecl Span }
 
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
-ty_param_bound :: { TyParamBound Span }
-  : lifetime                { RegionTyParamBound $1 (spanOf $1) }
-  | poly_trait_ref          { TraitTyParamBound $1 None (spanOf $1) }
-  | '(' poly_trait_ref ')'  { TraitTyParamBound $2 None ($1 # $3) }
+ty_param_bound :: { GenericBound Span }
+  : lifetime                { Outlives $1 (spanOf $1) }
+  | poly_trait_ref          { TraitBound $1 None (spanOf $1) }
+  | '(' poly_trait_ref ')'  { TraitBound $2 None ($1 # $3) }
 
-poly_trait_ref_mod_bound :: { TyParamBound Span }
-  : poly_trait_ref       { TraitTyParamBound $1 None (spanOf $1) }
-  | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe ($1 # $2) }
+poly_trait_ref_mod_bound :: { GenericBound Span }
+  : poly_trait_ref       { TraitBound $1 None (spanOf $1) }
+  | '?' poly_trait_ref   { TraitBound $2 Maybe ($1 # $2) }
 
 -- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+')
-ty_param_bound_mod :: { TyParamBound Span }
+ty_param_bound_mod :: { GenericBound Span }
   : ty_param_bound       { $1 }
-  | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe ($1 # $2) }
+  | '?' poly_trait_ref   { TraitBound $2 Maybe ($1 # $2) }
 
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Abi }
@@ -943,10 +943,10 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | left_gen_expression(lhs,rhs,rhs2) { $1 }
   -- range expressions
   |     '..'  rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) HalfOpen ($1 # $2) }
-  |     '...' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) Closed ($1 # $2) }
-  |     '..=' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) Closed ($1 # $2) }
+  |     '...' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) ClosedDot ($1 # $2) }
+  |     '..=' rhs2  %prec PREFIXRNG  { Range [] Nothing (Just $2) ClosedEq ($1 # $2) }
   |     '..'        %prec SINGLERNG  { Range [] Nothing Nothing HalfOpen (spanOf $1) }
-  |     '..='       %prec SINGLERNG  { Range [] Nothing Nothing Closed (spanOf $1) }
+  |     '..='       %prec SINGLERNG  { Range [] Nothing Nothing ClosedEq (spanOf $1) }
   -- low precedence prefix expressions
   | return                           { Ret [] Nothing (spanOf $1) }
   | return rhs                       { Ret [] (Just $2) ($1 # $2) }
@@ -1927,8 +1927,8 @@ lit (Spanned (LiteralTok litTok suffix_m) s) = translateLit litTok suffix s
                (Just "f64")   -> F64
                _ -> error "invalid literal"
 
-isTraitTyParamBound TraitTyParamBound{} = True
-isTraitTyParamBound _ = False
+isTraitBound TraitBound{} = True
+isTraitBound _ = False
 
 -- | Parse a source file
 parseSourceFile :: P (SourceFile Span)

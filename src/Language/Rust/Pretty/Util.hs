@@ -128,12 +128,12 @@ string new = foldMap (\c -> case c of { '\n' -> new; _ -> Char c })
 --
 -- Note that this will try to fit things on one line when possible, so if you want a block that is
 -- sure /not/ to be condensed on one line (e.g. for a function), you have to construct it manually.
-block :: Delim           -- ^ outer delimiters
-       -> Bool           -- ^ prefer to be on one line (as opposed to multiline)? 
-       -> Doc a          -- ^ seperator
-       -> Doc a          -- ^ attributes doc, after which no seperator will (use 'mempty' to ignore)
-       -> [Doc a]        -- ^ entries
-       -> Doc a
+block :: Delim          -- ^ outer delimiters
+      -> Bool           -- ^ prefer to be on one line (as opposed to multiline)? 
+      -> Doc a          -- ^ seperator
+      -> Doc a          -- ^ attributes doc, after which no seperator will (use 'mempty' to ignore)
+      -> [Doc a]        -- ^ entries
+      -> Doc a
 block delim p s as xs = group' (lDel # PP.vsep (as' ++ ys) # rDel)
   where
   group' = if p || null (as' ++ ys) then PP.group else id

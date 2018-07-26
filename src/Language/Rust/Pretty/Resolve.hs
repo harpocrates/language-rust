@@ -93,6 +93,7 @@ import Data.Semigroup                  ( (<>) )
 --  * See where attributes are not allowed
 --  * resolve in a better monad (`type ResolveM a = ReaderT [Doc] (Except ErrorType a)`)
 
+
 -- | Diagnostic for how severe an 'Issue' is.
 data Severity
   = Clean      -- ^ Everything is normal (this variant is returned when there was nothing to resolve)
