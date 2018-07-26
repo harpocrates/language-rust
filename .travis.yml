@@ -6,13 +6,12 @@ env:
   - GHCVER=7.10.3 CABALVER=1.22 
   - GHCVER=8.0.2  CABALVER=1.24
   - GHCVER=8.2.2  CABALVER=2.0
-  - GHCVER=8.4.1  CABALVER=head
+  - GHCVER=8.4.3  CABALVER=2.2
   - GHCVER=head   CABALVER=head
 
 # Allow for develop branch to break
 matrix:
   allow_failures:
-    - env: GHCVER=8.4.1  CABALVER=head
     - env: GHCVER=head   CABALVER=head
 
 # Manually install ghc and cabal
