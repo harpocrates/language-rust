@@ -604,11 +604,17 @@ instance Diffable LitTok where
       ("Char", CharTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
       ("Integer", IntegerTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
       ("Float", FloatTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      ("Str_", StrTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      ("StrRaw", StrRawTok s i) | fromString s == (val ! "fields" ! 0) -> i === (val ! "fields" ! 1)
-      ("ByteStr", ByteStrTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      ("ByteStrRaw", ByteStrRawTok s i) | fromString s == (val ! "fields" ! 0) -> i === (val ! "fields" ! 1)
+      ("Str_", StrTok s) | fromString s == clean (val ! "fields" ! 0) -> pure ()
+      ("StrRaw", StrRawTok s i) | fromString s == clean (val ! "fields" ! 0) -> i === (val ! "fields" ! 1)
+      ("ByteStr", ByteStrTok s) | fromString s == clean (val ! "fields" ! 0) -> pure ()
+      ("ByteStrRaw", ByteStrRawTok s i) | fromString s == clean (val ! "fields" ! 0) -> i === (val ! "fields" ! 1)
       _ -> diff "different literal token" l val
+
+clean :: Value -> Value
+clean x =
+  case x of
+    String s -> String (T.replace "\r\n" "\n" s)
+    _        -> x
 
 instance Show a => Diffable (FieldPat a) where
   f@(FieldPat mi p _) === val = do 
