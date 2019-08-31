@@ -1052,17 +1052,17 @@ $white+         { \s -> pure (Space Whitespace s)  }
 
 @lit_byte       { \c -> literal (ByteTok    (drop 2 (init c))) }
 @lit_char       { \c -> literal (CharTok    (drop 1 (init c))) }
-@lit_str        { \s -> literal (StrTok     (drop 1 (init s))) }
-@lit_byte_str   { \s -> literal (ByteStrTok (drop 2 (init s))) }
+@lit_str        { \s -> literal (StrTok     (cleanWindowsNewlines (drop 1 (init s)))) }
+@lit_byte_str   { \s -> literal (ByteStrTok (cleanWindowsNewlines (drop 2 (init s)))) }
 
 @lit_raw_str    { \s -> let n = length s - 2
                         in do
-                            str <- rawString n
+                            str <- cleanWindowsNewlines `fmap` rawString n
                             literal (StrRawTok str (fromIntegral n))
                 }
 @lit_raw_bstr   { \s -> let n = length s - 3
                         in do
-                            str <- rawString n
+                            str <- cleanWindowsNewlines `fmap` rawString n
                             literal (ByteStrRawTok str (fromIntegral n))
                 }
 
@@ -1075,7 +1075,8 @@ $white+         { \s -> pure (Space Whitespace s)  }
 @lifetime       { \s -> (pure (LifetimeTok (mkIdent (tail s))) :: P Token) }
 
 
-@outer_doc_line   { \c -> pure (Doc (drop 3 c) Outer False) } 
+@outer_doc_line { \c -> pure (Doc (drop 3 c) Outer False) } 
+@outer_doc_line \r { \c -> pure (Doc (drop 3 (init c)) Outer False) } 
 @outer_doc_inline / ( [^\*] | \r | \n )
                   { \_ -> Doc <$> nestedComment <*> pure Outer <*> pure True }
 
@@ -1281,5 +1282,10 @@ lexShebangLine = do
         _ <- nextChar
         (c' :) <$> toNewline
 
-    
+-- | If we're running on Windows, we need to normalize to "\n" instead of "\r\n", to match Rust's
+-- handling of newlines in strings.
+cleanWindowsNewlines :: String -> String
+cleanWindowsNewlines ""               = ""
+cleanWindowsNewlines ('\r':'\n':rest) = '\n' : cleanWindowsNewlines rest
+cleanWindowsNewlines (x:rest)         = x    : cleanWindowsNewlines rest
 }
