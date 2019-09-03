@@ -42,8 +42,8 @@ import Data.Data          ( Data )
 import Data.Typeable      ( Typeable )
 
 import Data.List.NonEmpty ( NonEmpty(..) )
-import Data.Monoid        ( Monoid(..) )
-import Data.Semigroup     ( Semigroup(..) )
+import Data.Monoid as Mon
+import Data.Semigroup as Sem
 
 
 -- | A position in a source file. The row and column information is kept only for its convenience
@@ -139,22 +139,22 @@ instance Show Span where
 subsetOf :: Span -> Span -> Bool
 Span l1 h1 `subsetOf` Span l2 h2 = minPos l1 l2 == l1 && maxPos h1 h2 == h2
 
--- | Convenience function lifting '<>' to work on all 'Located' things
+-- | Convenience function lifting 'Mon.<>' to work on all 'Located' things
 {-# INLINE (#) #-}
 (#) :: (Located a, Located b) => a -> b -> Span
-left # right = spanOf left <> spanOf right
+left # right = spanOf left Mon.<> spanOf right
 
 -- | smallest covering 'Span'
-instance Semigroup Span where
+instance Sem.Semigroup Span where
   {-# INLINE (<>) #-}
   Span l1 h1 <> Span l2 h2 = Span (l1 `minPos` l2) (h1 `maxPos` h2)
 
-instance Monoid Span where
+instance Mon.Monoid Span where
   {-# INLINE mempty #-}
   mempty = Span NoPosition NoPosition
 
   {-# INLINE mappend #-}
-  mappend = (<>) 
+  mappend = (Sem.<>)
 
 -- | Pretty print a 'Span'
 prettySpan :: Span -> String
@@ -178,11 +178,11 @@ instance Applicative Spanned where
   pure x = Spanned x mempty
   
   {-# INLINE (<*>) #-}
-  Spanned f s1 <*> Spanned x s2 = Spanned (f x) (s1 <> s2)
+  Spanned f s1 <*> Spanned x s2 = Spanned (f x) (s1 Sem.<> s2)
 
 instance Monad Spanned where
   return = pure
-  Spanned x s1 >>= f = let Spanned y s2 = f x in Spanned y (s1 <> s2) 
+  Spanned x s1 >>= f = let Spanned y s2 = f x in Spanned y (s1 Sem.<> s2)
 
 instance Show a => Show (Spanned a) where
   show = show . unspan

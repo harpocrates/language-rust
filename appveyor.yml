@@ -7,7 +7,9 @@ environment:
     # - resolver: lts-6.35 # ghc-7.10.3
     # - resolver: lts-7.24 # ghc-8.0.1
     # - resolver: lts-9.21 # ghc-8.0.2
-    - resolver: lts-10.7 # ghc-2.2.2
+    - resolver: lts-11.22 # ghc-8.2.2
+    - resolver: lts-12.14 # ghc-8.4.4
+    - resolver: lts-14.4  # ghc-8.6.5
     - resolver: nightly
 
 # Manually fetch stack
@@ -21,7 +23,7 @@ install:
 
 # Install Happy and Alex first, before installing
 build_script:
-  - stack --no-terminal install --resolver %resolver% happy-1.19.8
+  - stack --no-terminal install --resolver %resolver% happy-1.19.12
   - stack --no-terminal install --resolver %resolver% alex
 
 test_script:

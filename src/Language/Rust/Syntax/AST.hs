@@ -15,23 +15,23 @@ Portability : GHC
 module Language.Rust.Syntax.AST (
   -- ** Top level
   SourceFile(..),
-  
+
   -- ** General
   Mutability(..),
   Unsafety(..),
   Arg(..),
   FnDecl(..),
-  
+
   -- ** Paths
   Path(..),
   PathParameters(..),
   PathSegment(..),
   QSelf(..),
-  
+
   -- ** Attributes
   Attribute(..),
   AttrStyle(..),
-  
+
   -- ** Literals
   Lit(..),
   byteStr,
@@ -39,7 +39,7 @@ module Language.Rust.Syntax.AST (
   suffix,
   IntRep(..),
   StrStyle(..),
-  
+
   -- ** Expressions
   Expr(..),
   Abi(..),
@@ -51,7 +51,7 @@ module Language.Rust.Syntax.AST (
   Movability(..),
   Field(..),
   RangeLimits(..),
-  
+
   -- ** Types and lifetimes
   Ty(..),
   Generics(..),
@@ -66,15 +66,15 @@ module Language.Rust.Syntax.AST (
   PolyTraitRef(..),
   TraitRef(..),
   TraitBoundModifier(..),
-  
+
   -- ** Patterns
   Pat(..),
   BindingMode(..),
   FieldPat(..),
-  
+
   -- ** Statements
   Stmt(..),
-  
+
   -- ** Items
   Item(..),
   ForeignItem(..),
@@ -89,7 +89,7 @@ module Language.Rust.Syntax.AST (
   Visibility(..),
   Constness(..),
   MethodSig(..),
-  
+
   -- ** Blocks
   Block(..),
 
@@ -115,7 +115,7 @@ import Data.Typeable                             ( Typeable )
 import Data.Char                                 ( ord )
 import Data.List                                 ( partition )
 import Data.List.NonEmpty                        ( NonEmpty(..) )
-import Data.Semigroup                            ( Semigroup(..) )
+import Data.Semigroup as Sem                     ( Semigroup(..) )
 import Data.Word                                 ( Word8 )
 
 -- | ABIs support by Rust's foreign function interface (@syntax::abi::Abi@). Note that of these,
@@ -491,14 +491,14 @@ whereClause (Generics _ _ wc _) = wc
 
 instance Located a => Located (Generics a) where spanOf (Generics _ _ _ s) = spanOf s
 
-instance Semigroup a => Semigroup (Generics a) where
+instance Sem.Semigroup a => Sem.Semigroup (Generics a) where
   Generics lt1 tp1 wc1 x1 <> Generics lt2 tp2 wc2 x2 = Generics lts tps wcs xs
     where lts = lt1 ++ lt2
           tps = tp1 ++ tp2
           wcs = wc1 <> wc2
           xs  = x1 <> x2
 
-instance (Semigroup a, Monoid a) => Monoid (Generics a) where
+instance (Sem.Semigroup a, Monoid a) => Monoid (Generics a) where
   mappend = (<>)
   mempty = Generics [] [] mempty mempty
 
@@ -1173,10 +1173,10 @@ data WhereClause a = WhereClause [WherePredicate a] a
 
 instance Located a => Located (WhereClause a) where spanOf (WhereClause _ s) = spanOf s
 
-instance Semigroup a => Semigroup (WhereClause a) where
+instance Sem.Semigroup a => Sem.Semigroup (WhereClause a) where
   WhereClause wp1 x1 <> WhereClause wp2 x2 = WhereClause (wp1 ++ wp2) (x1 <> x2)
 
-instance (Semigroup a, Monoid a) => Monoid (WhereClause a) where
+instance (Sem.Semigroup a, Monoid a) => Monoid (WhereClause a) where
   mappend = (<>)
   mempty = WhereClause [] mempty
 

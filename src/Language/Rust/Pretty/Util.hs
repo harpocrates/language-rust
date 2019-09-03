@@ -23,7 +23,7 @@ neutral element for @<+>@, @hsep@, @<#>@, @vsep@, and @</>@.
 
 module Language.Rust.Pretty.Util where
 
-import Data.Monoid ( (<>) )
+import Data.Monoid as M
 
 import qualified Data.Text.Prettyprint.Doc as PP
 import Data.Text.Prettyprint.Doc.Internal.Type ( Doc(..) )
@@ -44,11 +44,11 @@ emptyElim _ f doc   = f doc
 
 -- | Vertically concatenate two 'Doc's with a collapsible line between them
 (<##>) :: Doc a -> Doc a -> Doc a
-d1 <##> d2 = d1 <> PP.line' <> d2
+d1 <##> d2 = d1 M.<> PP.line' M.<> d2
 
 -- | Flatten a 'Doc'
 flatten :: Doc a -> Doc a
-flatten d@Fail{}          = d 
+flatten d@Fail{}          = d
 flatten d@Empty{}         = d 
 flatten d@Char{}          = d 
 flatten d@Text{}          = d 
