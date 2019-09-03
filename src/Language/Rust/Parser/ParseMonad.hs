@@ -49,6 +49,7 @@ import Language.Rust.Data.InputStream  ( InputStream )
 import Language.Rust.Data.Position     ( Spanned, Position, initPos, prettyPosition )
 import Language.Rust.Syntax.Token      ( Token )
 
+import Control.Monad.Fail as Fail
 import Control.Exception               ( Exception )
 import Data.Maybe                      ( listToMaybe )
 import Data.Typeable                   ( Typeable )
@@ -87,8 +88,8 @@ instance Monad P where
     let pOk' x s' = unParser (k x) s' pOk pFailed
     in unParser m s pOk' pFailed
 
+instance Fail.MonadFail P where
   fail msg = P $ \ !s _ pFailed -> pFailed msg (curPos s)
-
 
 -- | Exceptions that occur during parsing
 data ParseFail = ParseFail Position String deriving (Eq, Typeable)
@@ -165,5 +166,5 @@ popToken = P $ \ !s@PState{ pushedTokens = toks } pOk _ -> pOk (listToMaybe toks
 
 -- | Signal a syntax error.
 parseError :: Show b => b -> P a
-parseError b = fail ("Syntax error: the symbol `" ++ show b ++ "' does not fit here")
+parseError b = Fail.fail ("Syntax error: the symbol `" ++ show b ++ "' does not fit here")
 

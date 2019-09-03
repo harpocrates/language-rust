@@ -27,7 +27,7 @@ module Language.Rust.Parser.Reversed (
 import Language.Rust.Data.Position
 
 import Data.Foldable          ( Foldable(toList) )
-import Data.Semigroup         ( Semigroup(..) )
+import Data.Semigroup as Sem  ( Semigroup(..) )
 
 import qualified Data.List.NonEmpty as N
 import qualified GHC.Exts as G
@@ -46,8 +46,8 @@ instance Foldable (Reversed N.NonEmpty) where
   foldMap f (Reversed xs) = foldMap f (N.reverse xs)
   toList (Reversed xs) = reverse (toList xs)
 
-instance Semigroup (f a) => Semigroup (Reversed f a) where
-  Reversed xs <> Reversed ys = Reversed (ys <> xs)
+instance Sem.Semigroup (f a) => Sem.Semigroup (Reversed f a) where
+  Reversed xs <> Reversed ys = Reversed (ys Sem.<> xs)
 
 instance Monoid (f a) => Monoid (Reversed f a) where
   mempty = Reversed mempty

@@ -24,7 +24,7 @@ import Data.Typeable      ( Typeable )
 import Data.List          ( foldl' )
 import Data.Char          ( ord )
 import Data.String        ( IsString(..) )
-import Data.Semigroup     ( Semigroup(..) )
+import Data.Semigroup as Sem
 
 -- | An identifier
 data Ident
@@ -57,7 +57,7 @@ instance Monoid Ident where
   mempty = mkIdent ""
 
 -- | "Forgets" about whether either argument was raw
-instance Semigroup Ident where
+instance Sem.Semigroup Ident where
   Ident n1 _ _ <> Ident n2 _  _ = mkIdent (n1 <> n2)
 
 
