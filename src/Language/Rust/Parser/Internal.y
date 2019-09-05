@@ -72,7 +72,7 @@ import qualified Data.List.NonEmpty as N
 %name parseLit lit
 %name parseAttr export_attribute
 %name parseTy ty
-%name parsePat pat
+%name parsePat or_pat
 %name parseStmt stmt
 %name parseExpr expr
 %name parseItem mod_item
@@ -805,6 +805,10 @@ lambda_arg :: { Arg Span }
 -- Patterns --
 --------------
 
+top_pat :: { Pat Span }
+  : '|' or_pat  { $> }
+  |     or_pat  { $> }
+
 -- There is a funky trick going on here around 'IdentP'. When there is a binding mode (ie a 'mut' or
 -- 'ref') or an '@' pattern, everything is fine, but otherwise there is no difference between an
 -- expression variable path and a pattern. To deal with this, we intercept expression paths with
@@ -831,18 +835,25 @@ pat :: { Pat Span }
   | expr_qual_path                  { PathP (Just (fst (unspan $1))) (snd (unspan $1)) ($1 # $>) }
   | lit_or_path '...' lit_or_path   { RangeP $1 $3 ($1 # $>) }
   | lit_or_path '..=' lit_or_path   { RangeP $1 $3 ($1 # $>) }
-  | expr_path '{' '..' '}'          { StructP $1 [] True ($1 # $>) }
   | expr_path '{' pat_fields '}'    { let (fs,b) = $3 in StructP $1 fs b ($1 # $>) }
-  | expr_path '(' sep_byT(pat,',') ')' { TupleStructP $1 $3 ($1 # $>) }
+  | expr_path '(' sep_byT(or_pat,',') ')' { TupleStructP $1 $3 ($1 # $>) }
   | expr_mac                        { MacP $1 (spanOf $1) }
-  | '[' sep_byT(pat,',') ']'        { SliceP $2 ($1 # $>) }
+  | '[' sep_byT(or_pat,',') ']'     { SliceP $2 ($1 # $>) }
   | '('                      ')'    { TupleP [] ($1 # $>) }
-  | '(' sep_by1(pat,',') ',' ')'    { TupleP (toList $2) ($1 # $>) }
-  | '(' sep_by1(pat,',')     ')'    {
+  | '(' sep_by1(or_pat,',') ',' ')' { TupleP (toList $2) ($1 # $>) }
+  | '(' sep_by1(or_pat,',')     ')' {
       case toList $2 of
         l @ [RestP _] -> TupleP l ($1 # $>)   -- (..) is a tuple pattern
         [p] -> ParenP p ($1 # $>)             -- (<pat>) is parenthesis around a pattern
         l -> TupleP l ($1 # $>)               -- (<pat1>, <pat2>) is a tuple pattern
+    }
+
+-- Or-pattern
+or_pat :: { Pat Span }
+  : sep_by1(pat,'|')     {
+      case toNonEmpty $1 of
+        [p] -> p
+        ps -> OrP ps (spanOf ps)
     }
 
 -- Endpoints of range patterns
@@ -854,7 +865,8 @@ lit_or_path :: { Expr Span }
 
 -- Used in patterns for expression patterns
 pat_fields :: { ([FieldPat Span], Bool) }
-  : sep_byT(pat_field,',')           { ($1, False) }
+  : '..'                             { ([], True) }
+  | sep_byT(pat_field,',')           { ($1, False) }
   | sep_by1(pat_field,',') ',' '..'  { (toList $1, True) }
 
 pat_field :: { FieldPat Span }
@@ -862,7 +874,7 @@ pat_field :: { FieldPat Span }
     { FieldPat Nothing (IdentP (unspan $1) (unspan $2) Nothing (spanOf $2)) ($1 # $2) }
   | box binding_mode ident
     { FieldPat Nothing (BoxP (IdentP (unspan $2) (unspan $3) Nothing ($2 # $3)) ($1 # $3)) ($1 # $3) }
-  |     binding_mode ident ':' pat
+  |     binding_mode ident ':' or_pat
     { FieldPat (Just (unspan $2)) $4 ($1 # $2 # $4) }
 
 
@@ -1090,12 +1102,12 @@ block_like_expr :: { Expr Span }
   : if_expr                                                      { $1 }
   |           loop                            inner_attrs_block  { let (as,b) = $> in Loop as b Nothing ($1 # b) }
   | label ':' loop                            inner_attrs_block  { let (as,b) = $> in Loop as b (Just $1) ($1 # b) }
-  |           for pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $2 $4 b Nothing ($1 # b) }
-  | label ':' for pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $4 $6 b (Just $1) ($1 # b) }
+  |           for top_pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $2 $4 b Nothing ($1 # b) }
+  | label ':' for top_pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $4 $6 b (Just $1) ($1 # b) }
   |           while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $2 b Nothing ($1 # b) }
   | label ':' while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $4 b (Just $1) ($1 # b) }
-  |           while let pats '=' nostruct_expr inner_attrs_block { let (as,b) = $> in WhileLet as $3 $5 b Nothing ($1 # b) }
-  | label ':' while let pats '=' nostruct_expr inner_attrs_block { let (as,b) = $> in WhileLet as $5 $7 b (Just $1) ($1 # b) }
+  |           while let top_pat '=' nostruct_expr inner_attrs_block { let (as,b) = $> in WhileLet as $3 $5 b Nothing ($1 # b) }
+  | label ':' while let top_pat '=' nostruct_expr inner_attrs_block { let (as,b) = $> in WhileLet as $5 $7 b (Just $1) ($1 # b) }
   | match nostruct_expr '{'                  '}'                 { Match [] $2 [] ($1 # $>) }
   | match nostruct_expr '{' inner_attrs      '}'                 { Match (toList $4) $2 [] ($1 # $>) }
   | match nostruct_expr '{'             arms '}'                 { Match [] $2 $4 ($1 # $>) }
@@ -1107,8 +1119,8 @@ block_like_expr :: { Expr Span }
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }
-  : if              nostruct_expr block else_expr       { If [] $2 $3 $4 ($1 # $3 # $>) }
-  | if let pats '=' nostruct_expr block else_expr       { IfLet [] $3 $5 $6 $7 ($1 # $6 # $>) }
+  : if                 nostruct_expr block else_expr    { If [] $2 $3 $4 ($1 # $3 # $>) }
+  | if let top_pat '=' nostruct_expr block else_expr    { IfLet [] $3 $5 $6 $7 ($1 # $6 # $>) }
 
 else_expr :: { Maybe (Expr Span) }
   : else block                                          { Just (BlockExpr [] $2 (spanOf $2)) }
@@ -1120,11 +1132,7 @@ else_expr :: { Maybe (Expr Span) }
 arms :: { [Arm Span] }
   : ntArm                                               { [$1] }
   | ntArm arms                                          { $1 : $2 }
-  | many(outer_attribute) pats arm_guard '=>' expr_arms { let (e,as) = $> in (Arm $1 $2 $3 e ($1 # $2 # e) : as) }
-
-pats :: { NonEmpty (Pat Span) }
-  : '|' sep_by1(pat,'|')   { toNonEmpty $2 }
-  |     sep_by1(pat,'|')   { toNonEmpty $1 }
+  | many(outer_attribute) top_pat arm_guard '=>' expr_arms { let (e,as) = $> in (Arm $1 $2 $3 e ($1 # $2 # e) : as) }
 
 arm_guard :: { Maybe (Expr Span) }
   : {- empty -}  { Nothing }
@@ -1224,8 +1232,8 @@ union_default_expr :: { Expr Span }
 
 stmt :: { Stmt Span }
   : ntStmt                                                 { $1 }
-  | many(outer_attribute) let pat ':' ty initializer ';'   { Local $3 (Just $5) $6 $1 ($1 # $2 # $>) }
-  | many(outer_attribute) let pat        initializer ';'   { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
+  | many(outer_attribute) let top_pat ':' ty initializer ';' { Local $3 (Just $5) $6 $1 ($1 # $2 # $>) }
+  | many(outer_attribute) let top_pat        initializer ';' { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
   | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
   | many(outer_attribute) block_like_expr ';'              { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
   | many(outer_attribute) blockpostfix_expr ';'            { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }

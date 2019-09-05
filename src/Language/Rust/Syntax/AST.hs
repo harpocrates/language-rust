@@ -169,8 +169,8 @@ data Abi
 -- }
 -- @
 data Arg a
-  = Arg (Maybe (Pat a)) (Ty a) a                   -- ^ Regular argument 
-  | SelfValue Mutability a                         -- ^ Self argument, by value 
+  = Arg (Maybe (Pat a)) (Ty a) a                   -- ^ Regular argument
+  | SelfValue Mutability a                         -- ^ Self argument, by value
   | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ Self argument, by reference
   | SelfExplicit (Ty a) Mutability a               -- ^ Explicit self argument
   deriving (Eq, Ord, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
@@ -193,7 +193,7 @@ instance Located a => Located (Arg a) where
 --   _ => println!("{} % 2 = 0", n)
 -- }
 -- @
-data Arm a = Arm [Attribute a] (NonEmpty (Pat a)) (Maybe (Expr a)) (Expr a) a
+data Arm a = Arm [Attribute a] (Pat a) (Maybe (Expr a)) (Expr a) a
   deriving (Eq, Ord, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
@@ -316,11 +316,11 @@ data Expr a
   -- type of the @if@ is inferred to be @()@. (example: @if 1 == 2 { (1,1) } else { (2,2) }@
   | If [Attribute a] (Expr a) (Block a) (Maybe (Expr a)) a
   -- | if-let expression with an optional else block (example: @if let Some(x) = None { () }@)
-  | IfLet [Attribute a] (NonEmpty (Pat a)) (Expr a) (Block a) (Maybe (Expr a)) a
+  | IfLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Expr a)) a
   -- | while loop, with an optional label (example: @'lbl: while 1 == 1 { break 'lbl }@)
   | While [Attribute a] (Expr a) (Block a) (Maybe (Label a)) a
   -- | while-let loop, with an optional label (example: @while let Some(x) = None { x }@)
-  | WhileLet [Attribute a] (NonEmpty (Pat a)) (Expr a) (Block a) (Maybe (Label a)) a
+  | WhileLet [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Label a)) a
   -- | for loop, with an optional label (example: @for i in 1..10 { println!("{}",i) }@)
   | ForLoop [Attribute a] (Pat a) (Expr a) (Block a) (Maybe (Label a)) a
   -- | conditionless loop (can be exited with 'Break', 'Continue', or 'Ret')
@@ -783,6 +783,8 @@ data Pat a
   | PathP (Maybe (QSelf a)) (Path a) a
   -- | tuple pattern (example: @(a, b)@)
   | TupleP [Pat a] a
+  -- | or pattern, must have more than one variant (example: @Some(0) | None@)
+  | OrP (NonEmpty (Pat a)) a
   -- | box pattern (example: @box _@)
   | BoxP (Pat a) a
   -- | reference pattern (example: @&mut (a, b)@)
@@ -809,6 +811,7 @@ instance Located a => Located (Pat a) where
   spanOf (TupleStructP _ _ s) = spanOf s
   spanOf (PathP _ _ s) = spanOf s
   spanOf (TupleP _ s) = spanOf s
+  spanOf (OrP _ s) = spanOf s
   spanOf (BoxP _ s) = spanOf s
   spanOf (RefP _ _ s) = spanOf s
   spanOf (LitP _ s) = spanOf s

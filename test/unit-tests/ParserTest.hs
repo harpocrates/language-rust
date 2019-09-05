@@ -36,21 +36,21 @@ parserSuite = testGroup "parser suite"
                 ]
 
 -- | Create a test for a code fragment that should parse to a type.
-testP :: forall f. 
+testP :: forall f.
          (Parse (f Span), Pretty (f ()), Resolve (f ()), Functor f, Show (f ()), Eq (f ()), Data (f Span)) =>
          TestName -> f () -> Test
 testP inp y = testCase inp $ do
     -- parse test
     Right y @=? parseNoSpans parser inps
-  
+
     -- resolve test
     Right y @=? either (\(ResolveFail _ msg) -> Left msg) Right (resolve y)
-  
+
     -- re-parse the result of printing resolve
     Right y @=? case pretty y of
                   Left (ResolveFail _ msg) -> Left msg
-                  Right inp' -> parseNoSpans parser (inputStreamFromString (show inp')) 
-  
+                  Right inp' -> parseNoSpans parser (inputStreamFromString (show inp'))
+
     -- check that the sub-spans re-parse correctly
     let Right y' = parse inps
     checkSubterms inps (y' :: f Span)
@@ -440,7 +440,12 @@ parserPatterns = testGroup "parsing patterns"
   , testP "Point { x, y: y1 }"      (StructP point
                                                [ FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) ()
                                                , FieldPat (Just "y") (IdentP (ByValue Immutable) "y1" Nothing ()) () ]
-                                               False ()) 
+                                               False ())
+  , testP "Point { y: y1 | y2, x }" (StructP point
+                                               [ FieldPat (Just "y") (OrP [ IdentP (ByValue Immutable) "y1" Nothing ()
+                                                                          , IdentP (ByValue Immutable) "y2" Nothing () ] ()) ()
+                                               , FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) () ]
+                                               False ())
   , testP "Point { x, .. }"         (StructP point
                                                [ FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) () ]
                                                True ())
@@ -460,6 +465,8 @@ parserPatterns = testGroup "parsing patterns"
                                             , LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ]
                                             ())
   , testP "Point(x)"                (TupleStructP point [ x' ] ())
+  , testP "Point(x | _)"            (TupleStructP point [ OrP [ x', WildP () ] () ] ())
+  , testP "Point(x | _,)"           (TupleStructP point [ OrP [ x', WildP () ] () ] ())
   , testP "Point(x,)"               (TupleStructP point [ x' ] ())
   , testP "<i32 as a(i32, i32)>::b::<'lt>::AssociatedItem"
             (PathP (Just (QSelf i32 1)) (Path False [ PathSegment "a" (Just (Parenthesized [i32, i32] Nothing ())) ()
@@ -481,6 +488,9 @@ parserPatterns = testGroup "parsing patterns"
   , testP "[1,x@..,3]"              (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
                                             , IdentP (ByValue Immutable) "x" (Just (RestP ())) ()
                                             , LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ] ())
+  , testP "[1 | _, .. | ..]"        (SliceP [ OrP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
+                                                  , WildP () ] ()
+                                            , OrP [RestP (), RestP ()] () ] ())
   , testP "[1,..]"                  (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), RestP () ] ())
   , testP "[1,x@..]"                (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
                                             , IdentP (ByValue Immutable) "x" (Just (RestP ())) () ] ())
@@ -502,6 +512,15 @@ parserExpressions = testGroup "parsing expressions"
   , testP "|| 1" (Closure [] Ref NotAsync Movable (FnDecl [] Nothing False ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())
   , testP "async || 1" (Closure [] Ref IsAsync Movable (FnDecl [] Nothing False ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())
   , testP "|_: ()| 1" (Closure [] Ref NotAsync Movable (FnDecl [Arg (Just (WildP ())) (TupTy [] ()) ()] Nothing False ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())
+  , testP "|(A | B): u8| ()" (Closure [] Ref NotAsync Movable (FnDecl [ Arg (Just (ParenP (OrP [ IdentP (ByValue Immutable) "A" Nothing ()
+                                                                                               , IdentP (ByValue Immutable) "B" Nothing () ] ()) ()))
+                                                                            (PathTy Nothing (Path False [PathSegment "u8" Nothing ()] ()) ())
+                                                                            () ]
+                                                                      Nothing
+                                                                      False
+                                                                      ())
+                                                              (TupExpr [] [] ())
+                                                              ())
   , testP "|_| 1" (Closure [] Ref NotAsync Movable (FnDecl [Arg (Just (WildP ())) (Infer ()) ()] Nothing False ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())
   , testP "static |_| 1" (Closure [] Ref NotAsync Immovable (FnDecl [Arg (Just (WildP ())) (Infer ()) ()] Nothing False ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())
   , testP "static async |_| 1" (Closure [] Ref IsAsync Immovable (FnDecl [Arg (Just (WildP ())) (Infer ()) ()] Nothing False ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())
@@ -566,33 +585,44 @@ parserExpressions = testGroup "parsing expressions"
                 (Just (If [] (Lit [] (Bool False Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ())
                     (Just (BlockExpr [] (Block [Semi (Lit [] (Int Dec 3 Unsuffixed ()) ()) ()] Normal ()) ())) ())) ())
   , testP "if let x = true { 1; }"
-            (IfLet [] [x'] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) 
+            (IfLet [] x' (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ())
                 Nothing ())
+  , testP "if let x | _ = true { }"
+            (IfLet [] (OrP [x', WildP ()] ()) (Lit [] (Bool True Unsuffixed ()) ()) (Block [] Normal ()) Nothing ())
+  , testP "if let | x | _ = true { }"
+            (IfLet [] (OrP [x', WildP ()] ()) (Lit [] (Bool True Unsuffixed ()) ()) (Block [] Normal ()) Nothing ())
+  , testP "if let (x | _) = true { }"
+            (IfLet [] (ParenP (OrP [x', WildP ()] ()) ()) (Lit [] (Bool True Unsuffixed ()) ()) (Block [] Normal ()) Nothing ())
+  , testP "if let (x | _,) = true { }"
+            (IfLet [] (TupleP [OrP [x', WildP ()] ()] ()) (Lit [] (Bool True Unsuffixed ()) ()) (Block [] Normal ()) Nothing ())
   , testP "if let x = true { 1; } else { 2; }"
-            (IfLet [] [x'] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) 
+            (IfLet [] x' (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ())
                 (Just (BlockExpr [] (Block [Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ()) ())) ())
   , testP "if true { 1; } else if let x = false { 2; }"
-            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) 
-                (Just (IfLet [] [x'] (Lit [] (Bool False Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ())
+            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ())
+                (Just (IfLet [] x' (Lit [] (Bool False Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ())
                     Nothing ())) ())
   , testP "try { 1; }" (TryBlock [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ())
   , testP "loop { 1; }" (Loop [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) Nothing ())
   , testP "'lbl: loop { 1; }" (Loop [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) (Just (Label "lbl" ())) ())
-  , testP "for x in [1,2,3] { 1; }" (ForLoop [] x' (Vec [] [Lit [] (Int Dec 1 Unsuffixed ()) (), Lit [] (Int Dec 2 Unsuffixed ()) (), Lit [] (Int Dec 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) Nothing ()) 
+  , testP "for x in [1,2,3] { 1; }" (ForLoop [] x' (Vec [] [Lit [] (Int Dec 1 Unsuffixed ()) (), Lit [] (Int Dec 2 Unsuffixed ()) (), Lit [] (Int Dec 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) Nothing ())
+  , testP "for | x | _ in [] { }" (ForLoop [] (OrP [x',WildP ()] ()) (Vec [] [] ()) (Block [] Normal ()) Nothing ())
+  , testP "for x | _ in [] { }" (ForLoop [] (OrP [x',WildP ()] ()) (Vec [] [] ()) (Block [] Normal ()) Nothing ())
   , testP "'lbl: for x in [1,2,3] { 1; }" (ForLoop [] x' (Vec [] [Lit [] (Int Dec 1 Unsuffixed ()) (), Lit [] (Int Dec 2 Unsuffixed ()) (), Lit [] (Int Dec 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) (Just (Label "lbl" ())) ()) 
   , testP "while true { 1; }" (While [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) Nothing ())
   , testP "'lbl: while true { 1; }" (While [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) (Just (Label "lbl" ())) ())
-  , testP "while let x = true { 1; }" (WhileLet [] [x'] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) Nothing ())
-  , testP "'lbl: while let x = true { 1; }" (WhileLet [] [x'] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) (Just (Label "lbl" ())) ())
+  , testP "while let x = true { 1; }" (WhileLet [] x' (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) Nothing ())
+  , testP "'lbl: while let x | x = true { 1; }" (WhileLet [] (OrP [x',x'] ()) (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) (Just (Label "lbl" ())) ())
+  , testP "'lbl: while let | x | _ = true { }" (WhileLet [] (OrP [x',WildP ()] ()) (Lit [] (Bool True Unsuffixed ()) ()) (Block [] Normal ()) (Just (Label "lbl" ())) ())
   , testP "match true { }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [] ())
-  , testP "match true { _ => 2 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] ())
-  , testP "match true { _ if true => 2 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] (Just (Lit [] (Bool True Unsuffixed ()) ())) (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] ())
-  , testP "match true { _ => 2, }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] ())
-  , testP "match true { _ => 2, x | x => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] [x',x'] Nothing (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
-  , testP "match true { _ => 2, x | x => { 1; } }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] [x',x'] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ()] ())
-  , testP "match true { _ => 2, x | x => { 1; }, }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] [x',x'] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ()] ())
-  , testP "match true { _ => 2, x | x => { 1; }, _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] [x',x'] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) (), Arm [] [WildP ()] Nothing (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
-  , testP "match true { _ => 2, x | x => { 1; } _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] [x',x'] Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) (), Arm [] [WildP ()] Nothing (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
+  , testP "match true { _ => 2 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] ())
+  , testP "match true { _ if true => 2 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) (Just (Lit [] (Bool True Unsuffixed ()) ())) (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] ())
+  , testP "match true { _ => 2, }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] ())
+  , testP "match true { _ => 2, x | x => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] (OrP [x',x'] ()) Nothing (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
+  , testP "match true { _ => 2, x | x => { 1; } }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] (OrP [x',x'] ()) Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ()] ())
+  , testP "match true { _ => 2, x | x => { 1; }, }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] (OrP [x',x'] ()) Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ()] ())
+  , testP "match true { _ => 2, | x | x => { 1; }, _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] (OrP [x',x'] ()) Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) (), Arm [] (WildP ()) Nothing (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
+  , testP "match true { _ => 2, x | x => { 1; } _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] (OrP [x',x'] ()) Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) (), Arm [] (WildP ()) Nothing (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
   , testP "println!()" (MacExpr [] (Mac (Path False [PathSegment "println" Nothing ()] ()) (Stream []) ()) ()) 
   , testP "1..2" (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) HalfOpen ())
   , testP "1...2" (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) Closed ())
@@ -676,18 +706,25 @@ parserExpressions = testGroup "parsing expressions"
   , testP "1 * 1 + 1 * 1" (Binary [] AddOp (Binary [] MulOp (Lit [] (Int Dec 1 Unsuffixed ()) ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()) (Binary [] MulOp (Lit [] (Int Dec 1 Unsuffixed ()) ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()) ())
   , testP "1 * - 1 + 1 * 1" (Binary [] AddOp (Binary [] MulOp (Lit [] (Int Dec 1 Unsuffixed ()) ()) (Unary [] Neg (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()) ()) (Binary [] MulOp (Lit [] (Int Dec 1 Unsuffixed ()) ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()) ())
   , testP "match true { _ => match true { _ => true }, _ => match true { _ => true } }" (Match [] (Lit [] (Bool True Unsuffixed ()) ())
-      [ Arm [] [WildP ()] Nothing (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Bool True Unsuffixed ()) ()) ()] ()) ()
-      , Arm [] [WildP ()] Nothing (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] [WildP ()] Nothing (Lit [] (Bool True Unsuffixed ()) ()) ()] ()) () ] ())
+      [ Arm [] (WildP ()) Nothing (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Bool True Unsuffixed ()) ()) ()] ()) ()
+      , Arm [] (WildP ()) Nothing (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Bool True Unsuffixed ()) ()) ()] ()) () ] ())
   ]
 
 
 -- | Test parsing of statements.
 parserStatements :: Test
 parserStatements = testGroup "parsing statements"
-  [ testP "let x: i32 = 1;" (Local x' (Just i32) (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) [] ()) 
+  [ testP "let x: i32 = 1;" (Local x' (Just i32) (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) [] ())
   , testP "let x: i32;"     (Local x' (Just i32) Nothing                                  [] ())
   , testP "let x = 1;"      (Local x' Nothing    (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) [] ())
   , testP "let x;"          (Local x' Nothing    Nothing                                  [] ())
+  , testP "let | x | _;"    (Local (OrP [x',WildP ()] ()) Nothing Nothing                 [] ())
+  , testP "let x | _;"      (Local (OrP [x',WildP ()] ()) Nothing Nothing                 [] ())
+  , testP "let x | _ = 1;"  (Local (OrP [x',WildP ()] ()) Nothing (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) [] ())
+  , testP "let box x | _;"  (Local (OrP [BoxP x' (),WildP ()] ()) Nothing Nothing [] ())
+  , testP "let &mut x | _;" (Local (OrP [RefP x' Mutable (),WildP ()] ()) Nothing Nothing [] ())
+  , testP "let x @ _ | _;"  (Local (OrP [IdentP (ByValue Immutable) "x" (Just (WildP ())) (),WildP ()] ()) Nothing Nothing [] ())
+  , testP "let ref mut x @ _ | _;"  (Local (OrP [IdentP (ByRef Mutable) "x" (Just (WildP ())) (),WildP ()] ()) Nothing Nothing [] ())
   , testP "x + 1;" (Semi (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()) ())
   , testP "x + { 1 };" (Semi (Binary [] AddOp (PathExpr [] Nothing x ()) (BlockExpr [] (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ()) ())
   , testP "match true { };" (Semi (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [] ()) ())

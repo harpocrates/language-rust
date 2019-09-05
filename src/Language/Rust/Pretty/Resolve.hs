@@ -575,6 +575,7 @@ instance (Typeable a, Monoid a) => Resolve (LifetimeDef a) where resolveM = reso
 --------------
 -- TODO: consider disallowind `..` not in the allowed contexts
 -- TODO: use parenP
+-- TODO: handling of Or patterns. They are not allowed everywhere!
 
 -- | A pattern can be invalid of
 --
@@ -601,6 +602,10 @@ resolvePat p@(PathP q@(Just (QSelf _ i)) p'@(Path g s x) x')
 resolvePat p@(TupleP ps x) = scope p $ do
   ps' <- traverse resolvePat ps
   pure (TupleP ps' x)
+-- OrP
+resolvePat p@(OrP ps x) = scope p $ do
+  ps' <- traverse resolvePat ps
+  pure (OrP ps' x)
 
 -- Everything else...
 resolvePat p@(LitP e x) = scope p (LitP <$> resolveExpr LitExpr e <*> pure x)
@@ -990,7 +995,7 @@ resolveExprP p c i@(If as e b es x) = scope i $ do
   pure (If as' e' b' es' x)
 resolveExprP p c i@(IfLet as p' e b es x) = scope i $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  p'' <- traverse resolvePat p'
+  p'' <- resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   es' <- case es of
@@ -1008,7 +1013,7 @@ resolveExprP _ _ w@(While as e b l x) = scope w $ do
   pure (While as' e' b' l' x)
 resolveExprP _ _ w@(WhileLet as p' e b l x) = scope w $ do
   as' <- traverse (resolveAttr EitherAttr) as
-  p'' <- traverse resolvePat p'
+  p'' <- resolvePat p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   l' <- traverse resolveLbl l
@@ -1069,12 +1074,12 @@ instance (Typeable a, Monoid a) => Resolve (Field a) where resolveM = resolveFie
 
 -- | Arms are invalid only if the underlying consitutents are
 resolveArm :: (Typeable a, Monoid a) => Arm a -> ResolveM (Arm a)
-resolveArm a@(Arm as ps g b x) = scope a $ do
+resolveArm a@(Arm as p g b x) = scope a $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  ps' <- traverse resolvePat ps
+  p' <- resolvePat p
   g' <- traverse (resolveExpr AnyExpr) g
   b' <- resolveExpr SemiExpr b
-  pure (Arm as' ps' g' b' x)
+  pure (Arm as' p' g' b' x)
 
 instance (Typeable a, Monoid a) => Resolve (Arm a) where resolveM = resolveArm
 

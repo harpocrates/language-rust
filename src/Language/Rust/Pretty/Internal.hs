@@ -375,9 +375,9 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
                                    in annotate x (hsep [ f e, "as", printType ty ])
     TypeAscription _ e ty x     -> annotate x (printExpr e <> ":" <+> printType ty)
     If _ test blk els x         -> annotate x (hsep [ "if", printExpr test, printBlock blk, printElse els ])
-    IfLet _ pats e blk els x    -> annotate x (hsep [ "if let", printPats pats, "=", printExpr e, printBlock blk, printElse els ])
+    IfLet _ pats e blk els x    -> annotate x (hsep [ "if let", printPat pats, "=", printExpr e, printBlock blk, printElse els ])
     While as test blk lbl x     -> annotate x (hsep [ printLbl lbl, "while", printExpr test, printBlockWithAttrs True blk as ])
-    WhileLet as ps e blk lbl x  -> annotate x (hsep [ printLbl lbl, "while let", printPats ps, "=", printExpr e, printBlockWithAttrs True blk as ])
+    WhileLet as ps e blk lbl x  -> annotate x (hsep [ printLbl lbl, "while let", printPat ps, "=", printExpr e, printBlockWithAttrs True blk as ])
     ForLoop as pat e blk lbl x  -> annotate x (hsep [ printLbl lbl, "for", printPat pat, "in", printExpr e, printBlockWithAttrs True blk as ])
     Loop as blk lbl x           -> annotate x (hsep [ printLbl lbl, "loop", printBlockWithAttrs True blk as ])
     Match as e arms x           -> annotate x (hsep [ "match", printExpr e, block Brace False "," (printInnerAttrs as) (printArm `map` arms) ])
@@ -515,14 +515,11 @@ printFnBlockArgs (FnDecl args ret _ x) = annotate x ("|" <> args' <> "|" <+> ret
 
 -- | Print the arm of a match expression (@print_arm@)
 printArm :: Arm a -> Doc a
-printArm (Arm as pats guard body x) = annotate x $ printOuterAttrs as
-  </> printPats pats 
+printArm (Arm as pat guard body x) = annotate x $ printOuterAttrs as
+  </> printPat pat
   <+> perhaps (\e -> "if" <+> printExpr e) guard
   <+> "=>"
   <+> printExpr body
-
-printPats :: Foldable f => f (Pat a) -> Doc a
-printPats pats = group (foldr1 (\a b -> a <+> "|" <#> b) (printPat `map` toList pats))
 
 -- | Print a block
 printBlock :: Block a -> Doc a
@@ -536,7 +533,7 @@ printBlockWithAttrs b (Block stmts rules x) as = annotate x (printUnsafety rules
          | otherwise = body ++ [ lastStmt ]
 
   body = printStmt `map` Prelude.init stmts
-  
+
   lastStmt = case last stmts of
                NoSemi expr _ -> printExprOuterAttrStyle expr False
                stmt -> printStmt stmt
@@ -545,11 +542,11 @@ printBlockWithAttrs b (Block stmts rules x) as = annotate x (printUnsafety rules
 printElse :: Maybe (Expr a) -> Doc a
 printElse Nothing = mempty
 printElse (Just (If _ e t s x))      = annotate x (hsep [ "else if", printExpr e, printBlock t, printElse s ])
-printElse (Just (IfLet _ p e t s x)) = annotate x (hsep [ "else if let", printPats p, "=", printExpr e, printBlock t, printElse s ])
+printElse (Just (IfLet _ p e t s x)) = annotate x (hsep [ "else if let", printPat p, "=", printExpr e, printBlock t, printElse s ])
 printElse (Just (BlockExpr _ blk x)) = annotate x (hsep [ "else", printBlock blk ])
 printElse _ = error "printElse saw `if` with a weird alternative"
 
--- | Print a binary operator 
+-- | Print a binary operator
 printBinOp :: BinOp -> Doc a
 printBinOp AddOp = "+"
 printBinOp SubOp = "-"
@@ -878,6 +875,7 @@ printPat (PathP (Just qself) path x)    = annotate x (printQPath path qself True
 printPat (TupleP [RestP y] x)           = annotate x ("(" <> annotate y ".." <> ")")
 printPat (TupleP [elt] x)               = annotate x ("(" <> printPat elt <> ",)")
 printPat (TupleP elts x)                = annotate x ("(" <> commas elts printPat <> ")")
+printPat (OrP ps x)                     = annotate x (group (foldr1 (\a b -> a <+> "|" <#> b) (printPat `map` toList ps)))
 printPat (BoxP inner x)                 = annotate x ("box" <+> printPat inner)
 printPat (RefP inner mutbl x)           = annotate x ("&" <> printMutability mutbl <+> printPat inner)
 printPat (LitP expr x)                  = annotate x (printExpr expr)
