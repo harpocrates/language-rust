@@ -390,6 +390,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Async attrs cap blk x       -> annotate x (hsep [ "async"
                                                     , when (cap == Value) "move"
                                                     , printBlockWithAttrs True blk attrs])
+    Await{}                     -> chainedMethodCalls expr False id
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
     AssignOp _ op lhs rhs x     -> annotate x (hsep [ printExpr lhs, printBinOp op <> "=", printExpr rhs ])
     FieldAccess{}               -> chainedMethodCalls expr False id
@@ -442,6 +443,8 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     = chainedMethodCalls s False (annotate x . (<##> fdoc (indent n (hcat [ ".", printIdent i ]))))
   chainedMethodCalls (Try _ s x) _ fdoc
     = chainedMethodCalls s False (annotate x . (<> fdoc "?"))
+  chainedMethodCalls (Await _ s x) _ fdoc
+    = chainedMethodCalls s False (annotate x . (<##> fdoc (indent n (hcat [ ".", "await" ]))))
   chainedMethodCalls (Index _ s i x) _ fdoc
     = chainedMethodCalls s False (annotate x . (<> fdoc ("[" <> block NoDelim True mempty mempty [printExpr i] <> "]")))
   chainedMethodCalls (TupField _ s i x) t fdoc
@@ -475,6 +478,7 @@ expressionAttrs (Closure as _ _ _ _ _ _) = as
 expressionAttrs (BlockExpr as _ _) = as
 expressionAttrs (TryBlock as _ _) = as
 expressionAttrs (Async as _ _ _) = as
+expressionAttrs (Await as _ _) = as
 expressionAttrs (Assign as _ _ _) = as
 expressionAttrs (AssignOp as _ _ _ _) = as
 expressionAttrs (FieldAccess as _ _ _) = as

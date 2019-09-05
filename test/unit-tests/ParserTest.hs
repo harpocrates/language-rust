@@ -603,6 +603,7 @@ parserExpressions = testGroup "parsing expressions"
   , testP ".." (Range [] Nothing Nothing HalfOpen ())
   , testP "x?" (Try [] (PathExpr [] Nothing x ()) ())
   , testP "x.0" (TupField [] (PathExpr [] Nothing x ()) 0 ())
+  , testP "x.await" (Await [] (PathExpr [] Nothing x ()) ())
   , testP "x.foo" (FieldAccess [] (PathExpr [] Nothing x ()) "foo" ())
   , testP "x.foo()" (MethodCall [] (PathExpr [] Nothing x ()) "foo" Nothing [] ())
   , testP "x.foo(1)" (MethodCall [] (PathExpr [] Nothing x ()) "foo" Nothing [Lit [] (Int Dec 1 Unsuffixed ()) ()] ())

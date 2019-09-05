@@ -333,6 +333,7 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "foo = 1" (printExpr (Assign [] foo _1 ()))
   , testFlatten "foo += 1" (printExpr (AssignOp [] AddOp foo _1 ()))
   , testFlatten "foo <<= 1" (printExpr (AssignOp [] ShlOp foo _1 ()))
+  , testFlatten "foo.await" (printExpr (Await [] foo ()))
   , testFlatten "foo.bar" (printExpr (FieldAccess [] foo (mkIdent "bar") ()))
   , testFlatten "foo.1" (printExpr (TupField [] foo 1 ()))
   , testFlatten "foo[1]" (printExpr (Index [] foo _1 ()))

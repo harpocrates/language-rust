@@ -1029,6 +1029,7 @@ left_gen_expression(lhs,rhs,rhs2) :: { Expr Span }
 --
 postfix_blockexpr(lhs) :: { Expr Span }
   : lhs '?'                          { Try [] $1 ($1 # $>) }
+  | lhs '.' await                    { Await [] $1 ($1 # $>) }
   | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
   | lhs '.' ident '(' sep_byT(expr,',') ')'
     { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
@@ -1039,44 +1040,6 @@ postfix_blockexpr(lhs) :: { Expr Span }
         Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
         _ -> parseError $3
     }
-
--- Postfix expressions that can come after an expression block, in a 'stmt'
---
---  * `{ 1 }[0]` isn't here because it is treated as `{ 1 }; [0]`
---  * `{ 1 }(0)` isn't here because it is treated as `{ 1 }; (0)`
---
-postfix_blockexpr(lhs) :: { Expr Span }
-  : lhs '?'                          { Try [] $1 ($1 # $>) }
-  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
-  | lhs '.' ident '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
-  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
-  | lhs '.' int                      {%
-      case lit $3 of
-        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
-        _ -> parseError $3
-    }
-
--- Postfix expressions that can come after an expression block, in a 'stmt'
---
---  * `{ 1 }[0]` isn't here because it is treated as `{ 1 }; [0]`
---  * `{ 1 }(0)` isn't here because it is treated as `{ 1 }; (0)`
---
-postfix_blockexpr(lhs) :: { Expr Span }
-  : lhs '?'                          { Try [] $1 ($1 # $>) }
-  | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
-  | lhs '.' ident '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
-  | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
-  | lhs '.' int                      {%
-      case lit $3 of
-        Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
-        _ -> parseError $3
-    }
-
-
 
 -- Then, we instantiate this general production into the following families of rules:
 --
@@ -1899,6 +1862,7 @@ addAttrs as (Closure as' c a m f e s) = Closure (as ++ as') c a m f e s
 addAttrs as (BlockExpr as' b s)      = BlockExpr (as ++ as') b s
 addAttrs as (TryBlock as' b s)       = TryBlock (as ++ as') b s
 addAttrs as (Async as' c b s)        = Async (as ++ as') c b s
+addAttrs as (Await as' e s)          = Await (as ++ as') e s
 addAttrs as (Assign as' e1 e2 s)     = Assign (as ++ as') e1 e2 s
 addAttrs as (AssignOp as' b e1 e2 s) = AssignOp (as ++ as') b e1 e2 s
 addAttrs as (FieldAccess as' e i s)  = FieldAccess (as ++ as') e i s

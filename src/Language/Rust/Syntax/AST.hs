@@ -335,6 +335,8 @@ data Expr a
   | TryBlock [Attribute a] (Block a) a
   -- | an async block (example: @async move { 1 }@)
   | Async [Attribute a] CaptureBy (Block a) a
+  -- | an await expression (example: @foo(1,2,3).await@)
+  | Await [Attribute a] (Expr a) a
   -- | assignment (example: @a = foo()@)
   | Assign [Attribute a] (Expr a) (Expr a) a
   -- | assignment with an operator (example: @a += 1@)
@@ -394,6 +396,7 @@ instance Located a => Located (Expr a) where
   spanOf (BlockExpr _ _ s) = spanOf s
   spanOf (TryBlock _ _ s) = spanOf s
   spanOf (Async _ _ _ s) = spanOf s
+  spanOf (Await _ _ s) = spanOf s
   spanOf (Assign _ _ _ s) = spanOf s
   spanOf (AssignOp _ _ _ _ s) = spanOf s
   spanOf (FieldAccess _ _ _ s) = spanOf s

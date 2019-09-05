@@ -667,6 +667,7 @@ resolveLhsExprP p SemiExpr l@Try{}         = resolveExprP p AnyExpr l
 resolveLhsExprP p SemiExpr l@FieldAccess{} = resolveExprP p AnyExpr l 
 resolveLhsExprP p SemiExpr l@MethodCall{}  = resolveExprP p AnyExpr l
 resolveLhsExprP p SemiExpr l@TupField{}    = resolveExprP p AnyExpr l
+resolveLhsExprP p SemiExpr l@Await{}       = resolveExprP p AnyExpr l
 resolveLhsExprP _ SemiExpr l | isBlockLike l = parenthesize l
 resolveLhsExprP p t l = resolveExprP p (lhs t) l
   where
@@ -914,11 +915,17 @@ resolveExprP p c f@(FieldAccess as e i x) = scope f $ parenE (p > 17) $ do
   e' <- resolveLhsExprP 17 c e
   i' <- resolveIdent i
   pure (FieldAccess as' e' i' x)
+resolveExprP p SemiExpr a@Await{} = resolveExprP p AnyExpr a
+resolveExprP p c a@(Await as e x) = scope a $ parenE (p > 17) $ do
+  as' <- traverse (resolveAttr OuterAttr) as
+  --e' <- resolveExprP 17 (lhs c) e
+  e' <- resolveLhsExprP 17 c e
+  pure (Await as' e' x)
 -- Immediate expressions
 resolveExprP _ _ v@(Vec as es x) = scope v $ do
   as' <- traverse (resolveAttr EitherAttr) as
   es' <- traverse (resolveExprP 0 AnyExpr) es
-  pure (Vec as' es' x) 
+  pure (Vec as' es' x)
 resolveExprP _ _ p@(PathExpr as Nothing p' x) = scope p $ do
   as' <- traverse (resolveAttr OuterAttr) as
   p'' <- resolvePath ExprPath p'

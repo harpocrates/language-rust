@@ -916,6 +916,7 @@ instance Show a => Diffable (Expr a) where
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
       ("Async", Async as c e _) -> error "TODO"
+      ("Await", Await as e _) -> error "TODO"
       _ -> diff "differing expressions:" ex val
     where
     n = val ! "node"
