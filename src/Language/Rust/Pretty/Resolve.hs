@@ -405,8 +405,8 @@ instance (Typeable a, Monoid a) => Resolve (QSelf a) where resolveM = resolveQSe
 -- keywords.
 resolveLifetime :: Typeable a => Lifetime a -> ResolveM (Lifetime a)
 resolveLifetime l@(Lifetime n _)
-  | n == "static" = pure l 
-  | n == "_" = pure l 
+  | n == "static" = pure l
+  | n == "_" = pure l
   | otherwise = scope l (resolveIdent (mkIdent n) *> pure l)
 
 instance Typeable a => Resolve (Lifetime a) where resolveM = resolveLifetime
@@ -425,7 +425,7 @@ data TyType
   | NoForType      -- ^ Non-sum types not starting with a 'for'
 
 -- | Resolve a given type, and a constraint on it (see the parser 'Internal.y' for more details on
--- these cases). 
+-- these cases).
 resolveTy :: (Typeable a, Monoid a) => TyType -> Ty a -> ResolveM (Ty a)
 -- TraitObject
 resolveTy NoSumType     o@(TraitObject b _) | length b > 1 = scope o (correct "added parens around trait object type" *> resolveTy NoSumType (ParenTy o mempty))
@@ -522,7 +522,7 @@ resolveArg NamedArg  a@(Arg p t x) = scope a $ do
   when (isSelfAlike a) $
     warn "argument looks like a self argument - did you mean to use 'SelfValue', 'SelfRegion', or 'SelfExplicit'?"
 
-  p' <- traverse resolvePat p
+  p' <- traverse (resolvePat NoOrPattern) p
   t' <- resolveTy AnyType t
   pure (Arg p' t' x)
 
@@ -532,12 +532,12 @@ resolveArg GeneralArg a@(Arg p t x) = scope a $ do
   
   p' <- case p of
           Nothing -> pure Nothing
-          Just WildP{} -> traverse resolvePat p
-          Just IdentP{} -> traverse resolvePat p
-          Just (RefP WildP{} Immutable _) -> traverse resolvePat p
-          Just (RefP (IdentP (ByValue Immutable) _ _ _) Immutable _) -> traverse resolvePat p
-          Just (RefP (RefP WildP{} Immutable _) Immutable _) -> traverse resolvePat p
-          Just (RefP (RefP (IdentP (ByValue Immutable) _ _ _) Immutable _) Immutable _) -> traverse resolvePat p
+          Just WildP{} -> traverse (resolvePat NoOrPattern) p
+          Just IdentP{} -> traverse (resolvePat NoOrPattern) p
+          Just (RefP WildP{} Immutable _) -> traverse (resolvePat NoOrPattern) p
+          Just (RefP (IdentP (ByValue Immutable) _ _ _) Immutable _) -> traverse (resolvePat NoOrPattern) p
+          Just (RefP (RefP WildP{} Immutable _) Immutable _) -> traverse (resolvePat NoOrPattern) p
+          Just (RefP (RefP (IdentP (ByValue Immutable) _ _ _) Immutable _) Immutable _) -> traverse (resolvePat NoOrPattern) p
           _ -> scope p (err p "this pattern is not allowed for this type of argument")
   t' <- resolveTy AnyType t
   pure (Arg p' t' x)
@@ -573,24 +573,32 @@ instance (Typeable a, Monoid a) => Resolve (LifetimeDef a) where resolveM = reso
 --------------
 -- Patterns --
 --------------
--- TODO: consider disallowind `..` not in the allowed contexts
--- TODO: use parenP
--- TODO: handling of Or patterns. They are not allowed everywhere!
+
+-- | There a a variety of constraints imposed on patterns, representing different invariants
+data PatType
+  = TopPattern     -- ^ No restrictions, can have @|@ patterns
+  | NoOrPattern    -- ^ Can't have @|@ patterns
+
+parenthesizeP :: (Typeable a, Monoid a) => Pat a -> ResolveM (Pat a)
+parenthesizeP p = do
+  correct "added parens around pattern"
+  p' <- resolvePat TopPattern p
+  pure (ParenP p' mempty)
 
 -- | A pattern can be invalid of
 --
 --   * the index of the qself path is out of range
 --   * any underlying component is invalid
 --
-resolvePat :: (Typeable a, Monoid a) => Pat a -> ResolveM (Pat a)
+resolvePat :: (Typeable a, Monoid a) => PatType -> Pat a -> ResolveM (Pat a)
 -- TupleStruct
-resolvePat t@(TupleStructP p fs x) = scope t $ do
+resolvePat _ t@(TupleStructP p fs x) = scope t $ do
   p' <- resolvePath ExprPath p
-  fs' <- traverse resolvePat fs
+  fs' <- traverse (resolvePat TopPattern) fs
   pure (TupleStructP p' fs' x)
 -- PathP
-resolvePat p@(PathP Nothing a x) = scope p (PathP Nothing <$> resolvePath ExprPath a <*> pure x)
-resolvePat p@(PathP q@(Just (QSelf _ i)) p'@(Path g s x) x')
+resolvePat _ p@(PathP Nothing a x) = scope p (PathP Nothing <$> resolvePath ExprPath a <*> pure x)
+resolvePat _ p@(PathP q@(Just (QSelf _ i)) p'@(Path g s x) x')
   | i < 0 || i >= length s = scope p (err p "index given by QSelf is outside the possible range")
   | i == 0 = scope p (PathP <$> traverse resolveQSelf q <*> resolvePath ExprPath p' <*> pure x)
   | otherwise = scope p $ do
@@ -599,36 +607,37 @@ resolvePat p@(PathP q@(Just (QSelf _ i)) p'@(Path g s x) x')
       q' <- traverse resolveQSelf q
       pure (PathP q' (Path g (tyPSegs <> exprPSegs) x) x')
 -- TupleP
-resolvePat p@(TupleP ps x) = scope p $ do
-  ps' <- traverse resolvePat ps
+resolvePat _ p@(TupleP ps x) = scope p $ do
+  ps' <- traverse (resolvePat TopPattern) ps
   pure (TupleP ps' x)
 -- OrP
-resolvePat p@(OrP ps x) = scope p $ do
-  ps' <- traverse resolvePat ps
+resolvePat NoOrPattern p@OrP{} = parenthesizeP p
+resolvePat TopPattern p@(OrP ps x) = scope p $ do
+  ps' <- traverse (resolvePat NoOrPattern) ps
   pure (OrP ps' x)
 
 -- Everything else...
-resolvePat p@(LitP e x) = scope p (LitP <$> resolveExpr LitExpr e <*> pure x)
-resolvePat p@(RangeP l h x) = scope p (RangeP <$> resolveExpr LitOrPathExpr l <*> resolveExpr LitOrPathExpr h <*> pure x)
-resolvePat p@(WildP x) = scope p (pure (WildP x))
-resolvePat p@(IdentP m i p' x) = scope p (IdentP m <$> resolveIdent i <*> traverse resolvePat p' <*> pure x)
-resolvePat p@(StructP p' fs b x) = scope p (StructP <$> resolvePath ExprPath p' <*> traverse resolveFieldPat fs <*> pure b <*> pure x)
-resolvePat p@(BoxP p' x) = scope p (BoxP <$> resolvePat p' <*> pure x)
-resolvePat p@(RefP p' m x) = scope p (RefP <$> resolvePat p' <*> pure m <*> pure x)
-resolvePat p@(SliceP ps x) = scope p (SliceP <$> traverse resolvePat ps <*> pure x)
-resolvePat p@(RestP x) = scope p (pure (RestP x))
-resolvePat p@(ParenP p' x) = scope p (ParenP <$> resolvePat p' <*> pure x)
-resolvePat p@(MacP m x) = scope p (MacP <$> resolveMac ExprPath m <*> pure x)
+resolvePat _ p@(LitP e x) = scope p (LitP <$> resolveExpr LitExpr e <*> pure x)
+resolvePat _ p@(RangeP l h x) = scope p (RangeP <$> resolveExpr LitOrPathExpr l <*> resolveExpr LitOrPathExpr h <*> pure x)
+resolvePat _ p@(WildP x) = scope p (pure (WildP x))
+resolvePat _ p@(IdentP m i p' x) = scope p (IdentP m <$> resolveIdent i <*> traverse (resolvePat NoOrPattern) p' <*> pure x)
+resolvePat _ p@(StructP p' fs b x) = scope p (StructP <$> resolvePath ExprPath p' <*> traverse resolveFieldPat fs <*> pure b <*> pure x)
+resolvePat _ p@(BoxP p' x) = scope p (BoxP <$> resolvePat NoOrPattern p' <*> pure x)
+resolvePat _ p@(RefP p' m x) = scope p (RefP <$> resolvePat NoOrPattern p' <*> pure m <*> pure x)
+resolvePat _ p@(SliceP ps x) = scope p (SliceP <$> traverse (resolvePat TopPattern) ps <*> pure x)
+resolvePat _ p@(RestP x) = scope p (pure (RestP x))
+resolvePat _ p@(ParenP p' x) = scope p (ParenP <$> (resolvePat TopPattern) p' <*> pure x)
+resolvePat _ p@(MacP m x) = scope p (MacP <$> resolveMac ExprPath m <*> pure x)
 
-instance (Typeable a, Monoid a) => Resolve (Pat a) where resolveM = resolvePat
+instance (Typeable a, Monoid a) => Resolve (Pat a) where resolveM = resolvePat TopPattern
 
 -- | Field patterns are only invalid if the underlying pattern / identifier is
 resolveFieldPat :: (Typeable a, Monoid a) => FieldPat a -> ResolveM (FieldPat a)
 resolveFieldPat f@(FieldPat Nothing p x) = scope f $
-    case p of (IdentP _ _ Nothing _)          -> FieldPat Nothing <$> resolvePat p <*> pure x
-              (BoxP (IdentP _ _ Nothing _) _) -> FieldPat Nothing <$> resolvePat p <*> pure x
+    case p of (IdentP _ _ Nothing _)          -> FieldPat Nothing <$> resolvePat TopPattern p <*> pure x
+              (BoxP (IdentP _ _ Nothing _) _) -> FieldPat Nothing <$> resolvePat TopPattern p <*> pure x
               _                               -> err f "patterns for fields without an identifier must be (possibly box) identifiers"
-resolveFieldPat f@(FieldPat i p x) = scope f (FieldPat <$> traverse resolveIdent i <*> resolvePat p <*> pure x)
+resolveFieldPat f@(FieldPat i p x) = scope f (FieldPat <$> traverse resolveIdent i <*> resolvePat TopPattern p <*> pure x)
 
 instance (Typeable a, Monoid a) => Resolve (FieldPat a) where resolveM = resolveFieldPat
 
@@ -654,9 +663,8 @@ data ExprType
 --
 -- ie: `if i[0] == j[0] { i } else { j } [1]`
 lhsSemiExpr :: (Typeable a, Monoid a) => Int -> Expr a -> ResolveM (Expr a)
-lhsSemiExpr p t@(Try _ e _) = resolveExprP p AnyExpr  
-                          
-lhsSemiExpr p (FieldAccess _ e _ _) | isBlockLike e = 
+lhsSemiExpr p t@(Try _ e _) = resolveExprP p AnyExpr
+lhsSemiExpr p (FieldAccess _ e _ _) | isBlockLike e =
 lhsSemiExpr p (Try _ e _)
 lhsSemiExpr p (Try _ e _)
 
@@ -664,11 +672,11 @@ lhsSemiExpr p (Try _ e _)
 
 resolveLhsExprP :: (Typeable a, Monoid a) => Int -> ExprType -> Expr a -> ResolveM (Expr a)
 resolveLhsExprP p SemiExpr l@Try{}         = resolveExprP p AnyExpr l
-resolveLhsExprP p SemiExpr l@FieldAccess{} = resolveExprP p AnyExpr l 
+resolveLhsExprP p SemiExpr l@FieldAccess{} = resolveExprP p AnyExpr l
 resolveLhsExprP p SemiExpr l@MethodCall{}  = resolveExprP p AnyExpr l
 resolveLhsExprP p SemiExpr l@TupField{}    = resolveExprP p AnyExpr l
 resolveLhsExprP p SemiExpr l@Await{}       = resolveExprP p AnyExpr l
-resolveLhsExprP _ SemiExpr l | isBlockLike l = parenthesize l
+resolveLhsExprP _ SemiExpr l | isBlockLike l = parenthesizeE l
 resolveLhsExprP p t l = resolveExprP p (lhs t) l
   where
     -- | Given the type of expression, what type of expression is allowed on the LHS
@@ -704,8 +712,8 @@ resolveExpr = resolveExprP 0
 
 instance (Typeable a, Monoid a) => Resolve (Expr a) where resolveM = resolveExpr AnyExpr
 
-parenthesize :: (Typeable a, Monoid a) => Expr a -> ResolveM (Expr a)
-parenthesize e = do
+parenthesizeE :: (Typeable a, Monoid a) => Expr a -> ResolveM (Expr a)
+parenthesizeE e = do
   correct "added parens around expression"
   e' <- resolveExprP 0 AnyExpr e
   pure (ParenExpr [] e' mempty)
@@ -773,12 +781,12 @@ resolveExprP p _ c@(Continue as ml x) = scope c $ parenE (p > 0) $ do
 resolveExprP _ _ c@(Closure _ _ _ _ (FnDecl _ _ True _) _ _) = scope c (err c "closures can never be variadic")
 resolveExprP p c e@(Closure as cb a m fn@(FnDecl _ ret _ _) b x) = scope c $
     case (c, ret, b) of
-      (NoStructExpr,      Just _, BlockExpr{}) -> parenthesize e
-      (NoStructBlockExpr, Just _, BlockExpr{}) -> parenthesize e
-      (NoStructExpr,      Just _, _          ) -> parenthesize (Closure as cb a m fn (asBlock b) x)
-      (NoStructBlockExpr, Just _, _          ) -> parenthesize (Closure as cb a m fn (asBlock b) x)
+      (NoStructExpr,      Just _, BlockExpr{}) -> parenthesizeE e
+      (NoStructBlockExpr, Just _, BlockExpr{}) -> parenthesizeE e
+      (NoStructExpr,      Just _, _          ) -> parenthesizeE (Closure as cb a m fn (asBlock b) x)
+      (NoStructBlockExpr, Just _, _          ) -> parenthesizeE (Closure as cb a m fn (asBlock b) x)
       (_,                 Just _, BlockExpr{}) -> resolved AnyExpr
-      (_,                 Just _, _          ) -> parenthesize (Closure as cb a m fn (asBlock b) x)
+      (_,                 Just _, _          ) -> parenthesizeE (Closure as cb a m fn (asBlock b) x)
       _                                         -> resolved (rhs c)
   where
   asBlock ex = BlockExpr [] (Block [NoSemi ex mempty] Normal mempty) mempty
@@ -967,14 +975,14 @@ resolveExprP _ _ t@(TupExpr as es x) = scope t $ do
   es' <- traverse (resolveExprP 0 AnyExpr) es
   pure (TupExpr as' es' x)
 -- Block expressions
-resolveExprP _ NoStructBlockExpr e@BlockExpr{} = parenthesize e
+resolveExprP _ NoStructBlockExpr e@BlockExpr{} = parenthesizeE e
 resolveExprP _ _ l@(BlockExpr as b x) = scope l $ do
   as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
   pure (BlockExpr as' b' x) 
 -- Struct expressions
-resolveExprP _ NoStructExpr e@Struct{} = parenthesize e
-resolveExprP _ NoStructBlockExpr e@Struct{} = parenthesize e
+resolveExprP _ NoStructExpr e@Struct{} = parenthesizeE e
+resolveExprP _ NoStructBlockExpr e@Struct{} = parenthesizeE e
 resolveExprP _ _ s@(Struct as p' fs e x) = scope s $ do
   as' <- traverse (resolveAttr OuterAttr) as
   p'' <- resolvePath ExprPath p'
@@ -995,7 +1003,7 @@ resolveExprP p c i@(If as e b es x) = scope i $ do
   pure (If as' e' b' es' x)
 resolveExprP p c i@(IfLet as p' e b es x) = scope i $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  p'' <- resolvePat p'
+  p'' <- resolvePat TopPattern p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   es' <- case es of
@@ -1013,14 +1021,14 @@ resolveExprP _ _ w@(While as e b l x) = scope w $ do
   pure (While as' e' b' l' x)
 resolveExprP _ _ w@(WhileLet as p' e b l x) = scope w $ do
   as' <- traverse (resolveAttr EitherAttr) as
-  p'' <- resolvePat p'
+  p'' <- resolvePat TopPattern p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   l' <- traverse resolveLbl l
   pure (WhileLet as' p'' e' b' l' x)
 resolveExprP _ _ f@(ForLoop as p' e b l x) = scope f $ do
   as' <- traverse (resolveAttr EitherAttr) as
-  p'' <- resolvePat p'
+  p'' <- resolvePat TopPattern p'
   e' <- resolveExprP 0 NoStructExpr e
   b' <- resolveBlock b
   l' <- traverse resolveLbl l
@@ -1076,7 +1084,7 @@ instance (Typeable a, Monoid a) => Resolve (Field a) where resolveM = resolveFie
 resolveArm :: (Typeable a, Monoid a) => Arm a -> ResolveM (Arm a)
 resolveArm a@(Arm as p g b x) = scope a $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  p' <- resolvePat p
+  p' <- resolvePat TopPattern p
   g' <- traverse (resolveExpr AnyExpr) g
   b' <- resolveExpr SemiExpr b
   pure (Arm as' p' g' b' x)
@@ -1096,7 +1104,7 @@ data StmtType
 -- | Statements are invalid only when the underlying components are.
 resolveStmt :: (Typeable a, Monoid a) => StmtType -> Stmt a -> ResolveM (Stmt a)
 resolveStmt _ l@(Local p t i as x) = scope l $ do
-  p' <- resolvePat p
+  p' <- resolvePat TopPattern p
   t' <- traverse (resolveTy AnyType) t
   i' <- traverse (resolveExpr AnyExpr) i
   as' <- traverse (resolveAttr OuterAttr) as
