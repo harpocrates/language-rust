@@ -15,7 +15,7 @@ import Data.Text.Prettyprint.Doc.Render.String (renderShowS)
 -- The following tests render with width 50 and ribbon length 50 too.
 --  |                                                |
 
-completeSuite :: Test 
+completeSuite :: Test
 completeSuite = testGroup "complete suite"
   [ testComplete "short mod"
     "mod foo { }"
@@ -37,7 +37,7 @@ completeSuite = testGroup "complete suite"
   , structs
   , enums
   , matchExpressions
-  ] 
+  ]
 
 functionArgs :: Test
 functionArgs = testGroup "function args"
@@ -139,7 +139,7 @@ methodCalls = testGroup "method calls"
     \    .foo\n\
     \    .bar[0]\n\
     \    .baz?\n\
-    \}" 
+    \}"
   ]
 
 lets :: Test
@@ -432,6 +432,6 @@ testComplete name inp = testCase name $ do
   -- Pretty print it
   let opts = LayoutOptions (AvailablePerLine 50 1.0)
       inp' = renderShowS (layoutPretty opts (pretty' x)) ""
-  
+
   -- Assert that the input and output are the same
   inp @=? inp'

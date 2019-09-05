@@ -21,11 +21,11 @@ directory).
 # Tools
 
 Since some of these tests take a while, you can add a `.benchignore` file in `sample-sources` which
-lists files to skip for benchmarking (one file name per line). 
+lists files to skip for benchmarking (one file name per line).
 
 There is also a `bench.py` utility in this directory which lets you compare benchmarks across
 different commits. It relies on the JSON files in `allocations` and `timings`, so you will have to
-checkout and run the benchmarks on commits you want to compare against (to generate the 
+checkout and run the benchmarks on commits you want to compare against (to generate the
 corresponding JSON file).
 
 ```

@@ -1,15 +1,15 @@
 {-|
 Module      : Language.Rust.Pretty.Internal
 Description : Rust pretty printer
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
 The pretty printing facilities in this file are re-exported to 'Language.Rust.Pretty' via the
-'Pretty' and 'PrettyAnnotated' classes. There may be invariants in this module that are not properly
-documented.
+'Language.Rust.Pretty.Pretty' and 'Language.Rust.Pretty.PrettyAnnotated' classes. There may be
+invariants in this module that are not properly documented.
 -}
 {-# OPTIONS_GHC -Wall -fno-warn-name-shadowing #-}
 {-# OPTIONS_HADDOCK hide, not-home #-}
@@ -160,14 +160,14 @@ printSpaceBetween :: Bool -> Span -> Span -> Maybe (Doc a)
 printSpaceBetween spaceNeeded (Span _ (Position _ y1 x1)) (Span (Position _ y2 x2) _)
   | y2 == y1 && x2 > x1 = Just $ hcat (replicate (x2 - x1) space)
   | y2 > y1             = Just $ hcat (replicate (y2 - y1) line) <> column (\x1' -> hcat (replicate (x2 - x1') space))
-  | spaceNeeded         = Just space 
+  | spaceNeeded         = Just space
   | otherwise           = Just mempty
-printSpaceBetween _ _ _ = Nothing 
+printSpaceBetween _ _ _ = Nothing
 
 -- | Print a token tree (@print_tt@)
 printTt :: TokenTree -> Doc a
 printTt (Token _ t) = printToken t
-printTt (Delimited _ d ts) = block d True mempty mempty [ printTokenStream ts ] 
+printTt (Delimited _ d ts) = block d True mempty mempty [ printTokenStream ts ]
 
 -- | Print a list of token trees, with the right amount of space between successive elements
 printTokenTrees :: [TokenTree] -> Doc a
@@ -193,14 +193,14 @@ printTokenTrees (tt1:tt2:tts) = printTt tt1 <> sp <> printTokenTrees (tt2:tts)
             (Semicolon, _) -> space
             (_, OpenDelim Brace) -> space
             (CloseDelim Brace, _) -> space
-            (t1, t2) | t1 `elem` toksRequiringSp || t2 `elem` toksRequiringSp -> space 
+            (t1, t2) | t1 `elem` toksRequiringSp || t2 `elem` toksRequiringSp -> space
                      | otherwise -> if spNeeded then space else mempty
 
   -- List of tokens that want to have space on either side of them
   toksRequiringSp = [ Equal, GreaterEqual, GreaterGreaterEqual, EqualEqual, NotEqual, LessEqual,
                       LessLessEqual, MinusEqual, AmpersandEqual, PipeEqual, PlusEqual, StarEqual,
                       SlashEqual, CaretEqual, PercentEqual, RArrow, LArrow, FatArrow ]
-  
+
   -- Use 'spPos' with 'spTok' as a fallback
   sp = fromMaybe spTok spPos
 
@@ -287,7 +287,7 @@ printToken (Doc d Outer True) = "/**" <> printName d <> "*/"
 printToken (Doc d Inner False) = "//!" <> printName d
 printToken (Doc d Outer False) = "///" <> printName d
 printToken Shebang = "#!"
--- Macro related 
+-- Macro related
 printToken (Interpolated n) = unAnnotate (printNonterminal n)
 -- Other
 printToken t = error $ "printToken: " ++ show t
@@ -406,7 +406,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Yield _ result x            -> annotate x ("yield" <+> perhaps printExpr result)
     MacExpr _ m x               -> annotate x (printMac Paren m)
     Struct as p fs Nothing x    -> annotate x (printPath p True <+> block Brace True "," (printInnerAttrs as) (printField `map` fs))
-    Struct as p fs (Just d) x   -> let body = [ printField f <> "," | f <- fs ] ++ [ ".." <> printExpr d ] 
+    Struct as p fs (Just d) x   -> let body = [ printField f <> "," | f <- fs ] ++ [ ".." <> printExpr d ]
                                    in annotate x (printPath p True <+> block Brace True mempty (printInnerAttrs as) body)
     Repeat attrs e cnt x        -> annotate x (brackets (printInnerAttrs attrs <+> printExpr e <> ";" <+> printExpr cnt))
     ParenExpr attrs e x         -> annotate x (parens (printInnerAttrs attrs <+> printExpr e))
@@ -571,7 +571,7 @@ printBinOp GtOp = ">"
 printUnOp :: UnOp -> Doc a
 printUnOp Deref = "*"
 printUnOp Not = "!"
-printUnOp Neg = "-" 
+printUnOp Neg = "-"
 
 -- | Print inner attributes (@print_inner_attributes@ or @print_inner_attributes_inline@
 -- or @print_inner_attributes_nodbreak@ - distinction has to be made at callsite
@@ -605,7 +605,7 @@ printAttr (SugaredDoc Outer False c x) _ = annotate x (flatAlt ("///" <> pretty 
 printCookedIdent :: Ident -> Doc a
 printCookedIdent ident@(Ident str raw _)
   | '-' `elem` str && not raw = printStr Cooked str
-  | otherwise = printIdent ident 
+  | otherwise = printIdent ident
 
 
 -- | Print an item (@print_item@)
@@ -647,7 +647,7 @@ printItem (StructItem as vis ident s g x) = annotate x $ align $ printOuterAttrs
 printItem (Union as vis ident s g x) = annotate x $ align $ printOuterAttrs as <#>
   hsep [ printVis vis, "union", printStruct s g ident True True ]
 
-printItem (Trait as vis ident a u g tys i x) = annotate x $ align $ printOuterAttrs as <#> 
+printItem (Trait as vis ident a u g tys i x) = annotate x $ align $ printOuterAttrs as <#>
   let leading = hsep [ printVis vis, printUnsafety u, when a "auto", "trait"
                      , printIdent ident <> printGenerics g <> printBounds ":" tys
                      ]
@@ -661,7 +661,7 @@ printItem (TraitAlias as vis ident g bds x) = annotate x $ align $ printOuterAtt
   let leading = printVis vis <+> "trait" <+> printIdent ident <> printGenerics g
   in group (leading <#> indent n (printBounds "=" (toList bds)) <> ";")
 
-printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs as <#> 
+printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs as <#>
   let generics = case g of { Generics [] [] _ _ -> mempty; _ -> printGenerics g }
       traitref = perhaps (\t' -> printPolarity p <> printTraitRef t' <+> "for") t
       leading = hsep [ printVis vis, printDef d, printUnsafety u
@@ -717,7 +717,7 @@ printImplItem (MacroI as def mac x) = annotate x $ printOuterAttrs as <#>
 -- | Print defaultness (@Defaultness@)
 printDef :: Defaultness -> Doc a
 printDef Default = "default"
-printDef Final = mempty 
+printDef Final = mempty
 
 -- | Print an associated type (@printAssociatedType@)
 printAssociatedType :: Ident ->  Maybe [TyParamBound a] -> Maybe (Ty a) -> Doc a
@@ -765,11 +765,11 @@ printForeignItem (ForeignTy attrs vis ident x) = annotate x $
 printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a
 printStruct structDef generics ident printFinalizer annotateGenerics =
   printIdent ident <> gen
-    <> case (structDef, whereClause generics) of 
+    <> case (structDef, whereClause generics) of
           (StructD fields x, WhereClause [] _) -> annotate x $ space <> block Brace False "," mempty (printStructField `map` fields)
           (StructD fields x, wc) -> annotate x $ line <> printWhereClause True wc <#> block Brace False "," mempty (printStructField `map` fields)
-          (TupleD fields x, WhereClause [] _) -> annotate x $ block Paren True "," mempty (printStructField `map` fields) <> when printFinalizer ";" 
-          (TupleD fields x, wc) -> annotate x $ block Paren True "," mempty (printStructField `map` fields) <#> printWhereClause (not printFinalizer) wc <> when printFinalizer ";" 
+          (TupleD fields x, WhereClause [] _) -> annotate x $ block Paren True "," mempty (printStructField `map` fields) <> when printFinalizer ";"
+          (TupleD fields x, wc) -> annotate x $ block Paren True "," mempty (printStructField `map` fields) <#> printWhereClause (not printFinalizer) wc <> when printFinalizer ";"
           (UnitD x, WhereClause [] _) -> annotate x $ when printFinalizer ";"
           (UnitD x, wc) -> annotate x $ line <> printWhereClause (not printFinalizer) wc <> when printFinalizer ";"
   where gen = if annotateGenerics then printGenerics generics else unAnnotate (printGenerics generics)
@@ -798,8 +798,8 @@ printVariant (Variant i _ _data e x) = annotate x (body <+> disc)
   where body = printStruct _data (Generics [] [] (WhereClause [] undefined) undefined) i False False
         disc = perhaps (\e' -> "=" <+> printExpr e') e
 
--- | Print a where clause (@print_where_clause@). The 'Bool' argument indicates whether to have a
--- trailing comma or not.
+-- | Print a where clause (@print_where_clause@). The 'Prelude.Bool' argument indicates whether to
+-- have a trailing comma or not.
 printWhereClause :: Bool -> WhereClause a -> Doc a
 printWhereClause trailing (WhereClause predicates x)
   | null predicates = mempty
@@ -857,7 +857,7 @@ printMutability :: Mutability -> Doc a
 printMutability Mutable = "mut"
 printMutability Immutable = mempty
 
--- | Like 'printMutability', but prints @const@ in the immutable case 
+-- | Like 'printMutability', but prints @const@ in the immutable case
 printFullMutability :: Mutability -> Doc a
 printFullMutability Mutable = "mut"
 printFullMutability Immutable = "const"
@@ -923,7 +923,7 @@ printAbi abi = "extern" <+> "\"" <> root abi <> "\""
     root PlatformIntrinsic = "platform-intrinsic"
     root Unadjusted = "unadjusted"
 
- 
+
 -- | Print the interior of a module given the list of items and attributes in it (@print_mod@)
 printMod :: Ident -> Maybe [Item a] -> [Attribute a] -> Doc a
 printMod i (Just items) attrs = printIdent i <+> block Brace False mempty (printInnerAttrs attrs) (punctuate line' (printItem `map` items))
@@ -979,7 +979,7 @@ printQPath :: Path a -> QSelf a -> Bool -> Doc a
 printQPath (Path global segs x) (QSelf ty n) colons = hcat [ "<", printType ty <+> aliasedDoc, ">", "::", restDoc ]
   where
   (aliased, rest) = splitAt n segs
-  
+
   aliasedDoc = case aliased of
                  [] -> mempty
                  segs -> "as" <+> printPath (Path global segs x) False

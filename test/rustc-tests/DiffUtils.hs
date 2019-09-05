@@ -1,7 +1,4 @@
-{-# LANGUAGE CPP #-}
-#if __GLASGOW_HASKELL__ >= 800
 {-# OPTIONS_GHC -Wno-missing-methods #-}
-#endif
 module DiffUtils where
 
 import qualified Data.Aeson as Aeson
@@ -105,5 +102,5 @@ diff explanation v j = throw (DiffError msg)
         cropped msg' | length msg' > 500 = take 500 msg' ++ "..."
                      | otherwise = msg'
 
-  
+
 

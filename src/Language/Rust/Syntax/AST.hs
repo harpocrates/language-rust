@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Syntax.AST
 Description : Non-token AST definitions
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -210,8 +210,8 @@ instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
 data Attribute a
   -- | Regular attributes of the form @#[...]@
   = Attribute AttrStyle (Path a) TokenStream a
-  -- | Doc comment attributes. The 'Bool' argument identifies if the comment is inline or not, and
-  -- the 'Name' contains the actual doc comment content.
+  -- | Doc comment attributes. The 'Prelude.Bool' argument identifies if the comment is inline or
+  -- not, and the 'Name' contains the actual doc comment content.
   | SugaredDoc AttrStyle Bool Name a
   deriving (Eq, Ord, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
@@ -432,8 +432,8 @@ data FieldPat a = FieldPat (Maybe Ident) (Pat a) a
 
 instance Located a => Located (FieldPat a) where spanOf (FieldPat _ _ s) = spanOf s
 
--- | Header (not the body) of a function declaration (@syntax::ast::FnDecl@). The 'Bool' argument
--- indicates whether the header is variadic (so whether the argument list ends in @...@).
+-- | Header (not the body) of a function declaration (@syntax::ast::FnDecl@). The 'Prelude.Bool'
+-- argument indicates whether the header is variadic (so whether the argument list ends in @...@).
 --
 -- Example: @(bar: i32) -> i32@ as in
 --
@@ -483,7 +483,7 @@ instance Located a => Located (ForeignItem a) where
 --
 -- @
 -- fn nonsense\<\'a, \'b: \'c, T: \'a\>(x: i32) -\> i32
--- where Option\<T\>: Copy { 
+-- where Option\<T\>: Copy {
 --   1
 -- }@.
 data Generics a = Generics [LifetimeDef a] [TyParam a] (WhereClause a) a
@@ -603,7 +603,7 @@ data Item a
   -- | implementation
   -- Example: @impl\<A\> Foo\<A\> { .. }@ or @impl\<A\> Trait for Foo\<A\> { .. }@
   | Impl [Attribute a] (Visibility a) Defaultness Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a] a
-  -- | generated from a call to a macro 
+  -- | generated from a call to a macro
   -- Example: @foo!{ .. }@
   | MacItem [Attribute a] (Maybe Ident) (Mac a) a
   -- | definition of a macro via @macro_rules@
@@ -682,13 +682,13 @@ data SourceFile a
 -- Examples: @i32@, @isize@, and @f32@
 data Suffix
   = Unsuffixed
-  | Is | I8 | I16 | I32 | I64 | I128 
+  | Is | I8 | I16 | I32 | I64 | I128
   | Us | U8 | U16 | U32 | U64 | U128
   |                 F32 | F64
-  deriving (Eq, Ord, Show, Enum, Bounded, Typeable, Data, Generic, NFData)  
+  deriving (Eq, Ord, Show, Enum, Bounded, Typeable, Data, Generic, NFData)
 
 -- | Literals in Rust (@syntax::ast::Lit@). As discussed in 'Suffix', Rust AST is designed to parse
--- suffixes for all literals, even if they are currently only valid on 'Int' and 'Float' literals.
+-- suffixes for all literals, even if they are currently only valid on integer and float literals.
 data Lit a
   = Str String StrStyle Suffix a            -- ^ string (example: @"foo"@)
   | ByteStr [Word8] StrStyle Suffix a       -- ^ byte string (example: @b"foo"@)
@@ -712,7 +712,7 @@ instance Located a => Located (Lit a) where
 byteStr :: String -> StrStyle -> Suffix -> a -> Lit a
 byteStr s = ByteStr (map (fromIntegral . ord) s)
 
--- | Extract the suffix from a 'Lit'.
+-- | Extract the suffix from a literal.
 suffix :: Lit a -> Suffix
 suffix (Str _ _ s _) = s
 suffix (ByteStr _ _ s _) = s
@@ -775,7 +775,8 @@ data Pat a
   -- const pattern. Disambiguation cannot be done with parser alone, so it happens during name
   -- resolution. (example: @mut x@)
   | IdentP BindingMode Ident (Maybe (Pat a)) a
-  -- | struct pattern. The 'Bool' signals the presence of a @..@. (example: @Variant { x, y, .. }@)
+  -- | struct pattern. The 'Prelude.Bool' signals the presence of a @..@.
+  -- (example: @Variant { x, y, .. }@)
   | StructP (Path a) [FieldPat a] Bool a
   -- | tuple struct pattern (example: @Variant(x, y, z)@)
   | TupleStructP (Path a) [Pat a] a
@@ -826,9 +827,9 @@ instance Located a => Located (Pat a) where
 -- file paths, these paths can be relative or absolute (global) with respect to the crate root.
 --
 -- Paths are used to identify expressions (see 'PathExpr'), types (see 'PathTy'), and modules
--- (indirectly through 'ViewPath' and such).
+-- (indirectly through 'UseTree' and such).
 --
--- The 'Bool' argument identifies whether the path is relative or absolute.
+-- The 'Prelude.Bool' argument identifies whether the path is relative or absolute.
 --
 -- Example: @std::cmp::PartialEq@
 data Path a = Path Bool [PathSegment a] a
@@ -864,11 +865,11 @@ instance Located a => Located (PathSegment a) where spanOf (PathSegment _ _ s) =
 
 -- | Trait ref parametrized over lifetimes introduced by a @for@ (@syntax::ast::PolyTraitRef@).
 --
--- Example: @for\<\'a,'b\> Foo\<&\'a Bar\>@ 
+-- Example: @for\<\'a,'b\> Foo\<&\'a Bar\>@
 data PolyTraitRef a = PolyTraitRef [LifetimeDef a] (TraitRef a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
-instance Located a => Located (PolyTraitRef a) where spanOf (PolyTraitRef _ _ s) = spanOf s 
+instance Located a => Located (PolyTraitRef a) where spanOf (PolyTraitRef _ _ s) = spanOf s
 
 -- | The explicit @Self@ type in a "qualified path". The actual path, including the trait and the
 -- associated item, is stored separately. The first argument is the type given to @Self@ and the
@@ -919,7 +920,7 @@ data StructField a = StructField (Maybe Ident) (Visibility a) (Ty a) [Attribute 
 instance Located a => Located (StructField a) where spanOf (StructField _ _ _ _ s) = spanOf s
 
 -- | An abstract sequence of tokens, organized into a sequence (e.g. stream) of 'TokenTree', each of
--- which is a single 'Token' or a 'Delimited' subsequence of tokens.
+-- which is a single token or a delimited subsequence of tokens.
 data TokenStream
   = Tree TokenTree              -- ^ a single token or a single set of delimited tokens
   | Stream [TokenStream]        -- ^ stream of streams of tokens
@@ -941,9 +942,9 @@ instance Located TokenStream where
   spanOf (Stream tt) = spanOf tt
 
 -- | When the parser encounters a macro call, it parses what follows as a 'Delimited' token tree.
--- Basically, token trees let you store raw tokens or 'Sequence' forms inside of balanced
--- parens, braces, or brackets. This is a very loose structure, such that all sorts of different
--- AST-fragments can be passed to syntax extensions using a uniform type.
+-- Basically, token trees let you store raw tokens inside of balanced parens, braces, or brackets.
+-- This is a very loose structure, such that all sorts of different AST-fragments can be passed to
+-- syntax extensions using a uniform type.
 data TokenTree
   -- | A single token
   = Token Span Token
@@ -1085,7 +1086,7 @@ partitionTyParamBounds = partition isTraitBound
 -- | Unary operators, used in the 'Unary' constructor of 'Expr' (@syntax::ast::UnOp@).
 --
 -- Example: @!@ as in @!true@
-data UnOp 
+data UnOp
   = Deref -- ^ @*@ operator (dereferencing)
   | Not   -- ^ @!@ operator (logical inversion)
   | Neg   -- ^ @-@ operator (negation)
@@ -1097,9 +1098,9 @@ data UnOp
 -- an unsafe block is compiler generated.
 data Unsafety = Unsafe | Normal deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
--- | A variant in Rust is a constructor (either in a 'StructItem', 'Union', or 'Enum') which groups
--- together fields (@syntax::ast::Variant@). In the case of a unit variant, there can also be an
--- explicit discriminant expression.
+-- | A variant in Rust is a constructor (either in a 'StructItem', 'Union', or
+-- 'Language.Rust.Syntax.Enum') which groups together fields (@syntax::ast::Variant@). In the case
+-- of a unit variant, there can also be an explicit discriminant expression.
 data Variant a = Variant Ident [Attribute a] (VariantData a) (Maybe (Expr a)) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -1152,7 +1153,7 @@ data UseTree a
   = UseTreeSimple (Path a) (Maybe Ident) a
   -- | Path ending in a glob pattern
   | UseTreeGlob (Path a) a
-  -- | Path ending in a list of more paths 
+  -- | Path ending in a list of more paths
   | UseTreeNested (Path a) [UseTree a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
@@ -1165,14 +1166,14 @@ instance Located a => Located (UseTree a) where
 -- (@ast::syntax::Visibility@). [RFC about adding restricted
 -- visibility](https://github.com/rust-lang/rfcs/blob/master/text/1422-pub-restricted.md)
 data Visibility a
-  = PublicV               -- ^ @pub@ is accessible from everywhere 
+  = PublicV               -- ^ @pub@ is accessible from everywhere
   | CrateV                -- ^ @pub(crate)@ is accessible from within the crate
   | RestrictedV (Path a)  -- ^ for some path @p@, @pub(p)@ is visible at that path
   | InheritedV            -- ^ if no visbility is specified, this is the default
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 -- | A @where@ clause in a definition, where one can apply a series of constraints to the types
--- introduced and used by a 'Generic' clause (@syntax::ast::WhereClause@). In many cases, @where@ 
+-- introduced and used by a 'Generic' clause (@syntax::ast::WhereClause@). In many cases, @where@
 -- is the /only/ way to express certain bounds (since those bounds may not be immediately on a type
 -- defined in the generic, but on a type derived from types defined in the generic).
 --

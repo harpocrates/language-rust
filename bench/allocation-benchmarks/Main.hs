@@ -29,7 +29,7 @@ main = do
   logFileName <- case status of
                    "" -> init <$> readCreateProcess (proc "git" ["rev-parse", "HEAD"]) ""
                    _ -> pure "WIP"
-  
+
   -- Get the test cases
   workingDirectory <- getCurrentDirectory
   let sampleSources = workingDirectory </> "sample-sources"

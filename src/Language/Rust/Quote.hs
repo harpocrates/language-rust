@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Quote
 Description : Quasiquotes for Rust AST
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -77,7 +77,7 @@ quoter p = QuasiQuoter
   -- | Given a parser and an input string, turn it into the corresponding Haskell expression/pattern.
   parse inp = do
     Loc{ loc_start = (r,c) } <- location
-  
+
     -- Run the parser
     case execParser p (inputStreamFromString inp) (Position 0 r c) of
       Left (ParseFail _ msg) -> fail msg

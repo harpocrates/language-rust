@@ -41,7 +41,7 @@ main = do
 
   -- Don't bother running the tests if you don't have `rustup` or `rustc` installed.
   missingProgs <- any null <$> traverse findExecutable ["rustup","rustc"]
-  when missingProgs $ do 
+  when missingProgs $ do
     putStrLn $ "Could not find `rustup`/`rustc`, so skipping these tests"
     exitSuccess
 
@@ -153,9 +153,8 @@ step timeout improvement action continuation = do
      Nothing -> pure (Error improvement "Timed out")
      Just (Left e) -> pure (Error improvement e)
      Just (Right val) -> continuation val
-  
 
-                 
+
 
 -- | Variant of 'try' which separates the error case by just returning 'Left msg' when there is an
 -- exception.

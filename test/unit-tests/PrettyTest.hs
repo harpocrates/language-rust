@@ -167,7 +167,7 @@ prettyPatterns = testGroup "printing patterns"
                                                  (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) ()))
   ]
 
--- | Test pretty printing of types (flattened). 
+-- | Test pretty printing of types (flattened).
 prettyTypes :: Test
 prettyTypes = testGroup "printing types"
   [ testFlatten "i32" (printType i32)
@@ -219,17 +219,17 @@ prettyTypes = testGroup "printing types"
                                        , Tree (Token (Span (Position 27 1 27) (Position 28 1 28)) Greater)
                                        ])
                                        ())
-                           ()))               
+                           ()))
   , testFlatten "fn(i32) -> i32"
                 (printType (BareFn Normal Rust [] (FnDecl [Arg Nothing i32 ()] (Just i32) False ()) ()))
   , testFlatten "unsafe extern \"C\" fn(i32) -> i32"
                 (printType (BareFn Unsafe C [] (FnDecl [Arg Nothing i32 ()] (Just i32) False ()) ()))
   ]
-    
+
 -- | Test pretty printing of attributes (flattened).
 prettyAttributes :: Test
 prettyAttributes = testGroup "printing attributes"
-  [ testFlatten "#![cfgi]" (printAttr cfgI True) 
+  [ testFlatten "#![cfgi]" (printAttr cfgI True)
   , testFlatten "#[cfgo]" (printAttr cfgO True)
   , testFlatten "#[derive(Eq, Ord, 1)]" (printAttr (Attribute Outer (Path False [PathSegment "derive" Nothing ()] ()) (Tree (Delimited mempty Paren (Stream
                                                           [ Tree (Token mempty (IdentTok "Eq"))
@@ -244,14 +244,14 @@ prettyAttributes = testGroup "printing attributes"
                                                           ]) ()) True)
   , testFlatten "/** some comment */" (printAttr (SugaredDoc Outer True " some comment " ()) True)
   ]
-  
--- | Test pretty printing of expressions (flattened). 
+
+-- | Test pretty printing of expressions (flattened).
 prettyExpressions :: Test
 prettyExpressions = testGroup "printing expressions"
-  [ testFlatten "foo" (printExpr foo) 
-  , testFlatten "bar" (printExpr bar) 
-  , testFlatten "1" (printExpr _1) 
-  , testFlatten "#[cfgo] 2" (printExpr _2) 
+  [ testFlatten "foo" (printExpr foo)
+  , testFlatten "bar" (printExpr bar)
+  , testFlatten "1" (printExpr _1)
+  , testFlatten "#[cfgo] 2" (printExpr _2)
   , testFlatten "box 1" (printExpr (Box [] _1 ()))
   , testFlatten "#[cfgo] box #[cfgo] 2" (printExpr (Box [cfgO] _2 ()))
   , testFlatten "[ 1, 1, 1 ]" (printExpr (Vec [] [_1,_1,_1] ()))
@@ -408,7 +408,7 @@ prettyItems = testGroup "printing items"
   , testFlatten "impl Debug for i32 { }" (printItem (Impl [] InheritedV Final Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [debug] ()))) i32 [] ()))
   , testFlatten "default impl Debug for i32 { }" (printItem (Impl [] InheritedV Default Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [debug] ()))) i32 [] ()))
   , testFlatten "pub impl !Debug for i32 where 'lt: 'gt { }" (printItem (Impl [] PublicV Final Normal Negative (Generics [] [] (WhereClause [RegionPredicate (Lifetime "lt" ()) [Lifetime "gt" ()] ()] ()) ()) (Just (TraitRef (Path False [debug] ()))) i32 [] ()))
-  , testFlatten "impl<T> GenVal<T> { fn value(&mut self) -> &T { return 1; } }" 
+  , testFlatten "impl<T> GenVal<T> { fn value(&mut self) -> &T { return 1; } }"
                 (printItem (Impl [] InheritedV Final Normal Positive
                       (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())
                       Nothing
@@ -417,13 +417,13 @@ prettyItems = testGroup "printing items"
                           (Generics [] [] (WhereClause [] ()) ())
                           (MethodSig Normal NotConst Rust
                                       (FnDecl [SelfRegion Nothing Mutable ()]
-                                              (Just (Rptr Nothing Immutable (PathTy Nothing (Path False [PathSegment "T" Nothing ()] ()) ()) ())) 
-                                              False ())) 
+                                              (Just (Rptr Nothing Immutable (PathTy Nothing (Path False [PathSegment "T" Nothing ()] ()) ()) ()))
+                                              False ()))
                           retBlk
                           ()
                       ]
                       ()))
-  , testFlatten "#[cfgo] impl i32 { #![cfgi] fn value(&self) -> i32 { return 1; } pub const pi: i32 = 1; default type Size = i32; }" 
+  , testFlatten "#[cfgo] impl i32 { #![cfgi] fn value(&self) -> i32 { return 1; } pub const pi: i32 = 1; default type Size = i32; }"
                 (printItem (Impl [cfgI,cfgO] InheritedV Final Normal Positive
                       (Generics [] [] (WhereClause [] ()) ())
                       Nothing
@@ -432,8 +432,8 @@ prettyItems = testGroup "printing items"
                           (Generics [] [] (WhereClause [] ()) ())
                           (MethodSig Normal NotConst Rust
                                       (FnDecl [SelfRegion Nothing Immutable ()]
-                                              (Just i32) 
-                                              False ())) 
+                                              (Just i32)
+                                              False ()))
                           retBlk
                           ()
                       , ConstI [] PublicV Final (mkIdent "pi") i32 _1 ()
@@ -454,8 +454,8 @@ prettyItems = testGroup "printing items"
                           (Generics [] [] (WhereClause [] ()) ())
                           (MethodSig Normal NotConst Rust
                                       (FnDecl [SelfRegion Nothing Mutable ()]
-                                              (Just i32) 
-                                              False ())) 
+                                              (Just i32)
+                                              False ()))
                           Nothing
                           ()
                       , ConstT [] (mkIdent "pi") i32 (Just _1) ()
@@ -467,13 +467,13 @@ prettyItems = testGroup "printing items"
                       ()))
   ]
 
--- | Test pretty printing of statements (flattened). 
+-- | Test pretty printing of statements (flattened).
 prettyStatements :: Test
 prettyStatements = testGroup "printing statements"
   [ testFlatten "#[cfgo] let _;" (printStmt (Local (WildP ()) Nothing Nothing [cfgO] ()))
   , testFlatten "let _: i32;" (printStmt (Local (WildP ()) (Just i32) Nothing [] ()))
   , testFlatten "let _: i32 = 1;" (printStmt (Local (WildP ()) (Just i32) (Just _1) [] ()))
-  , testFlatten "extern crate rustc_serialize;" (printStmt (ItemStmt (ExternCrate [] InheritedV (mkIdent "rustc_serialize") Nothing ()) ())) 
+  , testFlatten "extern crate rustc_serialize;" (printStmt (ItemStmt (ExternCrate [] InheritedV (mkIdent "rustc_serialize") Nothing ()) ()))
   , testFlatten "if foo { foo = 1 }" (printStmt (NoSemi (If [] foo assBlk Nothing ()) ()))
   , testFlatten "{ return 1; }" (printStmt (NoSemi (BlockExpr [] retBlk ()) ()))
   , testFlatten "foo;" (printStmt (NoSemi foo ()))
@@ -486,7 +486,7 @@ prettyStatements = testGroup "printing statements"
   , testFlatten "println!(foo);" (printStmt (MacStmt (Mac (Path False [println] ()) (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) SemicolonMac [] ()))
   , testFlatten "println!{ foo }" (printStmt (MacStmt (Mac (Path False [println] ()) (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) BracesMac [] ()))
   ]
-  
+
 -- | This tries to make it so that the `Doc` gets rendered onto only one line.
 testFlatten :: String -> Doc a -> Test
 testFlatten str doc = testCase (escapeNewlines str) $ str @=? renderShowS (layoutPretty (LayoutOptions Unbounded) (flatten doc)) ""

@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Data.Position
 Description : Positions and spans in files
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -9,7 +9,6 @@ Portability : GHC
 
 Everything to do with describing a position or a contiguous region in a file.
 -}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
@@ -59,7 +58,7 @@ data Position = Position {
 -- | Field names are not shown
 instance Show Position where
   showsPrec _ NoPosition = showString "NoPosition"
-  showsPrec p (Position a r c) = showParen (p >= 11) 
+  showsPrec p (Position a r c) = showParen (p >= 11)
                                            ( showString "Position"
                                            . showString " " . showsPrec 11 a
                                            . showString " " . showsPrec 11 r
@@ -107,29 +106,29 @@ initPos = Position 0 1 0
 {-# INLINE incPos #-}
 incPos :: Position -> Int -> Position
 incPos NoPosition _ = NoPosition
-incPos p@Position{ absoluteOffset = a, col = c } offset = p { absoluteOffset = a + offset, col = c + offset }
+incPos (Position a r c) offset = Position (a + offset) r (c + offset)
 
 -- | Advance to the next line.
 {-# INLINE retPos #-}
 retPos :: Position -> Position
 retPos NoPosition = NoPosition
-retPos (Position a r _) = Position { absoluteOffset = a + 1, row = r + 1, col = 1 }
+retPos (Position a r _) = Position (a + 1) (r + 1) 1
 
 -- | Advance only the absolute offset, not the row and column information. Only use this if you
 -- know what you are doing!
 {-# INLINE incOffset #-}
 incOffset :: Position -> Int -> Position
 incOffset NoPosition _ = NoPosition
-incOffset p@Position{ absoluteOffset = a } offset = p { absoluteOffset = a + offset }
+incOffset (Position a r c) offset = Position (a + offset) r c
 
 -- | Spans represent a contiguous region of code, delimited by two 'Position's. The endpoints are
 -- inclusive. Analogous to the information encoded in a selection.
 data Span = Span { lo, hi :: !Position }
   deriving (Eq, Ord, Data, Typeable, Generic, NFData)
 
--- | Field names are not shown 
+-- | Field names are not shown
 instance Show Span where
-  showsPrec p (Span l h) = showParen (p >= 11) 
+  showsPrec p (Span l h) = showParen (p >= 11)
                                      ( showString "Span"
                                      . showString " " . showsPrec 11 l
                                      . showString " " . showsPrec 11 h )
@@ -176,7 +175,7 @@ instance Functor Spanned where
 instance Applicative Spanned where
   {-# INLINE pure #-}
   pure x = Spanned x mempty
-  
+
   {-# INLINE (<*>) #-}
   Spanned f s1 <*> Spanned x s2 = Spanned (f x) (s1 Sem.<> s2)
 

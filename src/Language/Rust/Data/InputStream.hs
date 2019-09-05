@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Data.InputStream
 Description : Interface to the underlying input of parsing
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -21,12 +21,12 @@ module Language.Rust.Data.InputStream (
   InputStream,
   countLines,
   inputStreamEmpty,
-  
+
   -- * Introduction forms
   readInputStream,
   hReadInputStream,
   inputStreamFromString,
-  
+
   -- * Elimination forms
   inputStreamToString,
   takeByte,
@@ -142,7 +142,7 @@ peekChars n = BE.toString . BE.take n . coerce
 readInputStream f = coerce <$> BS.readFile f
 hReadInputStream h = coerce <$> BS.hGetContents h
 inputStreamToString = BE.toString . coerce
-inputStreamFromString = IS . BE.fromString 
+inputStreamFromString = IS . BE.fromString
 countLines = length . BE.lines . coerce
 
 instance Show InputStream where

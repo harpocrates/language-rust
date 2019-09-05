@@ -9,7 +9,7 @@ $ stack test              --test-arguments "--hide-successes"     # show only fa
 $ stack test              --test-arguments "--help"               # learn about more options!
 ```
 
-## `unit-tests` 
+## `unit-tests`
 
 These are mostly regression/coverage style tests. They cover lexing, parsing, and pretty printing.
 The case for parsing is actually a bit more involved: on top of just checking that inputs parse

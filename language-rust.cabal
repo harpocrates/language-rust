@@ -3,20 +3,21 @@ version:             0.2.0.27
 
 synopsis:            Parsing and pretty printing of Rust code
 description:         Language Rust is a library for the analysis of Rust code. It includes a
-                     complete, well tested parser and pretty printer. 
+                     complete, well tested parser and pretty printer.
 
 homepage:            https://github.com/harpocrates/language-rust
 license:             BSD3
 license-file:        LICENSE
 author:              Alec Theriault
 maintainer:          alec.theriault@gmail.com
-copyright:           (c) 2017-2018 Alec Theriault
+copyright:           (c) 2017-2019 Alec Theriault
 stability:           provisional
 bug-reports:         https://github.com/harpocrates/language-rust/issues
 category:            Language
 build-type:          Simple
 extra-source-files:  ChangeLog.md README.md
 cabal-version:       >=1.10
+tested-with:         GHC==8.0.2, GHC==8.2.2, GHC==8.4.4, GHC==8.6.5
 
 source-repository head
   type:              git
@@ -34,12 +35,13 @@ library
   hs-source-dirs:      src
 
   ghc-options:         -Wall
-
-  if impl(ghc >= 8)
-    ghc-options:
+                       -Wcompat
+                       -Widentities
                        -Wincomplete-patterns
+                       -Wincomplete-record-updates
                        -Wincomplete-uni-patterns
                        -Wmissing-signatures
+                       -Wredundant-constraints
 
   build-tools:         alex >=3.1, happy >=1.19.8
   default-language:    Haskell2010

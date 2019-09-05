@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Parser.Literals
 Description : Parsing literals
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -29,16 +29,16 @@ import Text.Read                  ( readMaybe )
 translateLit :: LitTok -> Suffix -> a -> Lit a
 translateLit (ByteTok s)         = Byte (unescapeByte' s)
 translateLit (CharTok s)         = Char (unescapeChar' s)
-translateLit (FloatTok s)        = Float (unescapeFloat s) 
+translateLit (FloatTok s)        = Float (unescapeFloat s)
 translateLit (StrTok s)          = Str (unfoldr (unescapeChar True) s) Cooked
 translateLit (StrRawTok s n)     = Str s (Raw n)
 translateLit (ByteStrTok s)      = ByteStr (unfoldr (unescapeByte True) s) Cooked
-translateLit (ByteStrRawTok s n) = ByteStr (map (fromIntegral . ord) s) (Raw n) 
+translateLit (ByteStrRawTok s n) = ByteStr (map (fromIntegral . ord) s) (Raw n)
 translateLit (IntegerTok s)      = \suf -> case (suf, unescapeInteger s) of
                                              (F32, (Dec, n)) -> Float (fromInteger n) F32
-                                             (F64, (Dec, n)) -> Float (fromInteger n) F64 
+                                             (F64, (Dec, n)) -> Float (fromInteger n) F64
                                              (_,   (rep, n)) -> Int rep n suf
-  
+
 -- | Given a string of characters read from a Rust source, extract the next underlying char taking
 -- into account escapes and unicode.
 unescapeChar :: Bool                    -- ^ multi-line strings allowed

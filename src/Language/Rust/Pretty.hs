@@ -1,20 +1,20 @@
 {-|
 Module      : Language.Rust.Pretty
 Description : Pretty printing
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-This module provides functions for turning ASTs into values of type 'Doc'. These values can then be
-rendered into concrete string types using functions from the @prettyprinter@ package. This has some
-advantages over printing plain old strings:
+This module provides functions for turning ASTs into values of type 'Language.Rust.Pretty.Doc'.
+These values can then be rendered into concrete string types using functions from the
+@prettyprinter@ package. This has some advantages over printing plain old strings:
 
   * /Backend independent/: you can use a variety of existing backends to efficiently render to all
     sorts of formats like 'Data.Text.Text', 'String', HTML, and terminal.
 
-  * /Dynamic layouts/: the AST will render differently depending on the desired page width 
+  * /Dynamic layouts/: the AST will render differently depending on the desired page width
 
         >>> :set -XTypeApplications -XOverloadedStrings
         >>> import Language.Rust.Parser
@@ -34,8 +34,8 @@ advantages over printing plain old strings:
           x - y + z
         }
 
-  * /Annotations/: Depending on the backend you are using to render the 'Doc', annotations can
-    determine colours, styling, links, etc.
+  * /Annotations/: Depending on the backend you are using to render the 'Language.Rust.Pretty.Doc',
+    annotations can determine colours, styling, links, etc.
 
 The examples below assume the following GHCi flag and import:
 
@@ -56,7 +56,7 @@ module Language.Rust.Pretty (
   Pretty(..),
   PrettyAnnotated(..),
   Doc,
-  
+
   -- * Resolving
   Resolve(..),
 
@@ -93,7 +93,7 @@ import Control.Exception                     ( throw )
 -- Right (1 + 2) * 3
 -- >>> pretty (Binary [] AddOp one bogusVar ())
 -- Left (invalid AST (identifier `let' is a keyword))
--- 
+--
 pretty :: (Resolve a, Pretty a) => a -> Either ResolveFail (Doc b)
 pretty = fmap prettyUnresolved . resolve
 
@@ -199,8 +199,8 @@ instance Pretty Span               where prettyUnresolved = PP.pretty . prettySp
 
 -- | Similar to 'Pretty', but for types which are parametrized over an annotation type.
 class PrettyAnnotated p where
-  -- | Pretty print the given value without resolving it, adding annotations in the 'Doc' whenever
-  -- possible.
+  -- | Pretty print the given value without resolving it, adding annotations in the
+  -- 'Language.Rust.Pretty.Doc' whenever possible.
   prettyAnnUnresolved :: p a -> Doc a
 
 -- | This instance prints attributes inline

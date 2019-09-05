@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, OverloadedStrings, OverloadedLists, InstanceSigs #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLists, InstanceSigs #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Diff where
 
@@ -86,7 +86,7 @@ instance Show a => Diffable (Item a) where
         as === (val ! "attrs")
         v === (val ! "vis")
         i === (val ! "ident")
-        vs === (n' ! "fields" ! 0 ! "variants") 
+        vs === (n' ! "fields" ! 0 ! "variants")
         g === (n' ! "fields" ! 1)
       ("Struct", StructItem as v i v' g _) ->  do
         as === (val ! "attrs")
@@ -137,7 +137,7 @@ instance Show a => Diffable (Item a) where
         i === (val ! "ident")
         tt === (n' ! "fields" ! 0 ! "tokens")
       _ -> diff "different items" item val
- 
+
 newtype IsAuto = IsAuto Bool deriving (Show, Eq)
 
 instance Diffable IsAuto where
@@ -173,10 +173,10 @@ instance Show a => Diffable (TraitItem a) where
       ("Macro", MacroT as m _) -> do
         as === (val ! "attrs")
         m === (n' ! "fields" ! 0)
-      _ -> diff "different trait item" item val 
+      _ -> diff "different trait item" item val
 
 instance Show a => Diffable (ImplItem a) where
-  item === val = do 
+  item === val = do
     let n' = val ! "node"
     case (n' ! "variant", item) of
       ("Const", ConstI as v d i t e _) -> do
@@ -205,7 +205,7 @@ instance Show a => Diffable (ImplItem a) where
         d === (val ! "defaultness")
         m === (n' ! "fields" ! 0)
       _ -> diff "different impl item" item val
-      
+
 instance Show a => Diffable (MethodSig a) where
   MethodSig u c a decl === val = do
     u === (val ! "unsafety")
@@ -228,7 +228,7 @@ instance Show a => Diffable (Variant a) where
 instance Show a => Diffable (VariantData a) where
   d === val =
     case (val ! "variant", d) of
-      ("Tuple", TupleD sf _) -> sf === (val ! "fields" ! 0) 
+      ("Tuple", TupleD sf _) -> sf === (val ! "fields" ! 0)
       ("Struct", StructD sf _) -> sf === (val ! "fields" ! 0)
       ("Unit", UnitD _) -> pure ()
       _ -> diff "different variants" d val
@@ -252,7 +252,7 @@ instance Show a => Diffable (ForeignItem a) where
           as === (val ! "attrs")
           v === (val ! "vis")
           i === (val ! "ident")
-          d === (n' ! "fields" ! 0) 
+          d === (n' ! "fields" ! 0)
           g === (n' ! "fields" ! 1)
         ("Static", ForeignStatic as v i t m _) -> do
           as === (val ! "attrs")
@@ -282,19 +282,19 @@ instance Show (UseTreePair a) where
 
 instance Show a => Diffable (UseTreePair a) where
   UseTreePair ut === val = ut === (val ! 0)
-  
+
 instance Show a => Diffable (FnDecl a) where
   FnDecl as out v _ === val = do
     -- Check inputs
     as === (val ! "inputs")
-  
+
     -- Check output
     let outTy = val ! "output" ! "variant"
     case (outTy, out) of
       ("Default", Nothing) -> pure ()
       ("Ty", Just t) -> t === (val ! "output" ! "fields" ! 0)
       _ -> diff "different output types" out outTy
-  
+
     -- Check variadic
     v === (val ! "variadic")
 
@@ -352,7 +352,7 @@ instance Show a => Diffable (Generics a) where
 data Param a = TypeParam (TyParam a) | LifetimeParam (LifetimeDef a) deriving (Show)
 
 instance Show a => Diffable (Param a) where
-  p === val = 
+  p === val =
     case (val ! "variant", p) of
       ("Lifetime", LifetimeParam ldef) -> ldef === (val ! "fields" ! 0)
       ("Type", TypeParam typ) -> typ === (val ! "fields" ! 0)
@@ -403,7 +403,7 @@ instance Show a => Diffable (Stmt a) where
         t === (n' ! "fields" ! 0 ! "ty")
         i === (n' ! "fields" ! 0 ! "init")
         NullList as === (n' ! "fields" ! 0 ! "attrs" ! "_field0")
-      ("Expr", NoSemi e _)   -> e === (n' ! "fields" ! 0) 
+      ("Expr", NoSemi e _)   -> e === (n' ! "fields" ! 0)
       ("Semi", Semi e _)     -> e === (n' ! "fields" ! 0)
       ("Item", ItemStmt i _) -> i === (n' ! "fields" ! 0)
       ("Mac", MacStmt m s as _) -> do
@@ -425,7 +425,7 @@ instance Show a => Diffable (Visibility a) where
       (CrateV, "Crate") -> pure ()
       (RestrictedV p, val') -> do
         mkIdent "Restricted" === (val' ! "variant")
-        p === (val' ! "fields" ! 0) 
+        p === (val' ! "fields" ! 0)
       (InheritedV, "Inherited") -> pure ()
       (_, val') -> diff "different visibilities" a val'
 
@@ -506,7 +506,7 @@ instance Show a => Diffable (Mac a) where
     tt === (val ! "node" ! "tts")
 
 instance Diffable TokenTree where
-  tt === val = 
+  tt === val =
     case (val ! "variant", tt) of
       ("Token", Token _ t) -> t === (val ! "fields" ! 1)
       ("Delimited", Delimited _ d tt') -> do
@@ -515,8 +515,8 @@ instance Diffable TokenTree where
       _ -> diff "different token trees" tt val
 
 instance Diffable TokenStream where
-  ts === val = flatten ts === val 
-    where 
+  ts === val = flatten ts === val
+    where
     flatten (Tree t) = [t]
     flatten (Stream s) = concatMap flatten s
 
@@ -615,19 +615,19 @@ clean x =
     _        -> x
 
 instance Show a => Diffable (FieldPat a) where
-  f@(FieldPat mi p _) === val = do 
+  f@(FieldPat mi p _) === val = do
     -- Extract the identifier and whether the pattern is shorthand
     (i, s) <- case (mi,p) of
                 (Nothing, IdentP _ i' Nothing _) -> pure (i', True)
                 (Nothing, _) -> diff "shorthand field pattern needs to be identifier" f val
                 (Just i', _) -> pure (i', False)
-   
+
     i === (val ! "node" ! "ident")
     s === (val ! "node" ! "is_shorthand")
     p === (val ! "node" ! "pat")
 
 instance Show a => Diffable (Field a) where
-  Field i me _ === val = do 
+  Field i me _ === val = do
     isNothing me === (val ! "is_shorthand")
     i === (val ! "ident")
     unless (isNothing me) $
@@ -729,7 +729,7 @@ instance Show a => Diffable (Path a) where
     let val' = case val ! "segments" of
                  j@(Data.Aeson.Array v) | not (V.null v) && j ! 0 ! "ident" == "{{root}}" -> Data.Aeson.Array (V.drop 1 v)
                  j -> j
-    
+
     segs === val'
 
 instance Show a => Diffable (PathSegment a) where
@@ -775,7 +775,7 @@ instance Show a => Diffable (Expr a) where
         NullList as === (val ! "attrs" ! "_field0")
         q === (n ! "fields" ! 0)
         p === (n ! "fields" ! 1)
-      ("Array", Vec as es _) -> do 
+      ("Array", Vec as es _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         es === (n ! "fields" ! 0)
       ("Call", Call as f es _) -> do
@@ -789,12 +789,12 @@ instance Show a => Diffable (Expr a) where
         tys === if (tys' == Data.Aeson.Null)
                  then tys'
                  else tys' ! "fields" ! 0 ! "types"
-        (o : es) === (n ! "fields" ! 1) 
+        (o : es) === (n ! "fields" ! 1)
       ("Binary", Binary as o e1 e2 _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         o === (n ! "fields" ! 0)
-        e1 === (n ! "fields" ! 1) 
-        e2 === (n ! "fields" ! 2) 
+        e1 === (n ! "fields" ! 1)
+        e2 === (n ! "fields" ! 2)
       ("Unary", Unary as o e _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         o === (n ! "fields" ! 0)
@@ -853,7 +853,7 @@ instance Show a => Diffable (Expr a) where
         NullList as === (val ! "attrs" ! "_field0")
         l === (n ! "fields" ! 0)
         h === (n ! "fields" ! 1)
-        rl === (n ! "fields" ! 2) 
+        rl === (n ! "fields" ! 2)
       ("Closure", Closure as c a m decl e _) -> do
         error "TODO async closure"
         NullList as === (val ! "attrs" ! "_field0")
@@ -1023,17 +1023,17 @@ instance Diffable Suffix where
   Unsuffixed === "Unsuffixed" = pure ()
   F32 === "F32" = pure ()
   F64 === "F64" = pure ()
-  Is === val   | val ! "fields" == Data.Aeson.Array ["Isize"]   = pure () 
-  I8 === val   | val ! "fields" == Data.Aeson.Array ["I8"]   = pure () 
-  I16 === val  | val ! "fields" == Data.Aeson.Array ["I16"]  = pure () 
-  I32 === val  | val ! "fields" == Data.Aeson.Array ["I32"]  = pure () 
-  I64 === val  | val ! "fields" == Data.Aeson.Array ["I64"]  = pure () 
-  I128 === val | val ! "fields" == Data.Aeson.Array ["I128"] = pure () 
-  Us === val   | val ! "fields" == Data.Aeson.Array ["Usize"]   = pure () 
-  U8 === val   | val ! "fields" == Data.Aeson.Array ["U8"]   = pure () 
-  U16 === val  | val ! "fields" == Data.Aeson.Array ["U16"]  = pure () 
-  U32 === val  | val ! "fields" == Data.Aeson.Array ["U32"]  = pure () 
-  U64 === val  | val ! "fields" == Data.Aeson.Array ["U64"]  = pure () 
-  U128 === val | val ! "fields" == Data.Aeson.Array ["U128"] = pure () 
+  Is === val   | val ! "fields" == Data.Aeson.Array ["Isize"]   = pure ()
+  I8 === val   | val ! "fields" == Data.Aeson.Array ["I8"]   = pure ()
+  I16 === val  | val ! "fields" == Data.Aeson.Array ["I16"]  = pure ()
+  I32 === val  | val ! "fields" == Data.Aeson.Array ["I32"]  = pure ()
+  I64 === val  | val ! "fields" == Data.Aeson.Array ["I64"]  = pure ()
+  I128 === val | val ! "fields" == Data.Aeson.Array ["I128"] = pure ()
+  Us === val   | val ! "fields" == Data.Aeson.Array ["Usize"]   = pure ()
+  U8 === val   | val ! "fields" == Data.Aeson.Array ["U8"]   = pure ()
+  U16 === val  | val ! "fields" == Data.Aeson.Array ["U16"]  = pure ()
+  U32 === val  | val ! "fields" == Data.Aeson.Array ["U32"]  = pure ()
+  U64 === val  | val ! "fields" == Data.Aeson.Array ["U64"]  = pure ()
+  U128 === val | val ! "fields" == Data.Aeson.Array ["U128"] = pure ()
   u === val = diff "different suffix" u val
 

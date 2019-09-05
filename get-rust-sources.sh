@@ -31,7 +31,7 @@ curl https://api.github.com/orgs/rust-lang-nursery/repos > rust-lang-nursery.jso
 # Make one big JSON array of repos and extract the name and clone url
 (jq -rs '.[0] + .[1] | .[] | (.name, .clone_url)' rust-lang.json rust-lang-nursery.json \
 ) | while read -r REPO_NAME; read -r REPO_CLONE; do
- 
+
   # Skip 'multirust-rs-binaries' and 'rustc-timing-archive' in particular
   if [ $REPO_NAME = "multirust-rs-binaries" ] || [ $REPO_NAME = "rustc-timing-archive" ]
   then
@@ -48,7 +48,7 @@ curl https://api.github.com/orgs/rust-lang-nursery/repos > rust-lang-nursery.jso
   # compile.
   echo "Finding rust files in $REPO_NAME"
   find $REPO_NAME -type f -name '*.rs' | while read -r FILE; do
-    
+
     # Escaped file name
     DEST_FILE="../$DEST/${FILE//\//|}"
 

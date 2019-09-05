@@ -72,7 +72,7 @@ checkTerm inp y = sequence_ $ catMaybes tests
           , checkTerm' (Proxy :: Proxy Ty) inp <$> cast y
           , checkTerm' (Proxy :: Proxy Pat) inp <$> cast y
           , checkTerm' (Proxy :: Proxy Expr) inp <$> cast y
-       -- , checkTerm' (Proxy :: Proxy Stmt) inp <$> cast y  
+       -- , checkTerm' (Proxy :: Proxy Stmt) inp <$> cast y
           , checkTerm' (Proxy :: Proxy Item) inp <$> cast y
        -- , checkTerm' (Proxy :: Proxy TyParamBound) inp <$> cast y
           , checkTerm' (Proxy :: Proxy TyParam) inp <$> cast y
@@ -96,10 +96,10 @@ checkTerm inp y = sequence_ $ catMaybes tests
   slice (Span (Position s _ _) (Position e _ _)) str = Just . take (e - s) . drop s $ str
   slice _ _ = Nothing
 
- 
+
 checkSubterms :: Data a => InputStream -> a -> IO ()
 checkSubterms inp y = checkTerm inp y *> gmapQl (*>) (pure ()) (checkSubterms inp) y
- 
+
 
 -- | Turn an InputStream into either an error or a parse.
 parseNoSpans :: Functor f => P (f Span) -> InputStream -> Either String (f ())
@@ -119,7 +119,7 @@ parserLiterals = testGroup "parsing literals"
   , testP "b'\\n'" (Byte 10 Unsuffixed ())
   -- char's
   , testP "'a'" (Char 'a' Unsuffixed ())
-  , testP "'\\n'" (Char '\n' Unsuffixed ()) 
+  , testP "'\\n'" (Char '\n' Unsuffixed ())
   -- integers
   , testP "123" (Int Dec 123 Unsuffixed ())
   , testP "123i32" (Int Dec 123 I32 ())
@@ -137,7 +137,7 @@ parserLiterals = testGroup "parsing literals"
   , testP "123e-9f32" (Float 123e-9 F32 ())
   -- string's
   , testP "\"hello \\n world!\"" (Str "hello \n world!" Cooked Unsuffixed ())
-  , testP "r\"hello \n world!\"" (Str "hello \n world!" (Raw 0) Unsuffixed ()) 
+  , testP "r\"hello \n world!\"" (Str "hello \n world!" (Raw 0) Unsuffixed ())
   , testP "r##\"hello \"#\n world!\"##" (Str "hello \"#\n world!" (Raw 2) Unsuffixed ())
   -- bytestring's
   , testP "b\"hello \\n world!\"" (byteStr "hello \n world!" Cooked Unsuffixed ())
@@ -166,7 +166,7 @@ t = Path False [PathSegment "T" Nothing ()] ()
 
 -- | Test parsing of (inner and outer) attributes.
 parserAttributes :: Test
-parserAttributes = testGroup "parsing attributes" 
+parserAttributes = testGroup "parsing attributes"
   [ testP "#![cfgi]" (Attribute Inner cfgi (Stream []) ())
   , testP "#[cfgo]" (Attribute Outer cfgo (Stream []) ())
   , testP "#[derive(Eq, Ord, 1)]" (Attribute Outer derive (Tree (Delimited (Span (Position 8 1 8) (Position 20 1 20)) Paren (Stream
@@ -264,12 +264,12 @@ parserTypes = testGroup "parsing types"
                                                                                                                , PathSegment "b" Nothing ()
                                                                                                                ] ()) ()
                                                                                           , i32] [] ())) ()] ()) ())
-  , testP "std::vec::Vec<T>" (PathTy Nothing (Path False [ PathSegment "std" Nothing () 
-                                                         , PathSegment "vec" Nothing () 
+  , testP "std::vec::Vec<T>" (PathTy Nothing (Path False [ PathSegment "std" Nothing ()
+                                                         , PathSegment "vec" Nothing ()
                                                          , PathSegment "Vec" (Just (AngleBracketed [] [PathTy Nothing t ()] [] ())) ()
                                                          ] ()) ())
   , testP "foo::baz<'a,T,B=!>" (PathTy Nothing (Path False [ PathSegment "foo" Nothing ()
-                                                           , PathSegment "baz" (Just (AngleBracketed [Lifetime "a" ()] 
+                                                           , PathSegment "baz" (Just (AngleBracketed [Lifetime "a" ()]
                                                                                             [PathTy Nothing t () ]
                                                                                             [(mkIdent "B", Never ())] ())) ()
                                                            ] ()) ())
@@ -311,7 +311,7 @@ parserTypes = testGroup "parsing types"
              (PathTy (Just (QSelf (PathTy (Just (QSelf
                          (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
                                       , RegionTyParamBound (Lifetime "static" ()) ()
-                                      ] ()) 3)) 
+                                      ] ()) 3))
                                                 (Path False [ PathSegment "a" Nothing ()
                                                       , PathSegment "b" Nothing ()
                                                       , PathSegment "Trait" Nothing ()
@@ -325,7 +325,7 @@ parserTypes = testGroup "parsing types"
              (PathTy (Just (QSelf (PathTy (Just (QSelf
                          (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
                                       , RegionTyParamBound (Lifetime "static" ()) ()
-                                      ] ()) 3)) 
+                                      ] ()) 3))
                                                 (Path False [ PathSegment "a" Nothing ()
                                                       , PathSegment "b" Nothing ()
                                                       , PathSegment "Trait" Nothing ()
@@ -364,7 +364,7 @@ parserTypes = testGroup "parsing types"
              (BareFn Normal Rust
                             [ LifetimeDef [] (Lifetime "l1" ()) [Lifetime "l2" (), Lifetime "l3" ()] ()
                             , LifetimeDef [] (Lifetime "l4" ()) [Lifetime "l5" ()] () ]
-                            (FnDecl [Arg (Just (WildP ())) (TraitObject [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Trait" Nothing ()] ())) ()) None (), RegionTyParamBound (Lifetime "l1" ()) ()] ()) ()] 
+                            (FnDecl [Arg (Just (WildP ())) (TraitObject [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Trait" Nothing ()] ())) ()) None (), RegionTyParamBound (Lifetime "l1" ()) ()] ()) ()]
                                     (Just i32) False ()) ())
   , testP "for <'a> Foo<&'a T>"
              (TraitObject
@@ -408,7 +408,7 @@ parserTypes = testGroup "parsing types"
              (TraitObject
                  [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
                  , TraitTyParamBound (PolyTraitRef [] (TraitRef clone) ()) None ()
-                 ] ()) 
+                 ] ())
   ]
 
 
@@ -501,12 +501,12 @@ parserPatterns = testGroup "parsing patterns"
   , testP "foo!(x)"                 (MacP (Mac (Path False [PathSegment "foo" Nothing ()] ()) (Tree (Token (Span (Position 5 1 5) (Position 6 1 6)) (IdentTok "x")))  ()) ())
   ]
 
-  
+
 -- | Test parsing of expressions.
 parserExpressions :: Test
 parserExpressions = testGroup "parsing expressions"
   [ testP "123" (Lit [] (Int Dec 123 Unsuffixed ()) ())
-  , testP "()" (TupExpr [] [] ()) 
+  , testP "()" (TupExpr [] [] ())
   , testP "(1,)" (TupExpr [] [Lit [] (Int Dec 1 Unsuffixed ()) ()] ())
   , testP "(1,2)" (TupExpr [] [Lit [] (Int Dec 1 Unsuffixed ()) (), Lit [] (Int Dec 2 Unsuffixed ()) ()] ())
   , testP "|| 1" (Closure [] Ref NotAsync Movable (FnDecl [] Nothing False ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())
@@ -571,17 +571,17 @@ parserExpressions = testGroup "parsing expressions"
   , testP "Point { ..p }" (Struct [] point [] (Just (PathExpr [] Nothing (Path False [ PathSegment "p" Nothing () ] ()) ())) ())
   , testP "Point { }" (Struct [] point [] Nothing ())
   , testP "if true { 1; }"
-            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) 
+            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ())
                 Nothing ())
   , testP "if true { 1; } else { 2; }"
-            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) 
+            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ())
                 (Just (BlockExpr [] (Block [Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ()) ())) ())
   , testP "if true { 1; } else if false { 2; }"
-            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) 
+            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ())
                 (Just (If [] (Lit [] (Bool False Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ())
                     Nothing ())) ())
   , testP "if true { 1; } else if false { 2; } else { 3; }"
-            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) 
+            (If [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ())
                 (Just (If [] (Lit [] (Bool False Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ())
                     (Just (BlockExpr [] (Block [Semi (Lit [] (Int Dec 3 Unsuffixed ()) ()) ()] Normal ()) ())) ())) ())
   , testP "if let x = true { 1; }"
@@ -608,7 +608,7 @@ parserExpressions = testGroup "parsing expressions"
   , testP "for x in [1,2,3] { 1; }" (ForLoop [] x' (Vec [] [Lit [] (Int Dec 1 Unsuffixed ()) (), Lit [] (Int Dec 2 Unsuffixed ()) (), Lit [] (Int Dec 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) Nothing ())
   , testP "for | x | _ in [] { }" (ForLoop [] (OrP [x',WildP ()] ()) (Vec [] [] ()) (Block [] Normal ()) Nothing ())
   , testP "for x | _ in [] { }" (ForLoop [] (OrP [x',WildP ()] ()) (Vec [] [] ()) (Block [] Normal ()) Nothing ())
-  , testP "'lbl: for x in [1,2,3] { 1; }" (ForLoop [] x' (Vec [] [Lit [] (Int Dec 1 Unsuffixed ()) (), Lit [] (Int Dec 2 Unsuffixed ()) (), Lit [] (Int Dec 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) (Just (Label "lbl" ())) ()) 
+  , testP "'lbl: for x in [1,2,3] { 1; }" (ForLoop [] x' (Vec [] [Lit [] (Int Dec 1 Unsuffixed ()) (), Lit [] (Int Dec 2 Unsuffixed ()) (), Lit [] (Int Dec 3 Unsuffixed ()) ()] ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) (Just (Label "lbl" ())) ())
   , testP "while true { 1; }" (While [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) Nothing ())
   , testP "'lbl: while true { 1; }" (While [] (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) (Just (Label "lbl" ())) ())
   , testP "while let x = true { 1; }" (WhileLet [] x' (Lit [] (Bool True Unsuffixed ()) ()) (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) Nothing ())
@@ -623,7 +623,7 @@ parserExpressions = testGroup "parsing expressions"
   , testP "match true { _ => 2, x | x => { 1; }, }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] (OrP [x',x'] ()) Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ()] ())
   , testP "match true { _ => 2, | x | x => { 1; }, _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] (OrP [x',x'] ()) Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) (), Arm [] (WildP ()) Nothing (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
   , testP "match true { _ => 2, x | x => { 1; } _ => 1 }" (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [Arm [] (WildP ()) Nothing (Lit [] (Int Dec 2 Unsuffixed ()) ()) (), Arm [] (OrP [x',x'] ()) Nothing (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) (), Arm [] (WildP ()) Nothing (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
-  , testP "println!()" (MacExpr [] (Mac (Path False [PathSegment "println" Nothing ()] ()) (Stream []) ()) ()) 
+  , testP "println!()" (MacExpr [] (Mac (Path False [PathSegment "println" Nothing ()] ()) (Stream []) ()) ())
   , testP "1..2" (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) HalfOpen ())
   , testP "1...2" (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) Closed ())
   , testP "1..=2" (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) Closed ())
@@ -699,7 +699,7 @@ parserExpressions = testGroup "parsing expressions"
   , testP "x << 1" (Binary [] ShlOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())
   , testP "x >> 1" (Binary [] ShrOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())
   , testP "&&&x&&&x" (Binary [] AndOp (AddrOf [] Immutable (AddrOf [] Immutable (AddrOf [] Immutable (PathExpr [] Nothing x ()) ()) ()) ()) (AddrOf [] Immutable (PathExpr [] Nothing x ()) ()) ())
-  , testP "&[]" (AddrOf [] Immutable (Vec [] [] ()) ()) 
+  , testP "&[]" (AddrOf [] Immutable (Vec [] [] ()) ())
   , testP "for _ in 1..2 { }" (ForLoop [] (WildP ()) (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) HalfOpen ()) (Block [] Normal ()) Nothing ())
   , testP "for _ in 1..x { }" (ForLoop [] (WildP ()) (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (Just (PathExpr [] Nothing x ())) HalfOpen ()) (Block [] Normal ()) Nothing ())
   , testP "for _ in 1.. { }" (ForLoop [] (WildP ()) (Range [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) Nothing HalfOpen ()) (Block [] Normal ()) Nothing ())
@@ -743,9 +743,9 @@ parserItems = testGroup "parsing items"
   [ testP "static mut foo: i32 = 1;" (Static [] InheritedV (mkIdent "foo") i32 Mutable _1 ())
   , testP "static foo: i32 = 1;" (Static [] InheritedV (mkIdent "foo") i32 Immutable _1 ())
   , testP "const foo: i32 = 1;" (ConstItem [] InheritedV (mkIdent "foo") i32 _1 ())
-  , testP "type Foo = i32;" (TyAlias [] InheritedV "Foo" i32 (Generics [] [] (WhereClause [] ()) ()) ()) 
-  , testP "type Foo where i32 = i32 = i32;" (TyAlias [] InheritedV "Foo" i32 (Generics [] [] (WhereClause [EqPredicate i32 i32 ()] ()) ()) ()) 
-  , testP "type Foo<> = i32;" (TyAlias [] InheritedV "Foo" i32 (Generics [] [] (WhereClause [] ()) ()) ()) 
+  , testP "type Foo = i32;" (TyAlias [] InheritedV "Foo" i32 (Generics [] [] (WhereClause [] ()) ()) ())
+  , testP "type Foo where i32 = i32 = i32;" (TyAlias [] InheritedV "Foo" i32 (Generics [] [] (WhereClause [EqPredicate i32 i32 ()] ()) ()) ())
+  , testP "type Foo<> = i32;" (TyAlias [] InheritedV "Foo" i32 (Generics [] [] (WhereClause [] ()) ()) ())
   , testP "extern crate foo;" (ExternCrate [] InheritedV (mkIdent "foo") Nothing ())
   , testP "extern crate foo as bar;" (ExternCrate [] InheritedV (mkIdent "bar") (Just "foo") ())
   , testP "mod foo;" (Mod [] InheritedV "foo" Nothing ())
@@ -783,7 +783,7 @@ parserItems = testGroup "parsing items"
 
   , testP "fn inverse<T,>(x: i32) -> T where i32: ConvertTo<T>, { return x + 1 }" (Fn [] InheritedV "inverse" (FnDecl [ Arg (Just (IdentP (ByValue Immutable) "x" Nothing ())) (PathTy Nothing (Path False [PathSegment "i32" Nothing ()] ()) ()) ()
                      ]
-            (Just (PathTy Nothing t ())) 
+            (Just (PathTy Nothing t ()))
             False
             ())
     Normal NotConst Rust
@@ -799,17 +799,17 @@ parserItems = testGroup "parsing items"
   , testP "extern \"win64\" fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Normal NotConst Win64 (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
   , testP "fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
   , testP "fn foo(x: i32) -> i32 where { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
-  , testP "mod foo;" (Mod [] InheritedV "foo" Nothing ()) 
-  , testP "mod foo { }" (Mod [] InheritedV "foo" (Just []) ()) 
+  , testP "mod foo;" (Mod [] InheritedV "foo" Nothing ())
+  , testP "mod foo { }" (Mod [] InheritedV "foo" (Just []) ())
   , testP "mod foo { pub fn foo(x: i32) -> i32 { return x + 1 } }" (Mod [] InheritedV "foo" (Just [Fn [] PublicV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()]) ())
   , testP "pub extern { }" (ForeignMod [] PublicV C [] ())
   , testP "extern { }" (ForeignMod [] InheritedV C [] ())
   , testP "extern \"win64\" { pub static x: i32; static mut y: i32; }" (ForeignMod [] InheritedV Win64 [ForeignStatic [] PublicV "x" i32 Immutable (), ForeignStatic [] InheritedV "y" i32 Mutable ()] ())
   , testP "extern { pub fn foo(x: i32, ...); }" (ForeignMod [] InheritedV C [ForeignFn [] PublicV "foo" (FnDecl [Arg (Just x') i32 ()] Nothing True ()) (Generics [] [] (WhereClause [] ()) ()) ()] ())
- 
+
  , testP "enum Option<T> { None, Some(T) }" (Enum [] InheritedV "Option" [ Variant "None" [] (UnitD ()) Nothing ()
                                                                      , Variant "Some" [] (TupleD [ StructField Nothing InheritedV (PathTy Nothing t ()) [] ()] ()) Nothing () ]
-                                                                     (Generics [] [TyParam [] "T" [] Nothing ()] (WhereClause [] ()) ()) ())  
+                                                                     (Generics [] [TyParam [] "T" [] Nothing ()] (WhereClause [] ()) ()) ())
   , testP "impl [i32] { }" (Impl [] InheritedV Final Normal Positive (Generics [] [] (WhereClause [] ()) ()) Nothing (Slice i32 ()) [] ())
   , testP "unsafe impl i32 { }" (Impl [] InheritedV Final Unsafe Positive (Generics [] [] (WhereClause [] ()) ()) Nothing i32 [] ())
   , testP "impl (<i32 as a>::b) { }" (Impl [] InheritedV Final Normal Positive (Generics [] [] (WhereClause [] ()) ()) Nothing (ParenTy (PathTy (Just (QSelf i32 1)) (Path False [PathSegment "a" Nothing (), PathSegment "b" Nothing () ] ()) ()) ()) [] ())
@@ -821,33 +821,33 @@ parserItems = testGroup "parsing items"
   , testP "impl Debug for i32 { pub default type T = i32; }" (Impl [] InheritedV Final Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef debug)) i32 [TypeI [] PublicV Default "T" i32 ()] ())
   , testP "impl Debug for i32 { const x: i32 = 1; }" (Impl [] InheritedV Final Normal Positive (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef debug)) i32 [ConstI [] InheritedV Final "x" i32 (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] ())
 
-  , testP "pub impl Debug for i32 { const unsafe fn foo(x: i32) -> i32 { return x + 1 } }" 
+  , testP "pub impl Debug for i32 { const unsafe fn foo(x: i32) -> i32 { return x + 1 } }"
   (Impl [] PublicV Final Normal Positive
                     (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef debug)) i32
                     [MethodI [] InheritedV Final "foo"
                              (Generics [] [] (WhereClause [] ()) ())
                              (MethodSig Unsafe Const Rust (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()))
-                             (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()] ())  
-  , testP "impl Debug for i32 { pub default extern \"C\" fn foo(x: i32) -> i32 { return x + 1 } }" 
+                             (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()] ())
+  , testP "impl Debug for i32 { pub default extern \"C\" fn foo(x: i32) -> i32 { return x + 1 } }"
   (Impl [] InheritedV Final Normal Positive
                     (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef debug)) i32
                     [MethodI [] PublicV Default "foo"
                        (Generics [] [] (WhereClause [] ()) ())
                        (MethodSig Normal NotConst C (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) )
-                       (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()] ())  
-  , testP "impl Debug for i32 { fn foo(&self) -> i32 { return x + 1 } }" 
+                       (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()] ())
+  , testP "impl Debug for i32 { fn foo(&self) -> i32 { return x + 1 } }"
   (Impl [] InheritedV Final Normal Positive
                     (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef debug)) i32
                     [MethodI [] InheritedV Final "foo"
                              (Generics [] [] (WhereClause [] ()) ())
                              (MethodSig Normal NotConst Rust (FnDecl [SelfRegion Nothing Immutable ()] (Just i32) False ()) )
-                             (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()] ()) 
-  , testP "trait Trace { }" (Trait [] InheritedV "Trace" False Normal (Generics [] [] (WhereClause [] ()) ()) [] [] ()) 
-  , testP "unsafe trait Trace { }" (Trait [] InheritedV "Trace" False Unsafe (Generics [] [] (WhereClause [] ()) ()) [] [] ()) 
-  , testP "unsafe auto trait Trace { }" (Trait [] InheritedV "Trace" True Unsafe (Generics [] [] (WhereClause [] ()) ()) [] [] ()) 
-  , testP "trait Trace: Debug { }" (Trait [] InheritedV "Trace" False Normal (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()] [] ()) 
+                             (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()] ())
+  , testP "trait Trace { }" (Trait [] InheritedV "Trace" False Normal (Generics [] [] (WhereClause [] ()) ()) [] [] ())
+  , testP "unsafe trait Trace { }" (Trait [] InheritedV "Trace" False Unsafe (Generics [] [] (WhereClause [] ()) ()) [] [] ())
+  , testP "unsafe auto trait Trace { }" (Trait [] InheritedV "Trace" True Unsafe (Generics [] [] (WhereClause [] ()) ()) [] [] ())
+  , testP "trait Trace: Debug { }" (Trait [] InheritedV "Trace" False Normal (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()] [] ())
   , testP "unsafe trait Trace: Debug { }" (Trait [] InheritedV "Trace" False Unsafe (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()] [] ())
-  ] 
+  ]
 
 -- Just a common expression to make the tests above more straightforward
 _1 :: Expr ()

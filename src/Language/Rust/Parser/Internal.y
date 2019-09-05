@@ -2,14 +2,14 @@
 {-|
 Module      : Language.Rust.Parser.Internal
 Description : Rust parser
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : GHC
 
-The parsers in this file are all re-exported to 'Language.Rust.Parser' via the 'Parse' class. The
-parsers are based off of:
+The parsers in this file are all re-exported to 'Language.Rust.Parser' via the
+'Language.Rust.Parser.Parse' class. The parsers are based off of:
 
   * primarily the reference @rustc@ [implementation][0]
   * some documentation on [rust-lang][2]
@@ -355,7 +355,7 @@ gt :: { () }
 -- This should precede any '|' token which could be absorbed in a '||' token. This works in the same
 -- way as 'gt'.
 pipe :: { () }
-  : {- empty -}   {%% \(Spanned tok s) -> 
+  : {- empty -}   {%% \(Spanned tok s) ->
       let s' = nudge 1 0 s; s'' = nudge 0 (-1) s in
       case tok of
         PipePipe -> pushToken (Spanned Pipe s') *> pushToken (Spanned Pipe s'')
@@ -466,12 +466,12 @@ qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
   : ty '>' '::' segs                { Spanned (QSelf $1 0, Path False (toList $4) (spanOf $4)) ($1 # $>) }
   | ty as ty_path '>' '::' segs     {
       let Path g segsTy x = $3 in
-      Spanned (QSelf $1 (length segsTy), Path g (segsTy <> toList $6) x) ($1 # $>) 
+      Spanned (QSelf $1 (length segsTy), Path g (segsTy <> toList $6) x) ($1 # $>)
     }
 
 -- Usually qual_path_suf is for... type paths! This consumes these but with a starting '<<' token.
 -- The underlying type has the right 'Span' (it doesn't include the very first '<', while the
--- 'Spanned' wrapper does) 
+-- 'Spanned' wrapper does)
 lt_ty_qual_path :: { Spanned (Ty Span) }
   : '<<' qual_path_suf(path_segments_without_colons)
     { let (qself,path) = unspan $2 in Spanned (PathTy (Just qself) path (nudge 1 0 ($1 # $2))) ($1 # $2) }
@@ -704,23 +704,23 @@ ty_param_bound_mod :: { TyParamBound Span }
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Abi }
   : str             {% case unspan $1 of
-                         LiteralTok (StrTok "cdecl") Nothing ->              pure Cdecl             
-                         LiteralTok (StrTok "stdcall") Nothing ->            pure Stdcall          
-                         LiteralTok (StrTok "fastcall") Nothing ->           pure Fastcall         
-                         LiteralTok (StrTok "vectorcall") Nothing ->         pure Vectorcall       
-                         LiteralTok (StrTok "aapcs") Nothing ->              pure Aapcs            
-                         LiteralTok (StrTok "win64") Nothing ->              pure Win64            
-                         LiteralTok (StrTok "sysv64") Nothing ->             pure SysV64           
-                         LiteralTok (StrTok "ptx-kernel") Nothing ->         pure PtxKernel        
-                         LiteralTok (StrTok "msp430-interrupt") Nothing ->   pure Msp430Interrupt  
-                         LiteralTok (StrTok "x86-interrupt") Nothing ->      pure X86Interrupt     
-                         LiteralTok (StrTok "Rust") Nothing ->               pure Rust             
-                         LiteralTok (StrTok "C") Nothing ->                  pure C                
-                         LiteralTok (StrTok "system") Nothing ->             pure System           
-                         LiteralTok (StrTok "rust-intrinsic") Nothing ->     pure RustIntrinsic    
-                         LiteralTok (StrTok "rust-call") Nothing ->          pure RustCall         
+                         LiteralTok (StrTok "cdecl") Nothing ->              pure Cdecl
+                         LiteralTok (StrTok "stdcall") Nothing ->            pure Stdcall
+                         LiteralTok (StrTok "fastcall") Nothing ->           pure Fastcall
+                         LiteralTok (StrTok "vectorcall") Nothing ->         pure Vectorcall
+                         LiteralTok (StrTok "aapcs") Nothing ->              pure Aapcs
+                         LiteralTok (StrTok "win64") Nothing ->              pure Win64
+                         LiteralTok (StrTok "sysv64") Nothing ->             pure SysV64
+                         LiteralTok (StrTok "ptx-kernel") Nothing ->         pure PtxKernel
+                         LiteralTok (StrTok "msp430-interrupt") Nothing ->   pure Msp430Interrupt
+                         LiteralTok (StrTok "x86-interrupt") Nothing ->      pure X86Interrupt
+                         LiteralTok (StrTok "Rust") Nothing ->               pure Rust
+                         LiteralTok (StrTok "C") Nothing ->                  pure C
+                         LiteralTok (StrTok "system") Nothing ->             pure System
+                         LiteralTok (StrTok "rust-intrinsic") Nothing ->     pure RustIntrinsic
+                         LiteralTok (StrTok "rust-call") Nothing ->          pure RustCall
                          LiteralTok (StrTok "platform-intrinsic") Nothing -> pure PlatformIntrinsic
-                         LiteralTok (StrTok "unadjusted") Nothing ->         pure Unadjusted       
+                         LiteralTok (StrTok "unadjusted") Nothing ->         pure Unadjusted
                          _ -> parseError $1 {- "invalid ABI" -}
                     }
   | {- empty -}     { C }
@@ -1076,7 +1076,7 @@ nonblock_expr :: { Expr Span }
 blockpostfix_expr :: { Expr Span }
   : postfix_blockexpr(block_like_expr)                                        { $1 }
   | postfix_blockexpr(vis_safety_block)                                       { $1 }
-  | left_gen_expression(blockpostfix_expr,expr,expr)                          { $1 } 
+  | left_gen_expression(blockpostfix_expr,expr,expr)                          { $1 }
 
 
 -- Finally, what remains is the more mundane definitions of particular types of expressions.
@@ -1237,7 +1237,7 @@ stmt :: { Stmt Span }
   | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
   | many(outer_attribute) block_like_expr ';'              { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
   | many(outer_attribute) blockpostfix_expr ';'            { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
-  | many(outer_attribute) vis_union_def_nonblock_expr ';'  { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) } 
+  | many(outer_attribute) vis_union_def_nonblock_expr ';'  { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
   | many(outer_attribute) block_like_expr    %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
   | many(outer_attribute) vis_safety_block ';'             { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
   | many(outer_attribute) vis_safety_block   %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }
@@ -1526,7 +1526,7 @@ token_tree :: { TokenTree }
   -- # Delimited
   | '(' token_stream ')'                       { Delimited ($1 # $3) Paren $2 }
   | '{' token_stream '}'                       { Delimited ($1 # $3) Brace $2 }
-  | '[' token_stream ']'                       { Delimited ($1 # $3) Bracket $2 } 
+  | '[' token_stream ']'                       { Delimited ($1 # $3) Bracket $2 }
   -- # Token
   | token                                      { let Spanned t s = $1 in Token s t }
 
@@ -1757,7 +1757,7 @@ expParseError (Spanned t _, exps) = fail $ "Syntax error: unexpected `" ++ show 
     , (byteStrLit,                        "a byte string"   )
     , (rawStrLit,                         "a raw string"    )
     , (rawByteStrLit,                     "a raw bytestring")
-    
+
     , (doc,                               "a doc"           )
     , (outerDoc,                          "an outer doc"    )
     , (innerDoc,                          "an inner doc"    )
@@ -1785,7 +1785,7 @@ expParseError (Spanned t _, exps) = fail $ "Syntax error: unexpected `" ++ show 
   byteStrLit    = words "byteStr"
   rawStrLit     = words "rawStr"
   rawByteStrLit = words "rawByteStr"
- 
+
   doc = outerDoc ++ innerDoc
   outerDoc = words "outerDoc"
   innerDoc = words "innerDoc"
