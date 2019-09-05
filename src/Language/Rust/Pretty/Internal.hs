@@ -9,7 +9,7 @@ Portability : portable
 
 The pretty printing facilities in this file are re-exported to 'Language.Rust.Pretty' via the
 'Pretty' and 'PrettyAnnotated' classes. There may be invariants in this module that are not properly
-documented. 
+documented.
 -}
 {-# OPTIONS_GHC -Wall -fno-warn-name-shadowing #-}
 {-# OPTIONS_HADDOCK hide, not-home #-}
@@ -23,24 +23,24 @@ module Language.Rust.Pretty.Internal (
 
   -- ** Top level
   printSourceFile,
-  
+
   -- ** General
   printMutability,
   printUnsafety,
   printFnArgsAndRet,
   printIdent,
-  
+
   -- ** Paths
   printPath,
-  
+
   -- ** Attributes
   printAttr,
-  
+
   -- ** Literals
   printLit,
   printLitSuffix,
   printLitTok,
-  
+
   -- ** Expressions
   printExpr,
   printAbi,
@@ -48,7 +48,7 @@ module Language.Rust.Pretty.Internal (
   printBinOp,
   printField,
   printRangeLimits,
- 
+
   -- ** Types and lifetimes
   printType,
   printGenerics,
@@ -60,15 +60,15 @@ module Language.Rust.Pretty.Internal (
   printWherePredicate,
   printPolyTraitRef,
   printTraitRef,
-  
+
   -- ** Patterns
   printPat,
   printBindingMode,
   printFieldPat,
-  
+
   -- ** Statements
   printStmt,
-  
+
   -- ** Items
   printItem,
   printForeignItem,
@@ -79,7 +79,7 @@ module Language.Rust.Pretty.Internal (
   printVariant,
   printUseTree,
   printVis,
-  
+
   -- ** Blocks
   printBlock,
 
@@ -868,34 +868,23 @@ printFullMutability Immutable = "const"
 -- | Print a pattern (@print_pat@)
 printPat :: Pat a -> Doc a
 printPat (WildP x)                      = annotate x "_"
+printPat (RestP x)                      = annotate x ".."
 printPat (IdentP bm p s x)              = annotate x (printBindingMode bm <+> printIdent p <+> perhaps (\p' -> "@" <+> printPat p') s)
 printPat (StructP p fs False x)         = annotate x (printPath p True <+> block Brace True "," mempty (printFieldPat `map` fs))
 printPat (StructP p fs True x)          = annotate x (printPath p True <+> block Brace True mempty mempty ([ printFieldPat f <> "," | f <- fs ] ++ [ ".." ]))
-printPat (TupleStructP p es Nothing x)  = annotate x (printPath p True <> "(" <> commas es printPat <> ")")
-printPat (TupleStructP p es (Just d) x) = let (before,after) = splitAt d es
-  in annotate x (printPath p True <> "(" <> commas before printPat <> when (d /= 0) ","
-                    <+> ".." <> when (d /= length es) ("," <+> commas after printPat) <> ")")
+printPat (TupleStructP p es x)          = annotate x (printPath p True <> "(" <> commas es printPat <> ")")
 printPat (PathP Nothing path x)         = annotate x (printPath path True)
 printPat (PathP (Just qself) path x)    = annotate x (printQPath path qself True)
-printPat (TupleP [elt] Nothing x)        = annotate x ("(" <> printPat elt <> ",)")
-printPat (TupleP elts Nothing x)        = annotate x ("(" <> commas elts printPat <> ")")
-printPat (TupleP elts (Just ddpos) _) = let (before,after) = splitAt ddpos elts
-  in "(" <> commas before printPat <> unless (null before) ","
-      <+> ".." <> unless (null after) ("," <+> commas after printPat) <> ")"
+printPat (TupleP [RestP y] x)           = annotate x ("(" <> annotate y ".." <> ")")
+printPat (TupleP [elt] x)               = annotate x ("(" <> printPat elt <> ",)")
+printPat (TupleP elts x)                = annotate x ("(" <> commas elts printPat <> ")")
 printPat (BoxP inner x)                 = annotate x ("box" <+> printPat inner)
 printPat (RefP inner mutbl x)           = annotate x ("&" <> printMutability mutbl <+> printPat inner)
 printPat (LitP expr x)                  = annotate x (printExpr expr)
 printPat (RangeP lo hi x)               = annotate x (printExpr lo <+> "..=" <+> printExpr hi)
-printPat (SliceP pb Nothing pa x)       = annotate x ("[" <> commas (pb ++ pa) printPat <> "]")
-printPat (SliceP pb (Just ps) pa x)     = annotate x ("[" <> commas pb printPat <> ps' <+> commas pa printPat <> "]")
-  where ps' = hcat [ unless (null pb) ","
-                   , space
-                   , case ps of WildP{} -> mempty
-                                _ -> printPat ps
-                   , ".."
-                   , unless (null pa) ","
-                   ]
+printPat (SliceP ps x)                  = annotate x ("[" <> commas ps printPat <> "]")
 printPat (MacP m x)                     = annotate x (printMac Paren m)
+printPat (ParenP p x)                   = annotate x ("(" <> printPat p <> ")")
 
 -- | Print a field pattern
 printFieldPat :: FieldPat a -> Doc a

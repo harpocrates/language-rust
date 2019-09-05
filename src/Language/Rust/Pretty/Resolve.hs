@@ -573,23 +573,20 @@ instance (Typeable a, Monoid a) => Resolve (LifetimeDef a) where resolveM = reso
 --------------
 -- Patterns --
 --------------
+-- TODO: consider disallowind `..` not in the allowed contexts
+-- TODO: use parenP
 
 -- | A pattern can be invalid of
 --
---   * the index of the '...' in the tuple/tuple-struct is out of range
 --   * the index of the qself path is out of range
 --   * any underlying component is invalid
 --
 resolvePat :: (Typeable a, Monoid a) => Pat a -> ResolveM (Pat a)
 -- TupleStruct
-resolvePat t@(TupleStructP p fs im x) = scope t $ do
+resolvePat t@(TupleStructP p fs x) = scope t $ do
   p' <- resolvePath ExprPath p
   fs' <- traverse resolvePat fs
-  im' <- case im of
-           Nothing -> pure Nothing
-           Just i | 0 <= i && i <= length fs -> pure (Just i)
-           _ -> err im "index of ... in tuple struct pattern is outside of field range"
-  pure (TupleStructP p' fs' im' x)
+  pure (TupleStructP p' fs' x)
 -- PathP
 resolvePat p@(PathP Nothing a x) = scope p (PathP Nothing <$> resolvePath ExprPath a <*> pure x)
 resolvePat p@(PathP q@(Just (QSelf _ i)) p'@(Path g s x) x')
@@ -601,13 +598,9 @@ resolvePat p@(PathP q@(Just (QSelf _ i)) p'@(Path g s x) x')
       q' <- traverse resolveQSelf q
       pure (PathP q' (Path g (tyPSegs <> exprPSegs) x) x')
 -- TupleP
-resolvePat p@(TupleP ps i x) = scope p $ do
+resolvePat p@(TupleP ps x) = scope p $ do
   ps' <- traverse resolvePat ps
-  i' <- case i of
-          Nothing -> pure Nothing
-          Just j | 0 <= j && j <= length ps -> pure i
-                 | otherwise -> err i "index of ... in tuple pattern is outside of range"
-  pure (TupleP ps' i' x)
+  pure (TupleP ps' x)
 
 -- Everything else...
 resolvePat p@(LitP e x) = scope p (LitP <$> resolveExpr LitExpr e <*> pure x)
@@ -617,7 +610,9 @@ resolvePat p@(IdentP m i p' x) = scope p (IdentP m <$> resolveIdent i <*> traver
 resolvePat p@(StructP p' fs b x) = scope p (StructP <$> resolvePath ExprPath p' <*> traverse resolveFieldPat fs <*> pure b <*> pure x)
 resolvePat p@(BoxP p' x) = scope p (BoxP <$> resolvePat p' <*> pure x)
 resolvePat p@(RefP p' m x) = scope p (RefP <$> resolvePat p' <*> pure m <*> pure x)
-resolvePat p@(SliceP b m a x) = scope p (SliceP <$> traverse resolvePat b <*> traverse resolvePat m <*> traverse resolvePat a <*> pure x)
+resolvePat p@(SliceP ps x) = scope p (SliceP <$> traverse resolvePat ps <*> pure x)
+resolvePat p@(RestP x) = scope p (pure (RestP x))
+resolvePat p@(ParenP p' x) = scope p (ParenP <$> resolvePat p' <*> pure x)
 resolvePat p@(MacP m x) = scope p (MacP <$> resolveMac ExprPath m <*> pure x)
 
 instance (Typeable a, Monoid a) => Resolve (Pat a) where resolveM = resolvePat

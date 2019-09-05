@@ -777,14 +777,12 @@ data Pat a
   | IdentP BindingMode Ident (Maybe (Pat a)) a
   -- | struct pattern. The 'Bool' signals the presence of a @..@. (example: @Variant { x, y, .. }@)
   | StructP (Path a) [FieldPat a] Bool a
-  -- | tuple struct pattern. If the @..@ pattern is present, the 'Maybe Int' denotes its position.
-  -- (example: @Variant(x, y, .., z)@)
-  | TupleStructP (Path a) [Pat a] (Maybe Int) a
+  -- | tuple struct pattern (example: @Variant(x, y, z)@)
+  | TupleStructP (Path a) [Pat a] a
   -- | path pattern (example @A::B::C@)
   | PathP (Maybe (QSelf a)) (Path a) a
-  -- | tuple pattern. If the @..@ pattern is present, the 'Maybe Int' denotes its position.
-  -- (example: @(a, b)@)
-  | TupleP [Pat a] (Maybe Int) a
+  -- | tuple pattern (example: @(a, b)@)
+  | TupleP [Pat a] a
   -- | box pattern (example: @box _@)
   | BoxP (Pat a) a
   -- | reference pattern (example: @&mut (a, b)@)
@@ -793,9 +791,13 @@ data Pat a
   | LitP (Expr a) a
   -- | range pattern (example: @1...2@)
   | RangeP (Expr a) (Expr a) a
-  -- | slice pattern where, as per [this RFC](https://github.com/P1start/rfcs/blob/array-pattern-changes/text/0000-array-pattern-changes.md),
-  -- the pattern is split into the patterns before/after the @..@ and the pattern at the @..@. (example: @[a, b, ..i, y, z]@)
-  | SliceP [Pat a] (Maybe (Pat a)) [Pat a] a
+  -- | slice pattern (example: @[a, b, .., y, z]@)
+  | SliceP [Pat a] a
+  -- | A rest pattern @..@. Syntactically it is valid anywhere, but semantically it only has meaning
+  -- immediately inside a 'SliceP', a 'TupleP', or a 'TupleStructP' (example @[a, .., b]@)
+  | RestP a
+  -- | A paren
+  | ParenP (Pat a) a
   -- | generated from a call to a macro (example: @LinkedList!(1,2,3)@)
   | MacP (Mac a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
@@ -804,14 +806,16 @@ instance Located a => Located (Pat a) where
   spanOf (WildP s) = spanOf s
   spanOf (IdentP _ _ _ s) = spanOf s
   spanOf (StructP _ _ _ s) = spanOf s
-  spanOf (TupleStructP _ _ _ s) = spanOf s
+  spanOf (TupleStructP _ _ s) = spanOf s
   spanOf (PathP _ _ s) = spanOf s
-  spanOf (TupleP _ _ s) = spanOf s
+  spanOf (TupleP _ s) = spanOf s
   spanOf (BoxP _ s) = spanOf s
   spanOf (RefP _ _ s) = spanOf s
   spanOf (LitP _ s) = spanOf s
   spanOf (RangeP _ _ s) = spanOf s
-  spanOf (SliceP _ _ _ s) = spanOf s 
+  spanOf (SliceP _ s) = spanOf s
+  spanOf (RestP s) = spanOf s
+  spanOf (ParenP _ s) = spanOf s
   spanOf (MacP _ s) = spanOf s
 
 -- | Everything in Rust is namespaced using nested modules. A 'Path' represents a path into nested
@@ -1021,9 +1025,7 @@ data Ty a
   | PathTy (Maybe (QSelf a)) (Path a) a
   -- | trait object type (example: @Bound1 + Bound2 + Bound3@)
   | TraitObject (NonEmpty (TyParamBound a)) a
-  -- | impl trait type (see the
-  -- [RFC](https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md))
-  -- (example: @impl Bound1 + Bound2 + Bound3@).
+  -- | impl trait type (example: @impl Bound1 + Bound2 + Bound3@).
   | ImplTrait (NonEmpty (TyParamBound a)) a
   -- | no-op; kept solely so that we can pretty print faithfully
   | ParenTy (Ty a) a

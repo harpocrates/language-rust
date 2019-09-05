@@ -466,9 +466,11 @@ instance Show a => Diffable (Pat a) where
     let val' = val ! "node"
     case (val', p') of
       ("Wild", WildP _) -> pure ()
+      ("Rest", RestP _) -> pure ()
       (Data.Aeson.Object{}, _) ->
         case (val' ! "variant", p') of
           ("Box", BoxP p _) -> p === (val' ! "fields" ! 0)
+          ("Paren", ParenP p _) -> p === (val' ! "fields" ! 0)
           ("Lit", LitP e _) -> e === (val' ! "fields" ! 0)
           ("Mac", MacP m _) -> m === (val' ! "fields" ! 0)
           ("Ident", IdentP bm i m _) -> do
@@ -482,20 +484,16 @@ instance Show a => Diffable (Pat a) where
             p ===  (val' ! "fields" ! 0)
             fp === (val' ! "fields" ! 1)
             d === (val' ! "fields" ! 2)
-          ("TupleStruct", TupleStructP p fp mi _) -> do
+          ("TupleStruct", TupleStructP p fp _) -> do
             p  === (val' ! "fields" ! 0)
             fp === (val' ! "fields" ! 1)
-            mi === (val' ! "fields" ! 2)
-          ("Tuple", TupleP fp mi _) -> do
+          ("Tuple", TupleP fp _) -> do
             fp === (val' ! "fields" ! 0)
-            mi === (val' ! "fields" ! 1)
           ("Range", RangeP e1 e2 _) -> do
             e1 === (val' ! "fields" ! 0)
             e2 === (val' ! "fields" ! 1)
-          ("Slice", SliceP b m a _) -> do
-            b === (val' ! "fields" ! 0)
-            m === (val' ! "fields" ! 1)
-            a === (val' ! "fields" ! 2)
+          ("Slice", SliceP a _) -> do
+            a === (val' ! "fields" ! 0)
           ("Path", PathP q p _) -> do
             q === (val' ! "fields" ! 0)
             p === (val' ! "fields" ! 1)

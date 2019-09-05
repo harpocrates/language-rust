@@ -770,7 +770,7 @@ arg_general :: { Arg Span }
   | '&'  ident ':' ty  { Arg (Just (RefP (IdentP (ByValue Immutable) (unspan $2) Nothing (spanOf $2)) Immutable ($1 # $2))) $4 ($1 # $4) }
   | '&&' '_'   ':' ty  { Arg (Just (RefP (RefP (WildP (spanOf $2)) Immutable (nudge 1 0 ($1 # $2))) Immutable ($1 # $2))) $4 ($1 # $4) }
   | '&&' ident ':' ty  { Arg (Just (RefP (RefP (IdentP (ByValue Immutable) (unspan $2) Nothing (spanOf $2)) Immutable (nudge 1 0 ($1 # $2))) Immutable ($1 # $2))) $4 ($1 # $4) }
-  
+
 -- Self argument (only allowed in trait function signatures)
 arg_self_general :: { Arg Span }
   : mut self              { SelfValue Mutable ($1 # $>) }
@@ -812,6 +812,7 @@ lambda_arg :: { Arg Span }
 pat :: { Pat Span }
   : ntPat                           { $1 }
   | '_'                             { WildP (spanOf $1) }
+  | '..'                            { RestP (spanOf $1) }
   | '&' mut pat                     { RefP $3 Mutable ($1 # $3) }
   | '&' pat                         { RefP $2 Immutable ($1 # $2) }
   | '&&' mut pat                    { RefP (RefP $3 Mutable (nudge 1 0 ($1 # $3))) Immutable ($1 # $3) }
@@ -832,42 +833,17 @@ pat :: { Pat Span }
   | lit_or_path '..=' lit_or_path   { RangeP $1 $3 ($1 # $>) }
   | expr_path '{' '..' '}'          { StructP $1 [] True ($1 # $>) }
   | expr_path '{' pat_fields '}'    { let (fs,b) = $3 in StructP $1 fs b ($1 # $>) }
-  | expr_path '(' pat_tup ')'       { let (ps,m,_) = $3 in TupleStructP $1 ps m ($1 # $>) }
+  | expr_path '(' sep_byT(pat,',') ')' { TupleStructP $1 $3 ($1 # $>) }
   | expr_mac                        { MacP $1 (spanOf $1) }
-  | '[' pat_slice ']'               { let (b,s,a) = $2 in SliceP b s a ($1 # $3) }
-  | '(' pat_tup ')'                 {%
-      case $2 of
-        ([p], Nothing, False) -> parseError (CloseDelim Paren)
-        (ps,m,t) -> pure (TupleP ps m ($1 # $3))
+  | '[' sep_byT(pat,',') ']'        { SliceP $2 ($1 # $>) }
+  | '('                      ')'    { TupleP [] ($1 # $>) }
+  | '(' sep_by1(pat,',') ',' ')'    { TupleP (toList $2) ($1 # $>) }
+  | '(' sep_by1(pat,',')     ')'    {
+      case toList $2 of
+        l @ [RestP _] -> TupleP l ($1 # $>)   -- (..) is a tuple pattern
+        [p] -> ParenP p ($1 # $>)             -- (<pat>) is parenthesis around a pattern
+        l -> TupleP l ($1 # $>)               -- (<pat1>, <pat2>) is a tuple pattern
     }
-
-
--- The first element is the spans, the second the position of '..', and the third if there is a
--- trailing comma
-pat_tup :: { ([Pat Span], Maybe Int, Bool) }
-  : sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',')     { (toList ($1 <> $5), Just (length $1), False) }
-  | sep_by1(pat,',') ',' '..' ',' sep_by1(pat,',') ',' { (toList ($1 <> $5), Just (length $1), True) }
-  | sep_by1(pat,',') ',' '..'                          { (toList $1,         Just (length $1), False) }
-  | sep_by1(pat,',')                                   { (toList $1,         Nothing,          False) }
-  | sep_by1(pat,',') ','                               { (toList $1,         Nothing,          True) }
-  |                      '..' ',' sep_by1(pat,',')     { (toList $3,         Just 0,           False) }
-  |                      '..' ',' sep_by1(pat,',') ',' { (toList $3,         Just 0,           True) }
-  |                      '..'                          { ([],                Just 0,           False) }
-  | {- empty -}                                        { ([],                Nothing,          False) }
-
--- The first element is the patterns at the beginning of the slice, the second the optional binding
--- for the middle slice ('Nothing' if there is no '..' and 'Just (WildP mempty) is there is one, but
--- unlabelled), and the third is the patterns at the end of the slice.
-pat_slice :: { ([Pat Span], Maybe (Pat Span), [Pat Span]) }
-  : sep_by1(pat,',') ',' '..' ',' sep_by1T(pat,',')    { (toList $1, Just (WildP mempty), toList $5) }
-  | sep_by1(pat,',') ',' '..'                          { (toList $1, Just (WildP mempty), []) }
-  | sep_by1(pat,',')     '..' ',' sep_by1T(pat,',')    { let (xs, x) = unsnoc $1 in (toList xs, Just x,    toList $4) }
-  | sep_by1(pat,',')     '..'                          { let (xs, x) = unsnoc $1 in (toList xs, Just x,    []) }
-  |                               sep_by1T(pat,',')    { (toList $1, Nothing,             []) }
-  |                      '..' ',' sep_by1T(pat,',')    { ([],        Just (WildP mempty), toList $3) }
-  |                      '..'                          { ([],        Just (WildP mempty), []) }
-  | {- empty -}                                        { ([],        Nothing,             []) }
-
 
 -- Endpoints of range patterns
 lit_or_path :: { Expr Span }
@@ -876,7 +852,7 @@ lit_or_path :: { Expr Span }
   | '-' lit_expr      { Unary [] Neg $2 ($1 # $2) }
   |     lit_expr      { $1 }
 
--- Used in patterns for tuple and expression patterns
+-- Used in patterns for expression patterns
 pat_fields :: { ([FieldPat Span], Bool) }
   : sep_byT(pat_field,',')           { ($1, False) }
   | sep_by1(pat_field,',') ',' '..'  { (toList $1, True) }

@@ -103,6 +103,7 @@ prettyLiterals = testGroup "printing literals"
 prettyPatterns :: Test
 prettyPatterns = testGroup "printing patterns"
   [ testFlatten "_" (printPat (WildP ()))
+  , testFlatten ".." (printPat (RestP ()))
   , testFlatten "x" (printPat x)
   , testFlatten "x @ _" (printPat (IdentP (ByValue Immutable) (mkIdent "x") (Just (WildP ())) ()))
   , testFlatten "ref x" (printPat (IdentP (ByRef Immutable) (mkIdent "x") Nothing ()))
@@ -116,18 +117,12 @@ prettyPatterns = testGroup "printing patterns"
   , testFlatten "Point { x, .. }" (printPat (StructP point
                                                [ FieldPat Nothing x () ]
                                                True ())) 
-  , testFlatten "Point(x)" (printPat (TupleStructP point
-                                              [ x ] Nothing ()))
-  , testFlatten "Point()" (printPat (TupleStructP point
-                                              [] Nothing ()))
-  , testFlatten "Point(..)" (printPat (TupleStructP point
-                                              [] (Just 0) ()))
-  , testFlatten "Point(x, ..)" (printPat (TupleStructP point
-                                              [ x ] (Just 1) ()))
-  , testFlatten "Point(.., x)" (printPat (TupleStructP point
-                                              [ x ] (Just 0) ()))
-  , testFlatten "Point(x, _, .., _, x)" (printPat (TupleStructP point
-                                              [ x, WildP (), WildP (), x ] (Just 2) ()))
+  , testFlatten "Point(x)" (printPat (TupleStructP point [ x ] ()))
+  , testFlatten "Point()" (printPat (TupleStructP point [] ()))
+  , testFlatten "Point(..)" (printPat (TupleStructP point [RestP ()] ()))
+  , testFlatten "Point(x, ..)" (printPat (TupleStructP point [ x, RestP () ] ()))
+  , testFlatten "Point(.., x)" (printPat (TupleStructP point [ RestP (), x ] ()))
+  , testFlatten "Point(x, _, .., _, x)" (printPat (TupleStructP point [ x, WildP (), RestP (), WildP (), x ] ()))
   , testFlatten "math::PI" (printPat (PathP Nothing (Path False [ PathSegment "math" Nothing ()
                                                                 , PathSegment "PI" Nothing () ] ()) ()))
   , testFlatten "<i32 as a(i32, i32)>::b::<'lt>::AssociatedItem"
@@ -138,13 +133,15 @@ prettyPatterns = testGroup "printing patterns"
   , testFlatten "(x, ref mut y, box z)" (printPat (TupleP [ x
                                                           , IdentP (ByRef Mutable) "y" Nothing ()
                                                           , BoxP (IdentP (ByValue Immutable) "z" Nothing ()) ()
-                                                          ] 
-                                                          Nothing ()))
-  , testFlatten "ref mut y @ (x, x)" (printPat (IdentP (ByRef Mutable) "y" (Just (TupleP [ x, x ] Nothing ())) ()))
+                                                          ]
+                                                          ()))
+  , testFlatten "ref mut y @ (x, x)" (printPat (IdentP (ByRef Mutable) "y" (Just (TupleP [ x, x ] ())) ()))
   , testFlatten "(1, 2, .., 3)" (printPat (TupleP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
-                                               , LitP (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()
-                                               , LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ]
-                                               (Just 2) ()))
+                                                  , LitP (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()
+                                                  , RestP ()
+                                                  , LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ]
+                                                  ()))
+  , testFlatten "(..)" (printPat (TupleP [ RestP () ] ()))
 
   , testFlatten "box x" (printPat (BoxP x ()))
   , testFlatten "1 ..= 2" (printPat (RangeP (Lit [] (Int Dec 1 Unsuffixed ()) ()) (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()))
@@ -153,16 +150,17 @@ prettyPatterns = testGroup "printing patterns"
   , testFlatten "true" (printPat (LitP (Lit [] (Bool True Unsuffixed ()) ()) ()))
   , testFlatten "-123" (printPat (LitP (Unary [] Neg (Lit [] (Int Dec 123 Unsuffixed ()) ()) ()) ()))
   , testFlatten "[1, 2]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
-                                          , LitP (Lit [] (Int Dec 2 Unsuffixed ()) ()) () ] 
-                                          Nothing [] ()))
-  , testFlatten "[1, .., 3]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ]
-                                             (Just (WildP ()))
-                                             [ LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ] ()))
-  , testFlatten "[1, x.., 3]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ]
-                                              (Just x)
-                                              [ LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ] ()))
-  , testFlatten "[1, ..]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ] (Just (WildP ())) [] ()))
-  , testFlatten "[1, x..]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) () ] (Just x) [] ()))
+                                           , LitP (Lit [] (Int Dec 2 Unsuffixed ()) ()) () ]
+                                           ()))
+  , testFlatten "[1, .., 3]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
+                                               , RestP ()
+                                               , LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ] ()))
+  , testFlatten "[1, x @ .., 3]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
+                                                   , IdentP (ByValue Immutable) "x" (Just (RestP ())) ()
+                                                   , LitP (Lit [] (Int Dec 3 Unsuffixed ()) ()) () ] ()))
+  , testFlatten "[1, _]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), WildP () ] ()))
+  , testFlatten "[1, x @ ..]" (printPat (SliceP [ LitP (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
+                                                , IdentP (ByValue Immutable) "x" (Just (RestP ())) () ] ()))
 
   , testFlatten "vec!(foo)" (printPat (MacP (Mac (Path False [vec] ())
                                                  (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) ()))
