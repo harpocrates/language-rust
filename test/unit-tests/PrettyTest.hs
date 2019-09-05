@@ -302,16 +302,28 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "match foo { _ => { return 1; } }" (printExpr (Match [] foo [Arm [] [WildP ()] Nothing (BlockExpr [] retBlk ()) ()] ())) 
   , testFlatten "match foo { _ => { return 1; }, _ | _ if foo => 1 }" (printExpr (Match [] foo [Arm [] [WildP ()] Nothing (BlockExpr [] retBlk ()) (), Arm [] [WildP (), WildP ()] (Just foo) _1 ()] ())) 
   , testFlatten "move |x: i32| { return 1; }"
-                (printExpr (Closure [] Movable Value (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) 
+                (printExpr (Closure [] Value NotAsync Movable (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ())
                                     (BlockExpr [] retBlk ()) ()))
   , testFlatten "static move |x: i32| { return 1; }"
-                (printExpr (Closure [] Immovable Value (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) 
+                (printExpr (Closure [] Value NotAsync Immovable (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ())
                                     (BlockExpr [] retBlk ()) ()))
   , testFlatten "|x: i32| -> i32 { return 1; }"
-                (printExpr (Closure [] Movable Ref (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ()) 
+                (printExpr (Closure [] Ref NotAsync Movable (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ())
                                     (BlockExpr [] retBlk ()) ()))
   , testFlatten "static |x: i32| -> i32 { return 1; }"
-                (printExpr (Closure [] Immovable Ref (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ()) 
+                (printExpr (Closure [] Ref NotAsync Immovable (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ())
+                                    (BlockExpr [] retBlk ()) ()))
+  , testFlatten "async move |x: i32| { return 1; }"
+                (printExpr (Closure [] Value IsAsync Movable (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ())
+                                    (BlockExpr [] retBlk ()) ()))
+  , testFlatten "static async move |x: i32| { return 1; }"
+                (printExpr (Closure [] Value IsAsync Immovable (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ())
+                                    (BlockExpr [] retBlk ()) ()))
+  , testFlatten "async |x: i32| -> i32 { return 1; }"
+                (printExpr (Closure [] Ref IsAsync Movable (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ())
+                                    (BlockExpr [] retBlk ()) ()))
+  , testFlatten "static async |x: i32| -> i32 { return 1; }"
+                (printExpr (Closure [] Ref IsAsync Immovable (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ())
                                     (BlockExpr [] retBlk ()) ()))
   , testFlatten "#[cfgo] { #![cfgi] return 1; }" (printExpr (BlockExpr [cfgI,cfgO] retBlk ()))
   , testFlatten "{ return 1; }" (printExpr (BlockExpr [] retBlk ()))

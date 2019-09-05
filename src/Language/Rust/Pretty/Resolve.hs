@@ -769,15 +769,15 @@ resolveExprP p _ c@(Continue as ml x) = scope c $ parenE (p > 0) $ do
   ml' <- traverse resolveLbl ml
   pure (Continue as' ml' x)
 -- Closures
-resolveExprP _ _ c@(Closure _ _ _ (FnDecl _ _ True _) _ _) = scope c (err c "closures can never be variadic")
-resolveExprP p c e@(Closure as m cb fn@(FnDecl _ ret _ _) b x) = scope c $
+resolveExprP _ _ c@(Closure _ _ _ _ (FnDecl _ _ True _) _ _) = scope c (err c "closures can never be variadic")
+resolveExprP p c e@(Closure as cb a m fn@(FnDecl _ ret _ _) b x) = scope c $
     case (c, ret, b) of
       (NoStructExpr,      Just _, BlockExpr{}) -> parenthesize e
       (NoStructBlockExpr, Just _, BlockExpr{}) -> parenthesize e
-      (NoStructExpr,      Just _, _          ) -> parenthesize (Closure as m cb fn (asBlock b) x) 
-      (NoStructBlockExpr, Just _, _          ) -> parenthesize (Closure as m cb fn (asBlock b) x)
+      (NoStructExpr,      Just _, _          ) -> parenthesize (Closure as cb a m fn (asBlock b) x)
+      (NoStructBlockExpr, Just _, _          ) -> parenthesize (Closure as cb a m fn (asBlock b) x)
       (_,                 Just _, BlockExpr{}) -> resolved AnyExpr
-      (_,                 Just _, _          ) -> parenthesize (Closure as m cb fn (asBlock b) x)
+      (_,                 Just _, _          ) -> parenthesize (Closure as cb a m fn (asBlock b) x)
       _                                         -> resolved (rhs c)
   where
   asBlock ex = BlockExpr [] (Block [NoSemi ex mempty] Normal mempty) mempty
@@ -786,7 +786,7 @@ resolveExprP p c e@(Closure as m cb fn@(FnDecl _ ret _ _) b x) = scope c $
     as' <- traverse (resolveAttr OuterAttr) as
     fn' <- resolveFnDecl NoSelf NamedArg fn
     b' <- resolveExprP 0 c' b
-    pure (Closure as' m cb fn' b' x)
+    pure (Closure as' cb a m fn' b' x)
 -- Assignment/in-place expressions
 resolveExprP p c a@(Assign as l r x) = scope a $ parenE (p > 1) $ do
   as' <- traverse (resolveAttr OuterAttr) as

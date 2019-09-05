@@ -856,7 +856,8 @@ instance Show a => Diffable (Expr a) where
         l === (n ! "fields" ! 0)
         h === (n ! "fields" ! 1)
         rl === (n ! "fields" ! 2) 
-      ("Closure", Closure as m c decl e _) -> do
+      ("Closure", Closure as c a m decl e _) -> do
+        error "TODO async closure"
         NullList as === (val ! "attrs" ! "_field0")
         m === (n ! "fields" ! 1)
         c === (n ! "fields" ! 0)

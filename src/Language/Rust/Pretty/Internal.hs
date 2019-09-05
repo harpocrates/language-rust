@@ -381,8 +381,9 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     ForLoop as pat e blk lbl x  -> annotate x (hsep [ printLbl lbl, "for", printPat pat, "in", printExpr e, printBlockWithAttrs True blk as ])
     Loop as blk lbl x           -> annotate x (hsep [ printLbl lbl, "loop", printBlockWithAttrs True blk as ])
     Match as e arms x           -> annotate x (hsep [ "match", printExpr e, block Brace False "," (printInnerAttrs as) (printArm `map` arms) ])
-    Closure _ s cap decl body x -> annotate x (hsep [ when (s == Immovable) "static"
-                                                    , when (cap == Value) "move"
+    Closure _ c a s decl body x -> annotate x (hsep [ when (s == Immovable) "static"
+                                                    , when (a == IsAsync) "async"
+                                                    , when (c == Value) "move"
                                                     , printFnBlockArgs decl <+> printExpr body])
     BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs True blk attrs)
     TryBlock attrs blk x        -> annotate x ("try" <+> printBlockWithAttrs True blk attrs)
@@ -470,7 +471,7 @@ expressionAttrs (WhileLet as _ _ _ _ _) = as
 expressionAttrs (ForLoop as _ _ _ _ _) = as
 expressionAttrs (Loop as _ _ _) = as
 expressionAttrs (Match as _ _ _) = as
-expressionAttrs (Closure as _ _ _ _ _) = as
+expressionAttrs (Closure as _ _ _ _ _ _) = as
 expressionAttrs (BlockExpr as _ _) = as
 expressionAttrs (TryBlock as _ _) = as
 expressionAttrs (Async as _ _ _) = as

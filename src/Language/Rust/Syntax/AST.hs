@@ -44,6 +44,7 @@ module Language.Rust.Syntax.AST (
   Expr(..),
   Abi(..),
   Arm(..),
+  IsAsync(..),
   UnOp(..),
   BinOp(..),
   Label(..),
@@ -327,7 +328,7 @@ data Expr a
   -- | match block
   | Match [Attribute a] (Expr a) [Arm a] a
   -- | closure (example: @move |a, b, c| { a + b + c }@)
-  | Closure [Attribute a] Movability CaptureBy (FnDecl a) (Expr a) a
+  | Closure [Attribute a] CaptureBy IsAsync Movability (FnDecl a) (Expr a) a
   -- | (possibly unsafe) block (example: @unsafe { 1 }@)
   | BlockExpr [Attribute a] (Block a) a
   -- | a try block (example: @try { 1 }@)
@@ -389,7 +390,7 @@ instance Located a => Located (Expr a) where
   spanOf (ForLoop _ _ _ _ _ s) = spanOf s
   spanOf (Loop _ _ _ s) = spanOf s
   spanOf (Match _ _ _ s) = spanOf s
-  spanOf (Closure _ _ _ _ _ s) = spanOf s
+  spanOf (Closure _ _ _ _ _ _ s) = spanOf s
   spanOf (BlockExpr _ _ s) = spanOf s
   spanOf (TryBlock _ _ s) = spanOf s
   spanOf (Async _ _ _ s) = spanOf s
@@ -543,7 +544,14 @@ instance Located a => Located (ImplItem a) where
 -- traits](https://github.com/rust-lang/rfcs/blob/master/text/0019-opt-in-builtin-traits.md)
 --
 -- Example: @!@ as in @impl !Trait for Foo { }@
-data ImplPolarity = Positive | Negative deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
+data ImplPolarity = Positive | Negative
+  deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
+
+-- | Distinguishes async from not async elements, eg. closures.
+--
+-- Example: @async@ in @async |x: i32| { ... }@
+data IsAsync = IsAsync | NotAsync
+  deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | A top-level item, possibly in a 'Mod' or a 'ItemStmt' (@syntax::ast::Item@ with
 -- @syntax::ast::ItemKind@ inlined).

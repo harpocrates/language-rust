@@ -958,14 +958,22 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | break label                      { Break [] (Just $2) Nothing ($1 # $2) }
   | break label rhs      %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
   -- lambda expressions
-  | static move lambda_args rhs   %prec LAMBDA
-    { Closure [] Immovable Value (FnDecl (unspan $3) Nothing False (spanOf $3)) $> ($1 # $>) }
-  |        move lambda_args rhs   %prec LAMBDA
-    { Closure [] Movable Value (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
-  | static      lambda_args rhs   %prec LAMBDA
-    { Closure [] Immovable Ref   (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
-  |             lambda_args rhs   %prec LAMBDA
-    { Closure [] Movable Ref   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $>) }
+  | static async move lambda_args rhs   %prec LAMBDA
+    { Closure [] Value IsAsync  Immovable (FnDecl (unspan $4) Nothing False (spanOf $4)) $> ($1 # $>) }
+  |        async move lambda_args rhs   %prec LAMBDA
+    { Closure [] Value IsAsync  Movable   (FnDecl (unspan $3) Nothing False (spanOf $3)) $> ($1 # $>) }
+  | static       move lambda_args rhs   %prec LAMBDA
+    { Closure [] Value NotAsync Immovable (FnDecl (unspan $3) Nothing False (spanOf $3)) $> ($1 # $>) }
+  |              move lambda_args rhs   %prec LAMBDA
+    { Closure [] Value NotAsync Movable   (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
+  | static async      lambda_args rhs   %prec LAMBDA
+    { Closure [] Ref   IsAsync  Immovable (FnDecl (unspan $3) Nothing False (spanOf $3)) $> ($1 # $>) }
+  |        async      lambda_args rhs   %prec LAMBDA
+    { Closure [] Ref   IsAsync  Movable   (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
+  | static            lambda_args rhs   %prec LAMBDA
+    { Closure [] Ref   NotAsync Immovable (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
+  |                   lambda_args rhs   %prec LAMBDA
+    { Closure [] Ref   NotAsync Movable   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $>) }
 
 -- Variant of 'gen_expression' which only constructs expressions starting with another expression.
 left_gen_expression(lhs,rhs,rhs2) :: { Expr Span }
@@ -1213,14 +1221,22 @@ paren_expr :: { Expr Span }
 
 -- Closure ending in blocks
 lambda_expr_block :: { Expr Span }
-  : static move lambda_args '->' ty_no_plus block
-    { Closure [] Immovable Value (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |        move lambda_args '->' ty_no_plus block
-    { Closure [] Movable Value (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  | static      lambda_args '->' ty_no_plus block
-    { Closure [] Immovable Ref   (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |             lambda_args '->' ty_no_plus block
-    { Closure [] Movable Ref   (FnDecl (unspan $1) (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  : static async move lambda_args '->' ty_no_plus block
+    { Closure [] Value IsAsync  Immovable (FnDecl (unspan $4) (Just $6) False (spanOf $4)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  |        async move lambda_args '->' ty_no_plus block
+    { Closure [] Value IsAsync  Movable   (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  | static       move lambda_args '->' ty_no_plus block
+    { Closure [] Value NotAsync Immovable (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  |              move lambda_args '->' ty_no_plus block
+    { Closure [] Value NotAsync Movable   (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  | static async      lambda_args '->' ty_no_plus block
+    { Closure [] Ref   IsAsync  Immovable (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  |        async      lambda_args '->' ty_no_plus block
+    { Closure [] Ref   IsAsync  Movable   (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  | static            lambda_args '->' ty_no_plus block
+    { Closure [] Ref   NotAsync Immovable (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+  |                   lambda_args '->' ty_no_plus block
+    { Closure [] Ref   NotAsync Movable   (FnDecl (unspan $1) (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
 
 -- Lambda expression arguments block
 lambda_args :: { Spanned [Arg Span] }
@@ -1879,7 +1895,7 @@ addAttrs as (WhileLet as' p e b l s) = WhileLet (as ++ as') p e b l s
 addAttrs as (ForLoop as' p e b l s)  = ForLoop (as ++ as') p e b l s
 addAttrs as (Loop as' b l s)         = Loop (as ++ as') b l s
 addAttrs as (Match as' e a s)        = Match (as ++ as') e a s
-addAttrs as (Closure as' m c f e s)  = Closure (as ++ as') m c f e s
+addAttrs as (Closure as' c a m f e s) = Closure (as ++ as') c a m f e s
 addAttrs as (BlockExpr as' b s)      = BlockExpr (as ++ as') b s
 addAttrs as (TryBlock as' b s)       = TryBlock (as ++ as') b s
 addAttrs as (Async as' c b s)        = Async (as ++ as') c b s
