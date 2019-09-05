@@ -171,11 +171,15 @@ import qualified Data.List.NonEmpty as N
 
   -- Strict keywords used in the language
   as             { Spanned (IdentTok "as") _ }
+  async          { Spanned (IdentTok "async") _ }
+  await          { Spanned (IdentTok "await") _ }
   box            { Spanned (IdentTok "box") _ }
   break          { Spanned (IdentTok "break") _ }
   const          { Spanned (IdentTok "const") _ }
   continue       { Spanned (IdentTok "continue") _ }
   crate          { Spanned (IdentTok "crate") _ }
+  do             { Spanned (IdentTok "do") _ }
+  dyn            { Spanned (IdentTok "dyn") _ }
   else           { Spanned (IdentTok "else") _ }
   enum           { Spanned (IdentTok "enum") _ }
   extern         { Spanned (IdentTok "extern") _ }
@@ -201,12 +205,13 @@ import qualified Data.List.NonEmpty as N
   super          { Spanned (IdentTok "super") _ }
   trait          { Spanned (IdentTok "trait") _ }
   true           { Spanned (IdentTok "true") _ }
+  try            { Spanned (IdentTok "try") _ }
   type           { Spanned (IdentTok "type") _ }
   unsafe         { Spanned (IdentTok "unsafe") _ }
   use            { Spanned (IdentTok "use") _ }
   where          { Spanned (IdentTok "where") _ }
   while          { Spanned (IdentTok "while") _ }
-  do             { Spanned (IdentTok "do") _ }
+  yield          { Spanned (IdentTok "yield") _ }
 
   -- Keywords reserved for future use
   abstract       { Spanned (IdentTok "abstract") _ }
@@ -227,10 +232,7 @@ import qualified Data.List.NonEmpty as N
   -- Weak keywords, have special meaning only in specific contexts.
   default        { Spanned (IdentTok "default") _ }
   union          { Spanned (IdentTok "union") _ }
-  catch          { Spanned (IdentTok "catch") _ }
   auto           { Spanned (IdentTok "auto") _ }
-  yield          { Spanned (IdentTok "yield") _ }
-  dyn            { Spanned (IdentTok "dyn") _ }
 
   -- Comments
   outerDoc       { Spanned (Doc _ Outer _) _ }
@@ -277,7 +279,7 @@ import qualified Data.List.NonEmpty as N
 %nonassoc mut DEF EQ '::'
 
 -- These are all identifiers of sorts ('union' and 'default' are "weak" keywords)
-%nonassoc IDENT ntIdent default union catch self Self super auto dyn crate
+%nonassoc IDENT ntIdent default union self Self super auto crate
 
 -- These are all very low precedence unary operators
 %nonassoc box return yield break continue for IMPLTRAIT LAMBDA
@@ -325,7 +327,7 @@ import qualified Data.List.NonEmpty as N
 %%
 
 -- Unwraps the IdentTok into just an Ident
--- For questionable reasons of backwards compatibility, 'union', 'default', and 'catch' can be used
+-- For questionable reasons of backwards compatibility, 'union', and 'default' can be used
 -- as identifiers, even if they are also keywords. They are "contextual" keywords.
 --
 -- Union's RFC: https://github.com/rust-lang/rfcs/blob/master/text/1444-union.md
@@ -333,9 +335,7 @@ ident :: { Spanned Ident }
   : ntIdent                       { fmap (\(Interpolated (NtIdent i)) -> i) $1 }
   | union                         { toIdent $1 }
   | default                       { toIdent $1 }
-  | catch                         { toIdent $1 }
   | auto                          { toIdent $1 }
-  | dyn                           { toIdent $1 }
   | IDENT                         { toIdent $1 }
 
 -- This should precede any '>' token which could be absorbed in a '>>', '>=', or '>>=' token. Its
@@ -554,7 +554,7 @@ path_segments_with_colons :: { Reversed NonEmpty (PathSegment Span) }
       case (unsnoc $1, unspan $3) of
         ((rst, PathSegment i Nothing x), (lts, tys, bds)) ->
           let seg = PathSegment i (Just (AngleBracketed lts tys bds (spanOf $3))) (x # $3)
-          in pure $ snoc rst seg 
+          in pure $ snoc rst seg
         _ -> fail "invalid path segment in expression path"
     }
 
@@ -1002,7 +1002,6 @@ left_gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | lhs '...' rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
   | lhs '..=' rhs2  %prec INFIXRNG   { Range [] (Just $1) (Just $3) Closed ($1 # $>) }
   -- assignment expressions
-  | lhs '<-' rhs                     { InPlace [] $1 $3 ($1 # $>) }
   | lhs '=' rhs                      { Assign [] $1 $3 ($1 # $>) }
   | lhs '>>=' rhs                    { AssignOp [] ShrOp $1 $3 ($1 # $>) }
   | lhs '<<=' rhs                    { AssignOp [] ShlOp $1 $3 ($1 # $>) }
@@ -1155,11 +1154,13 @@ block_like_expr :: { Expr Span }
   | match nostruct_expr '{'             arms '}'                 { Match [] $2 $4 ($1 # $>) }
   | match nostruct_expr '{' inner_attrs arms '}'                 { Match (toList $4) $2 $5 ($1 # $>) }
   | expr_path '!' '{' token_stream '}'                           { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
-  | do catch inner_attrs_block                                   { let (as,b) = $> in Catch as b ($1 # b) }
+  | try inner_attrs_block                                        { let (as,b) = $> in TryBlock as b ($1 # b) }
+  | async      inner_attrs_block                                 { let (as,b) = $> in Async as Ref b ($1 # b) }
+  | async move inner_attrs_block                                 { let (as,b) = $> in Async as Value b ($1 # b) }
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }
-  : if             nostruct_expr block else_expr        { If [] $2 $3 $4 ($1 # $3 # $>) }
+  : if              nostruct_expr block else_expr       { If [] $2 $3 $4 ($1 # $3 # $>) }
   | if let pats '=' nostruct_expr block else_expr       { IfLet [] $3 $5 $6 $7 ($1 # $6 # $>) }
 
 else_expr :: { Maybe (Expr Span) }
@@ -1631,6 +1632,7 @@ token :: { Spanned Token }
   | const      { $1 }
   | continue   { $1 }
   | crate      { $1 }
+  | dyn        { $1 }
   | else       { $1 }
   | enum       { $1 }
   | extern     { $1 }
@@ -1656,11 +1658,13 @@ token :: { Spanned Token }
   | super      { $1 }
   | trait      { $1 }
   | true       { $1 }
+  | try        { $1 }
   | type       { $1 }
   | unsafe     { $1 }
   | use        { $1 }
   | where      { $1 }
   | while      { $1 }
+  | yield      { $1 }
   -- Keywords reserved for future use
   | abstract   { $1 }
   | alignof    { $1 }
@@ -1680,10 +1684,7 @@ token :: { Spanned Token }
   -- Weak keywords, have special meaning only in specific contexts.
   | default    { $1 }
   | union      { $1 }
-  | catch      { $1 }
   | auto       { $1 }
-  | yield      { $1 }
-  | dyn        { $1 }
   -- Comments
   | outerDoc   { $1 }
   | innerDoc   { $1 }
@@ -1808,7 +1809,7 @@ expParseError (Spanned t _, exps) = fail $ "Syntax error: unexpected `" ++ show 
          words "'||' '&&' '<<' '(' '[' '{' box break continue" ++
          words "for if loop match move return Self self      " ++
          words "static super unsafe while do default union   " ++
-         words "catch auto yield dyn"
+         words "auto yield try async"
 
   lit = boolLit ++ byteLit ++ charLit ++ intLit ++ floatLit ++ strLit ++
         byteStrLit ++ rawStrLit ++ rawByteStrLit
@@ -1862,7 +1863,6 @@ macroItem as i mac x = MacItem as i mac x
 -- | Add attributes to an expression
 addAttrs :: [Attribute Span] -> Expr Span -> Expr Span
 addAttrs as (Box as' e s)            = Box (as ++ as') e s
-addAttrs as (InPlace as' e1 e2 s)    = InPlace (as ++ as') e1 e2 s
 addAttrs as (Vec as' e s)            = Vec (as ++ as') e s
 addAttrs as (Call as' f es s)        = Call (as ++ as') f es s
 addAttrs as (MethodCall as' i s tys es s') = MethodCall (as ++ as') i s tys es s'
@@ -1881,7 +1881,8 @@ addAttrs as (Loop as' b l s)         = Loop (as ++ as') b l s
 addAttrs as (Match as' e a s)        = Match (as ++ as') e a s
 addAttrs as (Closure as' m c f e s)  = Closure (as ++ as') m c f e s
 addAttrs as (BlockExpr as' b s)      = BlockExpr (as ++ as') b s
-addAttrs as (Catch as' b s)          = Catch (as ++ as') b s
+addAttrs as (TryBlock as' b s)       = TryBlock (as ++ as') b s
+addAttrs as (Async as' c b s)        = Async (as ++ as') c b s
 addAttrs as (Assign as' e1 e2 s)     = Assign (as ++ as') e1 e2 s
 addAttrs as (AssignOp as' b e1 e2 s) = AssignOp (as ++ as') b e1 e2 s
 addAttrs as (FieldAccess as' e i s)  = FieldAccess (as ++ as') e i s

@@ -773,10 +773,6 @@ instance Show a => Diffable (Expr a) where
       ("Box", Box as e _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
-      ("InPlace", InPlace as e1 e2 _) -> do
-        NullList as === (val ! "attrs" ! "_field0")
-        e1 === (n ! "fields" ! 0)
-        e2 === (n ! "fields" ! 1)
       ("Path", PathExpr as q p _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         q === (n ! "fields" ! 0)
@@ -915,9 +911,10 @@ instance Show a => Diffable (Expr a) where
       ("Try", Try as e _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
-      ("Catch", Catch as e _) -> do
+      ("TryBlock", TryBlock as e _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
+      ("Async", Async as c e _) -> error "TODO"
       _ -> diff "differing expressions:" ex val
     where
     n = val ! "node"
@@ -944,24 +941,24 @@ instance Diffable RangeLimits where
 instance Diffable BinOp where
   b === val =
     case (val ! "node", b) of
-      ("Add",    AddOp   ) -> pure () 
-      ("Sub",    SubOp   ) -> pure () 
-      ("Mul",    MulOp   ) -> pure () 
-      ("Div",    DivOp   ) -> pure () 
-      ("Rem",    RemOp   ) -> pure () 
-      ("And",    AndOp   ) -> pure () 
-      ("Or",     OrOp    ) -> pure () 
-      ("BitXor", BitXorOp) -> pure () 
-      ("BitAnd", BitAndOp) -> pure () 
-      ("BitOr",  BitOrOp ) -> pure () 
-      ("Shl",    ShlOp   ) -> pure () 
-      ("Shr",    ShrOp   ) -> pure () 
-      ("Eq",     EqOp    ) -> pure () 
-      ("Lt",     LtOp    ) -> pure () 
-      ("Le",     LeOp    ) -> pure () 
-      ("Ne",     NeOp    ) -> pure () 
-      ("Ge",     GeOp    ) -> pure () 
-      ("Gt",     GtOp    ) -> pure () 
+      ("Add",    AddOp   ) -> pure ()
+      ("Sub",    SubOp   ) -> pure ()
+      ("Mul",    MulOp   ) -> pure ()
+      ("Div",    DivOp   ) -> pure ()
+      ("Rem",    RemOp   ) -> pure ()
+      ("And",    AndOp   ) -> pure ()
+      ("Or",     OrOp    ) -> pure ()
+      ("BitXor", BitXorOp) -> pure ()
+      ("BitAnd", BitAndOp) -> pure ()
+      ("BitOr",  BitOrOp ) -> pure ()
+      ("Shl",    ShlOp   ) -> pure ()
+      ("Shr",    ShrOp   ) -> pure ()
+      ("Eq",     EqOp    ) -> pure ()
+      ("Lt",     LtOp    ) -> pure ()
+      ("Le",     LeOp    ) -> pure ()
+      ("Ne",     NeOp    ) -> pure ()
+      ("Ge",     GeOp    ) -> pure ()
+      ("Gt",     GtOp    ) -> pure ()
       _ -> diff "different binary operation" b val
 
 instance Diffable UnOp where

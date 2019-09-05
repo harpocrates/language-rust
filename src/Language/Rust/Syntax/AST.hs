@@ -154,7 +154,7 @@ data Abi
 -- trait Foo {
 --   // Regular argument
 --   fn new(x: usize) -> Foo;
---   
+--
 --   // Self argument, by value
 --   fn foo(self) -> i32;
 --   fn bar(mut self);
@@ -252,7 +252,7 @@ data BinOp
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | Describes how a value bound to an identifier in a pattern is going to be borrowed
--- (@syntax::ast::BindingMode@). 
+-- (@syntax::ast::BindingMode@).
 --
 -- Example: @&mut@ in @|&mut x: i32| -> { x += 1 }@
 data BindingMode
@@ -268,7 +268,7 @@ data Block a = Block [Stmt a] Unsafety a
   deriving (Eq, Ord, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Block a) where spanOf (Block _ _ s) = spanOf s
- 
+
 -- | Describes how a 'Closure' should close over its free variables (@syntax::ast::CaptureBy@).
 data CaptureBy
   = Value -- ^ make copies of free variables closed over (@move@ closures)
@@ -277,12 +277,12 @@ data CaptureBy
 
 -- | Const annotation to specify if a function or method is allowed to be called in constants
 -- context with constant arguments (@syntax::ast::Constness@). [Relevant
--- RFC](https://github.com/rust-lang/rfcs/blob/master/text/0911-const-fn.md) 
+-- RFC](https://github.com/rust-lang/rfcs/blob/master/text/0911-const-fn.md)
 --
 -- Example: @const@ in @const fn inc(x: i32) -> i32 { x + 1 }@
 data Constness = Const | NotConst deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
--- | An 'ImplItem' can be marked @default@ (@syntax::ast::Defaultness@).  
+-- | An 'ImplItem' can be marked @default@ (@syntax::ast::Defaultness@).
 data Defaultness = Default | Final deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | Expression (@syntax::ast::Expr@). Note that Rust pushes into expressions an unusual number
@@ -290,8 +290,6 @@ data Defaultness = Default | Final deriving (Eq, Ord, Enum, Bounded, Show, Typea
 data Expr a
   -- | box expression (example:  @box x@)
   = Box [Attribute a] (Expr a) a
-  -- | in-place expression - first 'Expr' is the place, second one is the value (example: @x <- y@)
-  | InPlace [Attribute a] (Expr a) (Expr a) a
   -- | array literal (example: @[a, b, c, d]@)
   | Vec [Attribute a] [Expr a] a
   -- | function call where the first 'Expr' is the function itself, and the @['Expr']@ is the list of
@@ -311,7 +309,7 @@ data Expr a
   | Lit [Attribute a] (Lit a) a
   -- | cast (example: @foo as f64@)
   | Cast [Attribute a] (Expr a) (Ty a) a
-  -- | type annotation (example: @x: i32@) 
+  -- | type annotation (example: @x: i32@)
   | TypeAscription [Attribute a] (Expr a) (Ty a) a
   -- | if expression, with an optional @else@ block. In the case the @else@ block is missing, the
   -- type of the @if@ is inferred to be @()@. (example: @if 1 == 2 { (1,1) } else { (2,2) }@
@@ -332,8 +330,10 @@ data Expr a
   | Closure [Attribute a] Movability CaptureBy (FnDecl a) (Expr a) a
   -- | (possibly unsafe) block (example: @unsafe { 1 }@)
   | BlockExpr [Attribute a] (Block a) a
-  -- | a catch block (example: @do catch { 1 }@)
-  | Catch [Attribute a] (Block a) a
+  -- | a try block (example: @try { 1 }@)
+  | TryBlock [Attribute a] (Block a) a
+  -- | an async block (example: @async move { 1 }@)
+  | Async [Attribute a] CaptureBy (Block a) a
   -- | assignment (example: @a = foo()@)
   | Assign [Attribute a] (Expr a) (Expr a) a
   -- | assignment with an operator (example: @a += 1@)
@@ -346,12 +346,12 @@ data Expr a
   | Index [Attribute a] (Expr a) (Expr a) a
   -- | range (examples: @1..2@, @1..@, @..2@, @1...2@, @1...@, @...2@)
   | Range [Attribute a] (Maybe (Expr a)) (Maybe (Expr a)) RangeLimits a
-  -- | variable reference 
+  -- | variable reference
   | PathExpr [Attribute a] (Maybe (QSelf a)) (Path a) a
   -- | referencing operation (example: @&a or &mut a@)
   | AddrOf [Attribute a] Mutability (Expr a) a
   -- | @break@ with an optional label and expression denoting what to break out of and what to
-  -- return (example: @break 'lbl 1@) 
+  -- return (example: @break 'lbl 1@)
   | Break [Attribute a] (Maybe (Label a)) (Maybe (Expr a)) a
   -- | @continue@ with an optional label (example: @continue@)
   | Continue [Attribute a] (Maybe (Label a)) a
@@ -373,7 +373,6 @@ data Expr a
 
 instance Located a => Located (Expr a) where
   spanOf (Box _ _ s) = spanOf s
-  spanOf (InPlace _ _ _ s) = spanOf s
   spanOf (Vec _ _ s) = spanOf s
   spanOf (Call _ _ _ s) = spanOf s
   spanOf (MethodCall _ _ _ _ _ s) = spanOf s
@@ -392,7 +391,8 @@ instance Located a => Located (Expr a) where
   spanOf (Match _ _ _ s) = spanOf s
   spanOf (Closure _ _ _ _ _ s) = spanOf s
   spanOf (BlockExpr _ _ s) = spanOf s
-  spanOf (Catch _ _ s) = spanOf s
+  spanOf (TryBlock _ _ s) = spanOf s
+  spanOf (Async _ _ _ s) = spanOf s
   spanOf (Assign _ _ _ s) = spanOf s
   spanOf (AssignOp _ _ _ _ s) = spanOf s
   spanOf (FieldAccess _ _ _ s) = spanOf s
@@ -705,11 +705,11 @@ byteStr s = ByteStr (map (fromIntegral . ord) s)
 suffix :: Lit a -> Suffix
 suffix (Str _ _ s _) = s
 suffix (ByteStr _ _ s _) = s
-suffix (Char _ s _) = s 
-suffix (Byte _ s _) = s 
-suffix (Int _ _ s _) = s 
+suffix (Char _ s _) = s
+suffix (Byte _ s _) = s
+suffix (Int _ _ s _) = s
 suffix (Float _ s _) = s
-suffix (Bool _ s _) = s 
+suffix (Bool _ s _) = s
 
 -- | The base of the number in an @Int@ literal can be binary (e.g. @0b1100@), octal (e.g. @0o14@),
 -- decimal (e.g. @12@), or hexadecimal (e.g. @0xc@).

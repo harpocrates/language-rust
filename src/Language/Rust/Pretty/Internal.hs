@@ -362,7 +362,6 @@ printExprOuterAttrStyle :: Expr a -> Bool -> Doc a
 printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs expr) Outer isInline) $
   case expr of
     Box _ e x                   -> annotate x ("box" <+> printExpr e)
-    InPlace _ place e x         -> annotate x (hsep [ printExpr place, "<-", printExpr e ])
     Vec as exprs x              -> annotate x (block Bracket True "," (printInnerAttrs as) (printExpr <$> exprs))
     Call _ func [arg] x         -> annotate x (printExpr func <> parens (printExpr arg))
     Call _ func args x          -> annotate x (printExpr func <> block Paren True "," mempty (printExpr <$> args))
@@ -386,7 +385,10 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
                                                     , when (cap == Value) "move"
                                                     , printFnBlockArgs decl <+> printExpr body])
     BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs True blk attrs)
-    Catch attrs blk x           -> annotate x ("do catch" <+> printBlockWithAttrs True blk attrs)
+    TryBlock attrs blk x        -> annotate x ("try" <+> printBlockWithAttrs True blk attrs)
+    Async attrs cap blk x       -> annotate x (hsep [ "async"
+                                                    , when (cap == Value) "move"
+                                                    , printBlockWithAttrs True blk attrs])
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
     AssignOp _ op lhs rhs x     -> annotate x (hsep [ printExpr lhs, printBinOp op <> "=", printExpr rhs ])
     FieldAccess{}               -> chainedMethodCalls expr False id
@@ -452,7 +454,6 @@ printStr sty str = unAnnotate (printLit (Str str sty Unsuffixed ()))
 -- | Extract from an expression its attributes
 expressionAttrs :: Expr a -> [Attribute a]
 expressionAttrs (Box as _ _) = as
-expressionAttrs (InPlace as _  _ _) = as
 expressionAttrs (Vec as _ _) = as
 expressionAttrs (Call as _  _ _) = as
 expressionAttrs (MethodCall as _ _  _ _ _) = as
@@ -471,7 +472,8 @@ expressionAttrs (Loop as _ _ _) = as
 expressionAttrs (Match as _ _ _) = as
 expressionAttrs (Closure as _ _ _ _ _) = as
 expressionAttrs (BlockExpr as _ _) = as
-expressionAttrs (Catch as _ _) = as
+expressionAttrs (TryBlock as _ _) = as
+expressionAttrs (Async as _ _ _) = as
 expressionAttrs (Assign as _ _ _) = as
 expressionAttrs (AssignOp as _ _ _ _) = as
 expressionAttrs (FieldAccess as _ _ _) = as

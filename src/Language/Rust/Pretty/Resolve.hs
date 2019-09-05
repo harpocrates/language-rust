@@ -800,12 +800,6 @@ resolveExprP p c a@(AssignOp as o l r x) = scope a $ parenE (p > 1) $ do
   l' <- resolveLhsExprP 2 c l
   r' <- resolveExprP 1 (rhs c) r
   pure (AssignOp as' o l' r' x)
-resolveExprP p c i@(InPlace as l r x) = scope i $ parenE (p > 2) $ do
-  as' <- traverse (resolveAttr OuterAttr) as
-  --l' <- resolveExprP 3 (lhs c) l 
-  l' <- resolveLhsExprP 3 c l
-  r' <- resolveExprP 2 (rhs c) r 
-  pure (InPlace as' l' r' x)
 -- Range expressions
 resolveExprP _ _ r@(Range _ _ Nothing Closed _) = scope r (err r "inclusive ranges must be bounded at the end")
 resolveExprP _ _ r@(Range as Nothing Nothing rl x) = scope r $ do
@@ -1034,10 +1028,14 @@ resolveExprP _ _ m@(Match as e ar x) = scope m $ do
   e' <- resolveExprP 0 AnyExpr e
   ar' <- traverse resolveArm ar
   pure (Match as' e' ar' x)
-resolveExprP _ _ c@(Catch as b x) = scope c $ do
+resolveExprP _ _ c@(TryBlock as b x) = scope c $ do
   as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
-  pure (Catch as' b' x) 
+  pure (TryBlock as' b' x)
+resolveExprP _ _ c@(Async as c' b x) = scope c $ do
+  as' <- traverse (resolveAttr EitherAttr) as
+  b' <- resolveBlock b
+  pure (Async as' c' b' x)
 
 isBlockLike :: Expr a -> Bool
 isBlockLike If{} = True
