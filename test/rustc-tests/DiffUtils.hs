@@ -8,10 +8,9 @@ import qualified Data.List.NonEmpty as N
 import Control.Monad
 import Data.String
 import Data.ByteString.Lazy.Char8 (unpack)
-import Control.Exception
-import Data.Typeable
 import Data.Foldable
 import Data.Word (Word8)
+import GHC.Stack
 
 
 -- | This type is a straightforward hack to let me index by both 'String' and 'Int' in '(!)' below.
@@ -20,15 +19,20 @@ instance Num AesonKey where fromInteger = Index . fromIntegral
 instance IsString AesonKey where fromString = Key
 
 -- | Accessor method for JSON with helpful error messages.
-(!) :: Aeson.Value -> AesonKey -> Aeson.Value
+(!) :: HasCallStack => Aeson.Value -> AesonKey -> Aeson.Value
 val@(Aeson.Object hashmap) ! Key key =
   case HM.lookup (fromString key) hashmap of
-    Nothing -> error $ "No key `" ++ key ++ "' on JSON object `" ++ showAeson val ++ "'"
+    Nothing ->
+      let ks = unwords . map show $ HM.keys hashmap
+          suggestion
+            | HM.size hashmap < 8 = "\n(Possible keys: " ++ ks ++ ")"
+            | otherwise = ""
+      in error $ "No key `" ++ key ++ "' on JSON object `" ++ showAeson val ++ "'" ++ suggestion
     Just v -> v
 val ! Key key = error $ "Cannot lookup key `" ++ key ++ "' on non-object JSON `" ++ showAeson val ++ "'"
 val@(Aeson.Array vect) ! Index key =
   case vect V.!? key of
-    Nothing -> error $ "Index `" ++ show key ++ "' is OOB on JSON array `" ++ showAeson val ++ "'"
+    Nothing -> error $ "Index `" ++ show key ++ "' is OOB on JSON array `" ++ showAeson val ++ "' of size " ++ show (V.length vect)
     Just v -> v
 val ! Index key = error $ "Cannot lookup index `" ++ show key ++ "' on non-array JSON `" ++ showAeson val ++ "'"
 
@@ -45,14 +49,9 @@ _ !? _ = Nothing
 -- | This lets us do whatever we want while comparing @rustc@ with our parser
 type Diff = IO ()
 
--- | This data type exists only as an easy way to throw a new type of error
-data DiffError = DiffError String deriving (Typeable)
-instance Exception DiffError
-instance Show DiffError where show (DiffError msg) = msg
-
 -- | Class of things that can be diff-ed against their JSON debug output
 class Show a => Diffable a where
-  (===) :: a -> Aeson.Value -> Diff
+  (===) :: HasCallStack => a -> Aeson.Value -> Diff
 
 instance Diffable a => Diffable (N.NonEmpty a) where
   xs === json = toList xs === json
@@ -86,13 +85,13 @@ instance Diffable Int where (===) = diffIntegral
 instance Diffable Integer where (===) = diffIntegral
 
 -- | Diff something that is a number and can be shown
-diffIntegral :: (Show i, Integral i) => i -> Aeson.Value -> Diff
+diffIntegral :: (HasCallStack, Show i, Integral i) => i -> Aeson.Value -> Diff
 diffIntegral i (Aeson.Number s) | fromIntegral i == s = pure ()
 diffIntegral i val = diff "different integral values" i val
 
 -- | Report a difference
-diff :: Show a => String -> a -> Aeson.Value -> IO b
-diff explanation v j = throw (DiffError msg)
+diff :: (HasCallStack, Show a) => String -> a -> Aeson.Value -> IO b
+diff explanation v j = error msg
   where msg = unlines [ explanation ++ " in"
                       , " * parsed AST"
                       , cropped (show v)

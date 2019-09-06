@@ -7,7 +7,7 @@ fn main() {
   fn foo() { return 1 }
 
   // Empty
-  ;;;
+  ;
 
   // NoSemi
   if true {

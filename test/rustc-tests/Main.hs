@@ -34,7 +34,7 @@ import Test.Framework.Providers.API
 main :: IO ()
 main = do
   -- Check last time `rustc` version was bumped
-  let lastDay = fromGregorian 2019 09 5
+  let lastDay = fromGregorian 2019 09 6
   today <- utctDay <$> getCurrentTime
   when (diffDays today lastDay > 32) $
     putStrLn $ "\x1b[33m" ++ "\nThe version of `rustc' the tests will try to use is older than 1 month" ++ "\x1b[0m"
@@ -62,6 +62,7 @@ getJsonAST :: FilePath -> IO Value
 getJsonAST fileName = do
   let cp = (proc "rustc" [ "-Z", "ast-json-noexpand"
                          , "-Z", "no-analysis"
+                         , "--edition", "2018"
                          , fileName ]){ std_out = CreatePipe
                                       , std_err = NoStream
                                       , std_in  = NoStream

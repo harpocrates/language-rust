@@ -14,7 +14,7 @@ fn main() {
   let x: (i32,);
   let x: (i32,!);
   let x: i32;
-  let x: T; 
+  let x: T;
   let x: <Vec<T> as SomeTrait>::SomeType;
   let x: Bound1 + Bound2 + 'static;
   let x: impl Bound1 + Bound2 + 'static;

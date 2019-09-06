@@ -1253,16 +1253,14 @@ pub_or_inherited :: { Spanned (Visibility Span) }
   : pub                                          %prec VIS { Spanned PublicV (spanOf $1) }
   | {- empty -}                                  %prec VIS { pure InheritedV }
 
-stmtOrSemi :: { Maybe (Stmt Span) }
-  : ';'                                                    { Nothing }
-  | stmt                                                   { Just $1 }
-
 -- List of statements where the last statement might be a no-semicolon statement.
-stmts_possibly_no_semi :: { [Maybe (Stmt Span)] }
-  : stmtOrSemi stmts_possibly_no_semi                      { $1 : $2 }
-  | stmtOrSemi                                             { [$1] }
-  | many(outer_attribute) nonblock_expr                    { [Just (toStmt ($1 `addAttrs` $2) False False ($1 # $2))] }
-  | many(outer_attribute) blockpostfix_expr                { [Just (toStmt ($1 `addAttrs` $2) False True  ($1 # $2))] }
+stmts_possibly_no_semi :: { [Stmt Span] }
+  : ';'  stmts_possibly_no_semi                            { $2 }
+  | stmt stmts_possibly_no_semi                            { $1 : $2 }
+  | ';'                                                    { [] }
+  | stmt                                                   { [$1] }
+  | many(outer_attribute) nonblock_expr                    { [toStmt ($1 `addAttrs` $2) False False ($1 # $2)] }
+  | many(outer_attribute) blockpostfix_expr                { [toStmt ($1 `addAttrs` $2) False True  ($1 # $2)] }
 
 initializer :: { Maybe (Expr Span) }
   : '=' expr                                               { Just $2 }
@@ -1271,12 +1269,12 @@ initializer :: { Maybe (Expr Span) }
 block :: { Block Span }
   : ntBlock                                                { $1 }
   | '{' '}'                                                { Block [] Normal ($1 # $>) }
-  | '{' stmts_possibly_no_semi '}'                         { Block [ s | Just s <- $2 ] Normal ($1 # $>) }
+  | '{' stmts_possibly_no_semi '}'                         { Block $2 Normal ($1 # $>) }
 
 inner_attrs_block :: { ([Attribute Span], Block Span) }
   : block                                                  { ([], $1) }
   | '{' inner_attrs '}'                                    { (toList $2, Block [] Normal ($1 # $>)) }
-  | '{' inner_attrs stmts_possibly_no_semi '}'             { (toList $2, Block [ s | Just s <- $3 ] Normal ($1 # $>)) }
+  | '{' inner_attrs stmts_possibly_no_semi '}'             { (toList $2, Block $3 Normal ($1 # $>)) }
 
 
 -----------
@@ -1683,7 +1681,7 @@ export_attribute :: { Attribute Span }
 export_block :: { Block Span }
   : ntBlock                                                { $1 }
   | safety '{' '}'                                         { Block [] (unspan $1) ($1 # $2 # $>) }
-  | safety '{' stmts_possibly_no_semi '}'                  { Block [ s | Just s <- $3 ] (unspan $1) ($1 # $2 # $>) }
+  | safety '{' stmts_possibly_no_semi '}'                  { Block $3 (unspan $1) ($1 # $2 # $>) }
 
 {
 -- | Parser for literals.

@@ -49,6 +49,9 @@ fn main() {
   yield 0;
   yield;
   let r#return = 0;
+  let r#async = 0;
+  let x = async { 1 };
+  let x = y.await;
 
   match true {
     true => move | | { 1 },

@@ -15,6 +15,7 @@ import Data.Maybe (fromMaybe, isNothing)
 import Data.Semigroup ((<>))
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import qualified Data.List.NonEmpty as N
 
 import DiffUtils
 
@@ -74,7 +75,7 @@ instance Show a => Diffable (Item a) where
         mkIdent "" === (val ! "ident")
         a === (n' ! "fields" ! 0 ! "abi")
         is === (n' ! "fields" ! 0 ! "items")
-      ("Ty", TyAlias as v i t g _) -> do
+      ("TyAlias", TyAlias as v i t g _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
         i === (val ! "ident")
@@ -192,7 +193,7 @@ instance Show a => Diffable (ImplItem a) where
         g === (val ! "generics")
         m === (n' ! "fields" ! 0)
         b === (n' ! "fields" ! 1)
-      ("Type", TypeI as v d i t _) -> do
+      ("TyAlias", TypeI as v d i t _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
         d === (val ! "defaultness")
@@ -263,7 +264,7 @@ instance Show a => Diffable (ForeignItem a) where
           v === (val ! "vis")
           i === (val ! "ident")
           t === (n' ! "fields" ! 0)
-          (m == Mutable) === (n' ! "fields" ! 1)
+          m === (n' ! "fields" ! 1)
         _ -> diff "different foreign item" f val
 
 instance Show a => Diffable (UseTree a) where
@@ -288,9 +289,13 @@ instance Show a => Diffable (UseTreePair a) where
   UseTreePair ut === val = ut === (val ! 0)
 
 instance Show a => Diffable (FnDecl a) where
-  FnDecl as out v _ === val = do
+  FnDecl as out variadic _ === val = do
     -- Check inputs
-    as === (val ! "inputs")
+    -- Rust tacks on an extra bogus argument representing the "...". We don't.
+    let adjustedIns = case val ! "inputs" of
+          Data.Aeson.Array arr | variadic -> Data.Aeson.Array (V.init arr)
+          other -> other
+    as === adjustedIns
 
     -- Check output
     let outTy = val ! "output" ! "variant"
@@ -300,7 +305,7 @@ instance Show a => Diffable (FnDecl a) where
       _ -> diff "different output types" out outTy
 
     -- Check variadic
-    v === (val ! "c_variadic")
+    variadic === (val ! "c_variadic")
 
 instance Show a => Diffable (Arg a) where
   SelfRegion _ _ x === val =
@@ -465,6 +470,16 @@ instance Show a => Diffable (Attribute a) where
         ts === (val ! "tokens")
       _ -> diff "attribute is not sugared doc" a val
 
+-- Temporary hack until Rust gets their AST in order...
+newtype OrPatHack a = OrPatHack (Pat a) deriving Show
+
+variants :: Pat a -> N.NonEmpty (Pat a)
+variants (OrP ps _) = ps
+variants notOrPat = [notOrPat]
+
+instance Show a => Diffable (OrPatHack a) where
+  OrPatHack p === val = variants p === val
+
 instance Show a => Diffable (Pat a) where
   p' === val = do
     let val' = val ! "node"
@@ -506,16 +521,16 @@ instance Show a => Diffable (Pat a) where
 
 instance Show a => Diffable (Mac a) where
   Mac p tt _ === val = do
-    p === (val ! "node" ! "path")
-    tt === (val ! "node" ! "tts")
+    p === (val ! "path")
+    tt === (val ! "tts")
 
 instance Diffable TokenTree where
   tt === val =
     case (val ! "variant", tt) of
-      ("Token", Token _ t) -> t === (val ! "fields" ! 1)
+      ("Token", Token _ t) -> t === (val ! "fields" ! 0 ! "kind")
       ("Delimited", Delimited _ d tt') -> do
-        d === (val ! "fields" ! 1 ! "delim")
-        tt' === (val ! "fields" ! 1 ! "tts")
+        d === (val ! "fields" ! 1)
+        tt' === (val ! "fields" ! 2)
       _ -> diff "different token trees" tt val
 
 instance Diffable TokenStream where
@@ -567,7 +582,7 @@ instance Diffable Token where
       ("DocComment", Doc s Outer True) -> ("/**" <> mkIdent s <> "*/") === (val ! "fields" ! 0)
       ("Literal", LiteralTok l s) -> do
         l === (val ! "fields" ! 0)
-        fmap mkIdent s === (val ! "fields" ! 1)
+        fmap mkIdent s === (val ! "fields" ! 0 ! "suffix")
       ("BinOp", _) ->
         case (val ! "fields" ! 0, t) of
           ("Star", Star) -> pure ()
@@ -601,15 +616,19 @@ instance Diffable Token where
 
 instance Diffable LitTok where
   l === val =
-    case (val ! "variant", l) of
-      ("Byte", ByteTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      ("Char", CharTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      ("Integer", IntegerTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      ("Float", FloatTok s) | fromString s == (val ! "fields" ! 0) -> pure ()
-      ("Str_", StrTok s) | fromString s == clean (val ! "fields" ! 0) -> pure ()
-      ("StrRaw", StrRawTok s i) | fromString s == clean (val ! "fields" ! 0) -> i === (val ! "fields" ! 1)
-      ("ByteStr", ByteStrTok s) | fromString s == clean (val ! "fields" ! 0) -> pure ()
-      ("ByteStrRaw", ByteStrRawTok s i) | fromString s == clean (val ! "fields" ! 0) -> i === (val ! "fields" ! 1)
+    case (val ! "kind", l) of
+      ("Byte", ByteTok s)             | fromString s == (val ! "symbol") -> pure ()
+      ("Char", CharTok s)             | fromString s == (val ! "symbol") -> pure ()
+      ("Integer", IntegerTok s)       | fromString s == (val ! "symbol") -> pure ()
+      ("Float", FloatTok s)           | fromString s == (val ! "symbol") -> pure ()
+      ("Str", StrTok s)               | fromString s == clean (val ! "symbol") -> pure ()
+      ("ByteStr", ByteStrTok s)       | fromString s == clean (val ! "symbol") -> pure ()
+      (strRaw, StrRawTok s i)         | strRaw !? "variant" == Just "StrRaw"
+                                      , fromString s == clean (val ! "symbol")
+                                      -> i === (strRaw ! "fields" ! 0)
+      (byteStrRaw, ByteStrRawTok s i) | byteStrRaw !? "variant" == Just "ByteStrRaw"
+                                      , fromString s == clean (val ! "symbol")
+                                      -> i === (byteStrRaw ! "fields" ! 0)
       _ -> diff "different literal token" l val
 
 clean :: Value -> Value
@@ -626,9 +645,9 @@ instance Show a => Diffable (FieldPat a) where
                 (Nothing, _) -> diff "shorthand field pattern needs to be identifier" f val
                 (Just i', _) -> pure (i', False)
 
-    i === (val ! "node" ! "ident")
-    s === (val ! "node" ! "is_shorthand")
-    p === (val ! "node" ! "pat")
+    i === (val ! "ident")
+    s === (val ! "is_shorthand")
+    p === (val ! "pat")
 
 instance Show a => Diffable (Field a) where
   Field i me _ === val = do
@@ -638,7 +657,8 @@ instance Show a => Diffable (Field a) where
       me === (val ! "expr")
 
 instance Diffable Ident where
-  Ident i _ _ === val | String s <- val ! "name"
+  Ident i _ _ === String s | fromString i == s = pure ()
+  Ident i _ _ === val | Just (String s) <- val !? "name"
                       , fromString i == s
                       = pure ()
   ident'      === val = diff "identifiers are different" ident' val
@@ -673,8 +693,8 @@ instance Show a => Diffable (Ty a) where
           ("Tup", TupTy t _) -> t === (n ! "fields" ! 0)
           ("Slice", Slice t _) -> t === (n ! "fields" ! 0)
           ("Array", Language.Rust.Syntax.Array t e _) -> do
-            t ===   (n ! "fields" ! 0)
-            e ===(n ! "fields" ! 1)
+            t === (n ! "fields" ! 0)
+            e === (n ! "fields" ! 1 ! "value")
           ("Ptr", Ptr m t _) -> do
             m === (n ! "fields" ! 0 ! "mutbl")
             t === (n ! "fields" ! 0 ! "ty")
@@ -717,11 +737,11 @@ instance Show a => Diffable (TraitRef a) where
 instance Diffable TraitBoundModifier where
   None  === "None" = pure ()
   Maybe === "Maybe" = pure ()
-  m     === val = diff "different trait boudn modifier" m val
+  m     === val = diff "different trait bound modifier" m val
 
 instance Show a => Diffable (Lifetime a) where
   l@(Lifetime n _) === val
-    | fromString ("'" ++ n) /= val ! "ident" = diff "lifetime is different" l val
+    | fromString ("'" ++ n) /= val ! "ident" ! "name" = diff "lifetime is different" l val
     | otherwise = pure ()
 
 instance Show a => Diffable (QSelf a) where
@@ -741,7 +761,7 @@ instance Show a => Diffable (Path a) where
 instance Show a => Diffable (PathSegment a) where
   PathSegment i pp _ === val = do
       i === (val ! "ident")
-      pp === (val ! "parameters")
+      pp === (val ! "args")
 
 instance Show a => Diffable (PathParameters a) where
   p === val =
@@ -791,7 +811,7 @@ instance Show a => Diffable (Expr a) where
       ("MethodCall", MethodCall as o i tys es _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         i === (n ! "fields" ! 0 ! "ident")
-        let tys' = n ! "fields" ! 0 ! "parameters"
+        let tys' = n ! "fields" ! 0 ! "args"
         tys === if (tys' == Data.Aeson.Null)
                  then tys'
                  else tys' ! "fields" ! 0 ! "types"
@@ -823,21 +843,27 @@ instance Show a => Diffable (Expr a) where
         ee === (n ! "fields" ! 2)
       ("IfLet", IfLet as p e tb ee _) -> do
         NullList as === (val ! "attrs" ! "_field0")
-        p === (n ! "fields" ! 0)
-        e === (n ! "fields" ! 1)
-        tb === (n ! "fields" ! 2)
-        ee === (n ! "fields" ! 3)
+        case n ! "fields" ! 0 ! "node" ! "variant" of
+          "Let" -> pure ()
+          _ -> diff "expected `Let` for condition of `IfLet`" ex val
+        OrPatHack p === (n ! "fields" ! 0 ! "node" ! "fields" ! 0)
+        e === (n ! "fields" ! 0 ! "node" ! "fields" ! 1)
+        tb === (n ! "fields" ! 1)
+        ee === (n ! "fields" ! 2)
       ("While", While as e b l _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
         b === (n ! "fields" ! 1)
         l === (n ! "fields" ! 2)
-      ("WhileLet", WhileLet as p e b l _) -> do
+      ("While", WhileLet as p e b l _) -> do
         NullList as === (val ! "attrs" ! "_field0")
-        p === (n ! "fields" ! 0)
-        e === (n ! "fields" ! 1)
-        b === (n ! "fields" ! 2)
-        l === (n ! "fields" ! 3)
+        case n ! "fields" ! 0 ! "node" ! "variant" of
+          "Let" -> pure ()
+          _ -> diff "expected `Let` for condition of `WhileLet`" ex val
+        OrPatHack p === (n ! "fields" ! 0 ! "node" ! "fields" ! 0)
+        e === (n ! "fields" ! 0 ! "node" ! "fields" ! 1)
+        b === (n ! "fields" ! 1)
+        l === (n ! "fields" ! 2)
       ("Continue", Continue as l _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         l === (n ! "fields" ! 0)
@@ -939,8 +965,10 @@ instance Diffable Movability where
   m         === val = diff "different movability" m val
 
 instance Diffable IsAsync where
-  IsAsync   === val | val ! "node" == "Async" = pure ()
-  NotAsync  === val | val ! "node" == "NotAsync" = pure ()
+  IsAsync   === val | val !? "node" == Just "Async" = pure ()
+  NotAsync  === val | val !? "node" == Just "NotAsync" = pure ()
+  IsAsync   === "Async" = pure ()
+  NotAsync  === "NotAsync" = pure ()
   a         === val = diff "different async-ness" a val
 
 instance Diffable RangeLimits where
@@ -980,7 +1008,7 @@ instance Diffable UnOp where
 instance Show a => Diffable (Arm a) where
   Arm as p g b _ === val = do
     as === (val ! "attrs")
-    p === (val ! "pats")
+    OrPatHack p === (val ! "pats")
     g  === (val ! "guard")
     b  === (val ! "body")
 
