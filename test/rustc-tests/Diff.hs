@@ -30,16 +30,14 @@ instance Show a => Diffable (Item a) where
     let n' = val ! "node"
         inheritedV = InheritedV :: Visibility ()
     case (n' ! "variant", item) of
-      ("Fn", Fn as v i decl u c a gen bod _) -> do
+      ("Fn", Fn as v i decl hdr gen bod _) -> do
         as   === (val ! "attrs")
         v    === (val ! "vis")
         i    === (val ! "ident")
         decl === (n' ! "fields" ! 0)
-        u    === (n' ! "fields" ! 1)
-        c    === (n' ! "fields" ! 2)
-        a    === (n' ! "fields" ! 3)
-        gen  === (n' ! "fields" ! 4)
-        bod  === (n' ! "fields" ! 5)
+        hdr  === (n' ! "fields" ! 1)
+        gen  === (n' ! "fields" ! 2)
+        bod  === (n' ! "fields" ! 3)
       ("ExternCrate", ExternCrate as v i i' _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
@@ -207,11 +205,17 @@ instance Show a => Diffable (ImplItem a) where
       _ -> diff "different impl item" item val
 
 instance Show a => Diffable (MethodSig a) where
-  MethodSig u c a decl === val = do
+  MethodSig header decl === val = do
+    header === (val ! "header")
+    decl === (val ! "decl")
+
+instance Show a => Diffable (FnHeader a) where
+  FnHeader u s c a _ === val = do
     u === (val ! "unsafety")
+    s === (val ! "asyncness")
     a === (val ! "abi")
     c === (val ! "constness")
-    decl === (val ! "decl")
+
 
 instance Diffable Defaultness where
   Final   === "Final" = pure ()
@@ -296,7 +300,7 @@ instance Show a => Diffable (FnDecl a) where
       _ -> diff "different output types" out outTy
 
     -- Check variadic
-    v === (val ! "variadic")
+    v === (val ! "c_variadic")
 
 instance Show a => Diffable (Arg a) where
   SelfRegion _ _ x === val =
@@ -634,7 +638,9 @@ instance Show a => Diffable (Field a) where
       me === (val ! "expr")
 
 instance Diffable Ident where
-  Ident i _ _ === String s | fromString i == s = pure ()
+  Ident i _ _ === val | String s <- val ! "name"
+                      , fromString i == s
+                      = pure ()
   ident'      === val = diff "identifiers are different" ident' val
 
 -- | The empty identifier is invalid
@@ -855,12 +861,12 @@ instance Show a => Diffable (Expr a) where
         h === (n ! "fields" ! 1)
         rl === (n ! "fields" ! 2)
       ("Closure", Closure as c a m decl e _) -> do
-        error "TODO async closure"
         NullList as === (val ! "attrs" ! "_field0")
-        m === (n ! "fields" ! 1)
         c === (n ! "fields" ! 0)
-        decl === (n ! "fields" ! 2)
-        e === (n ! "fields" ! 3)
+        a === (n ! "fields" ! 1)
+        m === (n ! "fields" ! 2)
+        decl === (n ! "fields" ! 3)
+        e === (n ! "fields" ! 4)
       ("Assign", Assign as l r _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         l === (n ! "fields" ! 0)
@@ -932,6 +938,10 @@ instance Diffable Movability where
   Movable   === "Movable" = pure ()
   m         === val = diff "different movability" m val
 
+instance Diffable IsAsync where
+  IsAsync   === val | val ! "node" == "Async" = pure ()
+  NotAsync  === val | val ! "node" == "NotAsync" = pure ()
+  a         === val = diff "different async-ness" a val
 
 instance Diffable RangeLimits where
   HalfOpen === "HalfOpen" = pure ()
@@ -968,9 +978,9 @@ instance Diffable UnOp where
   u     === val     = diff "different unary operator" u val
 
 instance Show a => Diffable (Arm a) where
-  Arm as ps g b _ === val = do
+  Arm as p g b _ === val = do
     as === (val ! "attrs")
-    ps === (val ! "pats")
+    p === (val ! "pats")
     g  === (val ! "guard")
     b  === (val ! "body")
 

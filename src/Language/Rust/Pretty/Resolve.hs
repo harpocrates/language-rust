@@ -1184,14 +1184,14 @@ resolveItem t c@(ConstItem as v i t' e x) = scope c $ do
   e' <- resolveExpr AnyExpr e
   pure (ConstItem as' v' i' t'' e' x)
 
-resolveItem t f@(Fn as v i d u c a g b x) = scope f $ do
+resolveItem t f@(Fn as v i d h g b x) = scope f $ do
   as' <- traverse (resolveAttr EitherAttr) as
   v' <- resolveVisibility' t v
   i' <- resolveIdent i
   d' <- resolveFnDecl NoSelf NamedArg d
   g' <- resolveGenerics g
   b' <- resolveBlock b
-  pure (Fn as' v' i' d' u c a g' b' x)
+  pure (Fn as' v' i' d' h g' b' x)
 
 resolveItem t m@(Mod as v i (Just is) x) = scope m $ do
   as' <- traverse (resolveAttr EitherAttr) as
@@ -1469,7 +1469,7 @@ instance (Typeable a, Monoid a) => Resolve (Visibility a) where resolveM = resol
 
 -- | A method signature is valid if the underlying components are
 resolveMethodSig :: (Typeable a, Monoid a) => ArgType -> MethodSig a -> ResolveM (MethodSig a)
-resolveMethodSig at m@(MethodSig u c a f) = scope m (MethodSig u c a <$> resolveFnDecl AllowSelf at f)
+resolveMethodSig at m@(MethodSig h f) = scope m (MethodSig h <$> resolveFnDecl AllowSelf at f)
 
 instance (Typeable a, Monoid a) => Resolve (MethodSig a) where resolveM = resolveMethodSig NamedArg
 

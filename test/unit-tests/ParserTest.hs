@@ -766,14 +766,14 @@ parserItems = testGroup "parsing items"
   , testP "use std::math::{sqrt, pi as p};" (Use [] InheritedV (UseTreeNested (Path False [ PathSegment "std" Nothing (), PathSegment "math" Nothing () ] ()) [ UseTreeSimple (Path False [ PathSegment "sqrt" Nothing () ] ()) Nothing (), UseTreeSimple (Path False [ PathSegment "pi" Nothing () ] ()) (Just "p") () ] ()) ())
   , testP "use std::math::{sqrt};" (Use [] InheritedV (UseTreeNested (Path False [ PathSegment "std" Nothing (), PathSegment "math" Nothing () ] ()) [ UseTreeSimple (Path False [ PathSegment "sqrt" Nothing () ] ()) Nothing () ] ()) ())
   , testP "use std::math::{sqrt, pi,};" (Use [] InheritedV (UseTreeNested (Path False [ PathSegment "std" Nothing (), PathSegment "math" Nothing () ] ()) [ UseTreeSimple (Path False [ PathSegment "sqrt" Nothing () ] ()) Nothing (), UseTreeSimple (Path False [ PathSegment "pi" Nothing () ] ()) Nothing () ] ()) ())
-  , testP "const unsafe fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Unsafe Const Rust (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
-  , testP "fn bar<T, K>(x: T, y: K) where T: Clone, K: Clone + Debug { return x + 1 }" (Fn [] InheritedV "bar" (FnDecl [ Arg (Just (IdentP (ByValue Immutable) "x" Nothing ())) (PathTy Nothing t ()) ()
+  , testP "const unsafe fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) (FnHeader Unsafe NotAsync Const Rust ()) (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
+  , testP "async fn bar<T, K>(x: T, y: K) where T: Clone, K: Clone + Debug { return x + 1 }" (Fn [] InheritedV "bar" (FnDecl [ Arg (Just (IdentP (ByValue Immutable) "x" Nothing ())) (PathTy Nothing t ()) ()
                      , Arg (Just (IdentP (ByValue Immutable) "y" Nothing ())) (PathTy Nothing (Path False [PathSegment "K" Nothing ()] ()) ()) ()
                      ]
             Nothing
             False
             ())
-    Normal NotConst Rust
+    (FnHeader Normal IsAsync NotConst Rust ())
     (Generics [] [TyParam [] "T" [] Nothing (), TyParam [] "K" [] Nothing ()]
               (WhereClause [ BoundPredicate [] (PathTy Nothing t ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef clone) ()) None ()] ()
                            , BoundPredicate [] (PathTy Nothing (Path False [PathSegment "K" Nothing ()] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef clone) ()) None (), TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()] ()
@@ -786,22 +786,22 @@ parserItems = testGroup "parsing items"
             (Just (PathTy Nothing t ()))
             False
             ())
-    Normal NotConst Rust
+    (FnHeader Normal NotAsync NotConst Rust ())
     (Generics [] [TyParam [] "T" [] Nothing ()]
               (WhereClause [ BoundPredicate [] (PathTy Nothing (Path False [ PathSegment "i32" Nothing () ] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [ PathSegment "ConvertTo" (Just (AngleBracketed [] [PathTy Nothing t ()] [] ())) () ] ())) ()) None ()] ()
                            ] ()) ())
     (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ())
     ())
 
-  , testP "const fn foo<>(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Normal Const Rust (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
-  , testP "unsafe extern fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Unsafe NotConst C (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
-  , testP "unsafe extern \"win64\" fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Unsafe NotConst Win64 (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
-  , testP "extern \"win64\" fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Normal NotConst Win64 (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
-  , testP "fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
-  , testP "fn foo(x: i32) -> i32 where { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
+  , testP "const fn foo<>(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) (FnHeader Normal NotAsync Const Rust ()) (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
+  , testP "unsafe extern fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) (FnHeader Unsafe NotAsync NotConst C ()) (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
+  , testP "unsafe extern \"win64\" fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) (FnHeader Unsafe NotAsync NotConst Win64 ()) (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
+  , testP "extern \"win64\" fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) (FnHeader Normal NotAsync NotConst Win64 ()) (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
+  , testP "fn foo(x: i32) -> i32 { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) (FnHeader Normal NotAsync NotConst Rust ()) (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
+  , testP "fn foo(x: i32) -> i32 where { return x + 1 }" (Fn [] InheritedV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) (FnHeader Normal NotAsync NotConst Rust ()) (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ())
   , testP "mod foo;" (Mod [] InheritedV "foo" Nothing ())
   , testP "mod foo { }" (Mod [] InheritedV "foo" (Just []) ())
-  , testP "mod foo { pub fn foo(x: i32) -> i32 { return x + 1 } }" (Mod [] InheritedV "foo" (Just [Fn [] PublicV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()]) ())
+  , testP "mod foo { pub fn foo(x: i32) -> i32 { return x + 1 } }" (Mod [] InheritedV "foo" (Just [Fn [] PublicV "foo" (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) (FnHeader Normal NotAsync NotConst Rust ()) (Generics [] [] (WhereClause [] ()) ()) (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()]) ())
   , testP "pub extern { }" (ForeignMod [] PublicV C [] ())
   , testP "extern { }" (ForeignMod [] InheritedV C [] ())
   , testP "extern \"win64\" { pub static x: i32; static mut y: i32; }" (ForeignMod [] InheritedV Win64 [ForeignStatic [] PublicV "x" i32 Immutable (), ForeignStatic [] InheritedV "y" i32 Mutable ()] ())
@@ -826,22 +826,29 @@ parserItems = testGroup "parsing items"
                     (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef debug)) i32
                     [MethodI [] InheritedV Final "foo"
                              (Generics [] [] (WhereClause [] ()) ())
-                             (MethodSig Unsafe Const Rust (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()))
+                             (MethodSig (FnHeader Unsafe NotAsync Const Rust ()) (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()))
                              (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()] ())
   , testP "impl Debug for i32 { pub default extern \"C\" fn foo(x: i32) -> i32 { return x + 1 } }"
   (Impl [] InheritedV Final Normal Positive
                     (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef debug)) i32
                     [MethodI [] PublicV Default "foo"
                        (Generics [] [] (WhereClause [] ()) ())
-                       (MethodSig Normal NotConst C (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) )
+                       (MethodSig (FnHeader Normal NotAsync NotConst C ()) (FnDecl [Arg (Just x') i32 ()] (Just i32) False ()) )
                        (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()] ())
   , testP "impl Debug for i32 { fn foo(&self) -> i32 { return x + 1 } }"
   (Impl [] InheritedV Final Normal Positive
                     (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef debug)) i32
                     [MethodI [] InheritedV Final "foo"
                              (Generics [] [] (WhereClause [] ()) ())
-                             (MethodSig Normal NotConst Rust (FnDecl [SelfRegion Nothing Immutable ()] (Just i32) False ()) )
+                             (MethodSig (FnHeader Normal NotAsync NotConst Rust ()) (FnDecl [SelfRegion Nothing Immutable ()] (Just i32) False ()) )
                              (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ()) ()] ())
+  , testP "impl Debug for i32 { async fn foo() { } }"
+  (Impl [] InheritedV Final Normal Positive
+                    (Generics [] [] (WhereClause [] ()) ()) (Just (TraitRef debug)) i32
+                    [MethodI [] InheritedV Final "foo"
+                             (Generics [] [] (WhereClause [] ()) ())
+                             (MethodSig (FnHeader Normal IsAsync NotConst Rust ()) (FnDecl [] Nothing False ()) )
+                             (Block [] Normal ()) ()] ())
   , testP "trait Trace { }" (Trait [] InheritedV "Trace" False Normal (Generics [] [] (WhereClause [] ()) ()) [] [] ())
   , testP "unsafe trait Trace { }" (Trait [] InheritedV "Trace" False Unsafe (Generics [] [] (WhereClause [] ()) ()) [] [] ())
   , testP "unsafe auto trait Trace { }" (Trait [] InheritedV "Trace" True Unsafe (Generics [] [] (WhereClause [] ()) ()) [] [] ())

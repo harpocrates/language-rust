@@ -91,8 +91,8 @@ fn expressions() {
   #[blockexpr_outer]
   unsafe { #![blockexpr_inner] 1; 2 }
 
-  #[catch_outer]
-  do catch { #![catch_inner] 1 };
+  #[try_outer]
+  try { #![try_inner] 1 };
 
 //  #[assign_outer]
 //  x = 1;

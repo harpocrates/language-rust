@@ -282,7 +282,7 @@ import qualified Data.List.NonEmpty as N
 %nonassoc IDENT ntIdent default union self Self super auto crate
 
 -- These are all very low precedence unary operators
-%nonassoc box return yield break continue for IMPLTRAIT LAMBDA
+%nonassoc async box return yield break continue for IMPLTRAIT LAMBDA
 
 -- 'static' needs to have higher precedenc than 'LAMBDA' so that statements starting in static get
 -- considered as static items, and not a static lambda
@@ -1303,11 +1303,13 @@ gen_item(vis) :: { Item Span }
   | many(outer_attribute) vis safety extern crate ident as ident ';'
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $8) (Just (unspan $6)) ($1 # $2 # $4 # $>)) }
   | many(outer_attribute) vis const safety  fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
-    { Fn ($1 ++ fst $>) (unspan $2) (unspan $6) $8 (unspan $4) Const Rust ($7 `withWhere` $9) (snd $>) ($1 # $2 # $3 # snd $>) }
+    { Fn ($1 ++ fst $>) (unspan $2) (unspan $6) $8 (FnHeader (unspan $4) NotAsync Const Rust (spanOf $4))    ($7 `withWhere` $9) (snd $>) ($1 # $2 # $3 # snd $>) }
+  | many(outer_attribute) vis async safety  fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
+    { Fn ($1 ++ fst $>) (unspan $2) (unspan $6) $8 (FnHeader (unspan $4) IsAsync NotConst Rust (spanOf $4))    ($7 `withWhere` $9) (snd $>) ($1 # $2 # $3 # snd $>) }
   | many(outer_attribute) vis safety extern abi fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
-    { Fn ($1 ++ fst $>) (unspan $2) (unspan $7) $9 (unspan $3) NotConst $5 ($8 `withWhere` $10) (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
+    { Fn ($1 ++ fst $>) (unspan $2) (unspan $7) $9 (FnHeader (unspan $3) NotAsync NotConst $5 ($3 # $4))     ($8 `withWhere` $10) (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
   | many(outer_attribute) vis safety            fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
-    { Fn ($1 ++ fst $>) (unspan $2) (unspan $5) $7 (unspan $3) NotConst Rust ($6 `withWhere` $8) (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
+    { Fn ($1 ++ fst $>) (unspan $2) (unspan $5) $7 (FnHeader (unspan $3) NotAsync NotConst Rust (spanOf $3)) ($6 `withWhere` $8) (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
   | many(outer_attribute) vis mod ident ';'
     { Mod $1 (unspan $2) (unspan $4) Nothing ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis mod ident '{'             many(mod_item) '}'
@@ -1439,11 +1441,15 @@ impl_item :: { ImplItem Span }
   | many(outer_attribute) vis def const ident ':' ty '=' expr ';' { ConstI $1 (unspan $2) (unspan $3) (unspan $5) $7 $9 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute)     def mod_mac                         { MacroI $1 (unspan $2) $3 ($1 # $2 # $>) }
   | many(outer_attribute) vis def const safety fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
-    { let methodSig = MethodSig (unspan $5) Const Rust $9; generics = $8 `withWhere` $10
+    { let methodSig = MethodSig (FnHeader (unspan $5) NotAsync Const Rust (spanOf $5)) $9; generics = $8 `withWhere` $10
+      in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) generics methodSig (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
+  | many(outer_attribute) vis def async safety fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
+    { let methodSig = MethodSig (FnHeader (unspan $5) IsAsync NotConst Rust (spanOf $5)) $9; generics = $8 `withWhere` $10
       in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) generics methodSig (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
   | many(outer_attribute) vis def safety ext_abi fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
-    { let methodSig = MethodSig (unspan $4) NotConst (unspan $5) $9; generics = $8 `withWhere` $10
+    { let methodSig = MethodSig (FnHeader (unspan $4) NotAsync NotConst (unspan $5) ($4 # $5)) $9; generics = $8 `withWhere` $10
       in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) generics methodSig (snd $>) ($1 # $2 # $3 # $4 # $5 # $6 # snd $>) }
+
 
 trait_item :: { TraitItem Span }
   : ntTraitItem                                              { $1 }
@@ -1455,12 +1461,16 @@ trait_item :: { TraitItem Span }
     { TypeT $1 (unspan $3) (toList $5) Nothing ($1 # $2 # $>) }
   | many(outer_attribute) type ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty ';'
     { TypeT $1 (unspan $3) (toList $5) (Just $7) ($1 # $2 # $>) }
-  | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self_general where_clause ';'
-    { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7; generics = $6 `withWhere` $8
-      in MethodT $1 (unspan $5) generics methodSig Nothing ($1 # $2 # $3 # $4 # $>) }
-  | many(outer_attribute) safety ext_abi fn ident generics fn_decl_with_self_general where_clause inner_attrs_block
-    { let methodSig = MethodSig (unspan $2) NotConst (unspan $3) $7; generics = $6 `withWhere` $8
-      in MethodT ($1 ++ fst $>) (unspan $5) generics methodSig (Just (snd $>)) ($1 # $2 # $3 # $4 # snd $>) }
+  | many(outer_attribute) is_async safety ext_abi fn ident generics fn_decl_with_self_general where_clause ';'
+    { let methodSig = MethodSig (FnHeader (unspan $3) (unspan $2) NotConst (unspan $4) ($2 # $3 # $4)) $8; generics = $7 `withWhere` $9
+      in MethodT $1             (unspan $6) generics methodSig Nothing         ($1 # $2 # $3 # $4 # $5 # $>) }
+  | many(outer_attribute) is_async safety ext_abi fn ident generics fn_decl_with_self_general where_clause inner_attrs_block
+    { let methodSig = MethodSig (FnHeader (unspan $3) (unspan $2) NotConst (unspan $4) ($2 # $3 # $4)) $8; generics = $7 `withWhere` $9
+      in MethodT ($1 ++ fst $>) (unspan $6) generics methodSig (Just (snd $>)) ($1 # $2 # $3 # $4 # $5 # snd $>) }
+
+is_async :: { Spanned IsAsync }
+  : {- empty -}             { pure NotAsync }
+  | async                   { Spanned IsAsync (spanOf $1) }
 
 safety :: { Spanned Unsafety }
   : {- empty -}             { pure Normal }

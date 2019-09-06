@@ -382,11 +382,12 @@ prettyItems = testGroup "printing items"
   , testFlatten "static mut foo: i32 = 1;" (printItem (Static [] InheritedV (mkIdent "foo") i32 Mutable _1 ()))
   , testFlatten "static foo: i32 = 1;" (printItem (Static [] InheritedV (mkIdent "foo") i32 Immutable _1 ()))
   , testFlatten "const foo: i32 = 1;" (printItem (ConstItem [] InheritedV (mkIdent "foo") i32 _1 ()))
-  , testFlatten "fn foo(x: i32) -> i32 { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ()) Normal NotConst Rust (Generics [] [] (WhereClause [] ()) ()) retBlk ()))
-  , testFlatten "unsafe fn foo(x: i32, ...) { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing True ()) Unsafe NotConst Rust (Generics [] [] (WhereClause [] ()) ()) retBlk ()))
-  , testFlatten "const unsafe extern \"C\" fn foo(x: i32) { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) Unsafe Const C (Generics [] [] (WhereClause [] ()) ()) retBlk ()))
-  , testFlatten "fn foo<'lt: 'foo + 'bar, T, U: Debug + 'lt = i32>(x: i32) { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) Normal NotConst Rust (Generics [LifetimeDef [] (Lifetime "lt" ()) [Lifetime "foo" (), Lifetime "bar" ()] ()] [TyParam [] (mkIdent "T") [] Nothing (), TyParam [] (mkIdent "U") [debug', lt] (Just i32) ()] (WhereClause [] ()) ()) retBlk ()))
-  , testFlatten "fn foo<T, U: Debug + 'lt = i32>(x: i32) where for<'lt> i32: Debug, 'foo: 'bar, vec::std = i32 { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) Normal NotConst Rust (Generics [] [TyParam [] (mkIdent "T") [] Nothing (), TyParam [] (mkIdent "U") [debug', lt] (Just i32) ()] (WhereClause [BoundPredicate [LifetimeDef [] (Lifetime "lt" ()) [] ()] i32 [debug'] (), RegionPredicate (Lifetime "foo" ()) [Lifetime "bar" ()] (), EqPredicate (PathTy Nothing (Path False [vec,std] ()) ()) i32 ()] ()) ()) retBlk ()))
+  , testFlatten "fn foo(x: i32) -> i32 { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] (Just i32) False ()) (FnHeader Normal NotAsync NotConst Rust ()) (Generics [] [] (WhereClause [] ()) ()) retBlk ()))
+  , testFlatten "async fn foo() { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [] Nothing False ()) (FnHeader Normal IsAsync NotConst Rust ()) (Generics [] [] (WhereClause [] ()) ()) retBlk ()))
+  , testFlatten "unsafe fn foo(x: i32, ...) { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing True ()) (FnHeader Unsafe NotAsync NotConst Rust ()) (Generics [] [] (WhereClause [] ()) ()) retBlk ()))
+  , testFlatten "const unsafe extern \"C\" fn foo(x: i32) { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) (FnHeader Unsafe NotAsync Const C ()) (Generics [] [] (WhereClause [] ()) ()) retBlk ()))
+  , testFlatten "fn foo<'lt: 'foo + 'bar, T, U: Debug + 'lt = i32>(x: i32) { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) (FnHeader Normal NotAsync NotConst Rust ()) (Generics [LifetimeDef [] (Lifetime "lt" ()) [Lifetime "foo" (), Lifetime "bar" ()] ()] [TyParam [] (mkIdent "T") [] Nothing (), TyParam [] (mkIdent "U") [debug', lt] (Just i32) ()] (WhereClause [] ()) ()) retBlk ()))
+  , testFlatten "fn foo<T, U: Debug + 'lt = i32>(x: i32) where for<'lt> i32: Debug, 'foo: 'bar, vec::std = i32 { return 1; }" (printItem (Fn [] InheritedV (mkIdent "foo") (FnDecl [Arg (Just (IdentP (ByValue Immutable) (mkIdent "x") Nothing ())) i32 ()] Nothing False ()) (FnHeader Normal NotAsync NotConst Rust ()) (Generics [] [TyParam [] (mkIdent "T") [] Nothing (), TyParam [] (mkIdent "U") [debug', lt] (Just i32) ()] (WhereClause [BoundPredicate [LifetimeDef [] (Lifetime "lt" ()) [] ()] i32 [debug'] (), RegionPredicate (Lifetime "foo" ()) [Lifetime "bar" ()] (), EqPredicate (PathTy Nothing (Path False [vec,std] ()) ()) i32 ()] ()) ()) retBlk ()))
   , testFlatten "mod serialize;" (printItem (Mod [] InheritedV (mkIdent "serialize") Nothing ()))
   , testFlatten "mod serialize { }" (printItem (Mod [] InheritedV (mkIdent "serialize") (Just []) ()))
   , testFlatten "mod serialize { const foo: i32 = 1; }" (printItem (Mod [] InheritedV (mkIdent "serialize") (Just [ConstItem [] InheritedV (mkIdent "foo") i32 _1 ()]) ()))
@@ -415,7 +416,7 @@ prettyItems = testGroup "printing items"
                       (PathTy Nothing (Path False [PathSegment "GenVal" (Just (AngleBracketed [] [PathTy Nothing (Path False [PathSegment "T" Nothing ()] ()) ()] [] ())) ()] ()) ())
                       [ MethodI [] InheritedV Final (mkIdent "value")
                           (Generics [] [] (WhereClause [] ()) ())
-                          (MethodSig Normal NotConst Rust
+                          (MethodSig (FnHeader Normal NotAsync NotConst Rust ())
                                       (FnDecl [SelfRegion Nothing Mutable ()]
                                               (Just (Rptr Nothing Immutable (PathTy Nothing (Path False [PathSegment "T" Nothing ()] ()) ()) ()))
                                               False ()))
@@ -423,14 +424,14 @@ prettyItems = testGroup "printing items"
                           ()
                       ]
                       ()))
-  , testFlatten "#[cfgo] impl i32 { #![cfgi] fn value(&self) -> i32 { return 1; } pub const pi: i32 = 1; default type Size = i32; }"
+  , testFlatten "#[cfgo] impl i32 { #![cfgi] async fn value(&self) -> i32 { return 1; } pub const pi: i32 = 1; default type Size = i32; }"
                 (printItem (Impl [cfgI,cfgO] InheritedV Final Normal Positive
                       (Generics [] [] (WhereClause [] ()) ())
                       Nothing
                       i32
                       [ MethodI [] InheritedV Final (mkIdent "value")
                           (Generics [] [] (WhereClause [] ()) ())
-                          (MethodSig Normal NotConst Rust
+                          (MethodSig (FnHeader Normal IsAsync NotConst Rust ())
                                       (FnDecl [SelfRegion Nothing Immutable ()]
                                               (Just i32)
                                               False ()))
@@ -452,7 +453,7 @@ prettyItems = testGroup "printing items"
                 (printItem (Trait [] PublicV (mkIdent "Show") False Normal (Generics [] [] (WhereClause [] ()) ()) []
                       [ MethodT [] (mkIdent "value")
                           (Generics [] [] (WhereClause [] ()) ())
-                          (MethodSig Normal NotConst Rust
+                          (MethodSig (FnHeader Normal NotAsync NotConst Rust ())
                                       (FnDecl [SelfRegion Nothing Mutable ()]
                                               (Just i32)
                                               False ()))

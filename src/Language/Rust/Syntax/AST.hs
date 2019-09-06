@@ -21,6 +21,7 @@ module Language.Rust.Syntax.AST (
   Unsafety(..),
   Arg(..),
   FnDecl(..),
+  FnHeader(..),
 
   -- ** Paths
   Path(..),
@@ -447,6 +448,13 @@ data FnDecl a = FnDecl [Arg a] (Maybe (Ty a)) Bool a
 
 instance Located a => Located (FnDecl a) where spanOf (FnDecl _ _ _ s) = spanOf s
 
+-- | A function header, as seen on a method or function. All of the information between the
+-- visibility and the name of the funciton is included in this struct.
+data FnHeader a = FnHeader Unsafety IsAsync Constness Abi a
+  deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+
+instance Located a => Located (FnHeader a) where spanOf (FnHeader _ _ _ _ s) = spanOf s
+
 -- | An item within an extern block (@syntax::ast::ForeignItem@ with @syntax::ast::ForeignItemKind@
 -- inlined).
 --
@@ -575,7 +583,7 @@ data Item a
   | ConstItem [Attribute a] (Visibility a) Ident (Ty a) (Expr a) a
   -- | function declaration (@fn@ or @pub fn@).
   -- Example: @fn foo(bar: usize) -\> usize { .. }@
-  | Fn [Attribute a] (Visibility a) Ident (FnDecl a) Unsafety Constness Abi (Generics a) (Block a) a
+  | Fn [Attribute a] (Visibility a) Ident (FnDecl a) (FnHeader a) (Generics a) (Block a) a
   -- | module declaration (@mod@ or @pub mod@) (@syntax::ast::Mod@).
   -- Example: @mod foo;@ or @mod foo { .. }@
   | Mod [Attribute a] (Visibility a) Ident (Maybe [Item a]) a
@@ -616,7 +624,7 @@ instance Located a => Located (Item a) where
   spanOf (Use _ _ _ s) = spanOf s
   spanOf (Static _ _ _ _ _ _ s) = spanOf s
   spanOf (ConstItem _ _ _ _ _ s) = spanOf s
-  spanOf (Fn _ _ _ _ _ _ _ _ _ s) = spanOf s
+  spanOf (Fn _ _ _ _ _ _ _ s) = spanOf s
   spanOf (Mod _ _ _ _ s) = spanOf s
   spanOf (ForeignMod _ _ _ _ s) = spanOf s
   spanOf (TyAlias _ _ _ _ _ s) = spanOf s
@@ -739,7 +747,8 @@ data MacStmtStyle
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | Represents a method's signature in a trait declaration, or in an implementation.
-data MethodSig a = MethodSig Unsafety Constness Abi (FnDecl a) deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+data MethodSig a = MethodSig (FnHeader a) (FnDecl a)
+  deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 -- | The movability of a generator / closure literal (@syntax::ast::Movability@).
 data Movability = Immovable | Movable deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)

@@ -147,7 +147,7 @@ printType (Typeof e x)          = annotate x ("typeof" <> block Paren True mempt
 printType (Infer x)             = annotate x "_"
 printType (MacTy m x)           = annotate x (printMac Bracket m)
 printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
-                                               <+> printFnHeaderInfo u NotConst a InheritedV
+                                               <+> printFnHeaderInfo u NotAsync NotConst a
                                                <> printFnArgsAndRet d)
 
 -- | Print a macro (@print_mac@)
@@ -622,8 +622,8 @@ printItem (Static as vis ident ty m e x) = annotate x $ align $ printOuterAttrs 
 printItem (ConstItem as vis ident t e x) = annotate x $ align $ printOuterAttrs as <#>
   hsep [ printVis vis, "const", printIdent ident <> ":", printType t, "=", printExpr e <> ";" ]
 
-printItem (Fn as vis ident d s c a t b x) = annotate x $ align $ printOuterAttrs as <#>
-  printFn d s c a (Just ident) t vis (Just (b, as))
+printItem (Fn as vis ident d (FnHeader s async c a y) t b x) = annotate x $ align $ printOuterAttrs as <#>
+  printFn d s async c a (Just y) (Just ident) t vis (Just (b, as))
 
 printItem (Mod as vis ident items x) = annotate x $ align $ printOuterAttrs as <#>
   hsep [ printVis vis, "mod", printMod ident items as ]
@@ -728,8 +728,8 @@ printAssociatedType ident bounds_m ty_m = "type" <+> (printIdent ident
 
 -- | Print a method signature (@print_method_sig@)
 printMethodSig :: Ident -> Generics a -> MethodSig a -> Visibility a -> Maybe (Block a, [Attribute a]) -> Doc a
-printMethodSig ident generics (MethodSig unsafety constness abi decl)
-  = printFn decl unsafety constness abi (Just ident) generics
+printMethodSig ident generics (MethodSig (FnHeader unsafety async constness abi y) decl)
+  = printFn decl unsafety async constness abi (Just y) (Just ident) generics
 
 -- | Print an associated constant (@print_associated_const@)
 printAssociatedConst :: Ident -> Ty a -> Maybe (Expr a) -> Visibility a -> Doc a
@@ -755,7 +755,7 @@ printVis InheritedV = mempty
 -- | Print a foreign item (@print_foreign_item@)
 printForeignItem :: ForeignItem a -> Doc a
 printForeignItem (ForeignFn attrs vis ident decl generics x) = annotate x $
-  printOuterAttrs attrs <#> printFn decl Normal NotConst Rust (Just ident) generics vis Nothing
+  printOuterAttrs attrs <#> printFn decl Normal NotAsync NotConst Rust Nothing (Just ident) generics vis Nothing
 printForeignItem (ForeignStatic attrs vis ident ty mut x) = annotate x $
   printOuterAttrs attrs <#> printVis vis <+> "static" <+> printMutability mut <+> printIdent ident <> ":" <+> printType ty <> ";"
 printForeignItem (ForeignTy attrs vis ident x) = annotate x $
@@ -813,9 +813,21 @@ printWherePredicate (RegionPredicate lt bds y) = annotate y (printLifetimeBounds
 printWherePredicate (EqPredicate lhs rhs y) = annotate y (printType lhs <+> "=" <+> printType rhs)
 
 -- | Print a function (@print_fn@)
-printFn :: FnDecl a -> Unsafety -> Constness -> Abi -> Maybe Ident -> Generics a -> Visibility a -> Maybe (Block a, [Attribute a]) -> Doc a
-printFn decl unsafety constness abi name generics vis blkAttrs =
-  printFnHeaderInfo unsafety constness abi vis
+printFn
+  :: FnDecl a
+  -> Unsafety
+  -> IsAsync
+  -> Constness
+  -> Abi
+  -> Maybe a   -- ^ we might have an annotation if the header info came from 'FnHeader'
+  -> Maybe Ident
+  -> Generics a
+  -> Visibility a
+  -> Maybe (Block a, [Attribute a])
+  -> Doc a
+printFn decl unsafety async constness abi y name generics vis blkAttrs =
+  printVis vis
+    <+> (maybe id annotate y) (printFnHeaderInfo unsafety async constness abi)
     <+> perhaps printIdent name
     <> printGenerics generics
     <> printFnArgsAndRet decl
@@ -895,9 +907,12 @@ printBindingMode (ByValue Immutable) = mempty
 printBindingMode (ByValue Mutable) = "mut"
 
 -- | Print the prefix of a function - all the stuff up to and including @fn@ (@print_fn_header_info@)
-printFnHeaderInfo :: Unsafety -> Constness -> Abi -> Visibility a -> Doc a
-printFnHeaderInfo u c a v = hsep [ printVis v, case c of { Const -> "const"; _ -> mempty }
-                                 , printUnsafety u, printAbi a, "fn" ]
+printFnHeaderInfo :: Unsafety -> IsAsync -> Constness -> Abi -> Doc a
+printFnHeaderInfo unsafe async constness abi = hsep [ when (constness == Const) "const"
+                                                    , when (async == IsAsync) "async"
+                                                    , printUnsafety unsafe
+                                                    , printAbi abi
+                                                    , "fn" ]
 
 -- | Print the ABI
 printAbi :: Abi -> Doc a
