@@ -643,8 +643,8 @@ no_for_ty_prim :: { Ty Span }
   | fn fn_decl(arg_general)                       { BareFn Normal Rust [] $> ($1 # $>) }
   | typeof '(' expr ')'              { Typeof $3 ($1 # $>) }
   | '[' ty ';' expr ']'              { Array $2 $4 ($1 # $>) }
-  | '?' trait_ref                    { TraitObject [TraitTyParamBound (PolyTraitRef [] $2 (spanOf $2)) Maybe ($1 # $2)] ($1 # $2) }
-  | '?' for_lts trait_ref            { TraitObject [TraitTyParamBound (PolyTraitRef (unspan $2) $3 ($2 # $3)) Maybe ($1 # $3)] ($1 # $3) }
+  | '?' trait_ref                    { TraitObject [TraitBound (PolyTraitRef [] $2 (spanOf $2)) Maybe ($1 # $2)] ($1 # $2) }
+  | '?' for_lts trait_ref            { TraitObject [TraitBound (PolyTraitRef (unspan $2) $3 ($2 # $3)) Maybe ($1 # $3)] ($1 # $3) }
   | impl sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait (toNonEmpty $2) ($1 # $2) }
   | dyn  sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { TraitObject (toNonEmpty $2) ($1 # $2) }
 
@@ -656,7 +656,7 @@ for_ty_no_plus :: { Ty Span }
   | for_lts fn fn_decl(arg_general)                   { BareFn Normal Rust (unspan $1) $> ($1 # $>) }
   | for_lts trait_ref                                 {
       let poly = PolyTraitRef (unspan $1) $2 ($1 # $2) in
-      TraitObject [TraitTyParamBound poly None ($1 # $2)] ($1 # $2)
+      TraitObject [TraitBound poly None ($1 # $2)] ($1 # $2)
     }
 
 -- An optional lifetime followed by an optional mutability
@@ -687,19 +687,19 @@ fn_decl_with_self_named :: { FnDecl Span }
 
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
-ty_param_bound :: { TyParamBound Span }
-  : lifetime                { RegionTyParamBound $1 (spanOf $1) }
-  | poly_trait_ref          { TraitTyParamBound $1 None (spanOf $1) }
-  | '(' poly_trait_ref ')'  { TraitTyParamBound $2 None ($1 # $3) }
+ty_param_bound :: { GenericBound Span }
+  : lifetime                { OutlivesBound $1 (spanOf $1) }
+  | poly_trait_ref          { TraitBound $1 None (spanOf $1) }
+  | '(' poly_trait_ref ')'  { TraitBound $2 None ($1 # $3) }
 
-poly_trait_ref_mod_bound :: { TyParamBound Span }
-  : poly_trait_ref       { TraitTyParamBound $1 None (spanOf $1) }
-  | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe ($1 # $2) }
+poly_trait_ref_mod_bound :: { GenericBound Span }
+  : poly_trait_ref       { TraitBound $1 None (spanOf $1) }
+  | '?' poly_trait_ref   { TraitBound $2 Maybe ($1 # $2) }
 
 -- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+')
-ty_param_bound_mod :: { TyParamBound Span }
+ty_param_bound_mod :: { GenericBound Span }
   : ty_param_bound       { $1 }
-  | '?' poly_trait_ref   { TraitTyParamBound $2 Maybe ($1 # $2) }
+  | '?' poly_trait_ref   { TraitBound $2 Maybe ($1 # $2) }
 
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Abi }
@@ -1066,6 +1066,10 @@ nonstructblock_expr :: { Expr Span }
   | block_like_expr                                                           { $1 }
   | unsafe inner_attrs_block
     { let (as, Block ss r x) = $> in BlockExpr as (Block ss Unsafe ($1 # x)) ($1 # x) }
+  | async      inner_attrs_block
+    { let (as,b) = $> in Async as Ref b ($1 # b) }
+  | async move inner_attrs_block
+    { let (as,b) = $> in Async as Value b ($1 # b) }
 
 nonblock_expr :: { Expr Span }
   : gen_expression(nonblock_expr,expr,expr)                                   { $1 }
@@ -1096,26 +1100,27 @@ block_expr :: { Expr Span }
   | inner_attrs_block                                   { let (as,b) = $1 in BlockExpr as b (spanOf b) }
   | unsafe inner_attrs_block
     { let (as, Block ss r x) = $> in BlockExpr as (Block ss Unsafe ($1 # x)) ($1 # x) }
+  | async      inner_attrs_block                        { let (as,b) = $> in Async as Ref b ($1 # b) }
+  | async move inner_attrs_block                        { let (as,b) = $> in Async as Value b ($1 # b) }
 
--- Any expression ending in a '{ ... }' block except a block itself.
+-- Any expression ending in a '{ ... }' block except those that cause ambiguities with statements
+-- (eg. a block itself).
 block_like_expr :: { Expr Span }
-  : if_expr                                                      { $1 }
-  |           loop                            inner_attrs_block  { let (as,b) = $> in Loop as b Nothing ($1 # b) }
-  | label ':' loop                            inner_attrs_block  { let (as,b) = $> in Loop as b (Just $1) ($1 # b) }
+  : if_expr                                                          { $1 }
+  |           loop                                inner_attrs_block  { let (as,b) = $> in Loop as b Nothing ($1 # b) }
+  | label ':' loop                                inner_attrs_block  { let (as,b) = $> in Loop as b (Just $1) ($1 # b) }
   |           for top_pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $2 $4 b Nothing ($1 # b) }
   | label ':' for top_pat in nostruct_expr        inner_attrs_block  { let (as,b) = $> in ForLoop as $4 $6 b (Just $1) ($1 # b) }
-  |           while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $2 b Nothing ($1 # b) }
-  | label ':' while             nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $4 b (Just $1) ($1 # b) }
-  |           while let top_pat '=' nostruct_expr inner_attrs_block { let (as,b) = $> in WhileLet as $3 $5 b Nothing ($1 # b) }
-  | label ':' while let top_pat '=' nostruct_expr inner_attrs_block { let (as,b) = $> in WhileLet as $5 $7 b (Just $1) ($1 # b) }
-  | match nostruct_expr '{'                  '}'                 { Match [] $2 [] ($1 # $>) }
-  | match nostruct_expr '{' inner_attrs      '}'                 { Match (toList $4) $2 [] ($1 # $>) }
-  | match nostruct_expr '{'             arms '}'                 { Match [] $2 $4 ($1 # $>) }
-  | match nostruct_expr '{' inner_attrs arms '}'                 { Match (toList $4) $2 $5 ($1 # $>) }
-  | expr_path '!' '{' token_stream '}'                           { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
-  | try inner_attrs_block                                        { let (as,b) = $> in TryBlock as b ($1 # b) }
-  | async      inner_attrs_block                                 { let (as,b) = $> in Async as Ref b ($1 # b) }
-  | async move inner_attrs_block                                 { let (as,b) = $> in Async as Value b ($1 # b) }
+  |           while                 nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $2 b Nothing ($1 # b) }
+  | label ':' while                 nostruct_expr inner_attrs_block  { let (as,b) = $> in While as $4 b (Just $1) ($1 # b) }
+  |           while let top_pat '=' nostruct_expr inner_attrs_block  { let (as,b) = $> in WhileLet as $3 $5 b Nothing ($1 # b) }
+  | label ':' while let top_pat '=' nostruct_expr inner_attrs_block  { let (as,b) = $> in WhileLet as $5 $7 b (Just $1) ($1 # b) }
+  | match nostruct_expr '{'                  '}'                     { Match [] $2 [] ($1 # $>) }
+  | match nostruct_expr '{' inner_attrs      '}'                     { Match (toList $4) $2 [] ($1 # $>) }
+  | match nostruct_expr '{'             arms '}'                     { Match [] $2 $4 ($1 # $>) }
+  | match nostruct_expr '{' inner_attrs arms '}'                     { Match (toList $4) $2 $5 ($1 # $>) }
+  | expr_path '!' '{' token_stream '}'                               { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
+  | try inner_attrs_block                                            { let (as,b) = $> in TryBlock as b ($1 # b) }
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }
@@ -1211,6 +1216,16 @@ vis_safety_block :: { Expr Span }
            e = BlockExpr as (Block ss (unspan $2) ($2 # x)) ($2 # x)
        in noVis $1 e
     }
+  | pub_or_inherited async      inner_attrs_block {%
+       let (as,b) = $>
+           e = Async as Ref b ($2 # b)
+       in noVis $1 e
+    }
+  | pub_or_inherited async move inner_attrs_block {%
+       let (as,b) = $>
+           e = Async as Value b ($2 # b)
+       in noVis $1 e
+    }
 
 -- an expression starting with 'union' or 'default' (as identifiers) that won't cause conflicts with stmts
 vis_union_def_nonblock_expr :: { Expr Span }
@@ -1234,14 +1249,14 @@ stmt :: { Stmt Span }
   : ntStmt                                                 { $1 }
   | many(outer_attribute) let top_pat ':' ty initializer ';' { Local $3 (Just $5) $6 $1 ($1 # $2 # $>) }
   | many(outer_attribute) let top_pat        initializer ';' { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
-  | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
-  | many(outer_attribute) block_like_expr ';'              { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
-  | many(outer_attribute) blockpostfix_expr ';'            { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
-  | many(outer_attribute) vis_union_def_nonblock_expr ';'  { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
-  | many(outer_attribute) block_like_expr    %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
-  | many(outer_attribute) vis_safety_block ';'             { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
-  | many(outer_attribute) vis_safety_block   %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }
-  | gen_item(pub_or_inherited)                             { ItemStmt $1 (spanOf $1) }
+  | many(outer_attribute) nonblock_expr                  ';' { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
+  | many(outer_attribute) block_like_expr                ';' { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
+  | many(outer_attribute) blockpostfix_expr              ';' { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
+  | many(outer_attribute) vis_union_def_nonblock_expr    ';' { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
+  | many(outer_attribute) block_like_expr      %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
+  | many(outer_attribute) vis_safety_block               ';' { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
+  | many(outer_attribute) vis_safety_block     %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }
+  | gen_item(pub_or_inherited)                               { ItemStmt $1 (spanOf $1) }
   | many(outer_attribute) expr_path '!' ident '[' token_stream ']' ';'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!' ident '(' token_stream ')' ';'
@@ -1899,8 +1914,8 @@ lit (Spanned (LiteralTok litTok suffix_m) s) = translateLit litTok suffix s
                (Just "f64")   -> F64
                _ -> error "invalid literal"
 
-isTraitTyParamBound TraitTyParamBound{} = True
-isTraitTyParamBound _ = False
+isTraitBound TraitBound{} = True
+isTraitBound _ = False
 
 -- | Parse a source file
 parseSourceFile :: P (SourceFile Span)

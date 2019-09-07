@@ -339,6 +339,7 @@ printStmt (NoSemi expr x)     = annotate x (printExprOuterAttrStyle expr False <
   requiresSemi Loop{} = False
   requiresSemi Match{} = False
   requiresSemi BlockExpr{} = False
+  requiresSemi Async{} = False
   requiresSemi _ = True
 printStmt (Semi expr x)       = annotate x (printExprOuterAttrStyle expr False <> ";")
 printStmt (MacStmt m ms as x) = annotate x (printOuterAttrs as </> printMac delim m <> end)
@@ -386,10 +387,10 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
                                                     , when (c == Value) "move"
                                                     , printFnBlockArgs decl <+> printExpr body])
     BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs True blk attrs)
-    TryBlock attrs blk x        -> annotate x ("try" <+> printBlockWithAttrs True blk attrs)
     Async attrs cap blk x       -> annotate x (hsep [ "async"
                                                     , when (cap == Value) "move"
                                                     , printBlockWithAttrs True blk attrs])
+    TryBlock attrs blk x        -> annotate x ("try" <+> printBlockWithAttrs True blk attrs)
     Await{}                     -> chainedMethodCalls expr False id
     Assign _ lhs rhs x          -> annotate x (hsep [ printExpr lhs, "=", printExpr rhs ])
     AssignOp _ op lhs rhs x     -> annotate x (hsep [ printExpr lhs, printBinOp op <> "=", printExpr rhs ])
@@ -688,14 +689,14 @@ printTraitItem (TypeT as ident bounds ty x) = annotate x $ printOuterAttrs as <#
 printTraitItem (MacroT as m x) = annotate x $ printOuterAttrs as <#> printMac Paren m <> ";"
 
 -- | Print type parameter bounds with the given prefix, but only if there are any bounds (@print_bounds@)
-printBounds :: Doc a -> [TyParamBound a] -> Doc a
+printBounds :: Doc a -> [GenericBound a] -> Doc a
 printBounds _ [] = mempty
 printBounds prefix bs = group (prefix <#> ungroup (block NoDelim False " +" mempty (printBound `map` bs)))
 
 -- | Print a type parameter bound
-printBound :: TyParamBound a -> Doc a
-printBound (RegionTyParamBound lt x) = annotate x $ printLifetime lt
-printBound (TraitTyParamBound tref modi x) = annotate x $ when (modi == Maybe) "?" <> printPolyTraitRef tref
+printBound :: GenericBound a -> Doc a
+printBound (OutlivesBound lt x) = annotate x $ printLifetime lt
+printBound (TraitBound tref modi x) = annotate x $ when (modi == Maybe) "?" <> printPolyTraitRef tref
 
 -- | Print the formal lifetime list (@print_formal_lifetime_list@)
 printFormalLifetimeList :: [LifetimeDef a] -> Doc a
@@ -720,7 +721,7 @@ printDef Default = "default"
 printDef Final = mempty
 
 -- | Print an associated type (@printAssociatedType@)
-printAssociatedType :: Ident ->  Maybe [TyParamBound a] -> Maybe (Ty a) -> Doc a
+printAssociatedType :: Ident ->  Maybe [GenericBound a] -> Maybe (Ty a) -> Doc a
 printAssociatedType ident bounds_m ty_m = "type" <+> (printIdent ident
   <> perhaps (printBounds ":") bounds_m)
   <+> perhaps (\ty -> "=" <+> printType ty) ty_m

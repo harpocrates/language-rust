@@ -717,12 +717,12 @@ instance Show a => Diffable (Ty a) where
       _ -> diff "differing types" t' val
 
 
-instance Show a => Diffable (TyParamBound a) where
+instance Show a => Diffable (GenericBound a) where
   bd === val = case (val ! "variant", bd) of
-                 ("TraitTyParamBound", TraitTyParamBound p m _) -> do
+                 ("Trait", TraitBound p m _) -> do
                    p === (val ! "fields" ! 0)
                    m === (val ! "fields" ! 1)
-                 ("RegionTyParamBound", RegionTyParamBound l _) ->
+                 ("Outlives", OutlivesBound l _) ->
                    l === (val ! "fields" ! 0)
                  _ -> diff "different type parameter bounds" bd val
 
@@ -945,8 +945,13 @@ instance Show a => Diffable (Expr a) where
       ("TryBlock", TryBlock as e _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
-      ("Async", Async as c e _) -> error "TODO"
-      ("Await", Await as e _) -> error "TODO"
+      ("Async", Async as c e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
+        c === (n ! "fields" ! 0)
+        e === (n ! "fields" ! 2)
+      ("Await", Await as e _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
+        e === (n ! "fields" ! 0)
       _ -> diff "differing expressions:" ex val
     where
     n = val ! "node"

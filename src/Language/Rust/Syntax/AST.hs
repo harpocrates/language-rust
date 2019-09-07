@@ -60,8 +60,8 @@ module Language.Rust.Syntax.AST (
   Lifetime(..),
   LifetimeDef(..),
   TyParam(..),
-  TyParamBound(..),
-  partitionTyParamBounds,
+  GenericBound(..),
+  partitionGenericBounds,
   WhereClause(..),
   whereClause,
   WherePredicate(..),
@@ -514,6 +514,13 @@ instance (Sem.Semigroup a, Monoid a) => Monoid (Generics a) where
   mappend = (<>)
   mempty = Generics [] [] mempty mempty
 
+{-
+data GenericParam a
+  = LifetimeParam [Attribute a] (Lifetime a) [GenericBounds a] a
+  | TypeParam [Attribute a] Ident [GenericBounds a] (Maybe (Ty a)) a
+  | ConstParam [Attribute a] Ident [GenericBounds a] (Ty a) a
+-}
+
 -- | An item within an impl (@syntax::ast::ImplItem@ with @syntax::ast::ImplItemKind@ inlined).
 --
 -- Examples:
@@ -604,10 +611,10 @@ data Item a
   | Union [Attribute a] (Visibility a) Ident (VariantData a) (Generics a) a
   -- | trait declaration (@trait@ or @pub trait@).
   -- Example: @trait Foo { .. }@ or @trait Foo\<T\> { .. }@
-  | Trait [Attribute a] (Visibility a) Ident Bool Unsafety (Generics a) [TyParamBound a] [TraitItem a] a
+  | Trait [Attribute a] (Visibility a) Ident Bool Unsafety (Generics a) [GenericBound a] [TraitItem a] a
   -- | trait alias
   -- Example: @trait Foo = Bar + Quux;@
-  | TraitAlias [Attribute a] (Visibility a) Ident (Generics a) (NonEmpty (TyParamBound a)) a
+  | TraitAlias [Attribute a] (Visibility a) Ident (Generics a) (NonEmpty (GenericBound a)) a
   -- | implementation
   -- Example: @impl\<A\> Foo\<A\> { .. }@ or @impl\<A\> Trait for Foo\<A\> { .. }@
   | Impl [Attribute a] (Visibility a) Defaultness Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a] a
@@ -972,7 +979,8 @@ instance Located TokenTree where
 
 -- | Modifier on a bound, currently this is only used for @?Sized@, where the modifier is @Maybe@.
 -- Negative bounds should also be handled here.
-data TraitBoundModifier = None | Maybe deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
+data TraitBoundModifier = None | Maybe
+  deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Data, Generic, NFData)
 
 -- | Item declaration within a trait declaration (@syntax::ast::TraitItem@ with
 -- @syntax::ast::TraitItemKind@ inlined), possibly including a default implementation. A trait item
@@ -1002,7 +1010,7 @@ data TraitItem a
   -- | Method with optional body
   | MethodT [Attribute a] Ident (Generics a) (MethodSig a) (Maybe (Block a)) a
   -- | Possibly abstract associated types
-  | TypeT [Attribute a] Ident [TyParamBound a] (Maybe (Ty a)) a
+  | TypeT [Attribute a] Ident [GenericBound a] (Maybe (Ty a)) a
   -- | Call to a macro
   | MacroT [Attribute a] (Mac a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
@@ -1037,9 +1045,9 @@ data Ty a
   -- | path type (examples: @std::math::pi@, @\<Vec\<T\> as SomeTrait\>::SomeType@).
   | PathTy (Maybe (QSelf a)) (Path a) a
   -- | trait object type (example: @Bound1 + Bound2 + Bound3@)
-  | TraitObject (NonEmpty (TyParamBound a)) a
+  | TraitObject (NonEmpty (GenericBound a)) a
   -- | impl trait type (example: @impl Bound1 + Bound2 + Bound3@).
-  | ImplTrait (NonEmpty (TyParamBound a)) a
+  | ImplTrait (NonEmpty (GenericBound a)) a
   -- | no-op; kept solely so that we can pretty print faithfully
   | ParenTy (Ty a) a
   -- | typeof, currently unsupported in @rustc@ (example: @typeof(1)@)
@@ -1068,29 +1076,29 @@ instance Located a => Located (Ty a) where
 
 -- | Type parameter definition used in 'Generics' (@syntax::ast::TyParam@). Note that each
 -- parameter can have any number of (lifetime or trait) bounds, as well as possibly a default type.
-data TyParam a = TyParam [Attribute a] Ident [TyParamBound a] (Maybe (Ty a)) a
+data TyParam a = TyParam [Attribute a] Ident [GenericBound a] (Maybe (Ty a)) a
    deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (TyParam a) where spanOf (TyParam _ _ _ _ s) = spanOf s
 
--- | Bounds that can be placed on types (@syntax::ast::TyParamBound@). These can be either traits or
+-- | Bounds that can be placed on types (@syntax::ast::GenericBound@). These can be either traits or
 -- lifetimes.
-data TyParamBound a
-  = TraitTyParamBound (PolyTraitRef a) TraitBoundModifier a -- ^ trait bound
-  | RegionTyParamBound (Lifetime a) a                       -- ^ lifetime bound
+data GenericBound a
+  = TraitBound (PolyTraitRef a) TraitBoundModifier a -- ^ trait bound
+  | OutlivesBound (Lifetime a) a                     -- ^ lifetime bound
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
-instance Located a => Located (TyParamBound a) where
-  spanOf (TraitTyParamBound _ _ s) = spanOf s
-  spanOf (RegionTyParamBound _ s) = spanOf s
+instance Located a => Located (GenericBound a) where
+  spanOf (TraitBound _ _ s) = spanOf s
+  spanOf (OutlivesBound _ s) = spanOf s
 
--- | Partition a list of 'TyParamBound' into a tuple of the 'TraitTyParamBound' and
--- 'RegionTyParamBound' variants.
-partitionTyParamBounds :: [TyParamBound a] -> ([TyParamBound a], [TyParamBound a])
-partitionTyParamBounds = partition isTraitBound
+-- | Partition a list of 'GenericBound' into a tuple of the 'TraitBound' and
+-- 'OutlivesBound' variants.
+partitionGenericBounds :: [GenericBound a] -> ([GenericBound a], [GenericBound a])
+partitionGenericBounds = partition isTraitBound
   where
-    isTraitBound TraitTyParamBound{} = True
-    isTraitBound RegionTyParamBound{} = False
+    isTraitBound TraitBound{} = True
+    isTraitBound OutlivesBound{} = False
 
 -- | Unary operators, used in the 'Unary' constructor of 'Expr' (@syntax::ast::UnOp@).
 --
@@ -1209,7 +1217,7 @@ instance (Sem.Semigroup a, Monoid a) => Monoid (WhereClause a) where
 -- | An individual predicate in a 'WhereClause' (@syntax::ast::WherePredicate@).
 data WherePredicate a
   -- | type bound (@syntax::ast::WhereBoundPredicate@) (example: @for\<\'c\> Foo: Send+Clone+\'c@)
-  = BoundPredicate [LifetimeDef a] (Ty a) [TyParamBound a] a
+  = BoundPredicate [LifetimeDef a] (Ty a) [GenericBound a] a
   -- | lifetime predicate (@syntax::ast::WhereRegionPredicate@) (example: @\'a: \'b+\'c@)
   | RegionPredicate (Lifetime a) [Lifetime a] a
   -- | equality predicate (@syntax::ast::WhereEqPredicate@) (example: @T=int@). Note that this is

@@ -430,8 +430,8 @@ resolveTy :: (Typeable a, Monoid a) => TyType -> Ty a -> ResolveM (Ty a)
 -- TraitObject
 resolveTy NoSumType     o@(TraitObject b _) | length b > 1 = scope o (correct "added parens around trait object type" *> resolveTy NoSumType (ParenTy o mempty))
 resolveTy NoForType     o@TraitObject{} = scope o (correct "added parens around trait object type" *> resolveTy NoForType (ParenTy o mempty))
-resolveTy _             o@(TraitObject bds@(TraitTyParamBound{} :| _) x)
-  = scope o (TraitObject <$> traverse (resolveTyParamBound ModBound) bds <*> pure x)
+resolveTy _             o@(TraitObject bds@(TraitBound{} :| _) x)
+  = scope o (TraitObject <$> traverse (resolveGenericBound ModBound) bds <*> pure x)
 resolveTy _             o@TraitObject{} = scope o (err o "first bound in trait object should be a trait bound")
 -- ParenTy
 resolveTy PrimParenType p@(ParenTy ty' x) = scope p (ParenTy <$> resolveTy NoSumType ty' <*> pure x)
@@ -440,7 +440,7 @@ resolveTy _             p@(ParenTy ty' x) = scope p (ParenTy <$> resolveTy AnyTy
 resolveTy PrimParenType t@TupTy{} = scope t (correct "added parens around tuple type" *> resolveTy PrimParenType (ParenTy t mempty))
 resolveTy _             t@(TupTy tys x) = scope t (TupTy <$> traverse (resolveTy AnyType) tys <*> pure x)
 -- ImplTrait
-resolveTy _             i@(ImplTrait bds x) = scope i (ImplTrait <$> traverse (resolveTyParamBound ModBound) bds <*> pure x)
+resolveTy _             i@(ImplTrait bds x) = scope i (ImplTrait <$> traverse (resolveGenericBound ModBound) bds <*> pure x)
 -- PathTy
 resolveTy PrimParenType p@(PathTy (Just _) _ _) = scope p (correct "added parents around path type" *> resolveTy PrimParenType (ParenTy p mempty))
 resolveTy _             p@(PathTy q p'@(Path _ s _) x) = scope p $
@@ -490,7 +490,7 @@ isSelfArg _ = True
 instance (Typeable a, Monoid a) => Resolve (FnDecl a) where resolveM = resolveFnDecl AllowSelf NamedArg
 
 -- | Only some type parameter bounds allow trait bounds to start with @?@
-data TyParamBoundType
+data GenericBoundType
   = NoneBound          -- ^ Don't allow @? poly_trait_ref@
   | ModBound           -- ^ Allow @? poly_trait_ref@
 
@@ -499,12 +499,12 @@ data TyParamBoundType
 --   * an underlying lifetime or traitref is
 --   * it is 'NoneBound' but is a trait bound with a @?@ (as in 'TraitObject')
 --
-resolveTyParamBound :: (Typeable a, Monoid a) => TyParamBoundType -> TyParamBound a -> ResolveM (TyParamBound a)
-resolveTyParamBound _         b@(RegionTyParamBound lt x) =     scope b (RegionTyParamBound <$> resolveLifetime lt <*> pure x)
-resolveTyParamBound NoneBound b@(TraitTyParamBound _ Maybe _) = scope b (err b "? trait is not allowed in this type param bound")
-resolveTyParamBound _         b@(TraitTyParamBound p t x) =     scope b (TraitTyParamBound <$> resolvePolyTraitRef p <*> pure t <*> pure x)
+resolveGenericBound :: (Typeable a, Monoid a) => GenericBoundType -> GenericBound a -> ResolveM (GenericBound a)
+resolveGenericBound _         b@(OutlivesBound lt x) =     scope b (OutlivesBound <$> resolveLifetime lt <*> pure x)
+resolveGenericBound NoneBound b@(TraitBound _ Maybe _) = scope b (err b "? trait is not allowed in this type param bound")
+resolveGenericBound _         b@(TraitBound p t x) =     scope b (TraitBound <$> resolvePolyTraitRef p <*> pure t <*> pure x)
 
-instance (Typeable a, Monoid a) => Resolve (TyParamBound a) where resolveM = resolveTyParamBound ModBound
+instance (Typeable a, Monoid a) => Resolve (GenericBound a) where resolveM = resolveGenericBound ModBound
 
 -- | There are several restricted forms of arguments allowed
 data ArgType
@@ -980,6 +980,12 @@ resolveExprP _ _ l@(BlockExpr as b x) = scope l $ do
   as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
   pure (BlockExpr as' b' x)
+-- Async expressions
+resolveExprP _ NoStructBlockExpr e@Async{} = parenthesizeE e
+resolveExprP _ _ c@(Async as c' b x) = scope c $ do
+  as' <- traverse (resolveAttr EitherAttr) as
+  b' <- resolveBlock b
+  pure (Async as' c' b' x)
 -- Struct expressions
 resolveExprP _ NoStructExpr e@Struct{} = parenthesizeE e
 resolveExprP _ NoStructBlockExpr e@Struct{} = parenthesizeE e
@@ -1047,10 +1053,6 @@ resolveExprP _ _ c@(TryBlock as b x) = scope c $ do
   as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
   pure (TryBlock as' b' x)
-resolveExprP _ _ c@(Async as c' b x) = scope c $ do
-  as' <- traverse (resolveAttr EitherAttr) as
-  b' <- resolveBlock b
-  pure (Async as' c' b' x)
 
 isBlockLike :: Expr a -> Bool
 isBlockLike If{} = True
@@ -1061,6 +1063,7 @@ isBlockLike While{} = True
 isBlockLike WhileLet{} = True
 isBlockLike Match{} = True
 isBlockLike BlockExpr{} = True
+isBlockLike Async{} = True
 isBlockLike _ = False
 
 resolveLbl :: Typeable a => Label a -> ResolveM (Label a)
@@ -1249,7 +1252,7 @@ resolveItem t r@(Trait as v i a u g bd is x) = scope r $ do
   v' <- resolveVisibility' t v
   i' <- resolveIdent i
   g' <- resolveGenerics g
-  bd' <- traverse (resolveTyParamBound NoneBound) bd
+  bd' <- traverse (resolveGenericBound NoneBound) bd
   is' <- traverse resolveTraitItem is
   pure (Trait as' v' i' a u g' bd' is' x)
 
@@ -1258,7 +1261,7 @@ resolveItem t r@(TraitAlias as v i g bd x) = scope r $ do
   v' <- resolveVisibility' t v
   i' <- resolveIdent i
   g' <- resolveGenerics g
-  bd' <- traverse (resolveTyParamBound NoneBound) bd
+  bd' <- traverse (resolveGenericBound NoneBound) bd
   pure (TraitAlias as' v' i' g' bd' x)
 
 resolveItem t i'@(Impl as v d u i g mt t' is x) = scope i' $ do
@@ -1331,7 +1334,7 @@ resolveTyParam :: (Typeable a, Monoid a) => TyParam a -> ResolveM (TyParam a)
 resolveTyParam p@(TyParam as i bds t x) = scope p $ do
   as' <- traverse (resolveAttr OuterAttr) as
   i' <- resolveIdent i
-  bds' <- traverse (resolveTyParamBound ModBound) bds
+  bds' <- traverse (resolveGenericBound ModBound) bds
   t' <- traverse (resolveTy AnyType) t
   pure (TyParam as' i' bds' t' x)
 
@@ -1394,7 +1397,7 @@ resolveWherePredicate p@(RegionPredicate l ls x) = scope p $ do
 resolveWherePredicate p@(BoundPredicate lts t bds x) = scope p $ do
   lts' <- traverse resolveLifetimeDef lts
   t' <- resolveTy NoForType t
-  bds' <- traverse (resolveTyParamBound ModBound) bds
+  bds' <- traverse (resolveGenericBound ModBound) bds
   pure (BoundPredicate lts' t' bds' x)
 
 instance (Typeable a, Monoid a) => Resolve (WherePredicate a) where resolveM = resolveWherePredicate
@@ -1417,7 +1420,7 @@ resolveTraitItem n@(MethodT as i g m b x) = scope n $ do
 resolveTraitItem n@(TypeT as i bd t x) = scope n $ do
   as' <- traverse (resolveAttr OuterAttr) as
   i' <- resolveIdent i
-  bd' <- traverse (resolveTyParamBound ModBound) bd
+  bd' <- traverse (resolveGenericBound ModBound) bd
   t' <- traverse (resolveTy AnyType) t
   pure (TypeT as' i' bd' t' x)
 resolveTraitItem n@(MacroT as m x) = scope n $ do

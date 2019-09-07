@@ -74,7 +74,7 @@ checkTerm inp y = sequence_ $ catMaybes tests
           , checkTerm' (Proxy :: Proxy Expr) inp <$> cast y
        -- , checkTerm' (Proxy :: Proxy Stmt) inp <$> cast y
           , checkTerm' (Proxy :: Proxy Item) inp <$> cast y
-       -- , checkTerm' (Proxy :: Proxy TyParamBound) inp <$> cast y
+       -- , checkTerm' (Proxy :: Proxy GenericBound) inp <$> cast y
           , checkTerm' (Proxy :: Proxy TyParam) inp <$> cast y
           , checkTerm' (Proxy :: Proxy TraitItem) inp <$> cast y
           , checkTerm' (Proxy :: Proxy ImplItem) inp <$> cast y
@@ -219,19 +219,19 @@ parserTypes = testGroup "parsing types"
   , testP "!" (Never ())
   , testP "i32" i32
   , testP "Self" (PathTy Nothing (Path False [PathSegment "Self" Nothing ()] ()) ())
-  , testP "?Debug" (TraitObject [TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) Maybe ()] ())
-  , testP "Debug + ?Send + 'a" (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
-                                            , TraitTyParamBound (PolyTraitRef [] (TraitRef send) ()) Maybe ()
-                                            , RegionTyParamBound (Lifetime "a" ()) ()
+  , testP "?Debug" (TraitObject [TraitBound (PolyTraitRef [] (TraitRef debug) ()) Maybe ()] ())
+  , testP "Debug + ?Send + 'a" (TraitObject [ TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()
+                                            , TraitBound (PolyTraitRef [] (TraitRef send) ()) Maybe ()
+                                            , OutlivesBound (Lifetime "a" ()) ()
                                             ] ())
-  , testP "?for<'a> Debug" (TraitObject [TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef debug) ()) Maybe ()] ())
-  , testP "?for<'a> Debug + 'a" (TraitObject [ TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef debug) ()) Maybe ()
-                                             , RegionTyParamBound (Lifetime "a" ()) ()
+  , testP "?for<'a> Debug" (TraitObject [TraitBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef debug) ()) Maybe ()] ())
+  , testP "?for<'a> Debug + 'a" (TraitObject [ TraitBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef debug) ()) Maybe ()
+                                             , OutlivesBound (Lifetime "a" ()) ()
                                              ] ())
   , testP "Send + ?for<'a> Debug + 'a" (TraitObject
-                                             [ TraitTyParamBound (PolyTraitRef [] (TraitRef send) ()) None ()
-                                             , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef debug) ()) Maybe ()
-                                             , RegionTyParamBound (Lifetime "a" ()) ()
+                                             [ TraitBound (PolyTraitRef [] (TraitRef send) ()) None ()
+                                             , TraitBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef debug) ()) Maybe ()
+                                             , OutlivesBound (Lifetime "a" ()) ()
                                              ] ())
   , testP "(i32,)" (TupTy [i32] ())
   , testP "(i32,())" (TupTy [i32, TupTy [] ()] ())
@@ -309,8 +309,8 @@ parserTypes = testGroup "parsing types"
                      ())
   , testP "< <Debug + 'static as a::b::Trait>::AssociatedItem as x>::Another"
              (PathTy (Just (QSelf (PathTy (Just (QSelf
-                         (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
-                                      , RegionTyParamBound (Lifetime "static" ()) ()
+                         (TraitObject [ TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()
+                                      , OutlivesBound (Lifetime "static" ()) ()
                                       ] ()) 3))
                                                 (Path False [ PathSegment "a" Nothing ()
                                                       , PathSegment "b" Nothing ()
@@ -323,8 +323,8 @@ parserTypes = testGroup "parsing types"
                      ())
   , testP "<<Debug + 'static as a::b::Trait>::AssociatedItem as x>::Another"
              (PathTy (Just (QSelf (PathTy (Just (QSelf
-                         (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
-                                      , RegionTyParamBound (Lifetime "static" ()) ()
+                         (TraitObject [ TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()
+                                      , OutlivesBound (Lifetime "static" ()) ()
                                       ] ()) 3))
                                                 (Path False [ PathSegment "a" Nothing ()
                                                       , PathSegment "b" Nothing ()
@@ -353,8 +353,8 @@ parserTypes = testGroup "parsing types"
              (BareFn Unsafe C [] (FnDecl [Arg (Just (WildP ())) i32 ()] Nothing False ()) ())
   , testP "fn(i32) -> impl Debug + Clone"
              (BareFn Normal Rust [] (FnDecl [Arg Nothing i32 ()] (Just (ImplTrait
-                 [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
-                 , TraitTyParamBound (PolyTraitRef [] (TraitRef clone) ()) None ()
+                 [ TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()
+                 , TraitBound (PolyTraitRef [] (TraitRef clone) ()) None ()
                  ] ())) False ()) ())
   , testP "PResult<'a, P<i32>>"
              (PathTy Nothing (Path False [PathSegment "PResult" (Just (AngleBracketed [ Lifetime "a" () ]
@@ -364,11 +364,11 @@ parserTypes = testGroup "parsing types"
              (BareFn Normal Rust
                             [ LifetimeDef [] (Lifetime "l1" ()) [Lifetime "l2" (), Lifetime "l3" ()] ()
                             , LifetimeDef [] (Lifetime "l4" ()) [Lifetime "l5" ()] () ]
-                            (FnDecl [Arg (Just (WildP ())) (TraitObject [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Trait" Nothing ()] ())) ()) None (), RegionTyParamBound (Lifetime "l1" ()) ()] ()) ()]
+                            (FnDecl [Arg (Just (WildP ())) (TraitObject [TraitBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Trait" Nothing ()] ())) ()) None (), OutlivesBound (Lifetime "l1" ()) ()] ()) ()]
                                     (Just i32) False ()) ())
   , testP "for <'a> Foo<&'a T>"
              (TraitObject
-                [TraitTyParamBound
+                [TraitBound
                    (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()]
                                  (TraitRef (Path False [PathSegment "Foo" (Just (AngleBracketed [] [Rptr (Just (Lifetime "a" ()))
                                                                                         Immutable
@@ -377,37 +377,37 @@ parserTypes = testGroup "parsing types"
                                                                                   [] ())) ()] ())) ()) None ()] ())
   , testP "for <'a,> Debug + for <'b> Send + for <'c> Sync"
              (TraitObject
-               [ TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()]
+               [ TraitBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()]
                                                 (TraitRef debug) ()) None ()
-               , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "b" ()) [] ()]
+               , TraitBound (PolyTraitRef [LifetimeDef [] (Lifetime "b" ()) [] ()]
                                                 (TraitRef send) ()) None ()
-               , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "c" ()) [] ()]
+               , TraitBound (PolyTraitRef [LifetimeDef [] (Lifetime "c" ()) [] ()]
                                                 (TraitRef (Path False [PathSegment "Sync" Nothing ()] ())) ()) None ()
                ] ())
   , testP "&(Debug + Send)"
            (Rptr Nothing Immutable (ParenTy
-              (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
-                           , TraitTyParamBound (PolyTraitRef [] (TraitRef send) ()) None ()
+              (TraitObject [ TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()
+                           , TraitBound (PolyTraitRef [] (TraitRef send) ()) None ()
                            ] ()) ()) ())
  , testP "&(for<'a> Tr<'a> + Send)"
            (Rptr Nothing Immutable (ParenTy
-              (TraitObject [ TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [PathSegment "Tr" (Just (AngleBracketed [Lifetime "a" ()] [] [] ())) ()] ())) ()) None ()
-                           , TraitTyParamBound (PolyTraitRef [] (TraitRef send) ()) None ()
+              (TraitObject [ TraitBound (PolyTraitRef [LifetimeDef [] (Lifetime "a" ()) [] ()] (TraitRef (Path False [PathSegment "Tr" (Just (AngleBracketed [Lifetime "a" ()] [] [] ())) ()] ())) ()) None ()
+                           , TraitBound (PolyTraitRef [] (TraitRef send) ()) None ()
                            ] ())
               ()) ())
   , testP "Fn() -> &(Object+Send)"
-           (PathTy Nothing (Path False [PathSegment "Fn" (Just (Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (TraitObject [ TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Object" Nothing ()] ())) ()) None ()
-             , TraitTyParamBound (PolyTraitRef [] (TraitRef send) ()) None ()] ()) ()) ())) ())) ()] ()) ())
+           (PathTy Nothing (Path False [PathSegment "Fn" (Just (Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (TraitObject [ TraitBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Object" Nothing ()] ())) ()) None ()
+             , TraitBound (PolyTraitRef [] (TraitRef send) ()) None ()] ()) ()) ())) ())) ()] ()) ())
   , testP "foo![ x ]" (MacTy (Mac (Path False [PathSegment "foo" Nothing ()] ()) (Tree (Token (Span (Position 6 1 6) (Position 7 1 7)) (IdentTok "x")))  ()) ())
   , testP "impl Debug + Clone"
              (ImplTrait
-                 [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
-                 , TraitTyParamBound (PolyTraitRef [] (TraitRef clone) ()) None ()
+                 [ TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()
+                 , TraitBound (PolyTraitRef [] (TraitRef clone) ()) None ()
                  ] ())
   , testP "dyn Debug + Clone"
              (TraitObject
-                 [ TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()
-                 , TraitTyParamBound (PolyTraitRef [] (TraitRef clone) ()) None ()
+                 [ TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()
+                 , TraitBound (PolyTraitRef [] (TraitRef clone) ()) None ()
                  ] ())
   ]
 
@@ -732,8 +732,13 @@ parserStatements = testGroup "parsing statements"
   , testP "static foo: i32 = 1;" (ItemStmt (Static [] InheritedV "foo" i32 Immutable (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()) ())
   , testP "unsafe { 1 };" (Semi (BlockExpr [] (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Unsafe ()) ()) ())
   , testP "unsafe { 1 }" (NoSemi (BlockExpr [] (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Unsafe ()) ()) ())
+  , testP "async { 1 };" (Semi (Async [] Ref (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
+  , testP "async { 1 }" (NoSemi (Async [] Ref (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
+  , testP "async move { 1 };" (Semi (Async [] Value (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
+  , testP "async move { 1 }" (NoSemi (Async [] Value (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
   , testP "{ 1 };" (Semi (BlockExpr [] (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
   , testP "{ 1 }" (NoSemi (BlockExpr [] (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
+  , testP "|| ();" (Semi (Closure [] Ref NotAsync Movable (FnDecl [] Nothing False ()) (TupExpr [] [] ()) ()) ())
   ]
 
 
@@ -775,8 +780,8 @@ parserItems = testGroup "parsing items"
             ())
     (FnHeader Normal IsAsync NotConst Rust ())
     (Generics [] [TyParam [] "T" [] Nothing (), TyParam [] "K" [] Nothing ()]
-              (WhereClause [ BoundPredicate [] (PathTy Nothing t ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef clone) ()) None ()] ()
-                           , BoundPredicate [] (PathTy Nothing (Path False [PathSegment "K" Nothing ()] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef clone) ()) None (), TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()] ()
+              (WhereClause [ BoundPredicate [] (PathTy Nothing t ()) [TraitBound (PolyTraitRef [] (TraitRef clone) ()) None ()] ()
+                           , BoundPredicate [] (PathTy Nothing (Path False [PathSegment "K" Nothing ()] ()) ()) [TraitBound (PolyTraitRef [] (TraitRef clone) ()) None (), TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()] ()
                            ] ()) ())
     (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ())
     ())
@@ -788,7 +793,7 @@ parserItems = testGroup "parsing items"
             ())
     (FnHeader Normal NotAsync NotConst Rust ())
     (Generics [] [TyParam [] "T" [] Nothing ()]
-              (WhereClause [ BoundPredicate [] (PathTy Nothing (Path False [ PathSegment "i32" Nothing () ] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [ PathSegment "ConvertTo" (Just (AngleBracketed [] [PathTy Nothing t ()] [] ())) () ] ())) ()) None ()] ()
+              (WhereClause [ BoundPredicate [] (PathTy Nothing (Path False [ PathSegment "i32" Nothing () ] ()) ()) [TraitBound (PolyTraitRef [] (TraitRef (Path False [ PathSegment "ConvertTo" (Just (AngleBracketed [] [PathTy Nothing t ()] [] ())) () ] ())) ()) None ()] ()
                            ] ()) ())
     (Block [NoSemi (Ret [] (Just (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ())) ()) ()] Normal ())
     ())
@@ -852,8 +857,8 @@ parserItems = testGroup "parsing items"
   , testP "trait Trace { }" (Trait [] InheritedV "Trace" False Normal (Generics [] [] (WhereClause [] ()) ()) [] [] ())
   , testP "unsafe trait Trace { }" (Trait [] InheritedV "Trace" False Unsafe (Generics [] [] (WhereClause [] ()) ()) [] [] ())
   , testP "unsafe auto trait Trace { }" (Trait [] InheritedV "Trace" True Unsafe (Generics [] [] (WhereClause [] ()) ()) [] [] ())
-  , testP "trait Trace: Debug { }" (Trait [] InheritedV "Trace" False Normal (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()] [] ())
-  , testP "unsafe trait Trace: Debug { }" (Trait [] InheritedV "Trace" False Unsafe (Generics [] [] (WhereClause [] ()) ()) [TraitTyParamBound (PolyTraitRef [] (TraitRef debug) ()) None ()] [] ())
+  , testP "trait Trace: Debug { }" (Trait [] InheritedV "Trace" False Normal (Generics [] [] (WhereClause [] ()) ()) [TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()] [] ())
+  , testP "unsafe trait Trace: Debug { }" (Trait [] InheritedV "Trace" False Unsafe (Generics [] [] (WhereClause [] ()) ()) [TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()] [] ())
   ]
 
 -- Just a common expression to make the tests above more straightforward

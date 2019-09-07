@@ -43,10 +43,10 @@ point :: Path ()
 point = Path False [PathSegment "Point" Nothing ()] ()
 
 -- | Type parameter bounds to make tests more straightforward
-debug', lt, iterator :: TyParamBound ()
-debug' = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [debug] ())) ()) None ()
-lt = RegionTyParamBound (Lifetime "lt" ()) ()
-iterator = TraitTyParamBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Iterator" (Just (AngleBracketed [] [] [(mkIdent "Item",i32)] ())) ()] ())) ()) None ()
+debug', lt, iterator :: GenericBound ()
+debug' = TraitBound (PolyTraitRef [] (TraitRef (Path False [debug] ())) ()) None ()
+lt = OutlivesBound (Lifetime "lt" ()) ()
+iterator = TraitBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Iterator" (Just (AngleBracketed [] [] [(mkIdent "Item",i32)] ())) ()] ())) ()) None ()
 
 -- | Short expressions to make tests more straightforward
 _1, _2, foo, bar :: Expr ()
@@ -444,9 +444,9 @@ prettyItems = testGroup "printing items"
   , testFlatten "unsafe trait Show { }" (printItem (Trait [] InheritedV (mkIdent "Show") False Unsafe (Generics [] [] (WhereClause [] ()) ()) [] [] ()))
   , testFlatten "trait Show<T>: 'l1 + for<'l3: 'l1 + 'l2> Debug + 'l2 { }" (printItem (Trait [] InheritedV (mkIdent "Show") False Normal
                                               (Generics [] [TyParam [] (mkIdent "T") [] Nothing ()] (WhereClause [] ()) ())
-                                              [ RegionTyParamBound (Lifetime "l1" ()) ()
-                                              , TraitTyParamBound (PolyTraitRef [LifetimeDef [] (Lifetime "l3" ()) [Lifetime "l1" (), Lifetime "l2" ()] ()] (TraitRef (Path False [debug] ())) ())  None ()
-                                              , RegionTyParamBound (Lifetime "l2" ()) ()]
+                                              [ OutlivesBound (Lifetime "l1" ()) ()
+                                              , TraitBound (PolyTraitRef [LifetimeDef [] (Lifetime "l3" ()) [Lifetime "l1" (), Lifetime "l2" ()] ()] (TraitRef (Path False [debug] ())) ())  None ()
+                                              , OutlivesBound (Lifetime "l2" ()) ()]
                                               []
                                               ()))
   , testFlatten "pub trait Show { fn value(&mut self) -> i32; const pi: i32 = 1; const e: i32; type Size = i32; type Length: 'l3; type SomeType: 'l1 = f64; }"
@@ -462,8 +462,8 @@ prettyItems = testGroup "printing items"
                       , ConstT [] (mkIdent "pi") i32 (Just _1) ()
                       , ConstT [] (mkIdent "e") i32 Nothing ()
                       , TypeT [] (mkIdent "Size") [] (Just i32) ()
-                      , TypeT [] (mkIdent "Length") [RegionTyParamBound (Lifetime "l3" ()) ()] Nothing ()
-                      , TypeT [] (mkIdent "SomeType") [RegionTyParamBound (Lifetime "l1" ()) ()] (Just f64) ()
+                      , TypeT [] (mkIdent "Length") [OutlivesBound (Lifetime "l3" ()) ()] Nothing ()
+                      , TypeT [] (mkIdent "SomeType") [OutlivesBound (Lifetime "l1" ()) ()] (Just f64) ()
                       ]
                       ()))
   ]
