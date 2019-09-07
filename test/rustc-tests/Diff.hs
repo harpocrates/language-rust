@@ -225,10 +225,10 @@ instance Diffable Defaultness where
 
 instance Show a => Diffable (Variant a) where
   Variant i as d e _ === val = do
-    i === (val ! "node" ! "ident")
-    as === (val ! "node" ! "attrs")
-    d === (val ! "node" ! "data")
-    e === (val ! "node" ! "disr_expr")
+    i === (val ! "ident")
+    as === (val ! "attrs")
+    d === (val ! "data")
+    e === (val ! "disr_expr")
 
 instance Show a => Diffable (VariantData a) where
   d === val =
@@ -354,31 +354,20 @@ instance Diffable Abi where
   a                 === val                 = diff "different ABI" a val
 
 instance Show a => Diffable (Generics a) where
-  Generics lts tys whr _ === val = do
-    (map LifetimeParam lts ++ map TypeParam tys) === (val ! "params")
+  Generics params whr _ === val = do
+    params === (val ! "params")
     whr === (val ! "where_clause")
 
-data Param a = TypeParam (TyParam a) | LifetimeParam (LifetimeDef a) deriving (Show)
-
-instance Show a => Diffable (Param a) where
-  p === val =
-    case (val ! "variant", p) of
-      ("Lifetime", LifetimeParam ldef) -> ldef === (val ! "fields" ! 0)
-      ("Type", TypeParam typ) -> typ === (val ! "fields" ! 0)
-      _ -> diff "different generic param" p val
-
-instance Show a => Diffable (LifetimeDef a) where
-  LifetimeDef as l bd _ === val = do
+instance Show a => Diffable (GenericParam a) where
+  LifetimeParam as l bd _ === val | val ! "kind" == "Lifetime" = do
     NullList as === (val ! "attrs" ! "_field0")
-    l === (val ! "lifetime")
+    l === val
     bd === (val ! "bounds")
-
-instance Show a => Diffable (TyParam a) where
-  TyParam as i bd d _ === val = do
+  TypeParam as i bd d _ === val | val ! "kind" ! "variant" == "Type" = do
     NullList as === (val ! "attrs" ! "_field0")
     i === (val ! "ident")
     bd === (val ! "bounds")
-    d === (val ! "default")
+    d === (val ! "kind" ! "fields" ! 0)
 
 instance Show a => Diffable (WhereClause a) where
   WhereClause preds _ === val = preds === (val ! "predicates")
@@ -387,12 +376,12 @@ instance Show a => Diffable (WherePredicate a) where
   w === val =
     case (val ! "variant", w) of
       ("BoundPredicate", BoundPredicate ls t bds _) -> do
-        map LifetimeParam ls === (val ! "fields" ! 0 ! "bound_generic_params")
+        ls === (val ! "fields" ! 0 ! "bound_generic_params")
         t === (val ! "fields" ! 0 ! "bounded_ty")
         bds === (val ! "fields" ! 0 ! "bounds")
       ("RegionPredicate", RegionPredicate l bs _) -> do
         l === (val ! "fields" ! 0 ! "lifetime")
-        bs === (val ! "fields" ! 0 ! "bounds")
+        map (\b@(Lifetime _ x) -> OutlivesBound b x) bs === (val ! "fields" ! 0 ! "bounds")
       ("EqPredicate", EqPredicate l r _) -> do
         l === (val ! "fields" ! 0 ! "lhs_ty")
         r === (val ! "fields" ! 0 ! "rhs_ty")
@@ -705,14 +694,14 @@ instance Show a => Diffable (Ty a) where
           ("BareFn", BareFn u a lts decl _) -> do
             u === (n ! "fields" ! 0 ! "unsafety")
             a === (n ! "fields" ! 0 ! "abi")
-            map LifetimeParam lts === (n ! "fields" ! 0 ! "generic_params")
+            lts === (n ! "fields" ! 0 ! "generic_params")
             decl === (n ! "fields" ! 0 ! "decl")
           ("TraitObject", TraitObject bds _) ->
             bds === (n ! "fields" ! 0)
           ("Paren", ParenTy t _) -> t === (n ! "fields" ! 0)
-          ("Typeof", Typeof e _) -> e ===(n ! "fields" ! 0)
+          ("Typeof", Typeof e _) -> e === (n ! "fields" ! 0 ! "value")
           ("Mac", MacTy m _) -> m === (n ! "fields" ! 0)
-          ("ImplTrait", ImplTrait bds _) -> bds === (n ! "fields" ! 0)
+          ("ImplTrait", ImplTrait bds _) -> bds === (n ! "fields" ! 1)
           _ -> diff "differing types" t' val
       _ -> diff "differing types" t' val
 
@@ -728,7 +717,7 @@ instance Show a => Diffable (GenericBound a) where
 
 instance Show a => Diffable (PolyTraitRef a) where
   PolyTraitRef lts tr _ === val = do
-    map LifetimeParam lts === (val ! "bound_generic_params")
+    lts === (val ! "bound_generic_params")
     tr === (val ! "trait_ref")
 
 instance Show a => Diffable (TraitRef a) where
@@ -741,8 +730,8 @@ instance Diffable TraitBoundModifier where
 
 instance Show a => Diffable (Lifetime a) where
   l@(Lifetime n _) === val
-    | fromString ("'" ++ n) /= val ! "ident" ! "name" = diff "lifetime is different" l val
-    | otherwise = pure ()
+    | fromString ("'" ++ n) == val ! "ident" ! "name" = pure () 
+    | otherwise = diff "lifetime is different" l val
 
 instance Show a => Diffable (QSelf a) where
   QSelf t p === val = do
@@ -763,23 +752,30 @@ instance Show a => Diffable (PathSegment a) where
       i === (val ! "ident")
       pp === (val ! "args")
 
-instance Show a => Diffable (PathParameters a) where
+instance Show a => Diffable (GenericArgs a) where
   p === val =
     case (val ! "variant", p) of
-      ("AngleBracketed", AngleBracketed lts tys bds _) -> do
-        lts === (val ! "fields" ! 0 ! "lifetimes")
-        tys === (val ! "fields" ! 0 ! "types")
-        map Binding bds === (val ! "fields" ! 0 ! "bindings")
+      ("AngleBracketed", AngleBracketed args bds _) -> do
+        args === (val ! "fields" ! 0 ! "args")
+        map Binding bds === (val ! "fields" ! 0 ! "constraints")
       ("Parenthesized", Parenthesized is o _) -> do
         is === (val ! "fields" ! 0 ! "inputs")
         o  === (val ! "fields" ! 0 ! "output")
       _ -> diff "different path parameters" p val
 
+instance Show a => Diffable (GenericArg a) where
+  arg === val =
+    case (val ! "variant", arg) of
+      ("Lifetime", LifetimeArg l) -> l === (val ! "fields" ! 0)
+      ("Type", TypeArg t) -> t === (val ! "fields" ! 0)
+      ("Const", ConstArg e) -> e === (val ! "fields" ! 0)
+      _ -> diff "different generic argument" arg val
+
 newtype Binding a = Binding (Ident, Ty a) deriving (Show)
 instance Show a => Diffable (Binding a) where
   Binding (i,t) === v = do
     i === (v ! "ident")
-    t === (v ! "ty")
+    t === (v ! "kind" ! "fields" ! 0)
 
 instance Show a => Diffable (Expr a) where
   ex === val =
@@ -808,13 +804,9 @@ instance Show a => Diffable (Expr a) where
         NullList as === (val ! "attrs" ! "_field0")
         f === (n ! "fields" ! 0)
         es === (n ! "fields" ! 1)
-      ("MethodCall", MethodCall as o i tys es _) -> do
+      ("MethodCall", MethodCall as o i es _) -> do
         NullList as === (val ! "attrs" ! "_field0")
-        i === (n ! "fields" ! 0 ! "ident")
-        let tys' = n ! "fields" ! 0 ! "args"
-        tys === if (tys' == Data.Aeson.Null)
-                 then tys'
-                 else tys' ! "fields" ! 0 ! "types"
+        i === (n ! "fields" ! 0)
         (o : es) === (n ! "fields" ! 1)
       ("Binary", Binary as o e1 e2 _) -> do
         NullList as === (val ! "attrs" ! "_field0")
@@ -841,7 +833,7 @@ instance Show a => Diffable (Expr a) where
         e === (n ! "fields" ! 0)
         tb === (n ! "fields" ! 1)
         ee === (n ! "fields" ! 2)
-      ("IfLet", IfLet as p e tb ee _) -> do
+      ("If", IfLet as p e tb ee _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         case n ! "fields" ! 0 ! "node" ! "variant" of
           "Let" -> pure ()
@@ -935,7 +927,7 @@ instance Show a => Diffable (Expr a) where
       ("Repeat", Repeat as e1 e2 _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e1 === (n ! "fields" ! 0)
-        e2 === (n ! "fields" ! 1)
+        e2 === (n ! "fields" ! 1 ! "value")
       ("Paren", ParenExpr as e' _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e' === (n ! "fields" ! 0)

@@ -32,10 +32,10 @@ module Language.Rust.Parser.Internal (
   parseAttr,
   parseBlock,
   parseExpr,
+  parseGenericParam,
   parseGenerics,
   parseImplItem,
   parseItem,
-  parseLifetimeDef,
   parseLit,
   parsePat,
   parseSourceFile,
@@ -44,7 +44,6 @@ module Language.Rust.Parser.Internal (
   parseTraitItem,
   parseTt,
   parseTy,
-  parseTyParam,
   parseWhereClause,
 ) where
 
@@ -82,8 +81,7 @@ import qualified Data.List.NonEmpty as N
 %name parseTraitItem trait_item
 %name parseTt token_tree
 %name parseTokenStream token_stream
-%name parseTyParam ty_param
-%name parseLifetimeDef lifetime_def
+%name parseGenericParam generic_param
 %name parseWhereClause where_clause
 %name parseGenerics generics
 
@@ -453,7 +451,7 @@ string :: { Lit Span }
 -----------
 
 -- parse_qualified_path(PathStyle::Type)
--- qual_path :: Spanned (NonEmpty (Ident, PathParameters Span)) -> P (Spanned (QSelf Span, Path Span))
+-- qual_path :: Spanned (NonEmpty (Ident, GenericArgs Span)) -> P (Spanned (QSelf Span, Path Span))
 qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
   : '<' qual_path_suf(segs)                    { let Spanned x _ = $2 in Spanned x ($1 # $2) }
   | lt_ty_qual_path as ty_path '>' '::' segs   {
@@ -525,9 +523,9 @@ path_segments_without_colons :: { [PathSegment Span] }
 path_segment_without_colons :: { PathSegment Span }
   : self_or_ident path_parameter                     { PathSegment (unspan $1) $2 ($1 # $>) }
 
-path_parameter  :: { Maybe (PathParameters Span) }
+path_parameter  :: { Maybe (GenericArgs Span) }
   : generic_values                           { let (lts, tys, bds) = unspan $1
-                                               in Just (AngleBracketed lts tys bds (spanOf $1)) }
+                                               in Just (AngleBracketed (map LifetimeArg lts ++ map TypeArg tys) bds (spanOf $1)) }
   | '(' sep_byT(ty,',') ')'                  { Just (Parenthesized $2 Nothing ($1 # $>)) }
   | '(' sep_byT(ty,',') ')' '->' ty_no_plus  { Just (Parenthesized $2 (Just $>) ($1 # $>)) }
   | {- empty -}                  %prec IDENT { Nothing }
@@ -553,7 +551,7 @@ path_segments_with_colons :: { Reversed NonEmpty (PathSegment Span) }
     {%
       case (unsnoc $1, unspan $3) of
         ((rst, PathSegment i Nothing x), (lts, tys, bds)) ->
-          let seg = PathSegment i (Just (AngleBracketed lts tys bds (spanOf $3))) (x # $3)
+          let seg = PathSegment i (Just (AngleBracketed (map LifetimeArg lts ++ map TypeArg tys) bds (spanOf $3))) (x # $3)
           in pure $ snoc rst seg
         _ -> fail "invalid path segment in expression path"
     }
@@ -737,14 +735,14 @@ poly_trait_ref :: { PolyTraitRef Span }
 
 -- parse_for_lts()
 -- Unlike the Rust libsyntax version, this _requires_ the 'for'
-for_lts :: { Spanned [LifetimeDef Span] }
+for_lts :: { Spanned [GenericParam Span] }
   : for '<' sep_byT(lifetime_def,',') '>'            { Spanned $3 ($1 # $>) }
 
 -- Definition of a lifetime: attributes can come before the lifetime, and a list of bounding
 -- lifetimes can come after the lifetime.
-lifetime_def :: { LifetimeDef Span }
-  : many(outer_attribute) lifetime ':' sep_by1T(lifetime,'+')  { LifetimeDef $1 $2 (toList $4) ($1 # $2 # $>) }
-  | many(outer_attribute) lifetime                             { LifetimeDef $1 $2 [] ($1 # $2 # $>) }
+lifetime_def :: { GenericParam Span }
+  : many(outer_attribute) lifetime ':' sep_by1T(lifetime,'+')  { LifetimeParam $1 $2 [ OutlivesBound l (spanOf l) | l <- toList $4 ] ($1 # $2 # $>) }
+  | many(outer_attribute) lifetime                             { LifetimeParam $1 $2 [] ($1 # $2 # $>) }
 
 
 ---------------
@@ -1020,9 +1018,9 @@ postfix_blockexpr(lhs) :: { Expr Span }
   | lhs '.' await                    { Await [] $1 ($1 # $>) }
   | lhs '.' ident       %prec FIELD  { FieldAccess [] $1 (unspan $3) ($1 # $>) }
   | lhs '.' ident '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) Nothing $5 ($1 # $>) }
+    { MethodCall [] $1 (PathSegment (unspan $3) Nothing (spanOf $3)) $5 ($1 # $>) }
   | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
-    { MethodCall [] $1 (unspan $3) (Just $6) $9 ($1 # $>) }
+    { MethodCall [] $1 (PathSegment (unspan $3) (Just (AngleBracketed (map TypeArg $6) [] ($5 # $7))) ($3 # $7)) $9 ($1 # $>) }
   | lhs '.' int                      {%
       case lit $3 of
         Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
@@ -1397,18 +1395,21 @@ foreign_item :: { ForeignItem Span }
 -- Leaves the WhereClause empty
 generics :: { Generics Span }
   : ntGenerics                                                      { $1 }
-  | '<' sep_by1(lifetime_def,',') ',' sep_by1T(ty_param,',') gt '>' { Generics (toList $2) (toList $4) (WhereClause [] mempty) ($1 # $>) }
-  | '<' sep_by1T(lifetime_def,',')                           gt '>' { Generics (toList $2) []          (WhereClause [] mempty) ($1 # $>) }
-  | '<'                               sep_by1T(ty_param,',') gt '>' { Generics []          (toList $2) (WhereClause [] mempty) ($1 # $>) }
-  | '<'                                                      gt '>' { Generics []          []          (WhereClause [] mempty) ($1 # $>) }
-  | {- empty -}                                                     { Generics []          []          (WhereClause [] mempty) mempty }
+  | '<' sep_by1(lifetime_def,',') ',' sep_by1T(ty_param,',') gt '>' { Generics (toList $2 ++ toList $4) (WhereClause [] mempty) ($1 # $>) }
+  | '<' sep_by1T(lifetime_def,',')                           gt '>' { Generics (toList $2)              (WhereClause [] mempty) ($1 # $>) }
+  | '<'                               sep_by1T(ty_param,',') gt '>' { Generics              (toList $2) (WhereClause [] mempty) ($1 # $>) }
+  | '<'                                                      gt '>' { Generics []                       (WhereClause [] mempty) ($1 # $>) }
+  | {- empty -}                                                     { Generics []                       (WhereClause [] mempty) mempty }
 
-ty_param :: { TyParam Span }
-  : many(outer_attribute) ident                                              { TyParam $1 (unspan $2) [] Nothing ($1 # $>) }
-  | many(outer_attribute) ident ':' sep_by1T(ty_param_bound_mod,'+')         { TyParam $1 (unspan $2) (toList $4) Nothing ($1 # $>) }
-  | many(outer_attribute) ident                                      '=' ty  { TyParam $1 (unspan $2) [] (Just $>) ($1 # $>) }
-  | many(outer_attribute) ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty  { TyParam $1 (unspan $2) (toList $4) (Just $>) ($1 # $>) }
+ty_param :: { GenericParam Span }
+  : many(outer_attribute) ident                                              { TypeParam $1 (unspan $2) [] Nothing ($1 # $>) }
+  | many(outer_attribute) ident ':' sep_by1T(ty_param_bound_mod,'+')         { TypeParam $1 (unspan $2) (toList $4) Nothing ($1 # $>) }
+  | many(outer_attribute) ident                                      '=' ty  { TypeParam $1 (unspan $2) [] (Just $>) ($1 # $>) }
+  | many(outer_attribute) ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty  { TypeParam $1 (unspan $2) (toList $4) (Just $>) ($1 # $>) }
 
+generic_param :: { GenericParam Span }
+  : ty_param     { $1 }
+  | lifetime_def { $1 }
 
 struct_decl_args :: { (WhereClause Span, VariantData Span) }
   : where_clause ';'                                         { ($1, UnitD ($1 # $>)) }
@@ -1735,11 +1736,8 @@ parseTt :: P TokenTree
 -- | Parser for token streams.
 parseTokenStream :: P TokenStream
 
--- | Parser for lifetime definitions.
-parseLifetimeDef :: P (LifetimeDef Span)
-
--- | Parser for a type parameter.
-parseTyParam :: P (TyParam Span)
+-- | Parser for generic parameters.
+parseGenericParam :: P (GenericParam Span)
 
 -- | Parser for a where clause.
 parseWhereClause :: P (WhereClause Span)
@@ -1834,7 +1832,7 @@ noVis _ _ = fail "visibility is not allowed here"
 
 -- | Fill in the where clause in a generic
 withWhere :: Generics a -> WhereClause a -> Generics a
-withWhere (Generics l t _ x) w = Generics l t w x
+withWhere (Generics ps _ x) w = Generics ps w x
 
 -- | Return the second argument, as long as the safety is 'Normal'
 noSafety :: Spanned Unsafety -> a -> P a
@@ -1851,7 +1849,7 @@ addAttrs :: [Attribute Span] -> Expr Span -> Expr Span
 addAttrs as (Box as' e s)            = Box (as ++ as') e s
 addAttrs as (Vec as' e s)            = Vec (as ++ as') e s
 addAttrs as (Call as' f es s)        = Call (as ++ as') f es s
-addAttrs as (MethodCall as' i s tys es s') = MethodCall (as ++ as') i s tys es s'
+addAttrs as (MethodCall as' i p a s) = MethodCall (as ++ as') i p a s
 addAttrs as (TupExpr as' e s)        = TupExpr (as ++ as') e s
 addAttrs as (Binary as' b e1 e2 s)   = Binary (as ++ as') b e1 e2 s
 addAttrs as (Unary as' u e s)        = Unary (as ++ as') u e s

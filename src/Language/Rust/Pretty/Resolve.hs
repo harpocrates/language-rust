@@ -81,7 +81,7 @@ import Control.Monad                   ( when )
 import Control.Monad.Trans.RWS
 
 import Data.Dynamic                    ( Dynamic, toDyn, Typeable )
-import Data.List                       ( find )
+import Data.List                       ( find, sortBy )
 import Data.List.NonEmpty              ( NonEmpty(..) )
 import qualified Data.List.NonEmpty as N
 import Data.Maybe                      ( fromJust )
@@ -353,21 +353,10 @@ resolvePath :: (Typeable a, Monoid a) => PathType -> Path a -> ResolveM (Path a)
 resolvePath t p@(Path _ [] _) | t /= UsePath = scope p $ err p "path must have at least one segment"
 resolvePath t p@(Path g segs x) = scope p $
     if null [ () | PathSegment _ (Just a) _ <- segs, not (isParamsForPath t a) ]
-      then Path g <$> traverse resolveSeg segs <*> pure x
+      then Path g <$> traverse resolvePathSegment segs <*> pure x
       else err p "path parameter is not valid for this type of path"
-  where
-  resolveSeg :: (Typeable a, Monoid a) => PathSegment a -> ResolveM (PathSegment a)
-  resolveSeg (PathSegment i a x') = do
-    i' <- case i of
-            Ident "self" False _ -> pure i
-            Ident "Self" False _ -> pure i
-            Ident "super" False _ -> pure i
-            Ident "crate" False _ -> pure i
-            _ -> resolveIdent i
-    a' <- traverse resolvePathParameters a
-    pure (PathSegment i' a' x')
-
-  isParamsForPath :: PathType -> PathParameters a -> Bool
+  where 
+  isParamsForPath :: PathType -> GenericArgs a -> Bool
   isParamsForPath t' AngleBracketed{} = t' `elem` ([TypePath, ExprPath] :: [PathType])
   isParamsForPath t' Parenthesized{}  = t' `elem` ([TypePath] :: [PathType])
 
@@ -376,19 +365,48 @@ resolvePath t p@(Path g segs x) = scope p $
 instance (Typeable a, Monoid a) => Resolve (Path a) where
   resolveM = resolvePath TypePath
 
+
+resolvePathSegment :: (Typeable a, Monoid a) => PathSegment a -> ResolveM (PathSegment a)
+resolvePathSegment (PathSegment i a x') = do
+  i' <- case i of
+          Ident "self" False _ -> pure i
+          Ident "Self" False _ -> pure i
+          Ident "super" False _ -> pure i
+          Ident "crate" False _ -> pure i
+          _ -> resolveIdent i
+  a' <- traverse resolveGenericArgs a
+  pure (PathSegment i' a' x')
+
 -- | A path parameter can be invalid if any of its constituent components are invalid
-resolvePathParameters :: (Typeable a, Monoid a) => PathParameters a -> ResolveM (PathParameters a)
-resolvePathParameters p@(AngleBracketed lts tys bds x) = scope p $ do
-  lts' <- traverse resolveLifetime lts
-  tys' <- traverse (resolveTy AnyType) tys
-  bds' <- traverse (\(i,t) -> (,) <$> resolveIdent i <*> resolveTy NoSumType t) bds
-  pure (AngleBracketed lts' tys' bds' x)
-resolvePathParameters p@(Parenthesized tys tym x) = scope p $ do
+resolveGenericArgs :: (Typeable a, Monoid a) => GenericArgs a -> ResolveM (GenericArgs a)
+resolveGenericArgs p@(Parenthesized tys tym x) = scope p $ do
   tys' <- traverse (resolveTy AnyType) tys
   tym' <- traverse (resolveTy NoSumType) tym
   pure (Parenthesized tys' tym' x)
+resolveGenericArgs p@(AngleBracketed args bds x) = scope p $ do
+  args' <- if isSorted genericArgOrder args
+             then pure args
+             else do correct "sorted generic parameters"
+                     pure (sortBy genericArgOrder args)
+  args'' <- traverse resolveGenericArg args'
+  bds' <- traverse (\(i,t) -> (,) <$> resolveIdent i <*> resolveTy NoSumType t) bds
+  pure (AngleBracketed args'' bds' x)
+  where
+    isSorted :: (a -> a -> Ordering) -> [a] -> Bool
+    isSorted _ [] = True
+    isSorted f (w:ws) = let go _ [] = True
+                            go y (z:zs) = ((y `f` z) /= GT) && go z zs
+                        in go w ws
 
-instance (Typeable a, Monoid a) => Resolve (PathParameters a) where resolveM = resolvePathParameters
+instance (Typeable a, Monoid a) => Resolve (GenericArgs a) where resolveM = resolveGenericArgs
+
+resolveGenericArg :: (Typeable a, Monoid a) => GenericArg a -> ResolveM (GenericArg a)
+resolveGenericArg (LifetimeArg l) = LifetimeArg <$> resolveLifetime l
+resolveGenericArg (TypeArg t) = TypeArg <$> resolveTy AnyType t
+resolveGenericArg (ConstArg e) = ConstArg <$> resolveExpr AnyExpr e
+
+instance (Typeable a, Monoid a) => Resolve (GenericArg a) where resolveM = resolveGenericArg
+
 
 -- | A QSelf by itself is only invalid when the underlying type is
 resolveQSelf :: (Typeable a, Monoid a) => QSelf a -> ResolveM (QSelf a)
@@ -451,7 +469,7 @@ resolveTy _             p@(PathTy q p'@(Path _ s _) x) = scope p $
       Nothing                    -> PathTy Nothing <$> resolvePath TypePath p' <*> pure x
 -- BareFn
 resolveTy NoForType     f@(BareFn _ _ (_:_) _ _) = scope f (correct "added parens around `for' function type" *> resolveTy NoForType (ParenTy f mempty))
-resolveTy _             f@(BareFn u a lts fd x) = scope f (BareFn u a <$> traverse resolveLifetimeDef lts <*> resolveFnDecl declTy GeneralArg fd <*> pure x)
+resolveTy _             f@(BareFn u a lts fd x) = scope f (BareFn u a <$> traverse resolveGenericParam lts <*> resolveFnDecl declTy GeneralArg fd <*> pure x)
   where declTy = if a == C then VarNoSelf else NoSelf
 -- Other types (don't care about the context)
 resolveTy _   (Never x) = pure (Never x)
@@ -553,21 +571,11 @@ instance (Typeable a, Monoid a) => Resolve (Arg a) where resolveM = resolveArg N
 -- | A Poly trait ref is valid whenever the underlying trait ref is.
 resolvePolyTraitRef :: (Typeable a, Monoid a) => PolyTraitRef a -> ResolveM (PolyTraitRef a)
 resolvePolyTraitRef p@(PolyTraitRef lts t x) = scope p $ do
-  lts' <- traverse resolveLifetimeDef lts
+  lts' <- traverse resolveGenericParam lts
   t' <- resolveTraitRef t
   pure (PolyTraitRef lts' t' x)
 
 instance (Typeable a, Monoid a) => Resolve (PolyTraitRef a) where resolveM = resolvePolyTraitRef
-
--- | A lifetime def is invalid if it has non-outer attributes
-resolveLifetimeDef :: (Typeable a, Monoid a) => LifetimeDef a -> ResolveM (LifetimeDef a)
-resolveLifetimeDef lts@(LifetimeDef as l bds x) = scope lts $ do
-  as' <- traverse (resolveAttr OuterAttr) as
-  l' <- resolveLifetime l
-  bds' <- traverse resolveLifetime bds
-  pure (LifetimeDef as' l' bds' x)
-
-instance (Typeable a, Monoid a) => Resolve (LifetimeDef a) where resolveM = resolveLifetimeDef
 
 
 --------------
@@ -900,16 +908,13 @@ resolveExprP p c a@(Call as f xs x) = scope a $ parenE (p > 17) $ do
   xs' <- traverse (resolveExprP 0 AnyExpr) xs
   pure (Call as' f' xs' x)
 resolveExprP p SemiExpr m@MethodCall{} = resolveExprP p AnyExpr m
-resolveExprP p c m@(MethodCall as e i mt es x) = scope m $ parenE (p > 17) $ do
+resolveExprP p c m@(MethodCall as e seg es x) = scope m $ parenE (p > 17) $ do
   as' <- traverse (resolveAttr OuterAttr) as
   --e' <- resolveExprP 17 (lhs c) e
   e' <- resolveLhsExprP 17 c e
-  i' <- resolveIdent i
-  mt' <- case mt of
-           Just t -> Just <$> traverse (resolveTy AnyType) t
-           Nothing -> pure Nothing
+  seg' <- resolvePathSegment seg
   es' <- traverse (resolveExprP 0 AnyExpr) es
-  pure (MethodCall as' e' i' mt' es' x)
+  pure (MethodCall as' e' seg' es' x)
 resolveExprP p SemiExpr t@TupField{} = resolveExprP p AnyExpr t
 resolveExprP p c t@(TupField as e i x) = scope t $ parenE (p > 17) $ do
   as' <- traverse (resolveAttr OuterAttr) as
@@ -1321,24 +1326,30 @@ instance (Typeable a, Monoid a) => Resolve (WhereClause a) where resolveM = reso
 
 -- | Generics are only invalid if the underlying lifetimes or type parameters are
 resolveGenerics :: (Typeable a, Monoid a) => Generics a -> ResolveM (Generics a)
-resolveGenerics g@(Generics lts typ wc x) = scope g $ do
-  lts' <- traverse resolveLifetimeDef lts
-  typ' <- traverse resolveTyParam typ
+resolveGenerics g@(Generics params wc x) = scope g $ do
+  params' <- traverse resolveGenericParam params
   wc' <- resolveWhereClause wc
-  pure (Generics lts' typ' wc' x)
+  pure (Generics params' wc' x)
 
 instance (Typeable a, Monoid a) => Resolve (Generics a) where resolveM = resolveGenerics
 
 -- | A type parameter is invalid only when the underlying components are
-resolveTyParam :: (Typeable a, Monoid a) => TyParam a -> ResolveM (TyParam a)
-resolveTyParam p@(TyParam as i bds t x) = scope p $ do
+resolveGenericParam :: (Typeable a, Monoid a) => GenericParam a -> ResolveM (GenericParam a)
+resolveGenericParam p@(TypeParam as i bds t x) = scope p $ do
   as' <- traverse (resolveAttr OuterAttr) as
   i' <- resolveIdent i
   bds' <- traverse (resolveGenericBound ModBound) bds
   t' <- traverse (resolveTy AnyType) t
-  pure (TyParam as' i' bds' t' x)
+  pure (TypeParam as' i' bds' t' x)
+resolveGenericParam lts@(LifetimeParam as l bds x) = scope lts $ do
+  as' <- traverse (resolveAttr OuterAttr) as
+  l' <- resolveLifetime l
+  bds' <- traverse (resolveGenericBound NoneBound) bds
+  pure (LifetimeParam as' l' bds' x)
+resolveGenericParam _ = error "TODO"
 
-instance (Typeable a, Monoid a) => Resolve (TyParam a) where resolveM = resolveTyParam
+instance (Typeable a, Monoid a) => Resolve (GenericParam a) where resolveM = resolveGenericParam
+
 
 -- Invariants for struct fields
 data StructFieldType
@@ -1395,7 +1406,7 @@ resolveWherePredicate p@(RegionPredicate l ls x) = scope p $ do
   ls' <- traverse resolveLifetime ls
   pure (RegionPredicate l' ls' x)
 resolveWherePredicate p@(BoundPredicate lts t bds x) = scope p $ do
-  lts' <- traverse resolveLifetimeDef lts
+  lts' <- traverse resolveGenericParam lts
   t' <- resolveTy NoForType t
   bds' <- traverse (resolveGenericBound ModBound) bds
   pure (BoundPredicate lts' t' bds' x)

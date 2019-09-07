@@ -25,7 +25,9 @@ module Language.Rust.Syntax.AST (
 
   -- ** Paths
   Path(..),
-  PathParameters(..),
+  GenericArg(..),
+  genericArgOrder,
+  GenericArgs(..),
   PathSegment(..),
   QSelf(..),
 
@@ -58,8 +60,7 @@ module Language.Rust.Syntax.AST (
   Ty(..),
   Generics(..),
   Lifetime(..),
-  LifetimeDef(..),
-  TyParam(..),
+  GenericParam(..),
   GenericBound(..),
   partitionGenericBounds,
   WhereClause(..),
@@ -117,6 +118,7 @@ import Data.Typeable                             ( Typeable )
 import Data.Char                                 ( ord )
 import Data.List                                 ( partition )
 import Data.List.NonEmpty                        ( NonEmpty(..) )
+import Data.Ord                                  ( comparing )
 import Data.Semigroup as Sem                     ( Semigroup(..) )
 import Data.Word                                 ( Word8 )
 
@@ -300,7 +302,7 @@ data Expr a
   -- | method call where the first 'Expr' is the receiver, 'Ident' is the method name, @Maybe ['Ty']@
   -- the list of type arguments and '[Expr]' the arguments to the method.
   -- (example: @x.foo::\<Bar, Baz\>(a, b, c, d)@
-  | MethodCall [Attribute a] (Expr a) Ident (Maybe [Ty a]) [Expr a] a
+  | MethodCall [Attribute a] (Expr a) (PathSegment a) [Expr a] a
   -- | tuple (example: @(a, b, c ,d)@)
   | TupExpr [Attribute a] [Expr a] a
   -- | binary operation (example: @a + b@, @a * b@)
@@ -379,7 +381,7 @@ instance Located a => Located (Expr a) where
   spanOf (Box _ _ s) = spanOf s
   spanOf (Vec _ _ s) = spanOf s
   spanOf (Call _ _ _ s) = spanOf s
-  spanOf (MethodCall _ _ _ _ _ s) = spanOf s
+  spanOf (MethodCall _ _ _ _ s) = spanOf s
   spanOf (TupExpr _ _ s) = spanOf s
   spanOf (Binary _ _ _ _ s) = spanOf s
   spanOf (Unary _ _ _ s) = spanOf s
@@ -494,32 +496,44 @@ instance Located a => Located (ForeignItem a) where
 -- where Option\<T\>: Copy {
 --   1
 -- }@.
-data Generics a = Generics [LifetimeDef a] [TyParam a] (WhereClause a) a
+data Generics a = Generics [GenericParam a] (WhereClause a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 -- | Extract the where clause from a 'Generics'.
 whereClause :: Generics a -> WhereClause a
-whereClause (Generics _ _ wc _) = wc
+whereClause (Generics _ wc _) = wc
 
-instance Located a => Located (Generics a) where spanOf (Generics _ _ _ s) = spanOf s
+instance Located a => Located (Generics a) where spanOf (Generics _ _ s) = spanOf s
 
 instance Sem.Semigroup a => Sem.Semigroup (Generics a) where
-  Generics lt1 tp1 wc1 x1 <> Generics lt2 tp2 wc2 x2 = Generics lts tps wcs xs
-    where lts = lt1 ++ lt2
-          tps = tp1 ++ tp2
+  Generics prm1 wc1 x1 <> Generics prm2 wc2 x2 = Generics prm wcs xs
+    where prm = prm1 ++ prm2
           wcs = wc1 <> wc2
           xs  = x1 <> x2
 
 instance (Sem.Semigroup a, Monoid a) => Monoid (Generics a) where
   mappend = (<>)
-  mempty = Generics [] [] mempty mempty
+  mempty = Generics [] mempty mempty
 
-{-
+-- TODO document
 data GenericParam a
-  = LifetimeParam [Attribute a] (Lifetime a) [GenericBounds a] a
-  | TypeParam [Attribute a] Ident [GenericBounds a] (Maybe (Ty a)) a
-  | ConstParam [Attribute a] Ident [GenericBounds a] (Ty a) a
--}
+  -- | A lifetime definition, introducing a lifetime and the other lifetimes that bound it.
+  --
+  -- Example: @\'a: \'b + \'c + \'d@
+  = LifetimeParam [Attribute a] (Lifetime a) [GenericBound a] a
+
+  -- | Type parameter definition used in 'Generics' (@syntax::ast::GenericParam@). Note that each
+  -- parameter can have any number of (lifetime or trait) bounds, as well as possibly a default type.
+  | TypeParam [Attribute a] Ident [GenericBound a] (Maybe (Ty a)) a
+
+  -- TODO document
+  | ConstParam [Attribute a] Ident (Ty a) a
+  deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+
+instance  Located a =>  Located (GenericParam a) where
+  spanOf (LifetimeParam _ _ _ s) = spanOf s
+  spanOf (TypeParam _ _ _ _ s) = spanOf s
+  spanOf (ConstParam _ _ _ s) = spanOf s
 
 -- | An item within an impl (@syntax::ast::ImplItem@ with @syntax::ast::ImplItemKind@ inlined).
 --
@@ -660,15 +674,6 @@ data Lifetime a = Lifetime Name a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Lifetime a) where spanOf (Lifetime _ s) = spanOf s
-
--- | A lifetime definition, introducing a lifetime and the other lifetimes that bound it
--- (@syntax::ast::LifetimeDef@).
---
--- Example: @\'a: \'b + \'c + \'d@
-data LifetimeDef a = LifetimeDef [Attribute a] (Lifetime a) [Lifetime a] a
-  deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
-
-instance Located a => Located (LifetimeDef a) where spanOf (LifetimeDef _ _ _ s) = spanOf s
 
 -- | This is the fundamental unit of parsing - it represents the contents of one source file. It is
 -- composed of an optional shebang line, inner attributes that follow, and then the module items.
@@ -853,14 +858,32 @@ data Path a = Path Bool [PathSegment a] a
 
 instance Located a => Located (Path a) where spanOf (Path _ _ s) = spanOf s
 
--- | Parameters on a path segment (@syntax::ast::PathParameters@).
-data PathParameters a
+data GenericArg a
+  = LifetimeArg (Lifetime a)
+  | TypeArg (Ty a)
+  | ConstArg (Expr a)
+  deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
+
+instance Located a => Located (GenericArg a) where
+  spanOf (LifetimeArg s) = spanOf s
+  spanOf (TypeArg s) = spanOf s
+  spanOf (ConstArg s) = spanOf s
+
+genericArgOrder :: GenericArg a -> GenericArg a -> Ordering
+genericArgOrder = comparing argCompare
+  where argCompare :: GenericArg a -> Int
+        argCompare LifetimeArg{} = 0
+        argCompare TypeArg{}     = 1
+        argCompare ConstArg{}    = 2
+
+-- | Parameters on a path segment (@syntax::ast::GenericArgs@).
+data GenericArgs a
   -- | Parameters in a chevron comma-delimited list (@syntax::ast::AngleBracketedParameterData@).
   -- Note that lifetimes must come before types, which must come before bindings. Bindings are
   -- equality constraints on associated types (example: @Foo\<A=Bar\>@)
   --
   -- Example: @\<\'a,A,B,C=i32\>@ in a path segment like @foo::\<'a,A,B,C=i32\>@
-  = AngleBracketed [Lifetime a] [Ty a] [(Ident, Ty a)] a
+  = AngleBracketed [GenericArg a] [(Ident, Ty a)] a
   -- | Parameters in a parenthesized comma-delimited list, with an optional output type
   -- (@syntax::ast::ParenthesizedParameterData@).
   --
@@ -868,13 +891,13 @@ data PathParameters a
   | Parenthesized [Ty a] (Maybe (Ty a)) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
-instance Located a => Located (PathParameters a) where
-  spanOf (AngleBracketed _ _ _ s) = spanOf s
+instance Located a => Located (GenericArgs a) where
+  spanOf (AngleBracketed _ _ s) = spanOf s
   spanOf (Parenthesized _ _ s) = spanOf s
 
 -- | Segment of a path (@syntax::ast::PathSegment@).
 data PathSegment a
-  = PathSegment Ident (Maybe (PathParameters a)) a
+  = PathSegment Ident (Maybe (GenericArgs a)) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (PathSegment a) where spanOf (PathSegment _ _ s) = spanOf s
@@ -882,7 +905,7 @@ instance Located a => Located (PathSegment a) where spanOf (PathSegment _ _ s) =
 -- | Trait ref parametrized over lifetimes introduced by a @for@ (@syntax::ast::PolyTraitRef@).
 --
 -- Example: @for\<\'a,'b\> Foo\<&\'a Bar\>@
-data PolyTraitRef a = PolyTraitRef [LifetimeDef a] (TraitRef a) a
+data PolyTraitRef a = PolyTraitRef [GenericParam a] (TraitRef a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (PolyTraitRef a) where spanOf (PolyTraitRef _ _ s) = spanOf s
@@ -1037,7 +1060,7 @@ data Ty a
   -- | reference (example: @&\'a T@ or @&\'a mut T@)
   | Rptr (Maybe (Lifetime a)) Mutability (Ty a) a
   -- | bare function (example: @fn(usize) -> bool@)
-  | BareFn Unsafety Abi [LifetimeDef a] (FnDecl a) a
+  | BareFn Unsafety Abi [GenericParam a] (FnDecl a) a
   -- | never type: @!@
   | Never a
   -- | tuple (example: @(i32, i32)@)
@@ -1073,13 +1096,6 @@ instance Located a => Located (Ty a) where
   spanOf (Typeof _ s) = spanOf s
   spanOf (Infer s) = spanOf s
   spanOf (MacTy _ s) = spanOf s
-
--- | Type parameter definition used in 'Generics' (@syntax::ast::TyParam@). Note that each
--- parameter can have any number of (lifetime or trait) bounds, as well as possibly a default type.
-data TyParam a = TyParam [Attribute a] Ident [GenericBound a] (Maybe (Ty a)) a
-   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
-
-instance Located a => Located (TyParam a) where spanOf (TyParam _ _ _ _ s) = spanOf s
 
 -- | Bounds that can be placed on types (@syntax::ast::GenericBound@). These can be either traits or
 -- lifetimes.
@@ -1217,7 +1233,7 @@ instance (Sem.Semigroup a, Monoid a) => Monoid (WhereClause a) where
 -- | An individual predicate in a 'WhereClause' (@syntax::ast::WherePredicate@).
 data WherePredicate a
   -- | type bound (@syntax::ast::WhereBoundPredicate@) (example: @for\<\'c\> Foo: Send+Clone+\'c@)
-  = BoundPredicate [LifetimeDef a] (Ty a) [GenericBound a] a
+  = BoundPredicate [GenericParam a] (Ty a) [GenericBound a] a
   -- | lifetime predicate (@syntax::ast::WhereRegionPredicate@) (example: @\'a: \'b+\'c@)
   | RegionPredicate (Lifetime a) [Lifetime a] a
   -- | equality predicate (@syntax::ast::WhereEqPredicate@) (example: @T=int@). Note that this is

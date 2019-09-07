@@ -51,10 +51,10 @@ module Language.Rust.Pretty.Internal (
 
   -- ** Types and lifetimes
   printType,
+  printGenericArg,
   printGenerics,
   printLifetime,
-  printLifetimeDef,
-  printTyParam,
+  printGenericParam,
   printBound,
   printWhereClause,
   printWherePredicate,
@@ -434,12 +434,12 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
                                           -- to prevent them from looking like a float literal)
                      -> (Doc a -> Doc a)  -- ^ suffix to the expression
                      -> Doc a
-  chainedMethodCalls (MethodCall _ s i ts' as x) _ fdoc
-    = let tys = perhaps (\ts -> "::<" <> commas ts printType <> ">") ts'
+  chainedMethodCalls (MethodCall _ s (PathSegment i ts' y) as x) _ fdoc
+    = let tys = perhaps (printGenericArgs True) ts'
           as' = case as of
                   [a] -> parens (printExpr a)
                   _ -> block Paren True "," mempty (printExpr <$> as)
-      in chainedMethodCalls s False (annotate x . (<##> fdoc (indent n (hcat [ ".", printIdent i, tys, as' ]))))
+      in chainedMethodCalls s False (annotate x . (<##> fdoc (indent n (hcat [ ".", annotate y (printIdent i <> tys), as' ]))))
   chainedMethodCalls (FieldAccess _ s i x) _ fdoc
     = chainedMethodCalls s False (annotate x . (<##> fdoc (indent n (hcat [ ".", printIdent i ]))))
   chainedMethodCalls (Try _ s x) _ fdoc
@@ -461,7 +461,7 @@ expressionAttrs :: Expr a -> [Attribute a]
 expressionAttrs (Box as _ _) = as
 expressionAttrs (Vec as _ _) = as
 expressionAttrs (Call as _  _ _) = as
-expressionAttrs (MethodCall as _ _  _ _ _) = as
+expressionAttrs (MethodCall as _ _ _ _) = as
 expressionAttrs (TupExpr as _ _) = as
 expressionAttrs (Binary as _ _ _ _) = as
 expressionAttrs (Unary as _ _ _) = as
@@ -663,7 +663,7 @@ printItem (TraitAlias as vis ident g bds x) = annotate x $ align $ printOuterAtt
   in group (leading <#> indent n (printBounds "=" (toList bds)) <> ";")
 
 printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs as <#>
-  let generics = case g of { Generics [] [] _ _ -> mempty; _ -> printGenerics g }
+  let generics = case g of { Generics [] _ _ -> mempty; _ -> printGenerics g }
       traitref = perhaps (\t' -> printPolarity p <> printTraitRef t' <+> "for") t
       leading = hsep [ printVis vis, printDef d, printUnsafety u
                      , "impl" <> generics, traitref, printType ty
@@ -699,10 +699,10 @@ printBound (OutlivesBound lt x) = annotate x $ printLifetime lt
 printBound (TraitBound tref modi x) = annotate x $ when (modi == Maybe) "?" <> printPolyTraitRef tref
 
 -- | Print the formal lifetime list (@print_formal_lifetime_list@)
-printFormalLifetimeList :: [LifetimeDef a] -> Doc a
+printFormalLifetimeList :: [GenericParam a] -> Doc a
 printFormalLifetimeList [] = mempty
 printFormalLifetimeList defs = "for" <> angles (align (fillSep (punctuate "," (printDef `map` defs))))
-  where printDef (LifetimeDef as lt bds x) = annotate x (printOuterAttrs as <+> flatten (printLifetimeBounds lt bds))
+  where printDef = flatten . printGenericParam
 
 -- | Print an impl item (@print_impl_item@)
 printImplItem :: ImplItem a -> Doc a
@@ -796,7 +796,7 @@ printEnumDef variants generics ident vis =
 -- | Print a variant (@print_variant@)
 printVariant :: Variant a -> Doc a
 printVariant (Variant i _ _data e x) = annotate x (body <+> disc)
-  where body = printStruct _data (Generics [] [] (WhereClause [] undefined) undefined) i False False
+  where body = printStruct _data (Generics [] (WhereClause [] undefined) undefined) i False False
         disc = perhaps (\e' -> "=" <+> printExpr e') e
 
 -- | Print a where clause (@print_where_clause@). The 'Prelude.Bool' argument indicates whether to
@@ -860,10 +860,6 @@ printArg (SelfExplicit ty mut x) _ = annotate x (printMutability mut <+> "self" 
 -- | Print a lifetime (@print_lifetime@)
 printLifetime :: Lifetime a -> Doc a
 printLifetime (Lifetime n x) = annotate x ("'" <> printName n)
-
--- | Print a lifetime definition
-printLifetimeDef :: LifetimeDef a -> Doc a
-printLifetimeDef (LifetimeDef as lt bds x) = annotate x (printOuterAttrs as <+> printLifetimeBounds lt bds)
 
 -- | Print mutability (@print_mutability@)
 printMutability :: Mutability -> Doc a
@@ -953,11 +949,10 @@ printForeignMod items attrs = block Brace False mempty (printInnerAttrs attrs) (
 -- Remark: we are discarding the where clause because it gets printed seperately from the rest of
 -- the generic.
 printGenerics :: Generics a -> Doc a
-printGenerics (Generics lifetimes tyParams _ x)
-  | null lifetimes && null tyParams = mempty
-  | otherwise =  let lifetimes' = printLifetimeDef `map` lifetimes
-                     bounds' = [ printTyParam param | param<-tyParams ]
-                 in annotate x (group ("<" <##> ungroup (block NoDelim True "," mempty (lifetimes' ++ bounds')) <##> ">"))
+printGenerics (Generics params _ x)
+  | null params = mempty
+  | otherwise =  let params' = printGenericParam `map` params
+                 in annotate x (group ("<" <##> ungroup (block NoDelim True "," mempty params') <##> ">"))
 
 -- | Print a poly-trait ref (@print_poly_trait_ref@)
 printPolyTraitRef :: PolyTraitRef a -> Doc a
@@ -968,15 +963,18 @@ printTraitRef :: TraitRef a -> Doc a
 printTraitRef (TraitRef path) = printPath path False
 
 -- | Print a path parameter and signal whether its generic (if any) should start with a colon (@print_path_parameters@)
-printPathParameters :: PathParameters a -> Bool -> Doc a
-printPathParameters (Parenthesized ins out x) colons = annotate x $
+printGenericArgs :: Bool -> GenericArgs a -> Doc a
+printGenericArgs colons (Parenthesized ins out x) = annotate x $
   when colons "::" <> parens (commas ins printType) <+> perhaps (\t -> "->" <+> printType t) out
-printPathParameters (AngleBracketed lts tys bds x) colons = annotate x (when colons "::" <> "<" <> hsep (punctuate "," (lts' ++ tys' ++ bds')) <> ">")
+printGenericArgs colons (AngleBracketed args bds x) = annotate x (when colons "::" <> "<" <> hsep (punctuate "," (args' ++ bds')) <> ">")
   where
-    lts' = printLifetime <$> lts
-    tys' = printType <$> tys
+    args' = printGenericArg <$> args
     bds' = (\(ident,ty) -> printIdent ident <+> "=" <+> printType ty) <$> bds
 
+printGenericArg :: GenericArg a -> Doc a
+printGenericArg (LifetimeArg l) = printLifetime l
+printGenericArg (TypeArg t) = printType t
+printGenericArg (ConstArg e) = printExpr e -- TODO: do we put `const` first here?
 
 -- | Print a path, specifiying explicitly whether to include colons (@::@) before generics
 -- or not (so expression style or type style generics) (@print_path@)
@@ -986,7 +984,7 @@ printPath (Path global segs x) colons = annotate x (when global "::" <> hcat (pu
 -- | Print a path segment
 printSegment :: PathSegment a -> Bool -> Doc a
 printSegment (PathSegment i ps x) colons = annotate x (printIdent i <> params)
-  where params = perhaps (\p -> printPathParameters p colons) ps
+  where params = perhaps (printGenericArgs colons) ps
 
 
 -- | Print a qualified path, specifiying explicitly whether to include colons (@::@) before
@@ -1011,9 +1009,10 @@ printUseTree (UseTreeGlob p x) = annotate x (printPath p True <> "::*")
 printUseTree (UseTreeNested p@(Path _ [] _) n x) = annotate x (printPath p True <> "{" <> hcat (punctuate ", " (map printUseTree n)) <> "}")
 printUseTree (UseTreeNested p n x) = annotate x (printPath p True <> "::{" <> hcat (punctuate ", " (map printUseTree n)) <> "}")
 
--- | Print a type parameters (@print_ty_param@)
-printTyParam :: TyParam a -> Doc a
-printTyParam (TyParam as i bds def x) = annotate x $ hsep
+-- | Print a type parameter (@print_ty_param@)
+printGenericParam :: GenericParam a -> Doc a
+printGenericParam (LifetimeParam as lt bds x) = annotate x (printOuterAttrs as <+> printLifetime lt <> printBounds ":" bds)
+printGenericParam (TypeParam as i bds def x) = annotate x $ hsep
   [ printOuterAttrs as
   , printIdent i <> printBounds ":" bds
   , perhaps (\def' -> "=" <+> printType def') def
@@ -1023,4 +1022,3 @@ printTyParam (TyParam as i bds def x) = annotate x $ hsep
 printLifetimeBounds :: Lifetime a -> [Lifetime a] -> Doc a
 printLifetimeBounds lifetime bounds = printLifetime lifetime
   <> unless (null bounds) (":" <+> foldr1 (\x y -> x <+> "+" <+> y) (printLifetime <$> bounds))
-
