@@ -1209,17 +1209,17 @@ field :: { Field Span }
 
 -- an expression block that won't cause conflicts with stmts
 vis_safety_block :: { Expr Span }
-  : pub_or_inherited safety inner_attrs_block {%
+  : vis safety inner_attrs_block {%
        let (as, Block ss r x) = $3
            e = BlockExpr as (Block ss (unspan $2) ($2 # x)) ($2 # x)
        in noVis $1 e
     }
-  | pub_or_inherited async      inner_attrs_block {%
+  | vis async      inner_attrs_block {%
        let (as,b) = $>
            e = Async as Ref b ($2 # b)
        in noVis $1 e
     }
-  | pub_or_inherited async move inner_attrs_block {%
+  | vis async move inner_attrs_block {%
        let (as,b) = $>
            e = Async as Value b ($2 # b)
        in noVis $1 e
@@ -1231,10 +1231,10 @@ vis_union_def_nonblock_expr :: { Expr Span }
   | left_gen_expression(vis_union_def_nonblock_expr, expr, expr) { $1 }
 
 union_default_expr :: { Expr Span }
-  : pub_or_inherited union         {%
+  : vis union         {%
       noVis $1 (PathExpr [] Nothing (Path False [PathSegment "union" Nothing (spanOf $2)] (spanOf $1)) (spanOf $1))
     }
-  | pub_or_inherited default         {%
+  | vis default         {%
       noVis $1 (PathExpr [] Nothing (Path False [PathSegment "default" Nothing (spanOf $2)] (spanOf $1)) (spanOf $1))
     }
 
@@ -1254,17 +1254,13 @@ stmt :: { Stmt Span }
   | many(outer_attribute) block_like_expr      %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
   | many(outer_attribute) vis_safety_block               ';' { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
   | many(outer_attribute) vis_safety_block     %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }
-  | gen_item(pub_or_inherited)                               { ItemStmt $1 (spanOf $1) }
+  | gen_item                                                 { ItemStmt $1 (spanOf $1) }
   | many(outer_attribute) expr_path '!' ident '[' token_stream ']' ';'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!' ident '(' token_stream ')' ';'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!' ident '{' token_stream '}'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
-
-pub_or_inherited :: { Spanned (Visibility Span) }
-  : pub                                          %prec VIS { Spanned PublicV (spanOf $1) }
-  | {- empty -}                                  %prec VIS { pure InheritedV }
 
 -- List of statements where the last statement might be a no-semicolon statement.
 stmts_possibly_no_semi :: { [Stmt Span] }
@@ -1298,7 +1294,7 @@ inner_attrs_block :: { ([Attribute Span], Block Span) }
 -- is useful over just having 'item :: { ItemSpan }' and then 'many(outer_attribute) vis item' is
 -- that (1) not all items have visibility and (2) attributes and visibility are fields on the 'Item'
 -- algebraic data type.
-gen_item(vis) :: { Item Span }
+gen_item :: { Item Span }
   : many(outer_attribute) vis static     ident ':' ty '=' expr ';'
     { Static $1 (unspan $2) (unspan $4) $6 Immutable $8 ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis static mut ident ':' ty '=' expr ';'
@@ -1367,7 +1363,7 @@ gen_item(vis) :: { Item Span }
 -- Most general type of item
 mod_item :: { Item Span }
   : ntItem                                             { $1 }
-  | gen_item(vis)                                      { $1 }
+  | gen_item                                           { $1 }
   | many(outer_attribute) expr_path '!' ident '[' token_stream ']' ';'
     { macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!'       '[' token_stream ']' ';'
@@ -1498,12 +1494,11 @@ vis :: { Spanned (Visibility Span) }
   : {- empty -}   %prec VIS { Spanned InheritedV mempty }
   | pub           %prec VIS { Spanned PublicV (spanOf $1) }
   | pub '(' crate ')'       { Spanned CrateV ($1 # $4) }
-  | crate                   { Spanned CrateV (spanOf $1) }
   | pub '(' in mod_path ')' { Spanned (RestrictedV $4) ($1 # $5) }
-  | pub '(' super ')'       { Spanned (RestrictedV (Path False [PathSegment "super" Nothing (spanOf
-  $3)] (spanOf $3))) ($1 # $4) }
-  | pub '(' self ')'        { Spanned (RestrictedV (Path False [PathSegment "self" Nothing (spanOf
-  $3)] (spanOf $3))) ($1 # $4) }
+  | pub '(' super ')'
+    { Spanned (RestrictedV (Path False [PathSegment "super" Nothing (spanOf $3)] (spanOf $3))) ($1 # $4) }
+  | pub '(' self ')'
+    { Spanned (RestrictedV (Path False [PathSegment "self" Nothing (spanOf $3)] (spanOf $3))) ($1 # $4) }
 
 def :: { Spanned Defaultness }
   : {- empty -}  %prec DEF        { pure Final }

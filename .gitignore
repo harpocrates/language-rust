@@ -13,8 +13,9 @@ bench/allocations/
 bench/timings/
 
 # Sample source files
-sample-sources/
+sample-sources/*
 !sample-sources/attributes.rs
+!sample-sources/difficult.rs
 !sample-sources/empty.rs
 !sample-sources/expressions.rs
 !sample-sources/items.rs
@@ -26,3 +27,4 @@ sample-sources/
 !sample-sources/statement-expressions.rs
 !sample-sources/statements.rs
 !sample-sources/types.rs
+!sample-sources/visibility.rs

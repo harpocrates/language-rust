@@ -23,14 +23,15 @@ mod bar {
   }
 
   type Foo = Bar<u8>;
-  
+
   enum Foo<A, B> { C(A), D(B) }
-  
+
   struct Foo<A> { x: A }
   union Foo<A, B> { x: A, y: B }
-  
+
   pub(super) struct Point { x: i32 }
 
+  auto trait IsCool { }
   trait Foo { }
   trait Foo<T> {
     const ID1: i32;
@@ -59,8 +60,8 @@ mod bar {
   struct Foo<T: Send + ?Sized + Sync> { field: Box<T> }
   trait Bar { type Baz: ?Sized; }
 
-  struct Bleh<T, U> where T: Copy, U: Sized; 
-  
+  struct Bleh<T, U> where T: Copy, U: Sized;
+
   impl<A> Foo<A> {
     const ID: i32 = 1;
     fn area(&self) -> f64 { 1f64 }
@@ -69,7 +70,7 @@ mod bar {
   }
   impl<A> Trait for Foo<A> { }
   impl<A> !Trait for Foo<A> { }
-  
+
   macro_rules! foo { }
   foo!();
 

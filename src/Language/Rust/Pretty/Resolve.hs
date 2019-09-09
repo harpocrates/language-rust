@@ -1147,133 +1147,125 @@ instance (Typeable a, Monoid a) => Resolve (Block a) where resolveM = resolveBlo
 -- Items --
 -----------
 
--- Whether the item is a statement item, or a general item
 data ItemType
-  = StmtItem   -- ^ Corresponds to @stmt_item@ - basically limited visbility and no macros
+  = StmtItem   -- ^ Corresponds to @stmt_item@ - basically no macros
   | ModItem    -- ^ General item
-
-resolveVisibility' :: Typeable a => ItemType -> Visibility a -> ResolveM (Visibility a)
-resolveVisibility' StmtItem PublicV = pure PublicV
-resolveVisibility' StmtItem InheritedV = pure InheritedV
-resolveVisibility' StmtItem v = scope v $ err v "statement items can only have public or inherited visibility"
-resolveVisibility' ModItem v = pure v
 
 -- | An item can be invalid if
 --
 --   * it is a macro but has 'StmtItem' restriction
---   * it has visibility other than public/inherited but has 'StmtItem' restriction
 --   * an underlying component is invalid
 --
 resolveItem :: (Typeable a, Monoid a) => ItemType -> Item a -> ResolveM (Item a)
-resolveItem t e@(ExternCrate as v i r x) = scope e $ do
+resolveItem _ e@(ExternCrate as v i r x) = scope e $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   r' <- traverse resolveIdent r
   pure (ExternCrate as' v' i' r' x)
 
-resolveItem t u@(Use as v p x) = scope u $ do
+resolveItem _ u@(Use as v p x) = scope u $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   p' <- resolveUseTree p
   pure (Use as' v' p' x)
 
-resolveItem t s@(Static as v i t' m e x) = scope s $ do
+resolveItem _ s@(Static as v i t' m e x) = scope s $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   t'' <- resolveTy AnyType t'
   e' <- resolveExpr AnyExpr e
   pure (Static as' v' i' t'' m e' x)
 
-resolveItem t c@(ConstItem as v i t' e x) = scope c $ do
+resolveItem _ c@(ConstItem as v i t' e x) = scope c $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   t'' <- resolveTy AnyType t'
   e' <- resolveExpr AnyExpr e
   pure (ConstItem as' v' i' t'' e' x)
 
-resolveItem t f@(Fn as v i d h g b x) = scope f $ do
+resolveItem _ f@(Fn as v i d h g b x) = scope f $ do
   as' <- traverse (resolveAttr EitherAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   d' <- resolveFnDecl NoSelf NamedArg d
   g' <- resolveGenerics g
   b' <- resolveBlock b
   pure (Fn as' v' i' d' h g' b' x)
 
-resolveItem t m@(Mod as v i (Just is) x) = scope m $ do
+resolveItem _ m@(Mod as v i (Just is) x) = scope m $ do
   as' <- traverse (resolveAttr EitherAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   is' <- traverse (resolveItem ModItem) is
   pure (Mod as' v' i' (Just is') x)
 
-resolveItem t m@(Mod as v i Nothing x) = scope m $ do
+resolveItem _ m@(Mod as v i Nothing x) = scope m $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   pure (Mod as' v' i' Nothing x)
 
-resolveItem t m@(ForeignMod as v a is x) = scope m $ do
+resolveItem _ m@(ForeignMod as v a is x) = scope m $ do
   as' <- traverse (resolveAttr EitherAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   is' <- traverse (resolveForeignItem a) is
   pure (ForeignMod as' v' a is' x)
 
-resolveItem t a@(TyAlias as v i t' g x) = scope a $ do
+resolveItem _ a@(TyAlias as v i t' g x) = scope a $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   t'' <- resolveTy AnyType t'
   g' <- resolveGenerics g
   pure (TyAlias as' v' i' t'' g' x)
 
-resolveItem t e@(Enum as v i vs g x) = scope e $ do
+resolveItem _ e@(Enum as v i vs g x) = scope e $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   vs' <- traverse resolveVariant vs
   g' <- resolveGenerics g
   pure (Enum as' v' i' vs' g' x)
 
-resolveItem t s@(StructItem as v i vd g x) = scope s $ do
+resolveItem _ s@(StructItem as v i vd g x) = scope s $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   vd' <- resolveVariantData vd
   g' <- resolveGenerics g
   pure (StructItem as' v' i' vd' g' x)
 
-resolveItem t u@(Union as v i vd g x) = scope u $ do
+resolveItem _ u@(Union as v i vd g x) = scope u $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   vd' <- resolveVariantData vd
   g' <- resolveGenerics g
   pure (Union as' v' i' vd' g' x)
 
-resolveItem t r@(Trait as v i a u g bd is x) = scope r $ do
+resolveItem _ r@(Trait as v i a u g bd is x) = scope r $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   g' <- resolveGenerics g
   bd' <- traverse (resolveGenericBound NoneBound) bd
   is' <- traverse resolveTraitItem is
   pure (Trait as' v' i' a u g' bd' is' x)
 
-resolveItem t r@(TraitAlias as v i g bd x) = scope r $ do
+resolveItem _ r@(TraitAlias as v i g bd x) = scope r $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   g' <- resolveGenerics g
   bd' <- traverse (resolveGenericBound NoneBound) bd
   pure (TraitAlias as' v' i' g' bd' x)
 
-resolveItem t i'@(Impl as v d u i g mt t' is x) = scope i' $ do
+resolveItem _ i'@(Impl as v d u i g mt t' is x) = scope i' $ do
   as' <- traverse (resolveAttr EitherAttr) as
-  v' <- resolveVisibility' t v
+  v' <- resolveVisibility v
   g' <- resolveGenerics g
   mt' <- traverse resolveTraitRef mt
   t'' <- case mt of
