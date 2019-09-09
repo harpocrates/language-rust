@@ -269,7 +269,7 @@ parserTypes = testGroup "parsing types"
                                                          ] ()) ())
   , testP "foo::baz<'a,T,B=!>" (PathTy Nothing (Path False [ PathSegment "foo" Nothing ()
                                                            , PathSegment "baz" (Just (AngleBracketed [LifetimeArg (Lifetime "a" ()), TypeArg (PathTy Nothing t ())]
-                                                                                            [(mkIdent "B", Never ())] ())) ()
+                                                                                            [EqualityConstraint (mkIdent "B") (Never ()) ()] ())) ()
                                                            ] ()) ())
   , testP "Foo(!,!)"       (PathTy Nothing (Path False [ PathSegment "Foo" (Just (Parenthesized [Never (), Never ()] Nothing ())) () ] ()) ())
   , testP "Foo(!,!,)"      (PathTy Nothing (Path False [ PathSegment "Foo" (Just (Parenthesized [Never (), Never ()] Nothing ())) () ] ()) ())

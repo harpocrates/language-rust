@@ -475,7 +475,7 @@ lt_ty_qual_path :: { Spanned (Ty Span) }
     { let (qself,path) = unspan $2 in Spanned (PathTy (Just qself) path (nudge 1 0 ($1 # $2))) ($1 # $2) }
 
 -- parse_generic_args() but with the '<' '>'
-generic_values :: { Spanned ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
+generic_values :: { Spanned ([Lifetime Span], [Ty Span], [AssocTyConstraint Span]) }
   : '<' sep_by1(lifetime,',')  ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>'
     { Spanned (toList $2,      toList $4, toList $6) ($1 # $>) }
   | '<' sep_by1(lifetime,',')  ',' sep_by1T(ty,',')                          gt '>'
@@ -501,8 +501,8 @@ generic_values :: { Spanned ([Lifetime Span], [Ty Span], [(Ident, Ty Span)]) }
   | lt_ty_qual_path                                                          gt '>'
     { Spanned ([],            [unspan $1],[]       ) ($1 # $>) }
 
-binding :: { (Ident, Ty Span) }
-  : ident '=' ty                             { (unspan $1, $3) }
+binding :: { AssocTyConstraint Span }
+  : ident '=' ty                             { EqualityConstraint (unspan $1) $3 ($1 # $3) }
 
 
 -- Type related:

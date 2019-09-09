@@ -757,7 +757,7 @@ instance Show a => Diffable (GenericArgs a) where
     case (val ! "variant", p) of
       ("AngleBracketed", AngleBracketed args bds _) -> do
         args === (val ! "fields" ! 0 ! "args")
-        map Binding bds === (val ! "fields" ! 0 ! "constraints")
+        bds === (val ! "fields" ! 0 ! "constraints")
       ("Parenthesized", Parenthesized is o _) -> do
         is === (val ! "fields" ! 0 ! "inputs")
         o  === (val ! "fields" ! 0 ! "output")
@@ -771,9 +771,8 @@ instance Show a => Diffable (GenericArg a) where
       ("Const", ConstArg e) -> e === (val ! "fields" ! 0)
       _ -> diff "different generic argument" arg val
 
-newtype Binding a = Binding (Ident, Ty a) deriving (Show)
-instance Show a => Diffable (Binding a) where
-  Binding (i,t) === v = do
+instance Show a => Diffable (AssocTyConstraint a) where
+  EqualityConstraint i t _ === v = do
     i === (v ! "ident")
     t === (v ! "kind" ! "fields" ! 0)
 

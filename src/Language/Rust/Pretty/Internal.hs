@@ -969,12 +969,15 @@ printGenericArgs colons (Parenthesized ins out x) = annotate x $
 printGenericArgs colons (AngleBracketed args bds x) = annotate x (when colons "::" <> "<" <> hsep (punctuate "," (args' ++ bds')) <> ">")
   where
     args' = printGenericArg <$> args
-    bds' = (\(ident,ty) -> printIdent ident <+> "=" <+> printType ty) <$> bds
+    bds' = printAssocTyConstraint <$> bds
 
 printGenericArg :: GenericArg a -> Doc a
 printGenericArg (LifetimeArg l) = printLifetime l
 printGenericArg (TypeArg t) = printType t
 printGenericArg (ConstArg e) = printExpr e -- TODO: do we put `const` first here?
+
+printAssocTyConstraint :: AssocTyConstraint a -> Doc a
+printAssocTyConstraint (EqualityConstraint i t x) = annotate x (printIdent i <+> "=" <+> printType t)
 
 -- | Print a path, specifiying explicitly whether to include colons (@::@) before generics
 -- or not (so expression style or type style generics) (@print_path@)

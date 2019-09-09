@@ -389,7 +389,7 @@ resolveGenericArgs p@(AngleBracketed args bds x) = scope p $ do
              else do correct "sorted generic parameters"
                      pure (sortBy genericArgOrder args)
   args'' <- traverse resolveGenericArg args'
-  bds' <- traverse (\(i,t) -> (,) <$> resolveIdent i <*> resolveTy NoSumType t) bds
+  bds' <- traverse resolveAssocTyConstraint bds
   pure (AngleBracketed args'' bds' x)
   where
     isSorted :: (a -> a -> Ordering) -> [a] -> Bool
@@ -407,6 +407,8 @@ resolveGenericArg (ConstArg e) = ConstArg <$> resolveExpr AnyExpr e
 
 instance (Typeable a, Monoid a) => Resolve (GenericArg a) where resolveM = resolveGenericArg
 
+resolveAssocTyConstraint :: (Typeable a, Monoid a) => AssocTyConstraint a -> ResolveM (AssocTyConstraint a)
+resolveAssocTyConstraint (EqualityConstraint i t x) = EqualityConstraint <$> resolveIdent i <*> resolveTy NoSumType t <*> pure x
 
 -- | A QSelf by itself is only invalid when the underlying type is
 resolveQSelf :: (Typeable a, Monoid a) => QSelf a -> ResolveM (QSelf a)

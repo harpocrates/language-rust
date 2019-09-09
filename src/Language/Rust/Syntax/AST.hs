@@ -28,6 +28,7 @@ module Language.Rust.Syntax.AST (
   GenericArg(..),
   genericArgOrder,
   GenericArgs(..),
+  AssocTyConstraint(..),
   PathSegment(..),
   QSelf(..),
 
@@ -200,6 +201,18 @@ data Arm a = Arm [Attribute a] (Pat a) (Maybe (Expr a)) (Expr a) a
   deriving (Eq, Ord, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Arm a) where spanOf (Arm _ _ _ _ s) = spanOf s
+
+-- | A constraint on an associated type
+data AssocTyConstraint a
+  -- | E.g., @A = Bar@ in @Foo\<A = Bar\>@
+  = EqualityConstraint Ident (Ty a) a
+  -- | E.g. @A: TraitA + TraitB@ in @Foo\<A: TraitA + TraitB\>@
+  | BoundConstraint Ident [GenericBound a] a
+  deriving (Eq, Ord, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
+
+instance Located a => Located (AssocTyConstraint a) where
+  spanOf (EqualityConstraint _ _ s) = spanOf s
+  spanOf (BoundConstraint _ _ s) = spanOf s
 
 -- | 'Attribute's are annotations for other AST nodes (@syntax::ast::Attribute@). Note that
 -- doc-comments are promoted to attributes.
@@ -883,7 +896,7 @@ data GenericArgs a
   -- equality constraints on associated types (example: @Foo\<A=Bar\>@)
   --
   -- Example: @\<\'a,A,B,C=i32\>@ in a path segment like @foo::\<'a,A,B,C=i32\>@
-  = AngleBracketed [GenericArg a] [(Ident, Ty a)] a
+  = AngleBracketed [GenericArg a] [AssocTyConstraint a] a
   -- | Parameters in a parenthesized comma-delimited list, with an optional output type
   -- (@syntax::ast::ParenthesizedParameterData@).
   --

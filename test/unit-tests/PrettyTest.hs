@@ -46,7 +46,7 @@ point = Path False [PathSegment "Point" Nothing ()] ()
 debug', lt, iterator :: GenericBound ()
 debug' = TraitBound (PolyTraitRef [] (TraitRef (Path False [debug] ())) ()) None ()
 lt = OutlivesBound (Lifetime "lt" ()) ()
-iterator = TraitBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Iterator" (Just (AngleBracketed [] [(mkIdent "Item",i32)] ())) ()] ())) ()) None ()
+iterator = TraitBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Iterator" (Just (AngleBracketed [] [EqualityConstraint (mkIdent "Item") i32 ()] ())) ()] ())) ()) None ()
 
 -- | Short expressions to make tests more straightforward
 _1, _2, foo, bar :: Expr ()
