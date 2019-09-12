@@ -57,6 +57,7 @@ import Language.Rust.Parser.ParseMonad ( pushToken, getPosition, P, parseError )
 import Language.Rust.Parser.Literals   ( translateLit )
 import Language.Rust.Parser.Reversed
 
+import Data.Either                     ( partitionEithers )
 import Data.Foldable                   ( toList )
 import Data.List                       ( (\\), isSubsequenceOf, sort )
 import Data.Semigroup                  ( (<>) )
@@ -475,35 +476,29 @@ lt_ty_qual_path :: { Spanned (Ty Span) }
     { let (qself,path) = unspan $2 in Spanned (PathTy (Just qself) path (nudge 1 0 ($1 # $2))) ($1 # $2) }
 
 -- parse_generic_args() but with the '<' '>'
-generic_values :: { Spanned ([Lifetime Span], [Ty Span], [AssocTyConstraint Span]) }
-  : '<' sep_by1(lifetime,',')  ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>'
-    { Spanned (toList $2,      toList $4, toList $6) ($1 # $>) }
-  | '<' sep_by1(lifetime,',')  ',' sep_by1T(ty,',')                          gt '>'
-    { Spanned (toList $2,      toList $4, []       ) ($1 # $>) }
-  | '<' sep_by1(lifetime,',')  ','                     sep_by1T(binding,',') gt '>'
-    { Spanned (toList $2,      [],        toList $4) ($1 # $>) }
-  | '<' sep_by1T(lifetime,',')                                               gt '>'
-    { Spanned (toList $2,      [],        []       ) ($1 # $>) }
-  | '<'                            sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>'
-    { Spanned ([],             toList $2, toList $4) ($1 # $>) }
-  | '<'                            sep_by1T(ty,',')                          gt '>'
-    { Spanned ([],             toList $2, []       ) ($1 # $>) }
-  | '<'                                                sep_by1T(binding,',') gt '>'
-    { Spanned ([],             [],        toList $2) ($1 # $>) }
-  | '<'                                                                      gt '>'
-    { Spanned ([],             [],        []       ) ($1 # $>) }
-  | lt_ty_qual_path            ',' sep_by1(ty,',') ',' sep_by1T(binding,',') gt '>'
-    { Spanned ([], unspan $1 : toList $3, toList $5) ($1 # $>) }
-  | lt_ty_qual_path            ',' sep_by1T(ty,',')                          gt '>'
-    { Spanned ([], unspan $1 : toList $3, []       ) ($1 # $>) }
-  | lt_ty_qual_path                                ',' sep_by1T(binding,',') gt '>'
-    { Spanned ([],            [unspan $1],toList $3) ($1 # $>) }
-  | lt_ty_qual_path                                                          gt '>'
-    { Spanned ([],            [unspan $1],[]       ) ($1 # $>) }
+generic_args :: { GenericArgs Span }
+  : '<'                 sep_byT(generic_arg_elem,',')  gt '>'
+    { let (a, c) = partitionEithers $2 in AngleBracketed a c ($1 # $>) }
+  | lt_ty_qual_path ',' sep_by1T(generic_arg_elem,',') gt '>'
+    { let (a, c) = partitionEithers (toList $3)
+      in AngleBracketed (TypeArg (unspan $1) : a) c ($1 # $>) }
+  | lt_ty_qual_path                                    gt '>'
+    { AngleBracketed [TypeArg (unspan $1)] [] ($1 # $>) }
 
-binding :: { AssocTyConstraint Span }
-  : ident '=' ty                             { EqualityConstraint (unspan $1) $3 ($1 # $3) }
+generic_arg :: { GenericArg Span }
+  : lifetime                                   { LifetimeArg $1 }
+  | ty                                         { TypeArg $1 }
+  | inner_attrs_block                          { ConstArg (let (as,b) = $1 in BlockExpr as b (spanOf b)) }
+  | '-' lit_expr                               { ConstArg (Unary [] Neg $2 ($1 # $2)) }
+  |     lit_expr                               { ConstArg $1 }
 
+generic_constraint :: { AssocTyConstraint Span }
+  : ident '=' ty                               { EqualityConstraint (unspan $1) $3 ($1 # $3) }
+  | ident ':' sep_by1T(ty_param_bound_mod,'+') { BoundConstraint (unspan $1) (toNonEmpty $3) ($1 # $>) }
+
+generic_arg_elem :: { Either (GenericArg Span) (AssocTyConstraint Span) }
+  : generic_arg                                { Left $1 }
+  | generic_constraint                         { Right $1 }
 
 -- Type related:
 -- parse_path(PathStyle::Type)
@@ -521,11 +516,10 @@ path_segments_without_colons :: { [PathSegment Span] }
 
 -- No corresponding function - see path_segments_without_colons
 path_segment_without_colons :: { PathSegment Span }
-  : self_or_ident path_parameter                     { PathSegment (unspan $1) $2 ($1 # $>) }
+  : path_segment_ident path_parameter                     { PathSegment (unspan $1) $2 ($1 # $>) }
 
 path_parameter  :: { Maybe (GenericArgs Span) }
-  : generic_values                           { let (lts, tys, bds) = unspan $1
-                                               in Just (AngleBracketed (map LifetimeArg lts ++ map TypeArg tys) bds (spanOf $1)) }
+  : generic_args                             { Just $1 }
   | '(' sep_byT(ty,',') ')'                  { Just (Parenthesized $2 Nothing ($1 # $>)) }
   | '(' sep_byT(ty,',') ')' '->' ty_no_plus  { Just (Parenthesized $2 (Just $>) ($1 # $>)) }
   | {- empty -}                  %prec IDENT { Nothing }
@@ -543,18 +537,19 @@ expr_qual_path :: { Spanned (QSelf Span, Path Span) }
 
 -- parse_path_segments_with_colons()
 path_segments_with_colons :: { Reversed NonEmpty (PathSegment Span) }
-  : self_or_ident
+  : path_segment_ident
     { [PathSegment (unspan $1) Nothing (spanOf $1)] }
-  | path_segments_with_colons '::' self_or_ident
+  | path_segments_with_colons '::' path_segment_ident
     { $1 <> [PathSegment (unspan $3) Nothing (spanOf $3)] }
-  | path_segments_with_colons '::' generic_values
+  | path_segments_with_colons '::' generic_args
     {%
-      case (unsnoc $1, unspan $3) of
-        ((rst, PathSegment i Nothing x), (lts, tys, bds)) ->
-          let seg = PathSegment i (Just (AngleBracketed (map LifetimeArg lts ++ map TypeArg tys) bds (spanOf $3))) (x # $3)
+      case (unsnoc $1) of
+        (rst, PathSegment i Nothing x) ->
+          let seg = PathSegment i (Just $3) (x # $3)
           in pure $ snoc rst seg
         _ -> fail "invalid path segment in expression path"
     }
+
 
 -- Mod related:
 -- parse_path(PathStyle::Mod)
@@ -563,14 +558,15 @@ path_segments_with_colons :: { Reversed NonEmpty (PathSegment Span) }
 --       order to refactor this nicely
 mod_path :: { Path Span  }
   : ntPath               { $1 }
-  | self_or_ident        { Path False [PathSegment (unspan $1) Nothing (spanOf $1)] (spanOf $1) }
-  | '::' self_or_ident   { Path True  [PathSegment (unspan $2) Nothing (spanOf $2)] ($1 # $>) }
-  | mod_path '::' self_or_ident  {
+  | path_segment_ident        { Path False [PathSegment (unspan $1) Nothing (spanOf $1)] (spanOf $1) }
+  | '::' path_segment_ident   { Path True  [PathSegment (unspan $2) Nothing (spanOf $2)] ($1 # $>) }
+  | mod_path '::' path_segment_ident  {
       let Path g segs _ = $1 in
       Path g (segs <> [PathSegment (unspan $3) Nothing (spanOf $3) ]) ($1 # $3)
     }
 
-self_or_ident :: { Spanned Ident }
+-- parse_path_segment_ident
+path_segment_ident :: { Spanned Ident }
   : ident                   { $1 }
   | crate                   { Spanned "crate" (spanOf $1) }
   | self                    { Spanned "self" (spanOf $1) }
@@ -837,7 +833,7 @@ pat :: { Pat Span }
   | expr_path '(' sep_byT(or_pat,',') ')' { TupleStructP $1 $3 ($1 # $>) }
   | expr_mac                        { MacP $1 (spanOf $1) }
   | '[' sep_byT(or_pat,',') ']'     { SliceP $2 ($1 # $>) }
-  | '('                      ')'    { TupleP [] ($1 # $>) }
+  | '('                         ')' { TupleP [] ($1 # $>) }
   | '(' sep_by1(or_pat,',') ',' ')' { TupleP (toList $2) ($1 # $>) }
   | '(' sep_by1(or_pat,',')     ')' {
       case toList $2 of
@@ -1390,12 +1386,9 @@ foreign_item :: { ForeignItem Span }
 -- parse_generics
 -- Leaves the WhereClause empty
 generics :: { Generics Span }
-  : ntGenerics                                                      { $1 }
-  | '<' sep_by1(lifetime_def,',') ',' sep_by1T(ty_param,',') gt '>' { Generics (toList $2 ++ toList $4) (WhereClause [] mempty) ($1 # $>) }
-  | '<' sep_by1T(lifetime_def,',')                           gt '>' { Generics (toList $2)              (WhereClause [] mempty) ($1 # $>) }
-  | '<'                               sep_by1T(ty_param,',') gt '>' { Generics              (toList $2) (WhereClause [] mempty) ($1 # $>) }
-  | '<'                                                      gt '>' { Generics []                       (WhereClause [] mempty) ($1 # $>) }
-  | {- empty -}                                                     { Generics []                       (WhereClause [] mempty) mempty }
+  : ntGenerics                            { $1 }
+  | '<' sep_byT(generic_param,',') gt '>' { Generics $2 (WhereClause [] mempty) ($1 # $>) }
+  | {- empty -}                           { Generics [] (WhereClause [] mempty) mempty }
 
 ty_param :: { GenericParam Span }
   : many(outer_attribute) ident                                              { TypeParam $1 (unspan $2) [] Nothing ($1 # $>) }
@@ -1403,9 +1396,13 @@ ty_param :: { GenericParam Span }
   | many(outer_attribute) ident                                      '=' ty  { TypeParam $1 (unspan $2) [] (Just $>) ($1 # $>) }
   | many(outer_attribute) ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty  { TypeParam $1 (unspan $2) (toList $4) (Just $>) ($1 # $>) }
 
+const_param :: { GenericParam Span }
+  : many(outer_attribute) const ident ':' ty                                 { ConstParam $1 (unspan $3) $5 ($1 # $2 # $>) }
+
 generic_param :: { GenericParam Span }
   : ty_param     { $1 }
   | lifetime_def { $1 }
+  | const_param  { $1 }
 
 struct_decl_args :: { (WhereClause Span, VariantData Span) }
   : where_clause ';'                                         { ($1, UnitD ($1 # $>)) }
@@ -1436,7 +1433,6 @@ where_predicate :: { WherePredicate Span }
   | lifetime ':' sep_by1T(lifetime,'+')                    { RegionPredicate $1 (toList $3) ($1 # $3) }
   | no_for_ty                                     %prec EQ { BoundPredicate [] $1 [] (spanOf $1) }
   | no_for_ty '='  ty                                      { EqPredicate $1 $3 ($1 # $3) }
-  | no_for_ty '==' ty                                      { EqPredicate $1 $3 ($1 # $3) }
   | no_for_ty ':' sep_by1T(ty_param_bound_mod,'+')         { BoundPredicate [] $1 (toList $3) ($1 # $3) }
   | for_lts no_for_ty                                      { BoundPredicate (unspan $1) $2 [] ($1 # $2) }
   | for_lts no_for_ty ':' sep_by1T(ty_param_bound_mod,'+') { BoundPredicate (unspan $1) $2 (toList $4) ($1 # $>) }

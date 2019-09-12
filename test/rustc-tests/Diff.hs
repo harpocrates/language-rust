@@ -359,15 +359,24 @@ instance Show a => Diffable (Generics a) where
     whr === (val ! "where_clause")
 
 instance Show a => Diffable (GenericParam a) where
-  LifetimeParam as l bd _ === val | val ! "kind" == "Lifetime" = do
-    NullList as === (val ! "attrs" ! "_field0")
-    l === val
-    bd === (val ! "bounds")
-  TypeParam as i bd d _ === val | val ! "kind" ! "variant" == "Type" = do
-    NullList as === (val ! "attrs" ! "_field0")
-    i === (val ! "ident")
-    bd === (val ! "bounds")
-    d === (val ! "kind" ! "fields" ! 0)
+  param === val =
+    case (val ! "kind", param) of
+      ("Lifetime", LifetimeParam as l bd _) -> do
+        NullList as === (val ! "attrs" ! "_field0")
+        l === val
+        bd === (val ! "bounds")
+      (n, _) ->
+        case (n ! "variant", param) of
+          ("Type", TypeParam as i bd d _) -> do
+            NullList as === (val ! "attrs" ! "_field0")
+            i === (val ! "ident")
+            bd === (val ! "bounds")
+            d === (val ! "kind" ! "fields" ! 0)
+          ("Const", ConstParam as i t _) -> do
+            NullList as === (val ! "attrs" ! "_field0")
+            i === (val ! "ident")
+            t === (val ! "kind" ! "fields" ! 0)
+          _ -> diff "different generic parameter" param val
 
 instance Show a => Diffable (WhereClause a) where
   WhereClause preds _ === val = preds === (val ! "predicates")
@@ -768,13 +777,19 @@ instance Show a => Diffable (GenericArg a) where
     case (val ! "variant", arg) of
       ("Lifetime", LifetimeArg l) -> l === (val ! "fields" ! 0)
       ("Type", TypeArg t) -> t === (val ! "fields" ! 0)
-      ("Const", ConstArg e) -> e === (val ! "fields" ! 0)
+      ("Const", ConstArg e) -> e === (val ! "fields" ! 0 ! "value")
       _ -> diff "different generic argument" arg val
 
 instance Show a => Diffable (AssocTyConstraint a) where
-  EqualityConstraint i t _ === v = do
-    i === (v ! "ident")
-    t === (v ! "kind" ! "fields" ! 0)
+  con === val =
+    case (val ! "kind" ! "variant", con) of
+      ("Equality", EqualityConstraint i t _) -> do
+        i === (val ! "ident")
+        t === (val ! "kind" ! "fields" ! 0)
+      ("Bound", BoundConstraint i b _) -> do
+        i === (val ! "ident")
+        b === (val ! "kind" ! "fields" ! 0)
+      _ -> diff "different associated constraints" con val
 
 instance Show a => Diffable (Expr a) where
   ex === val =

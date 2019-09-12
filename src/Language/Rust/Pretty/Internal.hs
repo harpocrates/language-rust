@@ -971,13 +971,16 @@ printGenericArgs colons (AngleBracketed args bds x) = annotate x (when colons ":
     args' = printGenericArg <$> args
     bds' = printAssocTyConstraint <$> bds
 
+-- | Print a generic argument
 printGenericArg :: GenericArg a -> Doc a
 printGenericArg (LifetimeArg l) = printLifetime l
 printGenericArg (TypeArg t) = printType t
-printGenericArg (ConstArg e) = printExpr e -- TODO: do we put `const` first here?
+printGenericArg (ConstArg e) = printExpr e
 
+-- | Print an associated type constraint
 printAssocTyConstraint :: AssocTyConstraint a -> Doc a
 printAssocTyConstraint (EqualityConstraint i t x) = annotate x (printIdent i <+> "=" <+> printType t)
+printAssocTyConstraint (BoundConstraint i b x) = annotate x (printIdent i <> printBounds ":" (toList b))
 
 -- | Print a path, specifiying explicitly whether to include colons (@::@) before generics
 -- or not (so expression style or type style generics) (@print_path@)
@@ -1019,6 +1022,12 @@ printGenericParam (TypeParam as i bds def x) = annotate x $ hsep
   [ printOuterAttrs as
   , printIdent i <> printBounds ":" bds
   , perhaps (\def' -> "=" <+> printType def') def
+  ]
+printGenericParam (ConstParam as i ty x) = annotate x $ hsep
+  [ printOuterAttrs as
+  , "const"
+  , printIdent i <> ":"
+  , printType ty
   ]
 
 -- | Print lifetime bounds (@print_lifetime_bounds@)

@@ -62,6 +62,7 @@ module Language.Rust.Syntax.AST (
   Generics(..),
   Lifetime(..),
   GenericParam(..),
+  genericParamOrder,
   GenericBound(..),
   partitionGenericBounds,
   WhereClause(..),
@@ -207,7 +208,7 @@ data AssocTyConstraint a
   -- | E.g., @A = Bar@ in @Foo\<A = Bar\>@
   = EqualityConstraint Ident (Ty a) a
   -- | E.g. @A: TraitA + TraitB@ in @Foo\<A: TraitA + TraitB\>@
-  | BoundConstraint Ident [GenericBound a] a
+  | BoundConstraint Ident (NonEmpty (GenericBound a)) a
   deriving (Eq, Ord, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (AssocTyConstraint a) where
@@ -547,6 +548,13 @@ instance  Located a =>  Located (GenericParam a) where
   spanOf (LifetimeParam _ _ _ s) = spanOf s
   spanOf (TypeParam _ _ _ _ s) = spanOf s
   spanOf (ConstParam _ _ _ s) = spanOf s
+
+genericParamOrder :: GenericParam a -> GenericParam a -> Ordering
+genericParamOrder = comparing paramCompare
+  where paramCompare :: GenericParam a -> Int
+        paramCompare LifetimeParam{} = 0
+        paramCompare TypeParam{}     = 1
+        paramCompare ConstParam{}    = 2
 
 -- | An item within an impl (@syntax::ast::ImplItem@ with @syntax::ast::ImplItemKind@ inlined).
 --

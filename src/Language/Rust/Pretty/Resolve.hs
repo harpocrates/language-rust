@@ -355,7 +355,7 @@ resolvePath t p@(Path g segs x) = scope p $
     if null [ () | PathSegment _ (Just a) _ <- segs, not (isParamsForPath t a) ]
       then Path g <$> traverse resolvePathSegment segs <*> pure x
       else err p "path parameter is not valid for this type of path"
-  where 
+  where
   isParamsForPath :: PathType -> GenericArgs a -> Bool
   isParamsForPath t' AngleBracketed{} = t' `elem` ([TypePath, ExprPath] :: [PathType])
   isParamsForPath t' Parenthesized{}  = t' `elem` ([TypePath] :: [PathType])
@@ -386,29 +386,24 @@ resolveGenericArgs p@(Parenthesized tys tym x) = scope p $ do
 resolveGenericArgs p@(AngleBracketed args bds x) = scope p $ do
   args' <- if isSorted genericArgOrder args
              then pure args
-             else do correct "sorted generic parameters"
+             else do correct "sorted generic arguments"
                      pure (sortBy genericArgOrder args)
   args'' <- traverse resolveGenericArg args'
   bds' <- traverse resolveAssocTyConstraint bds
   pure (AngleBracketed args'' bds' x)
-  where
-    isSorted :: (a -> a -> Ordering) -> [a] -> Bool
-    isSorted _ [] = True
-    isSorted f (w:ws) = let go _ [] = True
-                            go y (z:zs) = ((y `f` z) /= GT) && go z zs
-                        in go w ws
 
 instance (Typeable a, Monoid a) => Resolve (GenericArgs a) where resolveM = resolveGenericArgs
 
 resolveGenericArg :: (Typeable a, Monoid a) => GenericArg a -> ResolveM (GenericArg a)
 resolveGenericArg (LifetimeArg l) = LifetimeArg <$> resolveLifetime l
 resolveGenericArg (TypeArg t) = TypeArg <$> resolveTy AnyType t
-resolveGenericArg (ConstArg e) = ConstArg <$> resolveExpr AnyExpr e
+resolveGenericArg (ConstArg e) = ConstArg <$> resolveExpr LitOrBlockExpr e
 
 instance (Typeable a, Monoid a) => Resolve (GenericArg a) where resolveM = resolveGenericArg
 
 resolveAssocTyConstraint :: (Typeable a, Monoid a) => AssocTyConstraint a -> ResolveM (AssocTyConstraint a)
 resolveAssocTyConstraint (EqualityConstraint i t x) = EqualityConstraint <$> resolveIdent i <*> resolveTy NoSumType t <*> pure x
+resolveAssocTyConstraint (BoundConstraint i b x) = BoundConstraint <$> resolveIdent i <*> traverse (resolveGenericBound ModBound) b <*> pure x
 
 -- | A QSelf by itself is only invalid when the underlying type is
 resolveQSelf :: (Typeable a, Monoid a) => QSelf a -> ResolveM (QSelf a)
@@ -511,7 +506,8 @@ instance (Typeable a, Monoid a) => Resolve (FnDecl a) where resolveM = resolveFn
 
 -- | Only some type parameter bounds allow trait bounds to start with @?@
 data GenericBoundType
-  = NoneBound          -- ^ Don't allow @? poly_trait_ref@
+  = OnlyLifetimes      -- ^ Allow /only/ lifetime bounds
+  | NoneBound          -- ^ Don't allow @? poly_trait_ref@
   | ModBound           -- ^ Allow @? poly_trait_ref@
 
 -- | A type parameter bound is invalid if
@@ -520,9 +516,10 @@ data GenericBoundType
 --   * it is 'NoneBound' but is a trait bound with a @?@ (as in 'TraitObject')
 --
 resolveGenericBound :: (Typeable a, Monoid a) => GenericBoundType -> GenericBound a -> ResolveM (GenericBound a)
-resolveGenericBound _         b@(OutlivesBound lt x) =     scope b (OutlivesBound <$> resolveLifetime lt <*> pure x)
-resolveGenericBound NoneBound b@(TraitBound _ Maybe _) = scope b (err b "? trait is not allowed in this type param bound")
-resolveGenericBound _         b@(TraitBound p t x) =     scope b (TraitBound <$> resolvePolyTraitRef p <*> pure t <*> pure x)
+resolveGenericBound _             b@(OutlivesBound lt x) =   scope b (OutlivesBound <$> resolveLifetime lt <*> pure x)
+resolveGenericBound OnlyLifetimes b@TraitBound{} =           scope b (err b "? trait is not allowed in this type param bound")
+resolveGenericBound NoneBound     b@(TraitBound _ Maybe _) = scope b (err b "a trait cannot bound a lifetime")
+resolveGenericBound _             b@(TraitBound p t x) =     scope b (TraitBound <$> resolvePolyTraitRef p <*> pure t <*> pure x)
 
 instance (Typeable a, Monoid a) => Resolve (GenericBound a) where resolveM = resolveGenericBound ModBound
 
@@ -661,6 +658,7 @@ data ExprType
   = AnyExpr           -- ^ Any expression, no restrictions
   | LitExpr           -- ^ Either an immediate literal, or a negated literal
   | LitOrPathExpr     -- ^ A literal, negated literal, expression path, or qualified expression path
+  | LitOrBlockExpr    -- ^ A literal, negated literal, or (safe, not async) block expression
   | NoStructExpr      -- ^ No struct literals are allowed
   | NoStructBlockExpr -- ^ No struct literals or block expressions (block-like things like 'if' are fine)
   | SemiExpr          -- ^ Forbids expressions starting with blocks (things like '{ 1 } + 2') unless
@@ -693,6 +691,7 @@ resolveLhsExprP p t l = resolveExprP p (lhs t) l
     lhs :: ExprType -> ExprType
     lhs LitExpr = error "literal expressions never have a left hand side"
     lhs LitOrPathExpr = error "literal or path expressions never have a left hand side"
+    lhs LitOrBlockExpr = error "literal or path expressions never have a left hand side"
     lhs AnyExpr = AnyExpr
     lhs NoStructExpr = NoStructExpr
     lhs NoStructBlockExpr = NoStructBlockExpr
@@ -702,6 +701,7 @@ resolveLhsExprP p t l = resolveExprP p (lhs t) l
 rhs :: ExprType -> ExprType
 rhs LitExpr = error "literal expressions never have a right hand side"
 rhs LitOrPathExpr = error "literal or path expressions never have a right hand side"
+rhs LitOrBlockExpr = error "literal or path expressions never have a left hand side"
 rhs AnyExpr = AnyExpr
 rhs NoStructExpr = NoStructExpr
 rhs NoStructBlockExpr = NoStructExpr
@@ -711,6 +711,7 @@ rhs SemiExpr = AnyExpr
 rhs2 :: ExprType -> ExprType
 rhs2 LitExpr = error "literal expressions never have a right hand side (2)"
 rhs2 LitOrPathExpr = error "literal or path expressions never have a right hand side (2)"
+rhs2 LitOrBlockExpr = error "literal or path expressions never have a left hand side"
 rhs2 AnyExpr = AnyExpr
 rhs2 NoStructExpr = NoStructBlockExpr
 rhs2 NoStructBlockExpr = NoStructBlockExpr
@@ -764,6 +765,14 @@ resolveExprP p LitOrPathExpr l@Lit{} = resolveExprP p AnyExpr l
 resolveExprP p LitOrPathExpr n@(Unary _ Neg Lit{} _) = resolveExprP p AnyExpr n
 resolveExprP p LitOrPathExpr p'@PathExpr{} = resolveExprP p AnyExpr p'
 resolveExprP _ LitOrPathExpr l = scope l (err l "expression is not literal, negated literal, path, or qualified path")
+-- Conver the 'LitOrBlockExpr' type of expression
+resolveExprP p LitOrBlockExpr l@Lit{} = resolveExprP p AnyExpr l
+resolveExprP p LitOrBlockExpr n@(Unary _ Neg Lit{} _) = resolveExprP p AnyExpr n
+resolveExprP p LitOrBlockExpr b@(BlockExpr _ (Block _ Normal _) _) = resolveExprP p AnyExpr b
+resolveExprP _ LitOrBlockExpr e = scope e $ do
+  correct "added braces around expression"
+  e' <- resolveExpr AnyExpr e
+  pure (BlockExpr [] (Block [NoSemi e' mempty] Normal mempty) mempty)
 -- The following group of expression variants work in all of the remaining contexts (see
 -- 'gen_expression' in the parser)
 resolveExprP p c b@(Box as e x) = scope b $ parenE (p > 0) $ do
@@ -1321,9 +1330,13 @@ instance (Typeable a, Monoid a) => Resolve (WhereClause a) where resolveM = reso
 -- | Generics are only invalid if the underlying lifetimes or type parameters are
 resolveGenerics :: (Typeable a, Monoid a) => Generics a -> ResolveM (Generics a)
 resolveGenerics g@(Generics params wc x) = scope g $ do
-  params' <- traverse resolveGenericParam params
+  params' <- if isSorted genericParamOrder params
+             then pure params
+             else do correct "sorted generic parameters"
+                     pure (sortBy genericParamOrder params)
+  params'' <- traverse resolveGenericParam params'
   wc' <- resolveWhereClause wc
-  pure (Generics params' wc' x)
+  pure (Generics params'' wc' x)
 
 instance (Typeable a, Monoid a) => Resolve (Generics a) where resolveM = resolveGenerics
 
@@ -1338,9 +1351,13 @@ resolveGenericParam p@(TypeParam as i bds t x) = scope p $ do
 resolveGenericParam lts@(LifetimeParam as l bds x) = scope lts $ do
   as' <- traverse (resolveAttr OuterAttr) as
   l' <- resolveLifetime l
-  bds' <- traverse (resolveGenericBound NoneBound) bds
+  bds' <- traverse (resolveGenericBound OnlyLifetimes) bds
   pure (LifetimeParam as' l' bds' x)
-resolveGenericParam _ = error "TODO"
+resolveGenericParam lts@(ConstParam as i t x) = scope lts $ do
+  as' <- traverse (resolveAttr OuterAttr) as
+  i' <- resolveIdent i
+  t' <- resolveTy AnyType t
+  pure (ConstParam as' i' t' x)
 
 instance (Typeable a, Monoid a) => Resolve (GenericParam a) where resolveM = resolveGenericParam
 
@@ -1528,3 +1545,15 @@ resolveTokenStream s@(Stream ts) = scope s (Stream <$> mapM resolveTokenStream t
 
 instance Resolve TokenStream where resolveM = resolveTokenStream
 
+
+
+-------------
+-- Utility --
+-------------
+
+-- Check in a manner that shortcuts if a list is already sorted
+isSorted :: (a -> a -> Ordering) -> [a] -> Bool
+isSorted _ [] = True
+isSorted f (w:ws) = go w ws
+   where go _ [] = True
+         go y (z:zs) = ((y `f` z) /= GT) && go z zs

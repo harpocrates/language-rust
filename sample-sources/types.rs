@@ -28,11 +28,11 @@ fn main() {
 
 fn foo() -> impl Bound1 + Bound2 + Bound3 { }
 
-pub fn walk<F: 'a + 'static>(x: i32, it: &mut F) -> bool
+pub fn walk<U=V, W: Z + Send, F: 'a + 'static, const N: usize>(x: i32, it: &mut F) -> bool
 where
   F: FnMut(&Pat) -> bool,
   'a: 'b + 'c,
   F = i32,
 {
-  foo::<'a,A,B,C=i32> 
+  foo::<'a,A,B,C=i32,D: Send + ?Sync,{N}>
 }
