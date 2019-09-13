@@ -2,9 +2,9 @@
 
 import Weigh
 
+import Control.DeepSeq (rnf)
 import Control.Monad (filterM)
-import Control.Exception (catch, throwIO)
-import Data.Foldable (for_)
+import Control.Exception (catch, throwIO, evaluate)
 import Data.Traversable (for)
 import GHC.Exts (fromString)
 
@@ -18,7 +18,6 @@ import System.Process (proc, readCreateProcess)
 import System.IO.Error (isDoesNotExistError)
 
 import Data.Aeson
-import qualified Data.ByteString.Lazy as BL
 
 -- TODO: only allocation and GCs seem to be really reproducible. Live and max sometimes are 0.
 
@@ -46,25 +45,21 @@ main = do
         (\e -> if isDoesNotExistError e then pure () else throwIO e)
 
   -- Run 'weigh' tests
-  fileStreams <- for files $ \file -> do { is <- readInputStream file; pure (takeFileName file, is) }
-  let weigh = do setColumns [ Case, Max, Allocated, GCs, Live ]
-                 for_ fileStreams $ \(file,is) -> func file (parse' :: InputStream -> SourceFile Span) is
-  mainWith weigh
-  (wr, _) <- weighResults weigh
-  let results = object [ case maybeErr of
-                           Nothing -> key .= object [ "allocated" .= weightAllocatedBytes weight
---                                                    , "max"       .= weightMaxBytes w
---                                                    , "live"      .= weightLiveBytes w
---                                                    , "GCs"       .= weightGCs w
-                                                    ]
-                           Just err -> key .= String (fromString err)
-                       | (weight, maybeErr) <- wr
-                       , let key = fromString (weightLabel weight)
-                       ]
+  weighResultsJson <- fmap object . for files $ \file -> do
+    is <- readInputStream file
+    evaluate (rnf is)
+    let testName = fromString (takeFileName file)
+    (allocatedBytes, _gcs, _liveBytes, _maxBytes) <-
+      weighFunc (parse' :: InputStream -> SourceFile Span) is
+    pure $ testName .= object [ "allocated" .= allocatedBytes
+--                               , "max"       .= maxBytes
+--                               , "live"      .= liveBytes
+--                               , "GCs"       .= gcs
+                              ]
 
   -- Save the output to JSON
   createDirectoryIfMissing False (workingDirectory </> "bench" </> "allocations")
   let logFile = workingDirectory </> "bench" </> "allocations" </> logFileName <.> "json"
   putStrLn $ "writing results to: " ++ logFile
-  logFile `BL.writeFile` encode results
+  encodeFile logFile weighResultsJson
 

@@ -41,15 +41,24 @@ testP :: forall f.
          TestName -> f () -> Test
 testP inp y = testCase inp $ do
     -- parse test
-    Right y @=? parseNoSpans parser inps
+    assertEqual
+      "Incorrect parsing output:"
+      (Right y)
+      (parseNoSpans parser inps)
 
     -- resolve test
-    Right y @=? either (\(ResolveFail _ msg) -> Left msg) Right (resolve y)
+    assertEqual
+      "Resolving the parsed output was not idempotent:"
+      (Right y)
+      (either (\(ResolveFail _ msg) -> Left msg) Right (resolve y))
 
     -- re-parse the result of printing resolve
-    Right y @=? case pretty y of
-                  Left (ResolveFail _ msg) -> Left msg
-                  Right inp' -> parseNoSpans parser (inputStreamFromString (show inp'))
+    assertEqual
+      "Re-parsing pretty-printed output is not idempotent:"
+      (Right y)
+      (case pretty y of
+         Left (ResolveFail _ msg) -> Left msg
+         Right inp' -> parseNoSpans parser (inputStreamFromString (show inp')))
 
     -- check that the sub-spans re-parse correctly
     let Right y' = parse inps
