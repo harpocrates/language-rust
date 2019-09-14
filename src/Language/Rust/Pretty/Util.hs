@@ -83,6 +83,7 @@ hsep = foldr (<+>) mempty
 -- | Lifted version of Wadler's @<#>@
 (<#>) :: Doc a -> Doc a -> Doc a
 (<#>) = liftOp (\x y -> x <> PP.line <> y)
+infixl 8 <#>
 
 -- | Lifted version of Wadler's @vsep@
 vsep :: Foldable f => f (Doc a) -> Doc a

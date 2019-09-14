@@ -1445,7 +1445,7 @@ resolveTraitItem n@(MethodT as i g m b x) = scope n $ do
   as' <- traverse (resolveAttr OuterAttr) as
   i' <- resolveIdent i
   g' <- resolveGenerics g
-  m' <- resolveMethodSig GeneralArg m
+  m' <- resolveMethodSig NamedArg m
   b' <- traverse resolveBlock b
   pure (MethodT as' i' g' m' b' x)
 resolveTraitItem n@(TypeT as i bd t x) = scope n $ do

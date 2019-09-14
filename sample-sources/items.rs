@@ -74,6 +74,9 @@ mod bar {
   macro_rules! foo { }
   foo!();
 
+  pub macro PartialEq($item:item) { /* compiler built-in */ }
+  pub macro PartialEq { 1 }
+
   enum Foo {
     Baz {
       foo: i32,

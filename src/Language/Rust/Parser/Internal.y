@@ -686,18 +686,11 @@ fn_decl(arg, ret) :: { FnDecl Span }
   | '(' sep_byT(arg,',')           ')' ret  { FnDecl $2 $> False ($1 # $3 # $4) }
 
 -- Like 'fn_decl', but also accepting a self argument
-fn_decl_with_self_general :: { FnDecl Span }
-  : '(' arg_self_general ',' sep_byT(arg_general,',') ')' ret_ty  { FnDecl ($2 : $4) $> False ($1 # $5 # $6) }
-  | '(' arg_self_general                              ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
-  | '('                                               ')' ret_ty  { FnDecl [] $> False ($1 # $2 # $3) }
-
--- Like 'fn_decl', but also accepting a self argument
-fn_decl_with_self_named :: { FnDecl Span }
-  : '(' arg_self_named ',' sep_by1(arg_named,',') ',' ')' ret_ty  { FnDecl ($2 : toList $4) $> False ($1 # $6 # $7) }
-  | '(' arg_self_named ',' sep_by1(arg_named,',')     ')' ret_ty  { FnDecl ($2 : toList $4) $> False ($1 # $5 # $6) }
-  | '(' arg_self_named ','                            ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
-  | '(' arg_self_named                                ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
-  | fn_decl(arg_named, ret_ty)                                    { $1 }
+fn_decl_with_self :: { FnDecl Span }
+  : '(' arg_self ',' sep_by1T(arg_named,',')     ')' ret_ty  { FnDecl ($2 : toList $4) $> False ($1 # $5 # $6) }
+  | '(' arg_self ','                             ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
+  | '(' arg_self                                 ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
+  | fn_decl(arg_named, ret_ty)                                     { $1 }
 
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
@@ -794,20 +787,8 @@ arg_general :: { Arg Span }
   | '&&' '_'   ':' ty  { Arg (Just (RefP (RefP (WildP (spanOf $2)) Immutable (nudge 1 0 ($1 # $2))) Immutable ($1 # $2))) $4 ($1 # $4) }
   | '&&' ident ':' ty  { Arg (Just (RefP (RefP (IdentP (ByValue Immutable) (unspan $2) Nothing (spanOf $2)) Immutable (nudge 1 0 ($1 # $2))) Immutable ($1 # $2))) $4 ($1 # $4) }
 
--- Self argument (only allowed in trait function signatures)
-arg_self_general :: { Arg Span }
-  : mut self              { SelfValue Mutable ($1 # $>) }
-  |     self ':' ty       { SelfExplicit $3 Immutable ($1 # $>) }
-  | mut self ':' ty       { SelfExplicit $4 Mutable ($1 # $>) }
-  | arg_general           {
-      case $1 of
-        Arg Nothing (PathTy Nothing (Path False [PathSegment "self" Nothing _] _) _) x -> SelfValue Immutable x
-        Arg Nothing (Rptr l m (PathTy Nothing (Path False [PathSegment "self" Nothing _] _) _) _) x -> SelfRegion l m x
-        _ -> $1
-    }
-
--- Self argument (only allowed in impl function signatures)
-arg_self_named :: { Arg Span }
+-- Self argument (only allowed in trait/impl function signatures)
+arg_self :: { Arg Span }
   :                  self { SelfValue Immutable ($1 # $>) }
   |              mut self { SelfValue Mutable ($1 # $>) }
   | '&'              self { SelfRegion Nothing   Immutable ($1 # $>) }
@@ -1287,6 +1268,8 @@ stmt :: { Stmt Span }
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!' ident '{' token_stream '}'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
+  | many(outer_attribute) expr_path '!' ident '{' token_stream '}' ';'
+    { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
   | ';'                                                      { StandaloneSemi (spanOf $1) }
 
 -- List of statements where the last statement might be a no-semicolon statement.
@@ -1381,7 +1364,9 @@ item :: { Item Span }
   | many(outer_attribute) vis default safety impl generics     trait_ref for ty where_clause '{' impl_items '}'
     { Impl ($1 ++ fst $12) (unspan $2) Default (unspan $4) Positive ($6 `withWhere` $10) (Just $7) $9 (snd $12) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis macro ident '(' token_stream ')' '{' token_stream '}'
-    { MacroDef $1 (unspan $2) (unspan $4) (Stream [ $6, Tree (Token mempty FatArrow), $9 ]) ($1 # $2 # $3 # $>) }
+    { MacroDef $1 (unspan $2) (unspan $4) (Stream [ Tree (Delimited ($5 # $7) Paren $6)
+                                                  , Tree (Token mempty FatArrow)
+                                                  , Tree (Delimited ($8 # $10) Brace $9) ]) ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis macro ident                      '{' token_stream '}'
     { MacroDef $1 (unspan $2) (unspan $4) $6 ($1 # $2 # $3 # $>) }
 
@@ -1475,13 +1460,13 @@ impl_item :: { ImplItem Span }
   | many(outer_attribute) vis def type ident '=' ty ';'           { TypeI $1 (unspan $2) (unspan $3) (unspan $5) $7 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute) vis def const ident ':' ty '=' expr ';' { ConstI $1 (unspan $2) (unspan $3) (unspan $5) $7 $9 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute)     def mod_mac                         { MacroI $1 (unspan $2) $3 ($1 # $2 # $>) }
-  | many(outer_attribute) vis def const safety fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
+  | many(outer_attribute) vis def const safety fn ident generics fn_decl_with_self where_clause inner_attrs_block
     { let methodSig = MethodSig (FnHeader (unspan $5) NotAsync Const Rust (spanOf $5)) $9; generics = $8 `withWhere` $10
       in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) generics methodSig (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
-  | many(outer_attribute) vis def async safety fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
+  | many(outer_attribute) vis def async safety fn ident generics fn_decl_with_self where_clause inner_attrs_block
     { let methodSig = MethodSig (FnHeader (unspan $5) IsAsync NotConst Rust (spanOf $5)) $9; generics = $8 `withWhere` $10
       in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) generics methodSig (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
-  | many(outer_attribute) vis def safety ext_abi fn ident generics fn_decl_with_self_named where_clause inner_attrs_block
+  | many(outer_attribute) vis def safety ext_abi fn ident generics fn_decl_with_self where_clause inner_attrs_block
     { let methodSig = MethodSig (FnHeader (unspan $4) NotAsync NotConst (unspan $5) ($4 # $5)) $9; generics = $8 `withWhere` $10
       in MethodI ($1 ++ fst $>) (unspan $2) (unspan $3) (unspan $7) generics methodSig (snd $>) ($1 # $2 # $3 # $4 # $5 # $6 # snd $>) }
 
@@ -1496,10 +1481,10 @@ trait_item :: { TraitItem Span }
     { TypeT $1 (unspan $3) (toList $5) Nothing ($1 # $2 # $>) }
   | many(outer_attribute) type ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty ';'
     { TypeT $1 (unspan $3) (toList $5) (Just $7) ($1 # $2 # $>) }
-  | many(outer_attribute) is_async safety ext_abi fn ident generics fn_decl_with_self_general where_clause ';'
+  | many(outer_attribute) is_async safety ext_abi fn ident generics fn_decl_with_self where_clause ';'
     { let methodSig = MethodSig (FnHeader (unspan $3) (unspan $2) NotConst (unspan $4) ($2 # $3 # $4)) $8; generics = $7 `withWhere` $9
       in MethodT $1             (unspan $6) generics methodSig Nothing         ($1 # $2 # $3 # $4 # $5 # $>) }
-  | many(outer_attribute) is_async safety ext_abi fn ident generics fn_decl_with_self_general where_clause inner_attrs_block
+  | many(outer_attribute) is_async safety ext_abi fn ident generics fn_decl_with_self where_clause inner_attrs_block
     { let methodSig = MethodSig (FnHeader (unspan $3) (unspan $2) NotConst (unspan $4) ($2 # $3 # $4)) $8; generics = $7 `withWhere` $9
       in MethodT ($1 ++ fst $>) (unspan $6) generics methodSig (Just (snd $>)) ($1 # $2 # $3 # $4 # $5 # snd $>) }
 

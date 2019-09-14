@@ -692,6 +692,7 @@ printTraitItem (MacroT as m x) = annotate x $ printOuterAttrs as <#> printMac Pa
 -- | Print type parameter bounds with the given prefix, but only if there are any bounds (@print_bounds@)
 printBounds :: Doc a -> [GenericBound a] -> Doc a
 printBounds _ [] = mempty
+printBounds prefix [b] = group (prefix <#> ungroup (block NoDelim False mempty mempty [printBound b]))
 printBounds prefix bs = group (prefix <#> ungroup (block NoDelim False " +" mempty (printBound `map` bs)))
 
 -- | Print a type parameter bound
