@@ -1,7 +1,7 @@
 // See <https://github.com/rust-lang/rust/blob/master/src/libsyntax/util/parser.rs>
 
 fn main() {
-  a /= - b ? ^= * - c >= - * d [0] ? == box & ! e ? [0] .0 ? [0] .0 ?;
+  a /= - b ? ^= * - c >= - * d [0] ? + box & ! e ? [0] .0 ? [0] .0 ?;
   - a == box b [0] [0] [0] .0 || c [0] ^= d % e = f != g;
   & a *= ! b ^= c * d | e [0];
   a ^ b < * c ? || box d ? %= e [0] = - f < box g % & h &= i ? % & & & j ?;
@@ -9,7 +9,7 @@ fn main() {
   a >> & b && - box c >= d .. e .0 [0] + ! f * g >= h && & - i [0] * j;
   * a > b *= c * d && e ^ - & f ? *= g %= h .0 [0] ? & i -= j ?;
   * a >> b %= c .0 != * - d [0] || e <= f << g .0 | ! h += - & i >= j .0;
-  a && ! * box b [0] >> - c || * d ^ * e >= f >= g /= ! h = i [0] ... j;
+  a && ! * box b [0] >> - c || * d ^ * e + f >= g /= ! h = i [0] ..= j;
   .. a + box b ? [0] * c ? .0 ^ d +  & f <= g [0] * h && i + j [0] ?;
   a * b &= c & * d ? |= & ! e [0] != & f .0 = g >> ! ! * - h ? ^ i ? %= - j;
   & a != b [0] % c - & & ! - box - d & e [0] += g ? << h /= i <<= .. .. j;
@@ -17,13 +17,13 @@ fn main() {
   a & b - c *= &&*d? << *e.0?.0 ^= !f?[0].0 >> -g - h .. i??[0] | j;
   -a[0] - b[0][0]??.0 != c -= d || e[0][0] *= &f = !!g[0] / h ^ i | box!j[0];
   a != -b.0 - box!c.0?.0 *= -e? <= *-f.0 ^= g >> box box h + i + j;
-  !&&-box a??.0 >> b |= c[0]? ^ d * e | &*f[0] <= box -g? ... &h * &i - j[0][0];
+  !&&-box a??.0 >> b |= c[0]? ^ d * e | &*f[0] <= box -g? ..= &h * &i - j[0][0];
   a & b &= c[0] <= d + -!-box*e[0]?[0] % f.0? + -g >>= h[0] /= i = j;
-  a[0][0] >>= *b.0 .0? / c ^ d >>= !e >= box f ... g >= h + i? || j;
+  a[0][0] >>= *b.0 .0? / c ^ d >>= !e >= box f ..= g >= h + i? || j;
   !&a? |= -b >= c / *-d? *= e % f += !box g.0? != &-*h? + i.0 / j;
   a? - b? | c * *-box box box*box d? .0 .0 %= !!!e? &= -box!f.0 += g - h /= i && j;
-  *box box!a -= box-b.0 % c &= d % e? ^= !&f[0]? != g > h & i /= j;
-  box---!a.0 ^= b = -&box c? > d << e.0 >= f[0] + g -= h >>= i * j;
+  *box box!a -= box-b.0 % c &= d % e? ^= !&f[0]? != h & i /= j;
+  box---!a.0 ^= b = -&box c? > d << e.0 + f[0] + g -= h >>= i * j;
   a .0 .0 >>= -b >= -box*c || d? &= box&-e | f << g * h[0][0] |= i * j;
   box-a / b != c -= d == &e.0 >>= f - *g[0] %= h & i << &-j??;
   !&-a.0 == b *= c.0 <<= --d && e? ^= !f <<= g[0] > h += -i >>= j;

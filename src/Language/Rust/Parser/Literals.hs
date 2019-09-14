@@ -66,7 +66,7 @@ unescapeChar multiline ('\\':c:cs) = case c of
   '\n' | multiline -> unescapeChar multiline $ dropWhile isSpace cs
   _ -> error "unescape char: bad escape sequence"
 unescapeChar _ (c:cs) = Just (c, cs)
-unescapeChar _ [] = fail "unescape char: empty string"
+unescapeChar _ [] = Nothing -- unescape char: empty string
 
 -- | Given a string of characters read from a Rust source, extract the next underlying byte taking
 -- into account escapes.
@@ -86,7 +86,7 @@ unescapeByte multiline ('\\':c:cs) = case c of
        '\n' | multiline -> unescapeByte multiline $ dropWhile isSpace cs
        _    -> error "unescape byte: bad escape sequence"
 unescapeByte _ (c:cs) = Just (toEnum $ fromEnum c, cs)
-unescapeByte _ [] = fail "unescape byte: empty string"
+unescapeByte _ [] = Nothing -- unescape byte: empty string
 
 -- | Given a string Rust representation of a character, parse it into a character
 unescapeChar' :: String -> Char

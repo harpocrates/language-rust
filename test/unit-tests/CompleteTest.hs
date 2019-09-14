@@ -291,6 +291,23 @@ typeAliases = testGroup "type aliases"
     \where\n\
     \  T: Copy,\n\
     \= Vec<T>;"
+  , testComplete "long type"
+    "type F =\n\
+    \  (\n\
+    \    Box<\n\
+    \      dyn\n\
+    \        FnOnce(\n\
+    \          &BuildDeps,\n\
+    \          Option<\n\
+    \            &dyn Fn() -> CargoResult<String>,\n\
+    \          >,\n\
+    \        ) -> CargoResult<\n\
+    \          Option<Vec<LocalFingerprint>>,\n\
+    \        > +\n\
+    \        Send +,\n\
+    \    >,\n\
+    \    bool,\n\
+    \  );"
   ]
 
 traits :: Test

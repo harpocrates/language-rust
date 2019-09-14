@@ -6,17 +6,18 @@ fn main() {
   // Item
   fn foo() { return 1 }
 
-  // Empty
-  ;
-
   // NoSemi
   if true {
     foo()
   }
   let b = { let y = 3; y.await };
 
+  // Empty
+  ;
+
   // Semi
   2 + { 1 };
+  ;;;
 
   // Blocks
   unsafe { 1 };

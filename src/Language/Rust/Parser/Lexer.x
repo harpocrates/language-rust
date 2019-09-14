@@ -44,6 +44,10 @@ module Language.Rust.Parser.Lexer (
   lexicalError,
 ) where
 
+
+import Prelude hiding                  ( fail )
+import Control.Monad.Fail              ( fail )
+
 import Language.Rust.Data.Ident        ( mkIdent, Ident(..) )
 import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position

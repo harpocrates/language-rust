@@ -130,9 +130,9 @@ instance Show a => Diffable (Item a) where
         inheritedV === (val ! "vis")
         fromMaybe "" i === (val ! "ident")
         m === (n' ! "fields" ! 0)
-      ("MacroDef", MacroDef as i tt _) -> do
+      ("MacroDef", MacroDef as v i tt _) -> do
         as === (val ! "attrs")
-        inheritedV === (val ! "vis")
+        v === (val ! "vis")
         i === (val ! "ident")
         tt === (n' ! "fields" ! 0 ! "tokens")
       _ -> diff "different items" item val
@@ -228,7 +228,7 @@ instance Show a => Diffable (Variant a) where
     i === (val ! "ident")
     as === (val ! "attrs")
     d === (val ! "data")
-    e === (val ! "disr_expr")
+    fmap AnonConst e === (val ! "disr_expr")
 
 instance Show a => Diffable (VariantData a) where
   d === val =
@@ -398,9 +398,19 @@ instance Show a => Diffable (WherePredicate a) where
 
 instance Show a => Diffable (Block a) where
   Block ss ru _ === val = do
-    ss === (val ! "stmts")
+    massageStandaloneSemis ss === (val ! "stmts")
     ru === (val ! "rules")
 
+massageStandaloneSemis :: [Stmt a] -> [Stmt a]
+massageStandaloneSemis [] = []
+massageStandaloneSemis (StandaloneSemi s : rest) = semiTup s : massageStandaloneSemis (dropWhile isStandalone rest)
+  where
+    isStandalone StandaloneSemi{} = True
+    isStandalone _ = False
+    semiTup x = Semi (TupExpr [] [] x) x
+massageStandaloneSemis (s : rest) = s : massageStandaloneSemis rest
+
+-- TODO: Rust parses out extra semicolons
 instance Show a => Diffable (Stmt a) where
   stmt === val = do
     let n' = val ! "node"
@@ -448,9 +458,9 @@ instance Show a => Diffable (Attribute a) where
         let toks = val ! "tokens"
         Token mempty Equal === (toks ! 0)
         let str = toks ! 1
-        mkIdent "Literal" === (str ! "fields" ! 1 ! "variant")
-        mkIdent "Str_" === (str ! "fields" ! 1 ! "fields" ! 0 ! "variant")
-        let Data.Aeson.String n' = str ! "fields" ! 1 ! "fields" ! 0 ! "fields" ! 0
+        mkIdent "Literal" === (str ! "fields" ! 0 ! "kind" ! "variant")
+        mkIdent "Str" ===  (str ! "fields" ! 0 ! "kind" ! "fields" ! 0 ! "kind")
+        let Data.Aeson.String n' = str ! "fields" ! 0 ! "kind" ! "fields" ! 0 ! "symbol"
             Str n'' Cooked Unsuffixed () = translateLit (StrTok (T.unpack n')) Unsuffixed ()
         -- Style
         case (val ! "style", sty, inl) of
@@ -636,7 +646,7 @@ clean x =
     _        -> x
 
 instance Show a => Diffable (FieldPat a) where
-  f@(FieldPat mi p _) === val = do
+  f@(FieldPat mi p as _) === val = do
     -- Extract the identifier and whether the pattern is shorthand
     (i, s) <- case (mi,p) of
                 (Nothing, IdentP _ i' Nothing _) -> pure (i', True)
@@ -646,13 +656,15 @@ instance Show a => Diffable (FieldPat a) where
     i === (val ! "ident")
     s === (val ! "is_shorthand")
     p === (val ! "pat")
+    NullList as === (val ! "attrs" ! "_field0")
 
 instance Show a => Diffable (Field a) where
-  Field i me _ === val = do
+  Field i me as _ === val = do
     isNothing me === (val ! "is_shorthand")
     i === (val ! "ident")
     unless (isNothing me) $
       me === (val ! "expr")
+    NullList as === (val ! "attrs" ! "_field0")
 
 instance Diffable Ident where
   Ident i _ _ === String s | fromString i == s = pure ()
@@ -692,7 +704,7 @@ instance Show a => Diffable (Ty a) where
           ("Slice", Slice t _) -> t === (n ! "fields" ! 0)
           ("Array", Language.Rust.Syntax.Array t e _) -> do
             t === (n ! "fields" ! 0)
-            e === (n ! "fields" ! 1 ! "value")
+            AnonConst e === (n ! "fields" ! 1)
           ("Ptr", Ptr m t _) -> do
             m === (n ! "fields" ! 0 ! "mutbl")
             t === (n ! "fields" ! 0 ! "ty")
@@ -708,7 +720,7 @@ instance Show a => Diffable (Ty a) where
           ("TraitObject", TraitObject bds _) ->
             bds === (n ! "fields" ! 0)
           ("Paren", ParenTy t _) -> t === (n ! "fields" ! 0)
-          ("Typeof", Typeof e _) -> e === (n ! "fields" ! 0 ! "value")
+          ("Typeof", Typeof e _) -> AnonConst e === (n ! "fields" ! 0)
           ("Mac", MacTy m _) -> m === (n ! "fields" ! 0)
           ("ImplTrait", ImplTrait bds _) -> bds === (n ! "fields" ! 1)
           _ -> diff "differing types" t' val
@@ -751,7 +763,10 @@ instance Show a => Diffable (QSelf a) where
 instance Show a => Diffable (Path a) where
   Path _ segs _ === val = do
     let val' = case val ! "segments" of
-                 j@(Data.Aeson.Array v) | not (V.null v) && j ! 0 ! "ident" == "{{root}}" -> Data.Aeson.Array (V.drop 1 v)
+                 j@(Data.Aeson.Array v)
+                   | not (V.null v)
+                   , j ! 0 ! "ident" ! "name" == "{{root}}"
+                   -> Data.Aeson.Array (V.drop 1 v)
                  j -> j
 
     segs === val'
@@ -777,7 +792,7 @@ instance Show a => Diffable (GenericArg a) where
     case (val ! "variant", arg) of
       ("Lifetime", LifetimeArg l) -> l === (val ! "fields" ! 0)
       ("Type", TypeArg t) -> t === (val ! "fields" ! 0)
-      ("Const", ConstArg e) -> e === (val ! "fields" ! 0 ! "value")
+      ("Const", ConstArg e) -> AnonConst e === (val ! "fields" ! 0)
       _ -> diff "different generic argument" arg val
 
 instance Show a => Diffable (AssocTyConstraint a) where
@@ -790,6 +805,11 @@ instance Show a => Diffable (AssocTyConstraint a) where
         i === (val ! "ident")
         b === (val ! "kind" ! "fields" ! 0)
       _ -> diff "different associated constraints" con val
+
+newtype AnonConst a = AnonConst (Expr a) deriving (Show, Eq)
+
+instance Show a => Diffable (AnonConst a) where
+  AnonConst e === val = e === (val ! "value")
 
 instance Show a => Diffable (Expr a) where
   ex === val =
@@ -941,7 +961,7 @@ instance Show a => Diffable (Expr a) where
       ("Repeat", Repeat as e1 e2 _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e1 === (n ! "fields" ! 0)
-        e2 === (n ! "fields" ! 1 ! "value")
+        AnonConst e2 === (n ! "fields" ! 1)
       ("Paren", ParenExpr as e' _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e' === (n ! "fields" ! 0)

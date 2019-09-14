@@ -446,16 +446,16 @@ parserPatterns = testGroup "parsing patterns"
   , testP "-123"                    (LitP (Unary [] Neg (Lit [] (Int Dec 123 Unsuffixed ()) ()) ()) ())
   , testP "Point { .. }"            (StructP point [] True ())
   , testP "Point { x, y: y1 }"      (StructP point
-                                               [ FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) ()
-                                               , FieldPat (Just "y") (IdentP (ByValue Immutable) "y1" Nothing ()) () ]
+                                               [ FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) [] ()
+                                               , FieldPat (Just "y") (IdentP (ByValue Immutable) "y1" Nothing ()) [] () ]
                                                False ())
   , testP "Point { y: y1 | y2, x }" (StructP point
                                                [ FieldPat (Just "y") (OrP [ IdentP (ByValue Immutable) "y1" Nothing ()
-                                                                          , IdentP (ByValue Immutable) "y2" Nothing () ] ()) ()
-                                               , FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) () ]
+                                                                          , IdentP (ByValue Immutable) "y2" Nothing () ] ()) [] ()
+                                               , FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) [] () ]
                                                False ())
   , testP "Point { x, .. }"         (StructP point
-                                               [ FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) () ]
+                                               [ FieldPat Nothing (IdentP (ByValue Immutable) "x" Nothing ()) [] () ]
                                                True ())
   , testP "math"                    (IdentP (ByValue Immutable) "math" Nothing ())
   , testP "math::PI"                (PathP Nothing (Path False [ PathSegment "math" Nothing ()
@@ -551,8 +551,12 @@ parserExpressions = testGroup "parsing expressions"
   , testP "{ 1; 2; }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ()) ())
   , testP "{ }" (BlockExpr [] (Block [] Normal ()) ())
   , testP "unsafe { 1; 2; }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Unsafe ()) ())
-  , testP "{ ;;; }" (BlockExpr [] (Block [] Normal ()) ())
-  , testP "{ 1;; 2;; }" (BlockExpr [] (Block [Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) (), Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()] Normal ()) ())
+  , testP "{ ;;; }" (BlockExpr [] (Block [StandaloneSemi (), StandaloneSemi (), StandaloneSemi () ] Normal ()) ())
+  , testP "{ 1;; 2;; }" (BlockExpr [] (Block [ Semi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()
+                                             , StandaloneSemi ()
+                                             , Semi (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()
+                                             , StandaloneSemi () ]
+                                             Normal ()) ())
   , testP "return" (Ret [] Nothing ())
   , testP "return 1" (Ret [] (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) ())
   , testP "continue" (Continue [] Nothing ())
@@ -572,10 +576,10 @@ parserExpressions = testGroup "parsing expressions"
                                                           , PathSegment "b" (Just (AngleBracketed [LifetimeArg (Lifetime "lt" ())] [] ())) ()
                                                           , PathSegment "AssociatedItem" Nothing ()
                                                           ] ()) ())
-  , testP "Point { x: 1, y: 2 }" (Struct [] point [Field "x" (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (), Field "y" (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) ()] Nothing ())
-  , testP "Point { x, y }" (Struct [] point [Field "x" Nothing (), Field "y" Nothing ()] Nothing ())
-  , testP "Point { x: 1, y: 2, }" (Struct [] point [Field "x" (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) (), Field "y" (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) ()] Nothing ())
-  , testP "Point { x: 1, ..p }" (Struct [] point [Field "x" (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) ()] (Just (PathExpr [] Nothing (Path False [ PathSegment "p" Nothing () ] ()) ())) ())
+  , testP "Point { x: 1, y: 2 }" (Struct [] point [Field "x" (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) [] (), Field "y" (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) [] ()] Nothing ())
+  , testP "Point { x, y }" (Struct [] point [Field "x" Nothing [] (), Field "y" Nothing [] ()] Nothing ())
+  , testP "Point { x: 1, y: 2, }" (Struct [] point [Field "x" (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) [] (), Field "y" (Just (Lit [] (Int Dec 2 Unsuffixed ()) ())) [] ()] Nothing ())
+  , testP "Point { x: 1, ..p }" (Struct [] point [Field "x" (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) [] ()] (Just (PathExpr [] Nothing (Path False [ PathSegment "p" Nothing () ] ()) ())) ())
   , testP "Point { ..p }" (Struct [] point [] (Just (PathExpr [] Nothing (Path False [ PathSegment "p" Nothing () ] ()) ())) ())
   , testP "Point { }" (Struct [] point [] Nothing ())
   , testP "if true { 1; }"
@@ -818,7 +822,7 @@ parserItems = testGroup "parsing items"
   , testP "pub extern { }" (ForeignMod [] PublicV C [] ())
   , testP "extern { }" (ForeignMod [] InheritedV C [] ())
   , testP "extern \"win64\" { pub static x: i32; static mut y: i32; }" (ForeignMod [] InheritedV Win64 [ForeignStatic [] PublicV "x" i32 Immutable (), ForeignStatic [] InheritedV "y" i32 Mutable ()] ())
-  , testP "extern { pub fn foo(x: i32, ...); }" (ForeignMod [] InheritedV C [ForeignFn [] PublicV "foo" (FnDecl [Arg (Just x') i32 ()] Nothing True ()) (Generics [] (WhereClause [] ()) ()) ()] ())
+  , testP "pub extern { crate fn foo(x: i32, ...); }" (ForeignMod [] PublicV C [ForeignFn [] CrateV "foo" (FnDecl [Arg (Just x') i32 ()] Nothing True ()) (Generics [] (WhereClause [] ()) ()) ()] ())
 
  , testP "enum Option<T> { None, Some(T) }" (Enum [] InheritedV "Option" [ Variant "None" [] (UnitD ()) Nothing ()
                                                                      , Variant "Some" [] (TupleD [ StructField Nothing InheritedV (PathTy Nothing t ()) [] ()] ()) Nothing () ]

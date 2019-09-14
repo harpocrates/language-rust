@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiParamTypeClasses, BangPatterns #-}
 module Main where
 
 import Diff ()
@@ -17,10 +17,10 @@ import Language.Rust.Pretty (prettyUnresolved, Resolve(..), Issue(..), Severity(
 import Language.Rust.Syntax (SourceFile)
 
 import System.Directory (getCurrentDirectory, getTemporaryDirectory, listDirectory, doesFileExist, findExecutable)
-import System.Process (withCreateProcess, proc, CreateProcess(..), StdStream(..), callProcess, readProcess)
+import System.Process (createProcess, proc, CreateProcess(..), StdStream(..), callProcess, readProcess, waitForProcess)
 import System.FilePath ((</>), takeFileName)
 import System.IO (withFile, IOMode(WriteMode,ReadMode))
-import System.Exit (exitSuccess)
+import System.Exit (exitSuccess, ExitCode(..))
 
 import Data.Time.Clock (utctDay, getCurrentTime)
 import Data.Time.Calendar (fromGregorian, showGregorian, diffDays)
@@ -67,11 +67,14 @@ getJsonAST fileName = do
                                       , std_err = NoStream
                                       , std_in  = NoStream
                                       }
-  withCreateProcess cp $ \_ (Just hOut) _ _ -> do
-    jsonContents <- hGetContents hOut
-    case decode' jsonContents of
-      Just value -> pure value
-      Nothing -> error ("Failed to get `rustc' JSON\n" ++ unpack jsonContents)
+  (_, Just hOut, _, ph) <- createProcess cp
+  jsonContents <- hGetContents hOut
+  let !jsonAst = decode' jsonContents
+  exitCode <- waitForProcess ph
+  case  jsonAst of
+    _ | exitCode /= ExitSuccess -> error "`rustc' exitted with non-zero code"
+    Just value -> pure value
+    Nothing -> error ("Failed to get `rustc' JSON\n" ++ unpack jsonContents)
 
 -- | Given an AST and a file name, print it into a temporary file (without resolving) and return
 -- that path

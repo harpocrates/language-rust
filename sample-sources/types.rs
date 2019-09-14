@@ -34,5 +34,5 @@ where
   'a: 'b + 'c,
   F = i32,
 {
-  foo::<'a,A,B,C=i32,D: Send + ?Sync,{N}>
+  foo::<'a,A,B,{N},C=i32,D: Send + ?Sync>
 }

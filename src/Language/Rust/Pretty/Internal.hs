@@ -108,7 +108,6 @@ import Data.Text.Prettyprint.Doc hiding ( (<+>), hsep, indent, vsep )
 import Data.Maybe               ( maybeToList, fromMaybe )
 import Data.Foldable            ( toList )
 import Data.List                ( unfoldr )
-import qualified Data.List.NonEmpty as N
 
 -- | Print a source file
 printSourceFile :: SourceFile a -> Doc a
@@ -139,8 +138,7 @@ printType (TupTy [elt] x)       = annotate x (block Paren True ""  mempty [ prin
 printType (TupTy elts x)        = annotate x (block Paren True "," mempty (printType `map` elts))
 printType (PathTy Nothing p x)  = annotate x (printPath p False)
 printType (PathTy (Just q) p x) = annotate x (printQPath p q False)
-printType (TraitObject bs x)    = let prefix = if null (N.tail bs) then "dyn" else mempty
-                                  in annotate x (printBounds prefix (toList bs))
+printType (TraitObject bs x)    = annotate x (printBounds "dyn" (toList bs))
 printType (ImplTrait bs x)      = annotate x (printBounds "impl" (toList bs))
 printType (ParenTy ty x)        = annotate x ("(" <> printType ty <> ")")
 printType (Typeof e x)          = annotate x ("typeof" <> block Paren True mempty mempty [ printExpr e ])
@@ -348,6 +346,7 @@ printStmt (MacStmt m ms as x) = annotate x (printOuterAttrs as </> printMac deli
 printStmt (Local p ty i as x) = annotate x (printOuterAttrs as <#> group ("let" <+> binding <+> initializer <> ";"))
   where binding = group (printPat p <> perhaps (\t -> ":" <#> indent n (printType t)) ty)
         initializer = perhaps (\e -> "=" <#> indent n (printExpr e)) i
+printStmt (StandaloneSemi x)  = annotate x ";"
 
 -- | Print an expression
 printExpr :: Expr a -> Doc a
@@ -500,8 +499,10 @@ expressionAttrs (Yield as _ _) = as
 
 -- | Print a field
 printField :: Field a -> Doc a
-printField (Field ident Nothing x) = annotate x (printIdent ident)
-printField (Field ident (Just expr) x) = annotate x (printIdent ident <>":" <+> printExpr expr)
+printField (Field ident Nothing as x) =
+  annotate x (printOuterAttrs as </> printIdent ident)
+printField (Field ident (Just expr) as x) =
+  annotate x (printOuterAttrs as </> printIdent ident <> ":" <+> printExpr expr)
 
 -- | Print range limits
 printRangeLimits :: RangeLimits -> Doc a
@@ -677,8 +678,8 @@ printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs 
 printItem (MacItem as i (Mac p ts y) x) = annotate x $ annotate y $ align $ printOuterAttrs as <#>
   (printPath p True <> "!" <+> perhaps printIdent i <+> block Brace True mempty mempty [ printTokenStream ts ])
 
-printItem (MacroDef as i ts x) = annotate x $ align $ printOuterAttrs as <#>
-  ("macro_rules" <> "!" <+> printIdent i <+> block Brace True mempty mempty [ printTokenStream ts ])
+printItem (MacroDef as v i ts x) = annotate x $ align $ printOuterAttrs as <#>
+  (printVis v <+> "macro" <+> printIdent i <+> block Brace True mempty mempty [ printTokenStream ts ])
 
 
 -- | Print a trait item (@print_trait_item@)
@@ -895,7 +896,10 @@ printPat (ParenP p x)                   = annotate x ("(" <> printPat p <> ")")
 
 -- | Print a field pattern
 printFieldPat :: FieldPat a -> Doc a
-printFieldPat (FieldPat i p x) = annotate x (perhaps (\i -> printIdent i <> ":") i <+> printPat p)
+printFieldPat (FieldPat i p as x) = annotate x (attrs </> i' <+> printPat p)
+  where
+    i' = perhaps (\i -> printIdent i <> ":") i
+    attrs = printOuterAttrs as
 
 -- | Print a binding mode
 printBindingMode :: BindingMode -> Doc a
@@ -964,12 +968,16 @@ printTraitRef (TraitRef path) = printPath path False
 
 -- | Print a path parameter and signal whether its generic (if any) should start with a colon (@print_path_parameters@)
 printGenericArgs :: Bool -> GenericArgs a -> Doc a
-printGenericArgs colons (Parenthesized ins out x) = annotate x $
-  when colons "::" <> parens (commas ins printType) <+> perhaps (\t -> "->" <+> printType t) out
-printGenericArgs colons (AngleBracketed args bds x) = annotate x (when colons "::" <> "<" <> hsep (punctuate "," (args' ++ bds')) <> ">")
+printGenericArgs colons (Parenthesized ins out x) = annotate x (when colons "::" <> parenStuff <+> out')
+  where
+    ins' = printType <$> ins
+    out' = perhaps (\t -> "->" <+> printType t) out
+    parenStuff = block Paren True "," mempty ins'
+printGenericArgs colons (AngleBracketed args bds x) = annotate x (when colons "::" <> angleStuff)
   where
     args' = printGenericArg <$> args
     bds' = printAssocTyConstraint <$> bds
+    angleStuff = group ("<" <##> ungroup (block NoDelim True "," mempty (args' ++ bds')) <##> ">")
 
 -- | Print a generic argument
 printGenericArg :: GenericArg a -> Doc a

@@ -435,19 +435,19 @@ instance Located a => Located (Expr a) where
 -- | Field in a struct literal expression (@syntax::ast::Field@).
 --
 -- Example: @x: 1@ in @Point { x: 1, y: 2 }@
-data Field a = Field Ident (Maybe (Expr a)) a
+data Field a = Field Ident (Maybe (Expr a)) [Attribute a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
-instance Located a => Located (Field a) where spanOf (Field _ _ s) = spanOf s
+instance Located a => Located (Field a) where spanOf (Field _ _ _ s) = spanOf s
 
 -- | Field in a struct literal pattern (@syntax::ast::FieldPat@). The field name 'Ident' is optional
 -- but, when it is 'Nothing', the pattern the field is destructured to must be 'IdentP'.
 --
 -- Example: @x@ in @Point { x, y }@
-data FieldPat a = FieldPat (Maybe Ident) (Pat a) a
+data FieldPat a = FieldPat (Maybe Ident) (Pat a) [Attribute a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
-instance Located a => Located (FieldPat a) where spanOf (FieldPat _ _ s) = spanOf s
+instance Located a => Located (FieldPat a) where spanOf (FieldPat _ _ _ s) = spanOf s
 
 -- | Header (not the body) of a function declaration (@syntax::ast::FnDecl@). The 'Prelude.Bool'
 -- argument indicates whether the header is variadic (so whether the argument list ends in @...@).
@@ -658,7 +658,7 @@ data Item a
   | MacItem [Attribute a] (Maybe Ident) (Mac a) a
   -- | definition of a macro via @macro_rules@
   -- Example: @macro_rules! foo { .. }@
-  | MacroDef [Attribute a] Ident TokenStream a
+  | MacroDef [Attribute a] (Visibility a) Ident TokenStream a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Item a) where
@@ -677,7 +677,7 @@ instance Located a => Located (Item a) where
   spanOf (TraitAlias _ _ _ _ _ s) = spanOf s
   spanOf (Impl _ _ _ _ _ _ _ _ _ s) = spanOf s
   spanOf (MacItem _ _ _ s) = spanOf s
-  spanOf (MacroDef _ _ _ s) = spanOf s
+  spanOf (MacroDef _ _ _ _ s) = spanOf s
 
 -- | Used to annotate loops, breaks, continues, etc.
 data Label a = Label Name a
@@ -954,6 +954,8 @@ data Stmt a
   | NoSemi (Expr a) a
   -- | Expression with a trailing semicolon (example: @x + 1;@)
   | Semi (Expr a) a
+  -- | Just a semicolon
+  | StandaloneSemi a
   -- | A macro call (example: @println!("hello world")@)
   | MacStmt (Mac a) MacStmtStyle [Attribute a] a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
@@ -963,6 +965,7 @@ instance Located a => Located (Stmt a) where
   spanOf (ItemStmt _ s) = spanOf s
   spanOf (NoSemi _ s) = spanOf s
   spanOf (Semi _ s) = spanOf s
+  spanOf (StandaloneSemi s) = spanOf s
   spanOf (MacStmt _ _ _ s) = spanOf s
 
 -- | Style of a string literal (@syntax::ast::StrStyle@).

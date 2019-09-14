@@ -47,6 +47,8 @@ module Language.Rust.Parser.Internal (
   parseWhereClause,
 ) where
 
+import Prelude hiding                  ( fail )
+
 import Language.Rust.Syntax
 
 import Language.Rust.Data.Ident        ( Ident(..), mkIdent )
@@ -61,6 +63,7 @@ import Data.Either                     ( partitionEithers )
 import Data.Foldable                   ( toList )
 import Data.List                       ( (\\), isSubsequenceOf, sort )
 import Data.Semigroup                  ( (<>) )
+import Control.Monad.Fail              ( fail )
 
 import Text.Read                       ( readMaybe )
 
@@ -93,7 +96,7 @@ import qualified Data.List.NonEmpty as N
 %errorhandlertype explist
 %error { expParseError }
 
-%expect 0
+-- %expect 0
 
 %token
 
@@ -589,8 +592,8 @@ trait_ref :: { TraitRef Span }
 -- See https://github.com/rust-lang/rfcs/blob/master/text/0438-precedence-of-plus.md
 -- All types, including trait types with plus
 ty :: { Ty Span }
-  : ty_no_plus                                                    { $1 }
-  | poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+') { TraitObject ($1 <| toNonEmpty $3) ($1 # $3) }
+  : ty_no_plus                       { $1 }
+  | sum_ty                           { $1 }
 
 -- parse_ty_no_plus()
 ty_no_plus :: { Ty Span }
@@ -602,7 +605,20 @@ ty_no_plus :: { Ty Span }
 ty_prim :: { Ty Span }
   : no_for_ty_prim                   { $1 }
   | for_ty_no_plus                   { $1 }
-  | poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+') { TraitObject ($1 <| toNonEmpty $3) ($1 # $3) }
+  | sum_ty                           { $1 }
+
+-- The types that contain top-level sums
+sum_ty :: { Ty Span }
+  : poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+') { TraitObject ($1 <| toNonEmpty $3) ($1 # $3) }
+  | impl ty_param_bound_mod '+'                                  %prec IMPLTRAIT { ImplTrait   [$2] ($1 # $>) }
+  | impl ty_param_bound_mod '+' sep_by1T(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait   ($2 <| toNonEmpty $4) ($1 # $>) }
+  | dyn  ty_param_bound_mod '+'                                  %prec IMPLTRAIT { TraitObject [$2] ($1 # $>) }
+  | dyn  ty_param_bound_mod '+' sep_by1T(ty_param_bound_mod,'+') %prec IMPLTRAIT { TraitObject ($2 <| toNonEmpty $4) ($1 # $>) }
+  | bare_fn_ty(ret_ty_plus)       {  $1 }
+  | for_lts bare_fn_ty(ret_ty_plus)                {
+      let BareFn safety abi _ retTy s = $2 in
+      BareFn safety abi (unspan $1) retTy ($1 # s)
+    }
 
 -- All (non-sum) types not starting with a 'for'
 no_for_ty :: { Ty Span }
@@ -631,27 +647,31 @@ no_for_ty_prim :: { Ty Span }
   | '&&' lifetime mut ty_no_plus     { Rptr Nothing Immutable (Rptr (Just $2) Mutable   $4 (nudge 1 0 ($1 # $>))) ($1 # $>) }
   | ty_path               %prec PATH { PathTy Nothing $1 ($1 # $>) }
   | ty_mac                           { MacTy $1 ($1 # $>) }
-  | unsafe extern abi fn fn_decl(arg_general)     { BareFn Unsafe $3 [] $> ($1 # $>) }
-  | unsafe fn fn_decl(arg_general)                { BareFn Unsafe Rust [] $> ($1 # $>) }
-  | extern abi fn fn_decl(arg_general)            { BareFn Normal $2 [] $> ($1 # $>) }
-  | fn fn_decl(arg_general)                       { BareFn Normal Rust [] $> ($1 # $>) }
+  | bare_fn_ty(ret_ty_no_plus)       {  $1 }
   | typeof '(' expr ')'              { Typeof $3 ($1 # $>) }
   | '[' ty ';' expr ']'              { Array $2 $4 ($1 # $>) }
   | '?' trait_ref                    { TraitObject [TraitBound (PolyTraitRef [] $2 (spanOf $2)) Maybe ($1 # $2)] ($1 # $2) }
   | '?' for_lts trait_ref            { TraitObject [TraitBound (PolyTraitRef (unspan $2) $3 ($2 # $3)) Maybe ($1 # $3)] ($1 # $3) }
-  | impl sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait (toNonEmpty $2) ($1 # $2) }
-  | dyn  sep_by1(ty_param_bound_mod,'+') %prec IMPLTRAIT { TraitObject (toNonEmpty $2) ($1 # $2) }
+  | impl ty_param_bound_mod %prec IMPLTRAIT { ImplTrait [$2] ($1 # $>) }
+  | dyn  ty_param_bound_mod %prec IMPLTRAIT { TraitObject [$2] ($1 # $>) }
 
 -- All (non-sum) types starting with a 'for'
 for_ty_no_plus :: { Ty Span }
-  : for_lts unsafe extern abi fn fn_decl(arg_general) { BareFn Unsafe $4 (unspan $1) $> ($1 # $>) }
-  | for_lts unsafe fn fn_decl(arg_general)            { BareFn Unsafe Rust (unspan $1) $> ($1 # $>) }
-  | for_lts extern abi fn fn_decl(arg_general)        { BareFn Normal $3 (unspan $1) $> ($1 # $>) }
-  | for_lts fn fn_decl(arg_general)                   { BareFn Normal Rust (unspan $1) $> ($1 # $>) }
+  : for_lts bare_fn_ty(ret_ty_no_plus)                {
+      let BareFn safety abi _ retTy s = $2 in
+      BareFn safety abi (unspan $1) retTy ($1 # s)
+    }
   | for_lts trait_ref                                 {
       let poly = PolyTraitRef (unspan $1) $2 ($1 # $2) in
       TraitObject [TraitBound poly None ($1 # $2)] ($1 # $2)
     }
+
+-- Bare function types
+bare_fn_ty(ret) :: { Ty Span }
+  : unsafe extern abi fn fn_decl(arg_general, ret) { BareFn Unsafe $3 [] $> ($1 # $>) }
+  | unsafe fn fn_decl(arg_general, ret)            { BareFn Unsafe Rust [] $> ($1 # $>) }
+  | extern abi fn fn_decl(arg_general, ret)        { BareFn Normal $2 [] $> ($1 # $>) }
+  | fn fn_decl(arg_general, ret)                   { BareFn Normal Rust [] $> ($1 # $>) }
 
 -- An optional lifetime followed by an optional mutability
 lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
@@ -661,9 +681,9 @@ lifetime_mut :: { (Maybe (Lifetime Span), Mutability) }
   | {- empty -}   { (Nothing, Immutable) }
 
 -- The argument list and return type in a function
-fn_decl(arg) :: { FnDecl Span }
-  : '(' sep_by1(arg,',') ',' '...' ')' ret_ty  { FnDecl (toList $2) $> True ($1 # $5 # $6) }
-  | '(' sep_byT(arg,',')           ')' ret_ty  { FnDecl $2 $> False ($1 # $3 # $4) }
+fn_decl(arg, ret) :: { FnDecl Span }
+  : '(' sep_by1(arg,',') ',' '...' ')' ret  { FnDecl (toList $2) $> True ($1 # $5 # $6) }
+  | '(' sep_byT(arg,',')           ')' ret  { FnDecl $2 $> False ($1 # $3 # $4) }
 
 -- Like 'fn_decl', but also accepting a self argument
 fn_decl_with_self_general :: { FnDecl Span }
@@ -677,7 +697,7 @@ fn_decl_with_self_named :: { FnDecl Span }
   | '(' arg_self_named ',' sep_by1(arg_named,',')     ')' ret_ty  { FnDecl ($2 : toList $4) $> False ($1 # $5 # $6) }
   | '(' arg_self_named ','                            ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
   | '(' arg_self_named                                ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
-  | fn_decl(arg_named)                                            { $1 }
+  | fn_decl(arg_named, ret_ty)                                    { $1 }
 
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
@@ -719,10 +739,19 @@ abi :: { Abi }
                     }
   | {- empty -}     { C }
 
--- parse_ret_ty
+-- parse_ret_ty(allow_plus = true)
 ret_ty :: { Maybe (Ty Span) }
+  : '->' ty                                          { Just $2 }
+  | {- empty -}                                      { Nothing }
+
+-- parse_ret_ty(allow_plus = false)
+ret_ty_no_plus :: { Maybe (Ty Span) }
   : '->' ty_no_plus                                  { Just $2 }
   | {- empty -}                                      { Nothing }
+
+-- Must contain a sum (
+ret_ty_plus :: { Maybe (Ty Span) }
+  : '->' sum_ty                                      { Just $2 }
 
 -- parse_poly_trait_ref()
 poly_trait_ref :: { PolyTraitRef Span }
@@ -864,12 +893,12 @@ pat_fields :: { ([FieldPat Span], Bool) }
   | sep_by1(pat_field,',') ',' '..'  { (toList $1, True) }
 
 pat_field :: { FieldPat Span }
-  :     binding_mode ident
-    { FieldPat Nothing (IdentP (unspan $1) (unspan $2) Nothing (spanOf $2)) ($1 # $2) }
-  | box binding_mode ident
-    { FieldPat Nothing (BoxP (IdentP (unspan $2) (unspan $3) Nothing ($2 # $3)) ($1 # $3)) ($1 # $3) }
-  |     binding_mode ident ':' or_pat
-    { FieldPat (Just (unspan $2)) $4 ($1 # $2 # $4) }
+  : many(outer_attribute)     binding_mode ident
+    { FieldPat Nothing (IdentP (unspan $2) (unspan $3) Nothing (spanOf $1)) $1 ($1 # $2 # $3) }
+  | many(outer_attribute) box binding_mode ident
+    { FieldPat Nothing (BoxP (IdentP (unspan $3) (unspan $4) Nothing ($3 # $4)) ($2 # $4)) $1 ($1 # $2 # $4) }
+  | many(outer_attribute)     binding_mode ident ':' or_pat
+    { FieldPat (Just (unspan $3)) $5 $1 ($1 # $2 # $3 # $5) }
 
 
 -- Used prefixing IdentP patterns (not empty - that is a seperate pattern case)
@@ -1167,21 +1196,21 @@ paren_expr :: { Expr Span }
 
 -- Closure ending in blocks
 lambda_expr_block :: { Expr Span }
-  : static async move lambda_args '->' ty_no_plus block
+  : static async move lambda_args '->' ty block
     { Closure [] Value IsAsync  Immovable (FnDecl (unspan $4) (Just $6) False (spanOf $4)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |        async move lambda_args '->' ty_no_plus block
+  |        async move lambda_args '->' ty block
     { Closure [] Value IsAsync  Movable   (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  | static       move lambda_args '->' ty_no_plus block
+  | static       move lambda_args '->' ty block
     { Closure [] Value NotAsync Immovable (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |              move lambda_args '->' ty_no_plus block
+  |              move lambda_args '->' ty block
     { Closure [] Value NotAsync Movable   (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  | static async      lambda_args '->' ty_no_plus block
+  | static async      lambda_args '->' ty block
     { Closure [] Ref   IsAsync  Immovable (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |        async      lambda_args '->' ty_no_plus block
+  |        async      lambda_args '->' ty block
     { Closure [] Ref   IsAsync  Movable   (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  | static            lambda_args '->' ty_no_plus block
+  | static            lambda_args '->' ty block
     { Closure [] Ref   NotAsync Immovable (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |                   lambda_args '->' ty_no_plus block
+  |                   lambda_args '->' ty block
     { Closure [] Ref   NotAsync Movable   (FnDecl (unspan $1) (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
 
 -- Lambda expression arguments block
@@ -1200,8 +1229,8 @@ struct_expr :: { Expr Span }
   | expr_path '{' inner_attrs sep_byT(field,',')               '}'  { Struct (toList $3) $1 $4 Nothing ($1 # $>) }
 
 field :: { Field Span }
-  : ident ':' expr  { Field (unspan $1) (Just $3) ($1 # $3) }
-  | ident           { Field (unspan $1) Nothing (spanOf $1) }
+  : many(outer_attribute) ident ':' expr  { Field (unspan $2) (Just $4) $1 ($1 # $2 # $4) }
+  | many(outer_attribute) ident           { Field (unspan $2) Nothing $1 ($1 # $2) }
 
 -- an expression block that won't cause conflicts with stmts
 vis_safety_block :: { Expr Span }
@@ -1250,19 +1279,19 @@ stmt :: { Stmt Span }
   | many(outer_attribute) block_like_expr      %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
   | many(outer_attribute) vis_safety_block               ';' { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
   | many(outer_attribute) vis_safety_block     %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }
-  | gen_item                                                 { ItemStmt $1 (spanOf $1) }
+  | item                                                 ';' { ItemStmt $1 ($1 # $2) }
+  | item                                       %prec NOSEMI  { ItemStmt $1 (spanOf $1) }
   | many(outer_attribute) expr_path '!' ident '[' token_stream ']' ';'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!' ident '(' token_stream ')' ';'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!' ident '{' token_stream '}'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
+  | ';'                                                      { StandaloneSemi (spanOf $1) }
 
 -- List of statements where the last statement might be a no-semicolon statement.
 stmts_possibly_no_semi :: { [Stmt Span] }
-  : ';'  stmts_possibly_no_semi                            { $2 }
-  | stmt stmts_possibly_no_semi                            { $1 : $2 }
-  | ';'                                                    { [] }
+  : stmt stmts_possibly_no_semi                            { $1 : $2 }
   | stmt                                                   { [$1] }
   | many(outer_attribute) nonblock_expr                    { [toStmt ($1 `addAttrs` $2) False False ($1 # $2)] }
   | many(outer_attribute) blockpostfix_expr                { [toStmt ($1 `addAttrs` $2) False True  ($1 # $2)] }
@@ -1286,11 +1315,7 @@ inner_attrs_block :: { ([Attribute Span], Block Span) }
 -- Items --
 -----------
 
--- Given the types of permitted visibilities, generate a rule for items. The reason this production
--- is useful over just having 'item :: { ItemSpan }' and then 'many(outer_attribute) vis item' is
--- that (1) not all items have visibility and (2) attributes and visibility are fields on the 'Item'
--- algebraic data type.
-gen_item :: { Item Span }
+item :: { Item Span }
   : many(outer_attribute) vis static     ident ':' ty '=' expr ';'
     { Static $1 (unspan $2) (unspan $4) $6 Immutable $8 ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis static mut ident ':' ty '=' expr ';'
@@ -1305,13 +1330,13 @@ gen_item :: { Item Span }
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $6) Nothing ($1 # $2 # $4 # $>)) }
   | many(outer_attribute) vis safety extern crate ident as ident ';'
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $8) (Just (unspan $6)) ($1 # $2 # $4 # $>)) }
-  | many(outer_attribute) vis const safety  fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
+  | many(outer_attribute) vis const safety  fn ident generics fn_decl(arg_named, ret_ty) where_clause inner_attrs_block
     { Fn ($1 ++ fst $>) (unspan $2) (unspan $6) $8 (FnHeader (unspan $4) NotAsync Const Rust (spanOf $4))    ($7 `withWhere` $9) (snd $>) ($1 # $2 # $3 # snd $>) }
-  | many(outer_attribute) vis async safety  fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
+  | many(outer_attribute) vis async safety  fn ident generics fn_decl(arg_named, ret_ty) where_clause inner_attrs_block
     { Fn ($1 ++ fst $>) (unspan $2) (unspan $6) $8 (FnHeader (unspan $4) IsAsync NotConst Rust (spanOf $4))    ($7 `withWhere` $9) (snd $>) ($1 # $2 # $3 # snd $>) }
-  | many(outer_attribute) vis safety extern abi fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
+  | many(outer_attribute) vis safety extern abi fn ident generics fn_decl(arg_named, ret_ty) where_clause inner_attrs_block
     { Fn ($1 ++ fst $>) (unspan $2) (unspan $7) $9 (FnHeader (unspan $3) NotAsync NotConst $5 ($3 # $4))     ($8 `withWhere` $10) (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
-  | many(outer_attribute) vis safety            fn ident generics fn_decl(arg_named) where_clause inner_attrs_block
+  | many(outer_attribute) vis safety            fn ident generics fn_decl(arg_named, ret_ty) where_clause inner_attrs_block
     { Fn ($1 ++ fst $>) (unspan $2) (unspan $5) $7 (FnHeader (unspan $3) NotAsync NotConst Rust (spanOf $3)) ($6 `withWhere` $8) (snd $>) ($1 # $2 # $3 # $4 # snd $>) }
   | many(outer_attribute) vis mod ident ';'
     { Mod $1 (unspan $2) (unspan $4) Nothing ($1 # $2 # $3 # $>) }
@@ -1355,11 +1380,15 @@ gen_item :: { Item Span }
     { Impl ($1 ++ fst $11) (unspan $2) Final (unspan $3) Positive ($5 `withWhere` $9) (Just $6) $8 (snd $11) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis default safety impl generics     trait_ref for ty where_clause '{' impl_items '}'
     { Impl ($1 ++ fst $12) (unspan $2) Default (unspan $4) Positive ($6 `withWhere` $10) (Just $7) $9 (snd $12) ($1 # $2 # $3 # $4 # $5 # $>) }
+  | many(outer_attribute) vis macro ident '(' token_stream ')' '{' token_stream '}'
+    { MacroDef $1 (unspan $2) (unspan $4) (Stream [ $6, Tree (Token mempty FatArrow), $9 ]) ($1 # $2 # $3 # $>) }
+  | many(outer_attribute) vis macro ident                      '{' token_stream '}'
+    { MacroDef $1 (unspan $2) (unspan $4) $6 ($1 # $2 # $3 # $>) }
 
 -- Most general type of item
 mod_item :: { Item Span }
   : ntItem                                             { $1 }
-  | gen_item                                           { $1 }
+  | item                                           { $1 }
   | many(outer_attribute) expr_path '!' ident '[' token_stream ']' ';'
     { macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!'       '[' token_stream ']' ';'
@@ -1378,7 +1407,7 @@ foreign_item :: { ForeignItem Span }
     { ForeignStatic $1 (unspan $2) (unspan $4) $6 Immutable ($1 # $2 # $>) }
   | many(outer_attribute) vis static mut ident ':' ty ';'
     { ForeignStatic $1 (unspan $2) (unspan $5) $7 Mutable ($1 # $2 # $>) }
-  | many(outer_attribute) vis fn ident generics fn_decl(arg_named) where_clause ';'
+  | many(outer_attribute) vis fn ident generics fn_decl(arg_named, ret_ty) where_clause ';'
     { ForeignFn $1 (unspan $2) (unspan $4) $6 ($5 `withWhere` $7) ($1 # $2 # $>) }
   | many(outer_attribute) vis type ident ';'
     { ForeignTy $1 (unspan $2) (unspan $4) ($1 # $2 # $>) }
@@ -1490,6 +1519,7 @@ vis :: { Spanned (Visibility Span) }
   : {- empty -}   %prec VIS { Spanned InheritedV mempty }
   | pub           %prec VIS { Spanned PublicV (spanOf $1) }
   | pub '(' crate ')'       { Spanned CrateV ($1 # $4) }
+  | crate         %prec VIS { Spanned CrateV (spanOf $1) }
   | pub '(' in mod_path ')' { Spanned (RestrictedV $4) ($1 # $5) }
   | pub '(' super ')'
     { Spanned (RestrictedV (Path False [PathSegment "super" Nothing (spanOf $3)] (spanOf $3))) ($1 # $4) }
@@ -1503,6 +1533,7 @@ def :: { Spanned Defaultness }
 use_tree :: { UseTree Span }
   : mod_path                                    { UseTreeSimple $1 Nothing (spanOf $1) }
   | mod_path as ident                           { UseTreeSimple $1 (Just (unspan $3)) ($1 # $3) }
+  | mod_path as '_'                             { UseTreeSimple $1 (Just "_") ($1 # $3) }
   | mod_path '::' '*'                           { UseTreeGlob $1 ($1 # $3) }
   |          '::' '*'                           { UseTreeGlob (Path True [] (spanOf $1)) ($1 # $2) }
   |               '*'                           { UseTreeGlob (Path False [] mempty) (spanOf $1) }
@@ -1832,7 +1863,7 @@ noSafety _ _ = fail "safety is not allowed here"
 
 -- | Make a macro item, which may be a 'MacroDef'
 macroItem :: [Attribute Span] -> (Maybe Ident) -> Mac Span -> Span -> Item Span
-macroItem as (Just i) (Mac (Path False [PathSegment "macro_rules" Nothing _] _) tts _) x = MacroDef as i tts x
+macroItem as (Just i) (Mac (Path False [PathSegment "macro_rules" Nothing _] _) tts _) x = MacroDef as InheritedV i tts x
 macroItem as i mac x = MacItem as i mac x
 
 -- | Add attributes to an expression

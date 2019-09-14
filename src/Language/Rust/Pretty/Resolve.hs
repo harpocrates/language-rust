@@ -640,11 +640,17 @@ instance (Typeable a, Monoid a) => Resolve (Pat a) where resolveM = resolvePat T
 
 -- | Field patterns are only invalid if the underlying pattern / identifier is
 resolveFieldPat :: (Typeable a, Monoid a) => FieldPat a -> ResolveM (FieldPat a)
-resolveFieldPat f@(FieldPat Nothing p x) = scope f $
-    case p of (IdentP _ _ Nothing _)          -> FieldPat Nothing <$> resolvePat TopPattern p <*> pure x
-              (BoxP (IdentP _ _ Nothing _) _) -> FieldPat Nothing <$> resolvePat TopPattern p <*> pure x
-              _                               -> err f "patterns for fields without an identifier must be (possibly box) identifiers"
-resolveFieldPat f@(FieldPat i p x) = scope f (FieldPat <$> traverse resolveIdent i <*> resolvePat TopPattern p <*> pure x)
+resolveFieldPat f@(FieldPat Nothing p as x) = scope f $
+  let as' = traverse (resolveAttr OuterAttr) as
+  in case p of (IdentP _ _ Nothing _)          -> FieldPat Nothing <$> resolvePat TopPattern p <*> as' <*> pure x
+               (BoxP (IdentP _ _ Nothing _) _) -> FieldPat Nothing <$> resolvePat TopPattern p <*> as' <*> pure x
+               _                               -> err f "patterns for fields without an identifier must be (possibly box) identifiers"
+resolveFieldPat f@(FieldPat i p as x) = scope f $
+  FieldPat <$>
+    traverse resolveIdent i <*>
+    resolvePat TopPattern p <*>
+    traverse (resolveAttr OuterAttr) as <*>
+    pure x
 
 instance (Typeable a, Monoid a) => Resolve (FieldPat a) where resolveM = resolveFieldPat
 
@@ -1092,10 +1098,11 @@ parenE False e = e
 
 -- | A field just requires the identifier and expression to be valid
 resolveField :: (Typeable a, Monoid a) => Field a -> ResolveM (Field a)
-resolveField f@(Field i e x) = scope f $ do
+resolveField f@(Field i e as x) = scope f $ do
   i' <- resolveIdent i
   e' <- traverse (resolveExpr AnyExpr) e
-  pure (Field i' e' x)
+  as' <- traverse (resolveAttr OuterAttr) as
+  pure (Field i' e' as' x)
 
 instance (Typeable a, Monoid a) => Resolve (Field a) where resolveM = resolveField
 
@@ -1138,6 +1145,7 @@ resolveStmt _ a@(MacStmt m s as x) = scope a $ do
   m' <- resolveMac ExprPath m
   as' <- traverse (resolveAttr OuterAttr) as
   pure (MacStmt m' s as' x)
+resolveStmt _ s@StandaloneSemi{} = pure s
 
 instance (Typeable a, Monoid a) => Resolve (Stmt a) where resolveM = resolveStmt AnyStmt
 
@@ -1290,11 +1298,12 @@ resolveItem _ a@(MacItem as i m x) = scope a $ do
   m' <- resolveMac ExprPath m
   pure (MacItem as' i' m' x)
 
-resolveItem _ m@(MacroDef as i ts x) = scope m $ do
+resolveItem _ m@(MacroDef as v i ts x) = scope m $ do
   as' <- traverse (resolveAttr OuterAttr) as
+  v' <- resolveVisibility v
   i' <- resolveIdent i
   ts' <- resolveTokenStream ts
-  pure (MacroDef as' i' ts' x)
+  pure (MacroDef as' v' i' ts' x)
 
 instance (Typeable a, Monoid a) => Resolve (Item a) where resolveM = resolveItem ModItem
 

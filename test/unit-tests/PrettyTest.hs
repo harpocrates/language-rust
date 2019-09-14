@@ -112,11 +112,11 @@ prettyPatterns = testGroup "printing patterns"
   , testFlatten "ref mut x" (printPat (IdentP (ByRef Mutable) (mkIdent "x") Nothing ()))
   , testFlatten "Point { .. }" (printPat (StructP point [] True ()))
   , testFlatten "Point { x, y: y1 }" (printPat (StructP point
-                                               [ FieldPat Nothing x ()
-                                               , FieldPat (Just "y") (IdentP (ByValue Immutable) "y1" Nothing ()) () ]
+                                               [ FieldPat Nothing x [] ()
+                                               , FieldPat (Just "y") (IdentP (ByValue Immutable) "y1" Nothing ()) [] () ]
                                                False ()))
   , testFlatten "Point { x, .. }" (printPat (StructP point
-                                               [ FieldPat Nothing x () ]
+                                               [ FieldPat Nothing x [] () ]
                                                True ()))
   , testFlatten "Point(x)" (printPat (TupleStructP point [ x ] ()))
   , testFlatten "Point()" (printPat (TupleStructP point [] ()))
@@ -187,7 +187,7 @@ prettyTypes = testGroup "printing types"
   , testFlatten "(i32, f64, usize)" (printType (TupTy [i32,f64,usize] ()))
   , testFlatten "std::vec::Vec<i32>" (printType (PathTy Nothing (Path False [ std, vec, veci32 ] ()) ()))
   , testFlatten "<i32 as std::vec>::Vec<i32>" (printType (PathTy (Just (QSelf i32 2)) (Path False [ std, vec, veci32 ] ()) ()))
-  , testFlatten "Debug + 'lt" (printType (TraitObject [ debug', lt ] ()))
+  , testFlatten "dyn Debug + 'lt" (printType (TraitObject [ debug', lt ] ()))
   , testFlatten "impl Iterator<Item = i32> + 'lt" (printType (ImplTrait [ iterator, lt ] ()))
   , testFlatten "(i32)" (printType (ParenTy i32 ()))
   , testFlatten "typeof(1i32)" (printType (Typeof (Lit [] (Int Dec 1 I32 ()) ()) ()))
@@ -356,11 +356,11 @@ prettyExpressions = testGroup "printing expressions"
   , testFlatten "print!(foo)" (printExpr (MacExpr [] (Mac (Path False [PathSegment "print" Nothing ()] ())
                                        (Stream [ Tree (Token mempty (IdentTok (mkIdent "foo"))) ]) ()) ()))
   , testFlatten "foo { }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [] Nothing ()))
-  , testFlatten "foo { x: 1 }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [Field (mkIdent "x") (Just _1) ()] Nothing ()))
-  , testFlatten "#[cfgo] foo { #![cfgi] x: 1 }" (printExpr (Struct [cfgO,cfgI] (Path False [PathSegment "foo" Nothing ()] ()) [Field (mkIdent "x") (Just _1) ()] Nothing ()))
-  , testFlatten "foo { x: 1, y: 1 }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [Field (mkIdent "x") (Just _1) (), Field (mkIdent "y") (Just _1) ()] Nothing ()))
-  , testFlatten "foo { x: 1, y: 1, ..bar }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [Field (mkIdent "x") (Just _1) (), Field (mkIdent "y") (Just _1) ()] (Just bar) ()))
-  , testFlatten "#[cfgo] foo { #![cfgi] x, y, ..bar }" (printExpr (Struct [cfgO,cfgI] (Path False [PathSegment "foo" Nothing ()] ()) [Field (mkIdent "x") Nothing (), Field (mkIdent "y") Nothing ()] (Just bar) ()))
+  , testFlatten "foo { x: 1 }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [Field "x" (Just _1) [] ()] Nothing ()))
+  , testFlatten "#[cfgo] foo { #![cfgi] x: 1 }" (printExpr (Struct [cfgO,cfgI] (Path False [PathSegment "foo" Nothing ()] ()) [Field "x" (Just _1) [] ()] Nothing ()))
+  , testFlatten "foo { x: 1, y: 1 }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [Field "x" (Just _1) [] (), Field "y" (Just _1) [] ()] Nothing ()))
+  , testFlatten "foo { x: 1, y: 1, ..bar }" (printExpr (Struct [] (Path False [PathSegment "foo" Nothing ()] ()) [Field "x" (Just _1) [] (), Field "y" (Just _1) [] ()] (Just bar) ()))
+  , testFlatten "#[cfgo] foo { #![cfgi] x, y, ..bar }" (printExpr (Struct [cfgO,cfgI] (Path False [PathSegment "foo" Nothing ()] ()) [Field "x" Nothing [] (), Field "y" Nothing [] ()] (Just bar) ()))
   , testFlatten "[foo; 1]" (printExpr (Repeat [] foo _1 ()))
   , testFlatten "#[cfgo] [#![cfgi] foo; 1]" (printExpr (Repeat [cfgI, cfgO] foo _1 ()))
   , testFlatten "(foo?)" (printExpr (ParenExpr [] (Try [] foo ()) ()))
