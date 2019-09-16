@@ -96,7 +96,7 @@ import qualified Data.List.NonEmpty as N
 %errorhandlertype explist
 %error { expParseError }
 
--- %expect 0
+%expect 0
 
 %token
 
@@ -453,16 +453,20 @@ string :: { Lit Span }
 -- parse_qualified_path(PathStyle::Type)
 -- qual_path :: Spanned (NonEmpty (Ident, GenericArgs Span)) -> P (Spanned (QSelf Span, Path Span))
 qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
-  : '<' qual_path_suf(segs)                    { let Spanned x _ = $2 in Spanned x ($1 # $2) }
-  | lt_ty_qual_path as ty_path '>' '::' segs   {
+  : '<' qual_path_suf(segs)
+    { let Spanned x _ = $2 in Spanned x ($1 # $2) }
+  | lt_ty_qual_path as ty_path '>' '::' segs
+    {
       let Path g segsTy x = $3 in
       Spanned (QSelf (unspan $1) (length segsTy), Path g (segsTy <> toList $6) x) ($1 # $>)
     }
 
 -- Basically a qualified path, but ignoring the very first '<' token
 qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
-  : ty '>' '::' segs                { Spanned (QSelf $1 0, Path False (toList $4) (spanOf $4)) ($1 # $>) }
-  | ty as ty_path '>' '::' segs     {
+  : ty '>' '::' segs
+    { Spanned (QSelf $1 0, Path False (toList $4) (spanOf $4)) ($1 # $>) }
+  | ty as ty_path '>' '::' segs
+    {
       let Path g segsTy x = $3 in
       Spanned (QSelf $1 (length segsTy), Path g (segsTy <> toList $6) x) ($1 # $>)
     }
@@ -471,8 +475,11 @@ qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
 -- The underlying type has the right 'Span' (it doesn't include the very first '<', while the
 -- 'Spanned' wrapper does)
 lt_ty_qual_path :: { Spanned (Ty Span) }
-  : '<<' qual_path_suf(path_segments_without_colons)
-    { let (qself,path) = unspan $2 in Spanned (PathTy (Just qself) path (nudge 1 0 ($1 # $2))) ($1 # $2) }
+  : '<<' qual_path_suf(ty_path_segments)
+    {
+      let (qself,path) = unspan $2 in
+      Spanned (PathTy (Just qself) path (nudge 1 0 ($1 # $2))) ($1 # $2)
+    }
 
 -- parse_generic_args() but with the '<' '>'
 generic_args :: { GenericArgs Span }
@@ -502,45 +509,54 @@ generic_arg_elem :: { Either (GenericArg Span) (AssocTyConstraint Span) }
 -- Type related:
 -- parse_path(PathStyle::Type)
 ty_path :: { Path Span }
-  : ntPath                                   { $1 }
-  | path_segments_without_colons             { Path False $1 (spanOf $1) }
-  | '::' path_segments_without_colons        { Path True $2 ($1 # $2) }
+  : ntPath                                     { $1 }
+  | ty_path_segments                 %prec SEG { Path False (toList $1) (spanOf $1) }
+  | '::' ty_path_segments            %prec SEG { Path True (toList $2) ($1 # $2) }
 
 ty_qual_path :: { Spanned (QSelf Span, Path Span) }
-  : qual_path(path_segments_without_colons)  { $1 }
+  : qual_path(ty_path_segments)                { $1 }
 
--- parse_path_segments_without_colons()
-path_segments_without_colons :: { [PathSegment Span] }
-  : sep_by1(path_segment_without_colons, '::') %prec SEG  { toList $1 }
+-- parse_ty_path_segments()
+ty_path_segments :: { Reversed NonEmpty (PathSegment Span) }
+  : path_segment_ident ty_generic_args
+    { [PathSegment (unspan $1) $2 ($1 # $2)] }
+  | ty_path_segments '::' path_segment_ident ty_generic_args
+    { $1 <> [PathSegment (unspan $3) $4 ($3 # $4)] }
+  | ty_path_segments '::' ty_generic_args1
+    {%
+      case (unsnoc $1) of
+        (rst, PathSegment i Nothing x) ->
+          let seg = PathSegment i (Just $3) (x # $3)
+          in pure $ snoc rst seg
+        _ -> fail "invalid path segment in type path"
+    }
 
--- No corresponding function - see path_segments_without_colons
-path_segment_without_colons :: { PathSegment Span }
-  : path_segment_ident path_parameter                     { PathSegment (unspan $1) $2 ($1 # $>) }
+ty_generic_args  :: { Maybe (GenericArgs Span) }
+  : ty_generic_args1                           { Just $1 }
+  | {- empty -}                    %prec IDENT { Nothing }
 
-path_parameter  :: { Maybe (GenericArgs Span) }
-  : generic_args                             { Just $1 }
-  | '(' sep_byT(ty,',') ')'                  { Just (Parenthesized $2 Nothing ($1 # $>)) }
-  | '(' sep_byT(ty,',') ')' '->' ty_no_plus  { Just (Parenthesized $2 (Just $>) ($1 # $>)) }
-  | {- empty -}                  %prec IDENT { Nothing }
-
+ty_generic_args1 :: { GenericArgs Span }
+  : generic_args                               { $1 }
+  | '(' sep_byT(ty,',') ')'                    { Parenthesized $2 Nothing ($1 # $>) }
+  | '(' sep_byT(ty,',') ')' '->' ty_no_plus    { Parenthesized $2 (Just $>) ($1 # $>) }
 
 -- Expression related:
 -- parse_path(PathStyle::Expr)
 expr_path :: { Path Span }
-  : ntPath                                   { $1 }
-  | path_segments_with_colons                { Path False (toList $1) (spanOf $1) }
-  | '::' path_segments_with_colons           { Path True (toList $2) ($1 # $2) }
+  : ntPath                                     { $1 }
+  | expr_path_segments                         { Path False (toList $1) (spanOf $1) }
+  | '::' expr_path_segments                    { Path True (toList $2) ($1 # $2) }
 
 expr_qual_path :: { Spanned (QSelf Span, Path Span) }
-  : qual_path(path_segments_with_colons)     { $1 }
+  : qual_path(expr_path_segments)              { $1 }
 
--- parse_path_segments_with_colons()
-path_segments_with_colons :: { Reversed NonEmpty (PathSegment Span) }
+-- parse_expr_path_segments()
+expr_path_segments :: { Reversed NonEmpty (PathSegment Span) }
   : path_segment_ident
     { [PathSegment (unspan $1) Nothing (spanOf $1)] }
-  | path_segments_with_colons '::' path_segment_ident
+  | expr_path_segments '::' path_segment_ident
     { $1 <> [PathSegment (unspan $3) Nothing (spanOf $3)] }
-  | path_segments_with_colons '::' generic_args
+  | expr_path_segments '::' generic_args
     {%
       case (unsnoc $1) of
         (rst, PathSegment i Nothing x) ->
@@ -556,21 +572,24 @@ path_segments_with_colons :: { Reversed NonEmpty (PathSegment Span) }
 -- TODO: This is O(n^2) in the segment length! I haven't been able to make the grammar work out in
 --       order to refactor this nicely
 mod_path :: { Path Span  }
-  : ntPath               { $1 }
-  | path_segment_ident        { Path False [PathSegment (unspan $1) Nothing (spanOf $1)] (spanOf $1) }
-  | '::' path_segment_ident   { Path True  [PathSegment (unspan $2) Nothing (spanOf $2)] ($1 # $>) }
-  | mod_path '::' path_segment_ident  {
+  : ntPath                                     { $1 }
+  | path_segment_ident
+    { Path False [PathSegment (unspan $1) Nothing (spanOf $1)] (spanOf $1) }
+  | '::' path_segment_ident
+    { Path True  [PathSegment (unspan $2) Nothing (spanOf $2)] ($1 # $>) }
+  | mod_path '::' path_segment_ident
+    {
       let Path g segs _ = $1 in
       Path g (segs <> [PathSegment (unspan $3) Nothing (spanOf $3) ]) ($1 # $3)
     }
 
 -- parse_path_segment_ident
 path_segment_ident :: { Spanned Ident }
-  : ident                   { $1 }
-  | crate                   { Spanned "crate" (spanOf $1) }
-  | self                    { Spanned "self" (spanOf $1) }
-  | Self                    { Spanned "Self" (spanOf $1) }
-  | super                   { Spanned "super" (spanOf $1) }
+  : ident                                      { $1 }
+  | crate                                      { Spanned "crate" (spanOf $1) }
+  | self                                       { Spanned "self" (spanOf $1) }
+  | Self                                       { Spanned "Self" (spanOf $1) }
+  | super                                      { Spanned "super" (spanOf $1) }
 
 
 -----------
@@ -1267,7 +1286,7 @@ stmt :: { Stmt Span }
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!' ident '(' token_stream ')' ';'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!' ident '{' token_stream '}'
+  | many(outer_attribute) expr_path '!' ident '{' token_stream '}'      %prec NOSEMI
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!' ident '{' token_stream '}' ';'
     { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
@@ -1348,7 +1367,7 @@ item :: { Item Span }
     { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $10) (toList $9) $12 ($1 # $2 # $3 # $5 # $>) }
   | many(outer_attribute) vis safety auto trait ident generics where_clause '{' many(trait_item) '}'
     { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $8) [] $10 ($1 # $2 # $3 # $5 # $>) }
-  | many(outer_attribute) vis safety trait ident generics '=' sep_by1T(ty_param_bound,'+') ';'
+  | many(outer_attribute) vis safety trait ident generics '=' sep_by1T(ty_param_bound_mod,'+') ';'
     {% noSafety $3 (TraitAlias $1 (unspan $2) (unspan $5) $6 (toNonEmpty $8) ($1 # $2 # $3 # $>)) }
   | many(outer_attribute) vis         safety impl generics ty_prim              where_clause '{' impl_items '}'
     { Impl ($1 ++ fst $9) (unspan $2) Final (unspan $3) Positive ($5 `withWhere` $7) Nothing $6 (snd $9) ($1 # $2 # $3 # $4 # $5 # $>) }

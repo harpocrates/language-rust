@@ -54,6 +54,7 @@ mod bar {
   }
 
   trait Foo = Bar + Baz;
+  trait Foo = ?Sized;
   trait Foo<'a,N> = Bar<'a,N> + Baz + 'a;
 
   fn foo<T: ?Sized>(x: &T) { }

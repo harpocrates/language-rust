@@ -261,6 +261,7 @@ parserTypes = testGroup "parsing types"
   , testP "&'lt mut i32" (Rptr (Just (Lifetime "lt" ())) Mutable i32  ())
   , testP "typeof(123)" (Typeof (Lit [] (Int Dec 123 Unsuffixed ()) ()) ())
   , testP "Vec<i32>" (PathTy Nothing (Path False [PathSegment "Vec" (Just (AngleBracketed [TypeArg i32] [] ())) ()] ()) ())
+  , testP "Vec::<i32>" (PathTy Nothing (Path False [PathSegment "Vec" (Just (AngleBracketed [TypeArg i32] [] ())) ()] ()) ())
   , testP "Vec<{x}>" (PathTy Nothing (Path False [PathSegment "Vec" (Just (AngleBracketed [ConstArg (BlockExpr [] (Block [NoSemi (PathExpr [] Nothing x ()) ()] Normal ()) ())] [] ())) ()] ()) ())
   , testP "Vec<29, {x+1}>" (PathTy Nothing (Path False [PathSegment "Vec" (Just (AngleBracketed [ConstArg (Lit [] (Int Dec 29 Unsuffixed ()) ()), ConstArg (BlockExpr [] (Block [NoSemi (Binary [] AddOp (PathExpr [] Nothing x ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()) ()] Normal ()) ())] [] ())) ()] ()) ())
   , testP "Vec<<i32 as a>::b,i32>" (PathTy Nothing (Path False [PathSegment "Vec" (Just (AngleBracketed [ TypeArg (PathTy (Just (QSelf i32 1))
@@ -277,6 +278,10 @@ parserTypes = testGroup "parsing types"
                                                          , PathSegment "vec" Nothing ()
                                                          , PathSegment "Vec" (Just (AngleBracketed [TypeArg (PathTy Nothing t ())]  [] ())) ()
                                                          ] ()) ())
+  , testP "std::vec::Vec::<T>" (PathTy Nothing (Path False [ PathSegment "std" Nothing ()
+                                                           , PathSegment "vec" Nothing ()
+                                                           , PathSegment "Vec" (Just (AngleBracketed [TypeArg (PathTy Nothing t ())]  [] ())) ()
+                                                           ] ()) ())
   , testP "foo::baz<'a,T,B=!>" (PathTy Nothing (Path False [ PathSegment "foo" Nothing ()
                                                            , PathSegment "baz" (Just (AngleBracketed [LifetimeArg (Lifetime "a" ()), TypeArg (PathTy Nothing t ())]
                                                                                             [EqualityConstraint (mkIdent "B") (Never ()) ()] ())) ()
@@ -349,6 +354,12 @@ parserTypes = testGroup "parsing types"
                                                       , PathSegment "Trait" (Just (Parenthesized [i32] (Just i32) ())) ()
                                                       , PathSegment "AssociatedItem" Nothing ()
                                                       ] ()) ())
+  , testP "<i32 as a::(i32, i32)::b::<'lt>::Trait::(i32) -> i32>::AssociatedItem"
+             (PathTy (Just (QSelf i32 3)) (Path False [ PathSegment "a" (Just (Parenthesized [i32, i32] Nothing ())) ()
+                                                      , PathSegment "b" (Just (AngleBracketed [LifetimeArg (Lifetime "lt" ())] [] ())) ()
+                                                      , PathSegment "Trait" (Just (Parenthesized [i32] (Just i32) ())) ()
+                                                      , PathSegment "AssociatedItem" Nothing ()
+                                                      ] ()) ())
   , testP "extern fn(i32,...)"
              (BareFn Normal C [] (FnDecl [Arg Nothing i32 ()] Nothing True ()) ())
   , testP "fn(i32) -> i32"
@@ -404,6 +415,9 @@ parserTypes = testGroup "parsing types"
                            ] ())
               ()) ())
   , testP "Fn() -> &(Object+Send)"
+           (PathTy Nothing (Path False [PathSegment "Fn" (Just (Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (TraitObject [ TraitBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Object" Nothing ()] ())) ()) None ()
+             , TraitBound (PolyTraitRef [] (TraitRef send) ()) None ()] ()) ()) ())) ())) ()] ()) ())
+  , testP "Fn::() -> &(Object+Send)"
            (PathTy Nothing (Path False [PathSegment "Fn" (Just (Parenthesized [] (Just (Rptr Nothing Immutable (ParenTy (TraitObject [ TraitBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Object" Nothing ()] ())) ()) None ()
              , TraitBound (PolyTraitRef [] (TraitRef send) ()) None ()] ()) ()) ())) ())) ()] ()) ())
   , testP "foo![ x ]" (MacTy (Mac (Path False [PathSegment "foo" Nothing ()] ()) (Tree (Token (Span (Position 6 1 6) (Position 7 1 7)) (IdentTok "x")))  ()) ())
