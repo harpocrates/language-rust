@@ -132,6 +132,7 @@ test-suite rustc-tests
   main-is:             Main.hs
   other-modules:       Diff
                        DiffUtils
+                       Options
 
   other-extensions:    InstanceSigs
                      , OverloadedStrings

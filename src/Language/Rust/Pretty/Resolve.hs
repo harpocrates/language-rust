@@ -1275,7 +1275,7 @@ resolveItem _ r@(TraitAlias as v i g bd x) = scope r $ do
   v' <- resolveVisibility v
   i' <- resolveIdent i
   g' <- resolveGenerics g
-  bd' <- traverse (resolveGenericBound NoneBound) bd
+  bd' <- traverse (resolveGenericBound ModBound) bd
   pure (TraitAlias as' v' i' g' bd' x)
 
 resolveItem _ i'@(Impl as v d u i g mt t' is x) = scope i' $ do

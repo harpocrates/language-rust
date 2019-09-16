@@ -3,15 +3,17 @@ module Main where
 
 import Diff ()
 import DiffUtils
+import Options
 
 import Control.Monad (filterM, when)
 import Control.Exception (catch, SomeException, evaluate)
+import Data.Maybe (fromJust)
 import Data.Typeable (Typeable)
 
 import Data.ByteString.Lazy (hGetContents)
 import Data.ByteString.Lazy.Char8 (unpack)
 import Data.Aeson (decode', Value)
-
+import System.Directory
 import Language.Rust.Parser (readSourceFile)
 import Language.Rust.Pretty (prettyUnresolved, Resolve(..), Issue(..), Severity(Clean))
 import Language.Rust.Syntax (SourceFile)
@@ -28,11 +30,15 @@ import Data.Time.Calendar (fromGregorian, showGregorian, diffDays)
 import qualified Data.Text.Prettyprint.Doc as PP
 import Data.Text.Prettyprint.Doc.Render.Text (renderIO)
 
-import Test.Framework (defaultMain)
+import Test.Framework (defaultMainWithOpts)
 import Test.Framework.Providers.API
+
 
 main :: IO ()
 main = do
+  -- Parse out command line options
+  (opts, runnerOpts) <- getOptions
+
   -- Check last time `rustc` version was bumped
   let lastDay = fromGregorian 2019 09 6
   today <- utctDay <$> getCurrentTime
@@ -52,14 +58,19 @@ main = do
 
   -- Run the tests
   workingDirectory <- getCurrentDirectory
-  let folder = workingDirectory </> "sample-sources"
+  let folder = workingDirectory </> sourceFolder opts
   entries <- map (folder </>) <$> listDirectory folder
   files <- filterM doesFileExist (filter (/= folder </> ".benchignore") entries)
-  defaultMain (map (\f -> Test (takeFileName f) (DiffTest f)) files)
+  let tests = [ Test (takeFileName f) (DiffTest (pruneTests opts) f) | f <- files ]
+  defaultMainWithOpts tests runnerOpts
 
 -- | Given a path pointing to a rust source file, read that file and parse it into JSON
-getJsonAST :: FilePath -> IO Value
-getJsonAST fileName = do
+getJsonAST
+  :: Bool              -- ^ delete the test case if it can't be parsed and return 'Nothing'
+  -> FilePath          -- ^ test case path
+  -> IO (Maybe Value)  -- ^ the JSON AST (this will error instead of returning 'Nothing' unless the
+                       -- first argument is 'True')
+getJsonAST deleteOnFailure fileName = do
   let cp = (proc "rustc" [ "-Z", "ast-json-noexpand"
                          , "-Z", "no-analysis"
                          , "--edition", "2018"
@@ -68,12 +79,15 @@ getJsonAST fileName = do
                                       , std_in  = NoStream
                                       }
   (_, Just hOut, _, ph) <- createProcess cp
-  jsonContents <- hGetContents hOut
-  let !jsonAst = decode' jsonContents
+  !jsonContents <- hGetContents hOut
+  let !jsonAstOpt = decode' jsonContents
   exitCode <- waitForProcess ph
-  case  jsonAst of
-    _ | exitCode /= ExitSuccess -> error "`rustc' exitted with non-zero code"
-    Just value -> pure value
+  case jsonAstOpt of
+    _ | exitCode /= ExitSuccess
+      -> if deleteOnFailure
+           then removeFile fileName *> pure Nothing
+           else error "`rustc' exitted with non-zero code"
+    Just jsonAst -> pure (Just jsonAst)
     Nothing -> error ("Failed to get `rustc' JSON\n" ++ unpack jsonContents)
 
 -- | Given an AST and a file name, print it into a temporary file (without resolving) and return
@@ -95,8 +109,9 @@ resolveDiff ast = when (sev /= Clean) $
 
 -- * Difference tests
 
--- | A 'DiffTest' only needs to know the name of the file it is diffing
-data DiffTest = DiffTest String
+-- | A 'DiffTest' only needs to know the name of the file it is diffing and whether failed tests
+-- should be skipped
+data DiffTest = DiffTest Bool String
 
 -- | These are the possible pending statuses of a 'DiffTest'
 data DiffRunning = ParsingReference
@@ -120,29 +135,35 @@ instance Show DiffRunning where
 -- | These are the possible final states of a 'DiffTest'
 data DiffResult = Error DiffRunning String
                 | Done
+                | Skipped String
 
 instance Show DiffResult where
   show (Error improvement message) = "ERROR (" ++ show improvement ++ "): " ++ message
   show Done = "OK"
+  show (Skipped reason) = "SKIPPED: " ++ reason
 
 -- | A test is successful if it finishes and has no diffs
 instance TestResultlike DiffRunning DiffResult where
   testSucceeded Done = True
+  testSucceeded (Skipped _) = True
   testSucceeded (Error _ _) = False
 
 -- | With timeouts and catching errors
 instance Testlike DiffRunning DiffResult DiffTest where
   testTypeName _ = "Difference tests"
 
-  runTest TestOptions{ topt_timeout = K timeout } (DiffTest file) = runImprovingIO $
-    step timeout ParsingReference (getJsonAST file) $ \parsedRustc ->
-      step timeout ParsingImplementation (evaluate =<< withFile file ReadMode readSourceFile) $ \parsedOurs ->
-        step timeout ParsingDiffing (parsedOurs === parsedRustc) $ \_ ->
-          step timeout PrintingParsed (prettySourceFile file parsedOurs) $ \tmpFile ->
-            step timeout ReparsingReference (getJsonAST tmpFile) $ \reparsedRustc ->
-              step timeout ReparsingDiffing (parsedOurs === reparsedRustc) $ \_ ->
-                step timeout ResolveInvariant (resolveDiff parsedOurs) $ \_ ->
-                  pure Done
+  runTest TestOptions{ topt_timeout = K timeout } (DiffTest pruneFail file) = runImprovingIO $
+    step timeout ParsingReference (getJsonAST pruneFail file) $ \parsedRustcOpt ->
+      case parsedRustcOpt of
+        Nothing -> pure (Skipped "`rustc` can't parse")
+        Just parsedRustc ->
+          step timeout ParsingImplementation (evaluate =<< withFile file ReadMode readSourceFile) $ \parsedOurs ->
+            step timeout ParsingDiffing (parsedOurs === parsedRustc) $ \_ ->
+              step timeout PrintingParsed (prettySourceFile file parsedOurs) $ \tmpFile ->
+                step timeout ReparsingReference (getJsonAST False tmpFile) $ \reparsedRustcOpt ->
+                  step timeout ReparsingDiffing (parsedOurs === fromJust reparsedRustcOpt) $ \_ ->
+                    step timeout ResolveInvariant (resolveDiff parsedOurs) $ \_ ->
+                      pure Done
 
 
 step :: Maybe Int                                              -- ^ timeout for the step
