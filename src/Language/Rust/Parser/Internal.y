@@ -180,7 +180,6 @@ import qualified Data.List.NonEmpty as N
   const          { Spanned (IdentTok "const") _ }
   continue       { Spanned (IdentTok "continue") _ }
   crate          { Spanned (IdentTok "crate") _ }
-  do             { Spanned (IdentTok "do") _ }
   dyn            { Spanned (IdentTok "dyn") _ }
   else           { Spanned (IdentTok "else") _ }
   enum           { Spanned (IdentTok "enum") _ }
@@ -193,6 +192,7 @@ import qualified Data.List.NonEmpty as N
   in             { Spanned (IdentTok "in") _ }
   let            { Spanned (IdentTok "let") _ }
   loop           { Spanned (IdentTok "loop") _ }
+  macro          { Spanned (IdentTok "macro") _ }
   match          { Spanned (IdentTok "match") _ }
   mod            { Spanned (IdentTok "mod") _ }
   move           { Spanned (IdentTok "move") _ }
@@ -217,16 +217,12 @@ import qualified Data.List.NonEmpty as N
 
   -- Keywords reserved for future use
   abstract       { Spanned (IdentTok "abstract") _ }
-  alignof        { Spanned (IdentTok "alignof") _ }
   become         { Spanned (IdentTok "become") _ }
+  do             { Spanned (IdentTok "do") _ }
   final          { Spanned (IdentTok "final") _ }
-  macro          { Spanned (IdentTok "macro") _ }
-  offsetof       { Spanned (IdentTok "offsetof") _ }
   override       { Spanned (IdentTok "override") _ }
   priv           { Spanned (IdentTok "priv") _ }
   proc           { Spanned (IdentTok "proc") _ }
-  pure           { Spanned (IdentTok "pure") _ }
-  sizeof         { Spanned (IdentTok "sizeof") _ }
   typeof         { Spanned (IdentTok "typeof") _ }
   unsized        { Spanned (IdentTok "unsized") _ }
   virtual        { Spanned (IdentTok "virtual") _ }
@@ -609,7 +605,8 @@ ty_prim :: { Ty Span }
 
 -- The types that contain top-level sums
 sum_ty :: { Ty Span }
-  : poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+') { TraitObject ($1 <| toNonEmpty $3) ($1 # $3) }
+  : poly_trait_ref_mod_bound '+'                                                 { TraitObject [$1] ($1 # $2) }
+  | poly_trait_ref_mod_bound '+' sep_by1T(ty_param_bound_mod,'+')                { TraitObject ($1 <| toNonEmpty $3) ($1 # $3) }
   | impl ty_param_bound_mod '+'                                  %prec IMPLTRAIT { ImplTrait   [$2] ($1 # $>) }
   | impl ty_param_bound_mod '+' sep_by1T(ty_param_bound_mod,'+') %prec IMPLTRAIT { ImplTrait   ($2 <| toNonEmpty $4) ($1 # $>) }
   | dyn  ty_param_bound_mod '+'                                  %prec IMPLTRAIT { TraitObject [$2] ($1 # $>) }
@@ -714,6 +711,7 @@ abi :: { Abi }
                          LiteralTok (StrTok "cdecl") Nothing ->              pure Cdecl
                          LiteralTok (StrTok "stdcall") Nothing ->            pure Stdcall
                          LiteralTok (StrTok "fastcall") Nothing ->           pure Fastcall
+                         LiteralTok (StrTok "thiscall") Nothing ->           pure Thiscall
                          LiteralTok (StrTok "vectorcall") Nothing ->         pure Vectorcall
                          LiteralTok (StrTok "aapcs") Nothing ->              pure Aapcs
                          LiteralTok (StrTok "win64") Nothing ->              pure Win64
@@ -721,6 +719,7 @@ abi :: { Abi }
                          LiteralTok (StrTok "ptx-kernel") Nothing ->         pure PtxKernel
                          LiteralTok (StrTok "msp430-interrupt") Nothing ->   pure Msp430Interrupt
                          LiteralTok (StrTok "x86-interrupt") Nothing ->      pure X86Interrupt
+                         LiteralTok (StrTok "amdgpu-kernel") Nothing ->      pure AmdGpuKernel
                          LiteralTok (StrTok "Rust") Nothing ->               pure Rust
                          LiteralTok (StrTok "C") Nothing ->                  pure C
                          LiteralTok (StrTok "system") Nothing ->             pure System
@@ -837,8 +836,9 @@ pat :: { Pat Span }
          _                                      -> PathP Nothing $1 (spanOf $1)
     }
   | expr_qual_path                  { PathP (Just (fst (unspan $1))) (snd (unspan $1)) ($1 # $>) }
-  | lit_or_path '...' lit_or_path   { RangeP $1 $3 ($1 # $>) }
-  | lit_or_path '..=' lit_or_path   { RangeP $1 $3 ($1 # $>) }
+  | lit_or_path '...' lit_or_path   { RangeP $1 $3 Closed ($1 # $>) }
+  | lit_or_path '..=' lit_or_path   { RangeP $1 $3 Closed ($1 # $>) }
+  | lit_or_path '..'  lit_or_path   { RangeP $1 $3 HalfOpen ($1 # $>) }
   | expr_path '{' pat_fields '}'    { let (fs,b) = $3 in StructP $1 fs b ($1 # $>) }
   | expr_path '(' sep_byT(or_pat,',') ')' { TupleStructP $1 $3 ($1 # $>) }
   | expr_mac                        { MacP $1 (spanOf $1) }
@@ -908,7 +908,7 @@ binding_mode :: { Spanned BindingMode }
 --
 --   * 'lhs' - expressions allowed on the left extremity of the term
 --   * 'rhs' - expressions allowed on the right extremity of the term
---   * 'rhs2' - expressions allowed on the right extremity following '..'/'.../..='
+--   * 'rhs2' - expressions optionally allowed on the right extremity of terms
 --
 -- Precedences are handled by Happy (right at the end of the token section)
 gen_expression(lhs,rhs,rhs2) :: { Expr Span }
@@ -940,15 +940,15 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   |     '..='       %prec SINGLERNG  { Range [] Nothing Nothing Closed (spanOf $1) }
   -- low precedence prefix expressions
   | return                           { Ret [] Nothing (spanOf $1) }
-  | return rhs                       { Ret [] (Just $2) ($1 # $2) }
+  | return rhs2                      { Ret [] (Just $2) ($1 # $2) }
   | yield                            { Yield [] Nothing (spanOf $1) }
-  | yield rhs                        { Yield [] (Just $2) ($1 # $2) }
+  | yield rhs2                       { Yield [] (Just $2) ($1 # $2) }
   | continue                         { Continue [] Nothing (spanOf $1) }
   | continue label                   { Continue [] (Just $2) ($1 # $2) }
   | break                            { Break [] Nothing Nothing (spanOf $1) }
-  | break       rhs                  { Break [] Nothing (Just $2) ($1 # $2) }
+  | break       rhs2                 { Break [] Nothing (Just $2) ($1 # $2) }
   | break label                      { Break [] (Just $2) Nothing ($1 # $2) }
-  | break label rhs      %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
+  | break label rhs2     %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
   -- lambda expressions
   | static async move lambda_args rhs   %prec LAMBDA
     { Closure [] Value IsAsync  Immovable (FnDecl (unspan $4) Nothing False (spanOf $4)) $> ($1 # $>) }
@@ -1125,6 +1125,7 @@ block_like_expr :: { Expr Span }
   | match nostruct_expr '{' inner_attrs arms '}'                     { Match (toList $4) $2 $5 ($1 # $>) }
   | expr_path '!' '{' token_stream '}'                               { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
   | try inner_attrs_block                                            { let (as,b) = $> in TryBlock as b ($1 # b) }
+--  | label ':'                                     inner_attrs_block  { let (as,b) = $> in BlockExpr as b (spanOf b) }
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }
@@ -1313,6 +1314,8 @@ item :: { Item Span }
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $6) Nothing ($1 # $2 # $4 # $>)) }
   | many(outer_attribute) vis safety extern crate ident as ident ';'
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $8) (Just (unspan $6)) ($1 # $2 # $4 # $>)) }
+  | many(outer_attribute) vis safety extern crate ident as '_' ';'
+    {% noSafety $3 (ExternCrate $1 (unspan $2) "_"         (Just (unspan $6)) ($1 # $2 # $4 # $>)) }
   | many(outer_attribute) vis const safety  fn ident generics fn_decl(arg_named, ret_ty) where_clause inner_attrs_block
     { Fn ($1 ++ fst $>) (unspan $2) (unspan $6) $8 (FnHeader (unspan $4) NotAsync Const Rust (spanOf $4))    ($7 `withWhere` $9) (snd $>) ($1 # $2 # $3 # snd $>) }
   | many(outer_attribute) vis async safety  fn ident generics fn_decl(arg_named, ret_ty) where_clause inner_attrs_block
@@ -1430,9 +1433,12 @@ tuple_decl_field :: { StructField Span }
   : many(outer_attribute) vis ty                             { StructField Nothing (unspan $2) $3 $1 ($1 # $2 # $3) }
 
 enum_def :: { Variant Span }
-  : many(outer_attribute) ident '{' sep_byT(struct_decl_field,',') '}'  { Variant (unspan $2) $1 (StructD $4 ($3 # $5)) Nothing ($1 # $2 # $>) }
-  | many(outer_attribute) ident '(' sep_byT(tuple_decl_field,',')  ')'  { Variant (unspan $2) $1 (TupleD $4 ($3 # $5)) Nothing ($1 # $2 # $>) }
-  | many(outer_attribute) ident initializer                             { Variant (unspan $2) $1 (UnitD mempty) $3 ($1 # $2 # $>) }
+  : many(outer_attribute) ident '{' sep_byT(struct_decl_field,',') '}' initializer
+    { Variant (unspan $2) $1 (StructD $4 ($3 # $5)) $> ($1 # $2 # $5 # $>) }
+  | many(outer_attribute) ident '(' sep_byT(tuple_decl_field,',')  ')' initializer
+    { Variant (unspan $2) $1 (TupleD $4 ($3 # $5)) $> ($1 # $2 # $5 # $>) }
+  | many(outer_attribute) ident                                        initializer
+    { Variant (unspan $2) $1 (UnitD mempty) $3 ($1 # $2 # $>) }
 
 
 -- parse_where_clause
@@ -1621,6 +1627,8 @@ token :: { Spanned Token }
   | rawByteStr { $1 }
   -- Strict keywords used in the language
   | as         { $1 }
+  | async      { $1 }
+  | await      { $1 }
   | box        { $1 }
   | break      { $1 }
   | const      { $1 }
@@ -1638,6 +1646,7 @@ token :: { Spanned Token }
   | in         { $1 }
   | let        { $1 }
   | loop       { $1 }
+  | macro      { $1 }
   | match      { $1 }
   | mod        { $1 }
   | move       { $1 }
@@ -1661,17 +1670,12 @@ token :: { Spanned Token }
   | yield      { $1 }
   -- Keywords reserved for future use
   | abstract   { $1 }
-  | alignof    { $1 }
   | become     { $1 }
   | do         { $1 }
   | final      { $1 }
-  | macro      { $1 }
-  | offsetof   { $1 }
   | override   { $1 }
   | priv       { $1 }
   | proc       { $1 }
-  | pure       { $1 }
-  | sizeof     { $1 }
   | typeof     { $1 }
   | unsized    { $1 }
   | virtual    { $1 }

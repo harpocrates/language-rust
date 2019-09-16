@@ -114,9 +114,11 @@ ty = quoter parseTy
 
 -- | Quasiquoter for patterns (see 'Language.Rust.Syntax.Pat')
 --
--- >>> void [pat| x @ 1...5 |]
+-- >>> void [pat| x @ 1..=5 |]
 -- IdentP (ByValue Immutable) "x" (Just (RangeP (Lit [] (Int Dec 1 Unsuffixed ()) ())
---                                              (Lit [] (Int Dec 5 Unsuffixed ()) ()) ())) ()
+--                                              (Lit [] (Int Dec 5 Unsuffixed ()) ())
+--                                              Closed
+--                                              ())) ()
 --
 pat :: QuasiQuoter
 pat = quoter parsePat

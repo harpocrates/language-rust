@@ -81,6 +81,12 @@ instance Show a => Diffable (Item a) where
         i === (val ! "ident")
         t === (n' ! "fields" ! 0)
         g === (n' ! "fields" ! 1)
+      ("OpaqueTy", TyAlias as v i (ImplTrait b _) g _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        i === (val ! "ident")
+        b === (n' ! "fields" ! 0)
+        g === (n' ! "fields" ! 1)
       ("Enum", Enum as v i vs g _) -> do
         as === (val ! "attrs")
         v === (val ! "vis")
@@ -199,6 +205,12 @@ instance Show a => Diffable (ImplItem a) where
         d === (val ! "defaultness")
         i === (val ! "ident")
         t === (n' ! "fields" ! 0)
+      ("OpaqueTy", TypeI as v d i (ImplTrait b _) _) -> do
+        as === (val ! "attrs")
+        v === (val ! "vis")
+        d === (val ! "defaultness")
+        i === (val ! "ident")
+        b === (n' ! "fields" ! 0)
       ("Macro", MacroI as d m _) -> do
         as === (val ! "attrs")
         d === (val ! "defaultness")
@@ -213,7 +225,7 @@ instance Show a => Diffable (MethodSig a) where
 instance Show a => Diffable (FnHeader a) where
   FnHeader u s c a _ === val = do
     u === (val ! "unsafety")
-    s === (val ! "asyncness")
+    s === (val ! "asyncness" ! "node")
     a === (val ! "abi")
     c === (val ! "constness")
 
@@ -337,6 +349,7 @@ instance Diffable Abi where
   Cdecl             === "Cdecl"             = pure ()
   Stdcall           === "Stdcall"           = pure ()
   Fastcall          === "Fastcall"          = pure ()
+  Thiscall          === "Thiscall"          = pure ()
   Vectorcall        === "Vectorcall"        = pure ()
   Aapcs             === "Aapcs"             = pure ()
   Win64             === "Win64"             = pure ()
@@ -344,6 +357,7 @@ instance Diffable Abi where
   PtxKernel         === "PtxKernel"         = pure ()
   Msp430Interrupt   === "Msp430Interrupt"   = pure ()
   X86Interrupt      === "X86Interrupt"      = pure ()
+  AmdGpuKernel      === "AmdGpuKernel"      = pure ()
   Rust              === "Rust"              = pure ()
   C                 === "C"                 = pure ()
   System            === "System"            = pure ()
@@ -516,9 +530,12 @@ instance Show a => Diffable (Pat a) where
             fp === (val' ! "fields" ! 1)
           ("Tuple", TupleP fp _) -> do
             fp === (val' ! "fields" ! 0)
-          ("Range", RangeP e1 e2 _) -> do
+          ("Or", OrP ps _) -> do
+            ps === (val' ! "fields" ! 0)
+          ("Range", RangeP e1 e2 rl _) -> do
             e1 === (val' ! "fields" ! 0)
             e2 === (val' ! "fields" ! 1)
+            rl === (val' ! "fields" ! 2)
           ("Slice", SliceP a _) -> do
             a === (val' ! "fields" ! 0)
           ("Path", PathP q p _) -> do
@@ -649,6 +666,7 @@ instance Show a => Diffable (FieldPat a) where
   f@(FieldPat mi p as _) === val = do
     -- Extract the identifier and whether the pattern is shorthand
     (i, s) <- case (mi,p) of
+                (Nothing, BoxP (IdentP _ i' Nothing _) _) -> pure (i', True)
                 (Nothing, IdentP _ i' Nothing _) -> pure (i', True)
                 (Nothing, _) -> diff "shorthand field pattern needs to be identifier" f val
                 (Just i', _) -> pure (i', False)
@@ -998,11 +1016,16 @@ instance Diffable Movability where
 instance Diffable IsAsync where
   IsAsync   === val | val !? "node" == Just "Async" = pure ()
   NotAsync  === val | val !? "node" == Just "NotAsync" = pure ()
+  IsAsync   === val | val !? "variant" == Just "Async" = pure ()
+  NotAsync  === val | val !? "variant" == Just "NotAsync" = pure ()
   IsAsync   === "Async" = pure ()
   NotAsync  === "NotAsync" = pure ()
   a         === val = diff "different async-ness" a val
 
 instance Diffable RangeLimits where
+  HalfOpen === val | Just "Excluded" <- val !? "node" = pure ()
+  Closed   === val | Just v <- val !? "node"
+                   , Just "Included" <- v !? "variant" = pure ()
   HalfOpen === "HalfOpen" = pure ()
   Closed   === "Closed" = pure ()
   rl       === val = diff "different range limits" rl val

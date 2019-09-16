@@ -243,11 +243,11 @@ resolveIdent i@(Ident s r _) =
 
   where
 
-  keywords = map mkIdent $ words "as box break const continue crate else enum extern false fn for\
-                                \ if impl in let loop match mod move mut pub ref return Self self\
-                                \ static struct super trait true type unsafe use where while\
-                                \ abstract alignof become do final macro offsetof override priv\
-                                \ proc pure sizeof typeof unsized virtual yield"
+  keywords = map mkIdent $ words "as async await box break const continue crate do dyn else enum \
+                                 \extern false fn for if impl in let loop macro match mod move mut \
+                                 \pub ref return Self self static struct super trait true try type \
+                                 \unsafe use where while yield abstract become final override priv \
+                                 \proc typeof unsized virtual"
 
   s' = (if r then "r#" else "") ++ s
   toks = execParser (lexTokens lexToken) (inputStreamFromString s') initPos
@@ -445,9 +445,7 @@ resolveTy :: (Typeable a, Monoid a) => TyType -> Ty a -> ResolveM (Ty a)
 -- TraitObject
 resolveTy NoSumType     o@(TraitObject b _) | length b > 1 = scope o (correct "added parens around trait object type" *> resolveTy NoSumType (ParenTy o mempty))
 resolveTy NoForType     o@TraitObject{} = scope o (correct "added parens around trait object type" *> resolveTy NoForType (ParenTy o mempty))
-resolveTy _             o@(TraitObject bds@(TraitBound{} :| _) x)
-  = scope o (TraitObject <$> traverse (resolveGenericBound ModBound) bds <*> pure x)
-resolveTy _             o@TraitObject{} = scope o (err o "first bound in trait object should be a trait bound")
+resolveTy _             o@(TraitObject bds x) = scope o (TraitObject <$> traverse (resolveGenericBound ModBound) bds <*> pure x)
 -- ParenTy
 resolveTy PrimParenType p@(ParenTy ty' x) = scope p (ParenTy <$> resolveTy NoSumType ty' <*> pure x)
 resolveTy _             p@(ParenTy ty' x) = scope p (ParenTy <$> resolveTy AnyType ty' <*> pure x)
@@ -625,7 +623,7 @@ resolvePat TopPattern p@(OrP ps x) = scope p $ do
 
 -- Everything else...
 resolvePat _ p@(LitP e x) = scope p (LitP <$> resolveExpr LitExpr e <*> pure x)
-resolvePat _ p@(RangeP l h x) = scope p (RangeP <$> resolveExpr LitOrPathExpr l <*> resolveExpr LitOrPathExpr h <*> pure x)
+resolvePat _ p@(RangeP l h rl x) = scope p (RangeP <$> resolveExpr LitOrPathExpr l <*> resolveExpr LitOrPathExpr h <*> pure rl <*> pure x)
 resolvePat _ p@(WildP x) = scope p (pure (WildP x))
 resolvePat _ p@(IdentP m i p' x) = scope p (IdentP m <$> resolveIdent i <*> traverse (resolvePat NoOrPattern) p' <*> pure x)
 resolvePat _ p@(StructP p' fs b x) = scope p (StructP <$> resolvePath ExprPath p' <*> traverse resolveFieldPat fs <*> pure b <*> pure x)

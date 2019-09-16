@@ -56,13 +56,10 @@ unescapeChar multiline ('\\':c:cs) = case c of
   'X'  -> do (h,cs') <- readHex 2 cs; pure (chr h, cs')
   'U'  -> do (h,cs') <- readHex 8 cs; pure (chr h, cs')
   'u'  -> case cs of
-    '{':x1:'}':cs'                -> do (h,_)   <- readHex 1 [x1];                pure (chr h, cs')
-    '{':x1:x2:'}':cs'             -> do (h,_)   <- readHex 2 [x1,x2];             pure (chr h, cs')
-    '{':x1:x2:x3:'}':cs'          -> do (h,_)   <- readHex 3 [x1,x2,x3];          pure (chr h, cs')
-    '{':x1:x2:x3:x4:'}':cs'       -> do (h,_)   <- readHex 4 [x1,x2,x3,x4];       pure (chr h, cs')
-    '{':x1:x2:x3:x4:x5:'}':cs'    -> do (h,_)   <- readHex 5 [x1,x2,x3,x4,x5];    pure (chr h, cs')
-    '{':x1:x2:x3:x4:x5:x6:'}':cs' -> do (h,_)   <- readHex 6 [x1,x2,x3,x4,x5,x6]; pure (chr h, cs')
-    _                             -> do (h,cs') <- readHex 4 cs;                  pure (chr h, cs')
+    '{':rest | (xs, '}':cs') <- span (/= '}') rest
+             , xs' <- filter (/= '_') xs
+             -> do (h, _) <- readHex (length xs') xs'; pure (chr h, cs')
+    _        -> do (h,cs') <- readHex 4 cs;            pure (chr h, cs')
   '\n' | multiline -> unescapeChar multiline $ dropWhile isSpace cs
   _ -> error "unescape char: bad escape sequence"
 unescapeChar _ (c:cs) = Just (c, cs)
@@ -92,7 +89,7 @@ unescapeByte _ [] = Nothing -- unescape byte: empty string
 unescapeChar' :: String -> Char
 unescapeChar' s = case unescapeChar False s of
                     Just (c, "") -> c
-                    _ -> error "unescape char: bad character literal"
+                    _ -> error $ "unescape char: bad character literal " ++ s
 
 -- | Given a string Rust representation of a byte, parse it into a byte
 unescapeByte' :: String -> Word8

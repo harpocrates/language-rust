@@ -134,6 +134,7 @@ data Abi
   = Cdecl
   | Stdcall
   | Fastcall
+  | Thiscall
   | Vectorcall
   | Aapcs
   | Win64
@@ -141,6 +142,7 @@ data Abi
   | PtxKernel
   | Msp430Interrupt
   | X86Interrupt
+  | AmdGpuKernel
   -- Cross-platform ABIs
   | Rust
   | C
@@ -834,8 +836,8 @@ data Pat a
   | RefP (Pat a) Mutability a
   -- | literal (example: @1@)
   | LitP (Expr a) a
-  -- | range pattern (example: @1...2@)
-  | RangeP (Expr a) (Expr a) a
+  -- | range pattern (example: @1..=4@)
+  | RangeP (Expr a) (Expr a) RangeLimits a
   -- | slice pattern (example: @[a, b, .., y, z]@)
   | SliceP [Pat a] a
   -- | A rest pattern @..@. Syntactically it is valid anywhere, but semantically it only has meaning
@@ -858,7 +860,7 @@ instance Located a => Located (Pat a) where
   spanOf (BoxP _ s) = spanOf s
   spanOf (RefP _ _ s) = spanOf s
   spanOf (LitP _ s) = spanOf s
-  spanOf (RangeP _ _ s) = spanOf s
+  spanOf (RangeP _ _ _ s) = spanOf s
   spanOf (SliceP _ s) = spanOf s
   spanOf (RestP s) = spanOf s
   spanOf (ParenP _ s) = spanOf s

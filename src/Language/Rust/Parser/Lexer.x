@@ -67,6 +67,9 @@ import Data.Word                       ( Word8 )
 
 }
 
+-- Whitespace
+$whitespace = [ $white \x0085 \x200e \x200f \x2028 \x2029 ]
+
 -- XID_START unicode character class
 @xid_start
   = [\x0041-\x005a]
@@ -927,12 +930,7 @@ $hexit             = [0-9a-fA-F]
 @char_escape
   = [nrt\\'"0]
   | [xX] [0-7] $hexit
-  | u\{ $hexit \}
-  | u\{ $hexit $hexit \}
-  | u\{ $hexit $hexit $hexit \}
-  | u\{ $hexit $hexit $hexit $hexit \}
-  | u\{ $hexit $hexit $hexit $hexit $hexit \}
-  | u\{ $hexit $hexit $hexit $hexit $hexit $hexit \}
+  | u\{ _* ( $hexit _* ){1,6} \}
 
 @byte_escape
   = [xX] $hexit $hexit
@@ -989,7 +987,7 @@ $hexit             = [0-9a-fA-F]
 
 tokens :-
 
-$white+         { \s -> pure (Space Whitespace s)  }
+$whitespace+    { \s -> pure (Space Whitespace s)  }
 
 "="             { token Equal }
 "<"             { token Less }
@@ -1081,7 +1079,7 @@ $white+         { \s -> pure (Space Whitespace s)  }
 
 @outer_doc_line { \c -> pure (Doc (drop 3 c) Outer False) }
 @outer_doc_line \r { \c -> pure (Doc (drop 3 (init c)) Outer False) }
-@outer_doc_inline / ( [^\*] | \r | \n )
+@outer_doc_inline / ( [^\*\/] | \r | \n )
                   { \_ -> Doc <$> nestedComment <*> pure Outer <*> pure True }
 
 @inner_doc_line   { \c -> pure (Doc (drop 3 c) Inner False) }
@@ -1136,7 +1134,7 @@ rawString n = do
 
 -- | Consume a full inline comment (which may be nested).
 nestedComment :: P String
-nestedComment = go 1 ""
+nestedComment = fmap cleanWindowsNewlines (go 1 "")
   where
     go :: Int -> String -> P String
     go 0 s = pure (reverse (drop 2 s))

@@ -145,7 +145,8 @@ prettyPatterns = testGroup "printing patterns"
   , testFlatten "(..)" (printPat (TupleP [ RestP () ] ()))
 
   , testFlatten "box x" (printPat (BoxP x ()))
-  , testFlatten "1 ..= 2" (printPat (RangeP (Lit [] (Int Dec 1 Unsuffixed ()) ()) (Lit [] (Int Dec 2 Unsuffixed ()) ()) ()))
+  , testFlatten "1 ..= 2" (printPat (RangeP (Lit [] (Int Dec 1 Unsuffixed ()) ()) (Lit [] (Int Dec 2 Unsuffixed ()) ()) Closed ()))
+  , testFlatten "1 .. 2" (printPat (RangeP (Lit [] (Int Dec 1 Unsuffixed ()) ()) (Lit [] (Int Dec 2 Unsuffixed ()) ()) HalfOpen ()))
   , testFlatten "&x" (printPat (RefP x Immutable ()))
   , testFlatten "&mut x" (printPat (RefP x Mutable ()))
   , testFlatten "true" (printPat (LitP (Lit [] (Bool True Unsuffixed ()) ()) ()))
