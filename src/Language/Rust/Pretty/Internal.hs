@@ -675,8 +675,7 @@ printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs 
                (\w -> vsep [leading, w, lagging])
                wc
 
-printItem (MacItem as i (Mac p ts y) x) = annotate x $ annotate y $ align $ printOuterAttrs as <#>
-  (printPath p True <> "!" <+> perhaps printIdent i <+> block Brace True mempty mempty [ printTokenStream ts ])
+printItem (MacItem as m x) = annotate x $ printOuterAttrs as <#> printMac Brace m
 
 printItem (MacroDef as v i ts x) = annotate x $ align $ printOuterAttrs as <#>
   (printVis v <+> "macro" <+> printIdent i <+> block Brace True mempty mempty [ printTokenStream ts ])
@@ -811,7 +810,7 @@ printWhereClause trailing (WhereClause predicates x)
 
 -- | Print a where clause predicate
 printWherePredicate :: WherePredicate a -> Doc a
-printWherePredicate (BoundPredicate blt ty bds y) = annotate y (printFormalLifetimeList blt <+> printType ty <> printBounds ":" bds)
+printWherePredicate (BoundPredicate blt ty bds y) = annotate y (printFormalLifetimeList blt <+> printType ty <> ":" <+> printBounds mempty bds)
 printWherePredicate (RegionPredicate lt bds y) = annotate y (printLifetimeBounds lt bds)
 printWherePredicate (EqPredicate lhs rhs y) = annotate y (printType lhs <+> "=" <+> printType rhs)
 

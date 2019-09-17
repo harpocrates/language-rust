@@ -444,16 +444,15 @@ data TyType
 resolveTy :: (Typeable a, Monoid a) => TyType -> Ty a -> ResolveM (Ty a)
 -- TraitObject
 resolveTy NoSumType     o@(TraitObject b _) | length b > 1 = scope o (correct "added parens around trait object type" *> resolveTy NoSumType (ParenTy o mempty))
-resolveTy NoForType     o@TraitObject{} = scope o (correct "added parens around trait object type" *> resolveTy NoForType (ParenTy o mempty))
-resolveTy _             o@(TraitObject bds x) = scope o (TraitObject <$> traverse (resolveGenericBound ModBound) bds <*> pure x)
 -- ParenTy
 resolveTy PrimParenType p@(ParenTy ty' x) = scope p (ParenTy <$> resolveTy NoSumType ty' <*> pure x)
 resolveTy _             p@(ParenTy ty' x) = scope p (ParenTy <$> resolveTy AnyType ty' <*> pure x)
 -- TupTy
 resolveTy PrimParenType t@TupTy{} = scope t (correct "added parens around tuple type" *> resolveTy PrimParenType (ParenTy t mempty))
 resolveTy _             t@(TupTy tys x) = scope t (TupTy <$> traverse (resolveTy AnyType) tys <*> pure x)
--- ImplTrait
+-- ImplTrait/TraitObject
 resolveTy _             i@(ImplTrait bds x) = scope i (ImplTrait <$> traverse (resolveGenericBound ModBound) bds <*> pure x)
+resolveTy _             o@(TraitObject bds x) = scope o (TraitObject <$> traverse (resolveGenericBound ModBound) bds <*> pure x)
 -- PathTy
 resolveTy PrimParenType p@(PathTy (Just _) _ _) = scope p (correct "added parents around path type" *> resolveTy PrimParenType (ParenTy p mempty))
 resolveTy _             p@(PathTy q p'@(Path _ s _) x) = scope p $
@@ -1290,11 +1289,10 @@ resolveItem _ i'@(Impl as v d u i g mt t' is x) = scope i' $ do
   pure (Impl as' v' d u i g' mt' t'' is' x)
 
 resolveItem StmtItem m@MacItem{} = scope m (err m "macro items cannot be in statement items")
-resolveItem _ a@(MacItem as i m x) = scope a $ do
+resolveItem _ a@(MacItem as m x) = scope a $ do
   as' <- traverse (resolveAttr OuterAttr) as
-  i' <- traverse resolveIdent i
   m' <- resolveMac ExprPath m
-  pure (MacItem as' i' m' x)
+  pure (MacItem as' m' x)
 
 resolveItem _ m@(MacroDef as v i ts x) = scope m $ do
   as' <- traverse (resolveAttr OuterAttr) as

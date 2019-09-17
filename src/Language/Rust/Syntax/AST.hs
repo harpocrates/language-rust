@@ -657,7 +657,7 @@ data Item a
   | Impl [Attribute a] (Visibility a) Defaultness Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a] a
   -- | generated from a call to a macro
   -- Example: @foo!{ .. }@
-  | MacItem [Attribute a] (Maybe Ident) (Mac a) a
+  | MacItem [Attribute a] (Mac a) a
   -- | definition of a macro via @macro_rules@
   -- Example: @macro_rules! foo { .. }@
   | MacroDef [Attribute a] (Visibility a) Ident TokenStream a
@@ -678,7 +678,7 @@ instance Located a => Located (Item a) where
   spanOf (Trait _ _ _ _ _ _ _ _ s) = spanOf s
   spanOf (TraitAlias _ _ _ _ _ s) = spanOf s
   spanOf (Impl _ _ _ _ _ _ _ _ _ s) = spanOf s
-  spanOf (MacItem _ _ _ s) = spanOf s
+  spanOf (MacItem _ _ s) = spanOf s
   spanOf (MacroDef _ _ _ _ s) = spanOf s
 
 -- | Used to annotate loops, breaks, continues, etc.

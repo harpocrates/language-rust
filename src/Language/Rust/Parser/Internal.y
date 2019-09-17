@@ -231,6 +231,7 @@ import qualified Data.List.NonEmpty as N
   default        { Spanned (IdentTok "default") _ }
   union          { Spanned (IdentTok "union") _ }
   auto           { Spanned (IdentTok "auto") _ }
+  macro_rules    { Spanned (IdentTok "macro_rules") _ }
 
   -- Comments
   outerDoc       { Spanned (Doc _ Outer _) _ }
@@ -277,14 +278,14 @@ import qualified Data.List.NonEmpty as N
 %nonassoc mut DEF EQ '::'
 
 -- These are all identifiers of sorts ('union' and 'default' are "weak" keywords)
-%nonassoc IDENT ntIdent default union self Self super auto crate
+%nonassoc IDENT ntIdent default union self Self super auto crate macro_rules
 
 -- These are all very low precedence unary operators
 %nonassoc async box return yield break continue for IMPLTRAIT LAMBDA
 
--- 'static' needs to have higher precedenc than 'LAMBDA' so that statements starting in static get
+-- 'static' needs to have higher precedence than 'LAMBDA' so that statements starting in static get
 -- considered as static items, and not a static lambda
-%nonassoc static
+%nonassoc static move
 
 -- These are the usual arithmetic precedences. 'UNARY' is introduced here for '*', '!', '-', '&'
 %right '=' '>>=' '<<=' '-=' '+=' '*=' '/=' '^=' '|=' '&=' '%='
@@ -296,7 +297,7 @@ import qualified Data.List.NonEmpty as N
 %nonassoc '..' '...' '..='
 %left '||'
 %left '&&'
-%left '==' '!=' '<' '>' '<=' '>='
+%nonassoc '==' '!=' '<' '>' '<=' '>='
 %left '|'
 %left '^'
 %left '&'
@@ -334,6 +335,7 @@ ident :: { Spanned Ident }
   | union                         { toIdent $1 }
   | default                       { toIdent $1 }
   | auto                          { toIdent $1 }
+  | macro_rules                   { toIdent $1 }
   | IDENT                         { toIdent $1 }
 
 -- This should precede any '>' token which could be absorbed in a '>>', '>=', or '>>=' token. Its
@@ -494,7 +496,7 @@ generic_args :: { GenericArgs Span }
 generic_arg :: { GenericArg Span }
   : lifetime                                   { LifetimeArg $1 }
   | ty                                         { TypeArg $1 }
-  | inner_attrs_block                          { ConstArg (let (as,b) = $1 in BlockExpr as b (spanOf b)) }
+  | unannotated_block                          { ConstArg $1 }
   | '-' lit_expr                               { ConstArg (Unary [] Neg $2 ($1 # $2)) }
   |     lit_expr                               { ConstArg $1 }
 
@@ -552,11 +554,14 @@ expr_qual_path :: { Spanned (QSelf Span, Path Span) }
 
 -- parse_expr_path_segments()
 expr_path_segments :: { Reversed NonEmpty (PathSegment Span) }
-  : path_segment_ident
+  : gen_expr_path_segments(path_segment_ident) { $1 }
+
+gen_expr_path_segments(first_seg) :: { Reversed NonEmpty (PathSegment Span) }
+  : first_seg
     { [PathSegment (unspan $1) Nothing (spanOf $1)] }
-  | expr_path_segments '::' path_segment_ident
+  | gen_expr_path_segments(first_seg) '::' path_segment_ident
     { $1 <> [PathSegment (unspan $3) Nothing (spanOf $3)] }
-  | expr_path_segments '::' generic_args
+  | gen_expr_path_segments(first_seg) '::' generic_args
     {%
       case (unsnoc $1) of
         (rst, PathSegment i Nothing x) ->
@@ -969,22 +974,8 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   | break label                      { Break [] (Just $2) Nothing ($1 # $2) }
   | break label rhs2     %prec break { Break [] (Just $2) (Just $3) ($1 # $3) }
   -- lambda expressions
-  | static async move lambda_args rhs   %prec LAMBDA
-    { Closure [] Value IsAsync  Immovable (FnDecl (unspan $4) Nothing False (spanOf $4)) $> ($1 # $>) }
-  |        async move lambda_args rhs   %prec LAMBDA
-    { Closure [] Value IsAsync  Movable   (FnDecl (unspan $3) Nothing False (spanOf $3)) $> ($1 # $>) }
-  | static       move lambda_args rhs   %prec LAMBDA
-    { Closure [] Value NotAsync Immovable (FnDecl (unspan $3) Nothing False (spanOf $3)) $> ($1 # $>) }
-  |              move lambda_args rhs   %prec LAMBDA
-    { Closure [] Value NotAsync Movable   (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
-  | static async      lambda_args rhs   %prec LAMBDA
-    { Closure [] Ref   IsAsync  Immovable (FnDecl (unspan $3) Nothing False (spanOf $3)) $> ($1 # $>) }
-  |        async      lambda_args rhs   %prec LAMBDA
-    { Closure [] Ref   IsAsync  Movable   (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
-  | static            lambda_args rhs   %prec LAMBDA
-    { Closure [] Ref   NotAsync Immovable (FnDecl (unspan $2) Nothing False (spanOf $2)) $> ($1 # $>) }
-  |                   lambda_args rhs   %prec LAMBDA
-    { Closure [] Ref   NotAsync Movable   (FnDecl (unspan $1) Nothing False (spanOf $1)) $> ($1 # $>) }
+  | lambda_prefix rhs   %prec LAMBDA { $1 Nothing $> }
+
 
 -- Variant of 'gen_expression' which only constructs expressions starting with another expression.
 left_gen_expression(lhs,rhs,rhs2) :: { Expr Span }
@@ -1056,14 +1047,14 @@ postfix_blockexpr(lhs) :: { Expr Span }
 --
 --   ['expr']               Most general class of expressions, no restrictions
 --
---   ['nostruct_expr']      Forbids struct literals (for use as scrutinee of loops, ifs, etc)
+--   ['nostruct_expr']      Forbids struct literals (for use as scrutinee of loops, ifs, etc).
 --
---   ['nostructblock_expr'] Forbids struct literals and block expressions (but not block-like things
---                          like 'if' expressions or 'loop' expressions)
+--   ['nostructblock_expr'] Forbids struct literals and block expressions, but not block-like things
+--                          like 'if' expressions or 'loop' expressions (for use as an optional
+--                          right hand side of a `nostruct_expr` expression).
 --
---   ['nonblock_expr']      Forbids expressions starting with blocks (things such as '{ 1 } + 2' are
---                          not allowed, while struct expressions are - their "block" is at the end
---                          of the expression)
+--   ['nonblock_expr']      Forbids expressions starting with blocks like '{ 1 } + 2', but not
+--                          struct expressions since their "block" is at the end of the expression.
 --
 --   ['blockpostfix_expr']  Allows expressions starting with blocks (things such as '{ 1 }? + 1')
 --                          but only when the leading block is itself a postfix expression.
@@ -1076,29 +1067,26 @@ expr :: { Expr Span }
   | paren_expr                                                                { $1 }
   | struct_expr                                                               { $1 }
   | block_expr                                                                { $1 }
-  | lambda_expr_block                                                         { $1 }
+  | lambda_expr_with_ty                                                       { $1 }
 
 nostruct_expr :: { Expr Span }
-  : gen_expression(nostruct_expr,nostruct_expr,nonstructblock_expr)           { $1 }
+  : gen_expression(nostruct_expr,nostruct_expr,nostructblock_expr)            { $1 }
   | paren_expr                                                                { $1 }
   | block_expr                                                                { $1 }
+  | lambda_expr_with_ty                                                       { $1 }
 
-nonstructblock_expr :: { Expr Span }
-  : gen_expression(nonstructblock_expr,nostruct_expr,nonstructblock_expr)     { $1 }
+nostructblock_expr :: { Expr Span }
+  : gen_expression(nostructblock_expr,nostruct_expr,nostructblock_expr)       { $1 }
   | paren_expr                                                                { $1 }
   | block_like_expr                                                           { $1 }
-  | unsafe inner_attrs_block
-    { let (as, Block ss r x) = $> in BlockExpr as (Block ss Unsafe ($1 # x)) ($1 # x) }
-  | async      inner_attrs_block
-    { let (as,b) = $> in Async as Ref b ($1 # b) }
-  | async move inner_attrs_block
-    { let (as,b) = $> in Async as Value b ($1 # b) }
+  | annotated_block                                                           { $1 }
+  | lambda_expr_with_ty                                                       { $1 }
 
 nonblock_expr :: { Expr Span }
   : gen_expression(nonblock_expr,expr,expr)                                   { $1 }
   | paren_expr                                                                { $1 }
   | struct_expr                                                               { $1 }
-  | lambda_expr_block                                                         { $1 }
+  | lambda_expr_with_ty                                                       { $1 }
 
 blockpostfix_expr :: { Expr Span }
   : postfix_blockexpr(block_like_expr)                                        { $1 }
@@ -1120,8 +1108,16 @@ lit_expr :: { Expr Span }
 -- one to omit the separating ';' after 'if', 'match', 'loop', 'for', 'while'"
 block_expr :: { Expr Span }
   : block_like_expr                                     { $1 }
-  | inner_attrs_block                                   { let (as,b) = $1 in BlockExpr as b (spanOf b) }
-  | unsafe inner_attrs_block
+  | unannotated_block                                   { $1 }
+  | annotated_block                                     { $1 }
+
+-- simple expression that is a block (no prefix, just '{ ... }')
+unannotated_block :: { Expr Span }
+  : inner_attrs_block                                   { let (as,b) = $1 in BlockExpr as b (spanOf b) }
+
+-- `unsafe` and `async` block expressions
+annotated_block :: { Expr Span }
+  : unsafe inner_attrs_block
     { let (as, Block ss r x) = $> in BlockExpr as (Block ss Unsafe ($1 # x)) ($1 # x) }
   | async      inner_attrs_block                        { let (as,b) = $> in Async as Ref b ($1 # b) }
   | async move inner_attrs_block                        { let (as,b) = $> in Async as Value b ($1 # b) }
@@ -1145,6 +1141,7 @@ block_like_expr :: { Expr Span }
   | expr_path '!' '{' token_stream '}'                               { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
   | try inner_attrs_block                                            { let (as,b) = $> in TryBlock as b ($1 # b) }
 --  | label ':'                                     inner_attrs_block  { let (as,b) = $> in BlockExpr as b (spanOf b) }
+
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
 if_expr :: { Expr Span }
@@ -1194,25 +1191,29 @@ paren_expr :: { Expr Span }
   | '('             expr ',' sep_by1T(expr,',') ')'     { TupExpr [] ($2 : toList $4) ($1 # $>) }
   | '(' inner_attrs expr ',' sep_by1T(expr,',') ')'     { TupExpr (toList $2) ($3 : toList $5) ($1 # $>) }
 
+-- A lambda expression with a return type. This is seperate from the `gen_expression` production
+-- because the RHS _has_ to be a block.
+lambda_expr_with_ty :: { Expr Span }
+  : lambda_prefix '->' ty block                         { $1 (Just $3) (BlockExpr [] $> (spanOf $>)) }
 
--- Closure ending in blocks
-lambda_expr_block :: { Expr Span }
-  : static async move lambda_args '->' ty block
-    { Closure [] Value IsAsync  Immovable (FnDecl (unspan $4) (Just $6) False (spanOf $4)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |        async move lambda_args '->' ty block
-    { Closure [] Value IsAsync  Movable   (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  | static       move lambda_args '->' ty block
-    { Closure [] Value NotAsync Immovable (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |              move lambda_args '->' ty block
-    { Closure [] Value NotAsync Movable   (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  | static async      lambda_args '->' ty block
-    { Closure [] Ref   IsAsync  Immovable (FnDecl (unspan $3) (Just $5) False (spanOf $3)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |        async      lambda_args '->' ty block
-    { Closure [] Ref   IsAsync  Movable   (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  | static            lambda_args '->' ty block
-    { Closure [] Ref   NotAsync Immovable (FnDecl (unspan $2) (Just $4) False (spanOf $2)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
-  |                   lambda_args '->' ty block
-    { Closure [] Ref   NotAsync Movable   (FnDecl (unspan $1) (Just $3) False (spanOf $1)) (BlockExpr [] $> (spanOf $>)) ($1 # $>) }
+-- Given a return type and a body, make a lambda expression
+lambda_prefix :: { Maybe (Ty Span) -> Expr Span -> Expr Span }
+  : static async move lambda_args
+    { \retTy body -> Closure [] Value IsAsync  Immovable (FnDecl (unspan $4) retTy False (spanOf $4)) body ($1 # body) }
+  |        async move lambda_args
+    { \retTy body -> Closure [] Value IsAsync  Movable   (FnDecl (unspan $3) retTy False (spanOf $3)) body ($1 # body) }
+  | static       move lambda_args
+    { \retTy body -> Closure [] Value NotAsync Immovable (FnDecl (unspan $3) retTy False (spanOf $3)) body ($1 # body) }
+  |              move lambda_args
+    { \retTy body -> Closure [] Value NotAsync Movable   (FnDecl (unspan $2) retTy False (spanOf $2)) body ($1 # body) }
+  | static async      lambda_args
+    { \retTy body -> Closure [] Ref   IsAsync  Immovable (FnDecl (unspan $3) retTy False (spanOf $3)) body ($1 # body) }
+  |        async      lambda_args
+    { \retTy body -> Closure [] Ref   IsAsync  Movable   (FnDecl (unspan $2) retTy False (spanOf $2)) body ($1 # body) }
+  | static            lambda_args
+    { \retTy body -> Closure [] Ref   NotAsync Immovable (FnDecl (unspan $2) retTy False (spanOf $2)) body ($1 # body) }
+  |                   lambda_args
+    { \retTy body -> Closure [] Ref   NotAsync Movable   (FnDecl (unspan $1) retTy False (spanOf $1)) body ($1 # body) }
 
 -- Lambda expression arguments block
 lambda_args :: { Spanned [Arg Span] }
@@ -1222,12 +1223,15 @@ lambda_args :: { Spanned [Arg Span] }
 
 -- Struct expression literal
 struct_expr :: { Expr Span }
-  : expr_path '{'                                    '..' expr '}'  { Struct [] $1 [] (Just $4) ($1 # $>) }
-  | expr_path '{' inner_attrs                        '..' expr '}'  { Struct (toList $3) $1 [] (Just $5) ($1 # $>) }
-  | expr_path '{'             sep_by1(field,',') ',' '..' expr '}'  { Struct [] $1 (toList $3) (Just $6) ($1 # $>) }
-  | expr_path '{' inner_attrs sep_by1(field,',') ',' '..' expr '}'  { Struct (toList $3) $1 (toList $4) (Just $7) ($1 # $>) }
-  | expr_path '{'             sep_byT(field,',')               '}'  { Struct [] $1 $3 Nothing ($1 # $>) }
-  | expr_path '{' inner_attrs sep_byT(field,',')               '}'  { Struct (toList $3) $1 $4 Nothing ($1 # $>) }
+  : expr_path struct_suffix                             { $2 $1 }
+
+struct_suffix :: { Path Span -> Expr Span }
+  : '{'                                    '..' expr '}'  { \p -> Struct [] p [] (Just $3) (p # $>) }
+  | '{' inner_attrs                        '..' expr '}'  { \p -> Struct (toList $2) p [] (Just $4) (p # $>) }
+  | '{'             sep_by1(field,',') ',' '..' expr '}'  { \p -> Struct [] p (toList $2) (Just $5) (p # $>) }
+  | '{' inner_attrs sep_by1(field,',') ',' '..' expr '}'  { \p -> Struct (toList $2) p (toList $3) (Just $6) (p # $>) }
+  | '{'             sep_byT(field,',')               '}'  { \p -> Struct [] p $2 Nothing (p # $>) }
+  | '{' inner_attrs sep_byT(field,',')               '}'  { \p -> Struct (toList $2) p $3 Nothing (p # $>) }
 
 field :: { Field Span }
   : many(outer_attribute) ident ':' expr  { Field (unspan $2) (Just $4) $1 ($1 # $2 # $4) }
@@ -1235,34 +1239,50 @@ field :: { Field Span }
 
 -- an expression block that won't cause conflicts with stmts
 vis_safety_block :: { Expr Span }
-  : vis safety inner_attrs_block {%
-       let (as, Block ss r x) = $3
-           e = BlockExpr as (Block ss (unspan $2) ($2 # x)) ($2 # x)
-       in noVis $1 e
-    }
-  | vis async      inner_attrs_block {%
-       let (as,b) = $>
-           e = Async as Ref b ($2 # b)
-       in noVis $1 e
-    }
-  | vis async move inner_attrs_block {%
-       let (as,b) = $>
-           e = Async as Value b ($2 # b)
-       in noVis $1 e
-    }
+  : vis unannotated_block        {% noVis $1 $> }
+  | vis annotated_block          {% noVis $1 $> }
 
--- an expression starting with 'union' or 'default' (as identifiers) that won't cause conflicts with stmts
-vis_union_def_nonblock_expr :: { Expr Span }
-  : union_default_expr                                               { $1 }
-  | left_gen_expression(vis_union_def_nonblock_expr, expr, expr) { $1 }
+-- Like 'nonblock_expr', but for expressions which explicitly conflict with
+-- other statements:
+--
+--   * expressions starting with `union`, `default`, or `auto` (conflicts with
+--     union items, default impls, and auto impls)
+--
+--   * expressions starting with `unsafe`, `static` (conflicts with unsafe
+--     functions and static items)
+--
+-- This rule is designed to mesh with the `stmt` rule (hence the `vis`/`noVis`
+-- and `safety`/`noSafety` dance). It _only_ generates the problematic cases
+-- laid out above. Generating more cases would imply a conflict with the other
+-- expression rules for statements.
+conflict_nonblock_expr :: { Expr Span }
+  : conflict_expr_path  { (PathExpr [] Nothing $> (spanOf $>)) }
+  | conflict_expr_path struct_suffix                 { ($2 $1) }
+  | vis lambda_expr_with_ty                                        {% noVis $1 $2 }
+  | vis lambda_prefix expr                %prec '::'               {% noVis $1 ($2 Nothing $>) }
+  | left_gen_expression(conflict_nonblock_expr, expr, expr) { $1 }
+  | conflict_expr_path '!' '(' token_stream ')'                    { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
+  | conflict_expr_path '!' '[' token_stream ']'                    { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
 
-union_default_expr :: { Expr Span }
-  : vis union         {%
-      noVis $1 (PathExpr [] Nothing (Path False [PathSegment "union" Nothing (spanOf $2)] (spanOf $1)) (spanOf $1))
-    }
-  | vis default         {%
-      noVis $1 (PathExpr [] Nothing (Path False [PathSegment "default" Nothing (spanOf $2)] (spanOf $1)) (spanOf $1))
-    }
+-- Like 'block_like_expr', but for expressions which explicitly conflict with
+-- other statements:
+--
+--   * expressions starting with `union`, `default`, or `auto` (conflicts with
+--     union items, default impls, and auto impls)
+--
+-- See comments/motivation on 'conflict_nonblock_expr'
+conflict_block_like_expr :: { Expr Span }
+  : conflict_expr_path '!' '{' token_stream '}'                    { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
+
+-- Problematic "contextual" identifiers
+conflict_ident :: { Spanned Ident }
+  : vis union         {% noVis $1 (Spanned "union" (spanOf $>)) }
+  | vis default       {% noVis $1 (Spanned "default" (spanOf $>)) }
+  | vis safety auto   {% noSafety $2 =<< noVis $1 (Spanned "auto" (spanOf $>)) }
+
+-- Expression path starting with a problematic identifier
+conflict_expr_path :: { Path Span }
+  : gen_expr_path_segments(conflict_ident)       { Path False (toList $1) (spanOf $1) }
 
 
 ----------------
@@ -1270,33 +1290,38 @@ union_default_expr :: { Expr Span }
 ----------------
 
 stmt :: { Stmt Span }
-  : ntStmt                                                 { $1 }
-  | many(outer_attribute) let top_pat ':' ty initializer ';' { Local $3 (Just $5) $6 $1 ($1 # $2 # $>) }
-  | many(outer_attribute) let top_pat        initializer ';' { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
-  | many(outer_attribute) nonblock_expr                  ';' { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
-  | many(outer_attribute) block_like_expr                ';' { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
-  | many(outer_attribute) blockpostfix_expr              ';' { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
-  | many(outer_attribute) vis_union_def_nonblock_expr    ';' { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
-  | many(outer_attribute) block_like_expr      %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
-  | many(outer_attribute) vis_safety_block               ';' { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
-  | many(outer_attribute) vis_safety_block     %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }
-  | item                                                 ';' { ItemStmt $1 ($1 # $2) }
-  | item                                       %prec NOSEMI  { ItemStmt $1 (spanOf $1) }
-  | many(outer_attribute) expr_path '!' ident '[' token_stream ']' ';'
-    { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!' ident '(' token_stream ')' ';'
-    { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!' ident '{' token_stream '}'      %prec NOSEMI
-    { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!' ident '{' token_stream '}' ';'
-    { ItemStmt (macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>)) ($1 # $2 # $>) }
+  : ntStmt                                                        { $1 }
+  | many(outer_attribute) let top_pat ':' ty initializer      ';' { Local $3 (Just $5) $6 $1 ($1 # $2 # $>) }
+  | many(outer_attribute) let top_pat        initializer      ';' { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
+  | many(outer_attribute)          nonblock_expr              ';' { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
+  | many(outer_attribute) conflict_nonblock_expr              ';' { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
+  | many(outer_attribute)          block_like_expr            ';' { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
+  | many(outer_attribute) conflict_block_like_expr            ';' { toStmt ($1 `addAttrs` $2) False True  ($1 # $2 # $3) }
+  | many(outer_attribute)          block_like_expr  %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
+  | many(outer_attribute) conflict_block_like_expr  %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True  ($1 # $2) }
+  | many(outer_attribute) blockpostfix_expr                   ';' { toStmt ($1 `addAttrs` $2) True  True  ($1 # $2 # $3) }
+  | many(outer_attribute) vis_safety_block                    ';' { toStmt ($1 `addAttrs` $2) True True ($1 # $2 # $>) }
+  | many(outer_attribute) vis_safety_block          %prec NOSEMI  { toStmt ($1 `addAttrs` $2) False True ($1 # $2) }
+  | item                                                      ';' { ItemStmt $1 ($1 # $2) }
+  | item                                            %prec NOSEMI  { ItemStmt $1 (spanOf $1) }
+  | many(outer_attribute) macro_rules '!' ident '[' token_stream ']' ';'
+    { let s = $1 # $2 # $> in ItemStmt (MacroDef $1 InheritedV (unspan $4) $6 s) s }
+  | many(outer_attribute) macro_rules '!' ident '(' token_stream ')' ';'
+    { let s = $1 # $2 # $> in ItemStmt (MacroDef $1 InheritedV (unspan $4) $6 s) s }
+  | many(outer_attribute) macro_rules '!' ident '{' token_stream '}' %prec NOSEMI
+    { let s = $1 # $2 # $> in ItemStmt (MacroDef $1 InheritedV (unspan $4) $6 s) s }
+  | many(outer_attribute) macro_rules '!' ident '{' token_stream '}' ';'
+    { let s = $1 # $2 # $> in ItemStmt (MacroDef $1 InheritedV (unspan $4) $6 s) s }
   | ';'                                                      { StandaloneSemi (spanOf $1) }
+
+
 
 -- List of statements where the last statement might be a no-semicolon statement.
 stmts_possibly_no_semi :: { [Stmt Span] }
   : stmt stmts_possibly_no_semi                            { $1 : $2 }
   | stmt                                                   { [$1] }
-  | many(outer_attribute) nonblock_expr                    { [toStmt ($1 `addAttrs` $2) False False ($1 # $2)] }
+  | many(outer_attribute)          nonblock_expr           { [toStmt ($1 `addAttrs` $2) False False ($1 # $2)] }
+  | many(outer_attribute) conflict_nonblock_expr           { [toStmt ($1 `addAttrs` $2) False False ($1 # $2)] }
   | many(outer_attribute) blockpostfix_expr                { [toStmt ($1 `addAttrs` $2) False True  ($1 # $2)] }
 
 initializer :: { Maybe (Expr Span) }
@@ -1364,9 +1389,9 @@ item :: { Item Span }
   | many(outer_attribute) vis safety trait ident generics where_clause '{' many(trait_item) '}'
     { Trait $1 (unspan $2) (unspan $5) False (unspan $3) ($6 `withWhere` $7) [] $9 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute) vis safety auto trait ident generics ':' sep_by1T(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
-    { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $10) (toList $9) $12 ($1 # $2 # $3 # $5 # $>) }
+    { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $10) (toList $9) $12 ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis safety auto trait ident generics where_clause '{' many(trait_item) '}'
-    { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $8) [] $10 ($1 # $2 # $3 # $5 # $>) }
+    { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $8) [] $10 ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis safety trait ident generics '=' sep_by1T(ty_param_bound_mod,'+') ';'
     {% noSafety $3 (TraitAlias $1 (unspan $2) (unspan $5) $6 (toNonEmpty $8) ($1 # $2 # $3 # $>)) }
   | many(outer_attribute) vis         safety impl generics ty_prim              where_clause '{' impl_items '}'
@@ -1394,20 +1419,28 @@ item :: { Item Span }
 
 -- Most general type of item
 mod_item :: { Item Span }
-  : ntItem                                             { $1 }
+  : ntItem                                         { $1 }
   | item                                           { $1 }
-  | many(outer_attribute) expr_path '!' ident '[' token_stream ']' ';'
-    { macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!'       '[' token_stream ']' ';'
-    { macroItem $1 Nothing            (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!' ident '(' token_stream ')' ';'
-    { macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!'       '(' token_stream ')' ';'
-    { macroItem $1 Nothing            (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!' ident '{' token_stream '}'
-    { macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>) }
-  | many(outer_attribute) expr_path '!'       '{' token_stream '}'
-    { macroItem $1 Nothing            (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
+  | many(outer_attribute) mod_mac                  { MacItem $1 $2 ($1 # $2) }
+  | many(outer_attribute) conflict_mod_path '!' '[' token_stream ']' ';'  { MacItem $1 (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
+  | many(outer_attribute) conflict_mod_path '!' '{' token_stream '}'      { MacItem $1 (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
+  | many(outer_attribute) conflict_mod_path '!' '(' token_stream ')' ';'  { MacItem $1 (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
+  | many(outer_attribute) macro_rules '!' ident '[' token_stream ']' ';'
+    { MacroDef $1 InheritedV (unspan $4) $6 ($1 # $2 # $>) }
+  | many(outer_attribute) macro_rules '!' ident '(' token_stream ')' ';'
+    { MacroDef $1 InheritedV (unspan $4) $6 ($1 # $2 # $>) }
+  | many(outer_attribute) macro_rules '!' ident '{' token_stream '}'
+    { MacroDef $1 InheritedV (unspan $4) $6 ($1 # $2 # $>) }
+
+-- Module path starting with a problematic identifier
+conflict_mod_path :: { Path Span  }
+  : conflict_ident
+    { Path False [PathSegment (unspan $1) Nothing (spanOf $1)] (spanOf $1) }
+  | conflict_mod_path '::' path_segment_ident
+    {
+      let Path g segs _ = $1 in
+      Path g (segs <> [PathSegment (unspan $3) Nothing (spanOf $3) ]) ($1 # $3)
+    }
 
 foreign_item :: { ForeignItem Span }
   : many(outer_attribute) vis static     ident ':' ty ';'
@@ -1472,9 +1505,9 @@ where_predicate :: { WherePredicate Span }
   | lifetime ':' sep_by1T(lifetime,'+')                    { RegionPredicate $1 (toList $3) ($1 # $3) }
   | no_for_ty                                     %prec EQ { BoundPredicate [] $1 [] (spanOf $1) }
   | no_for_ty '='  ty                                      { EqPredicate $1 $3 ($1 # $3) }
-  | no_for_ty ':' sep_by1T(ty_param_bound_mod,'+')         { BoundPredicate [] $1 (toList $3) ($1 # $3) }
+  | no_for_ty ':' sep_byT(ty_param_bound_mod,'+')          { BoundPredicate [] $1 $3 ($1 # $3) }
   | for_lts no_for_ty                                      { BoundPredicate (unspan $1) $2 [] ($1 # $2) }
-  | for_lts no_for_ty ':' sep_by1T(ty_param_bound_mod,'+') { BoundPredicate (unspan $1) $2 (toList $4) ($1 # $>) }
+  | for_lts no_for_ty ':' sep_byT(ty_param_bound_mod,'+')  { BoundPredicate (unspan $1) $2 $4 ($1 # $>) }
 
 impl_items :: { ([Attribute Span], [ImplItem Span]) }
   :             many(impl_item)  { ([], $1) }
@@ -1702,6 +1735,7 @@ token :: { Spanned Token }
   | default    { $1 }
   | union      { $1 }
   | auto       { $1 }
+  | macro_rules { $1 }
   -- Comments
   | outerDoc   { $1 }
   | innerDoc   { $1 }
@@ -1841,7 +1875,7 @@ expParseError (Spanned t _, exps) = fail $ "Syntax error: unexpected `" ++ show 
   outerDoc = words "outerDoc"
   innerDoc = words "innerDoc"
 
-  identifier = words "IDENT"
+  identifier = words "IDENT union default auto macro_rules"
   lifetime = words "LIFETIME"
 
 -- | Convert an 'IdentTok' into an 'Ident'
@@ -1868,11 +1902,6 @@ withWhere (Generics ps _ x) w = Generics ps w x
 noSafety :: Spanned Unsafety -> a -> P a
 noSafety (Spanned Normal _) x = pure x
 noSafety _ _ = fail "safety is not allowed here"
-
--- | Make a macro item, which may be a 'MacroDef'
-macroItem :: [Attribute Span] -> (Maybe Ident) -> Mac Span -> Span -> Item Span
-macroItem as (Just i) (Mac (Path False [PathSegment "macro_rules" Nothing _] _) tts _) x = MacroDef as InheritedV i tts x
-macroItem as i mac x = MacItem as i mac x
 
 -- | Add attributes to an expression
 addAttrs :: [Attribute Span] -> Expr Span -> Expr Span

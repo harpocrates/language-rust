@@ -757,15 +757,24 @@ parserStatements = testGroup "parsing statements"
   , testP "match true { };" (Semi (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [] ()) ())
   , testP "match true { }" (NoSemi (Match [] (Lit [] (Bool True Unsuffixed ()) ()) [] ()) ())
   , testP "static foo: i32 = 1;" (ItemStmt (Static [] InheritedV "foo" i32 Immutable (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()) ())
+  , testP "static || 1;" (Semi (Closure [] Ref NotAsync Immovable (FnDecl [] Nothing False ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()) ())
   , testP "unsafe { 1 };" (Semi (BlockExpr [] (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Unsafe ()) ()) ())
   , testP "unsafe { 1 }" (NoSemi (BlockExpr [] (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Unsafe ()) ()) ())
+  , testP "unsafe fn foo() { }" (ItemStmt (Fn [] InheritedV "foo" (FnDecl [] Nothing False ()) (FnHeader Unsafe NotAsync NotConst Rust ()) (Generics [] (WhereClause [] ()) ()) (Block [] Normal ()) ()) ())
   , testP "async { 1 };" (Semi (Async [] Ref (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
   , testP "async { 1 }" (NoSemi (Async [] Ref (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
   , testP "async move { 1 };" (Semi (Async [] Value (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
   , testP "async move { 1 }" (NoSemi (Async [] Value (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
+  , testP "async fn foo() { }" (ItemStmt (Fn [] InheritedV "foo" (FnDecl [] Nothing False ()) (FnHeader Normal IsAsync NotConst Rust ()) (Generics [] (WhereClause [] ()) ()) (Block [] Normal ()) ()) ())
   , testP "{ 1 };" (Semi (BlockExpr [] (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
   , testP "{ 1 }" (NoSemi (BlockExpr [] (Block [NoSemi (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()] Normal ()) ()) ())
   , testP "|| ();" (Semi (Closure [] Ref NotAsync Movable (FnDecl [] Nothing False ()) (TupExpr [] [] ()) ()) ())
+  , testP "auto trait Foo { }" (ItemStmt (Trait [] InheritedV "Foo" True Normal (Generics [] (WhereClause [] ()) ()) [] [] ()) ())
+  , testP "auto.field + 1;" (Semi (Binary [] AddOp (FieldAccess [] (PathExpr [] Nothing (Path False [PathSegment "auto" Nothing ()] ()) ()) "field" ()) (Lit [] (Int Dec 1 Unsuffixed ()) ()) ()) ())
+  , testP "default impl Foo for Bar { }" (ItemStmt (Impl [] InheritedV Default Normal Positive (Generics [] (WhereClause [] ()) ()) (Just (TraitRef (Path False [PathSegment "Foo" Nothing ()] ()))) (PathTy Nothing (Path False [PathSegment "Bar" Nothing ()] ()) ()) [] ()) ())
+  , testP "default { x: 1 };" (Semi (Struct [] (Path False [PathSegment "default" Nothing ()] ()) [Field "x" (Just (Lit [] (Int Dec 1 Unsuffixed ()) ())) [] ()] Nothing ()) ())
+  , testP "union::foo::a;" (Semi (PathExpr [] Nothing (Path False [PathSegment "union" Nothing (),PathSegment "foo" Nothing (),PathSegment "a" Nothing ()] ()) ()) ())
+  , testP "union Foo { }" (ItemStmt (Union [] InheritedV "Foo" (StructD [] ()) (Generics [] (WhereClause [] ()) ()) ()) ())
   ]
 
 
@@ -886,6 +895,13 @@ parserItems = testGroup "parsing items"
   , testP "unsafe auto trait Trace { }" (Trait [] InheritedV "Trace" True Unsafe (Generics [] (WhereClause [] ()) ()) [] [] ())
   , testP "trait Trace: Debug { }" (Trait [] InheritedV "Trace" False Normal (Generics [] (WhereClause [] ()) ()) [TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()] [] ())
   , testP "unsafe trait Trace: Debug { }" (Trait [] InheritedV "Trace" False Unsafe (Generics [] (WhereClause [] ()) ()) [TraitBound (PolyTraitRef [] (TraitRef debug) ()) None ()] [] ())
+  , testP "default!{ SizeBounds, 0..100 }" (MacItem [] (Mac (Path False [PathSegment "default" Nothing ()] ())
+                                                            (Stream [ Tree (Token (Span (Position 10 1 10) (Position 20 1 20)) (IdentTok "SizeBounds"))
+                                                                    , Tree (Token (Span (Position 20 1 20) (Position 21 1 21)) Comma)
+                                                                    , Tree (Token (Span (Position 22 1 22) (Position 23 1 23)) (LiteralTok (IntegerTok "0") Nothing))
+                                                                    , Tree (Token (Span (Position 23 1 23) (Position 25 1 25)) DotDot)
+                                                                    , Tree (Token (Span (Position 25 1 25) (Position 28 1 28)) (LiteralTok (IntegerTok "100") Nothing))
+                                                                    ]) ()) ())
   ]
 
 -- Just a common expression to make the tests above more straightforward

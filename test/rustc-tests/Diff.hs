@@ -131,10 +131,9 @@ instance Show a => Diffable (Item a) where
         mtr === (n' ! "fields" ! 4)
         t === (n' ! "fields" ! 5)
         is === (n' ! "fields" ! 6)
-      ("Mac", MacItem as i m _) -> do
+      ("Mac", MacItem as m _) -> do
         as === (val ! "attrs")
         inheritedV === (val ! "vis")
-        fromMaybe "" i === (val ! "ident")
         m === (n' ! "fields" ! 0)
       ("MacroDef", MacroDef as v i tt _) -> do
         as === (val ! "attrs")
