@@ -188,6 +188,7 @@ prettyTypes = testGroup "printing types"
   , testFlatten "(i32, f64, usize)" (printType (TupTy [i32,f64,usize] ()))
   , testFlatten "std::vec::Vec<i32>" (printType (PathTy Nothing (Path False [ std, vec, veci32 ] ()) ()))
   , testFlatten "<i32 as std::vec>::Vec<i32>" (printType (PathTy (Just (QSelf i32 2)) (Path False [ std, vec, veci32 ] ()) ()))
+  , testFlatten "<i32 as ::std::vec>::Vec<i32>" (printType (PathTy (Just (QSelf i32 3)) (Path True [ std, vec, veci32 ] ()) ()))
   , testFlatten "dyn Debug + 'lt" (printType (TraitObject [ debug', lt ] ()))
   , testFlatten "impl Iterator<Item = i32> + 'lt" (printType (ImplTrait [ iterator, lt ] ()))
   , testFlatten "(i32)" (printType (ParenTy i32 ()))

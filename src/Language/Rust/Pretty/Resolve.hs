@@ -84,7 +84,7 @@ import Data.Dynamic                    ( Dynamic, toDyn, Typeable )
 import Data.List                       ( find, sortBy )
 import Data.List.NonEmpty              ( NonEmpty(..) )
 import qualified Data.List.NonEmpty as N
-import Data.Maybe                      ( fromJust )
+import Data.Maybe                      ( fromJust, isJust )
 import Data.Semigroup as Sem           ( (<>) )
 
 {-# ANN module "HLint: ignore Reduce duplication" #-}
@@ -455,12 +455,14 @@ resolveTy _             i@(ImplTrait bds x) = scope i (ImplTrait <$> traverse (r
 resolveTy _             o@(TraitObject bds x) = scope o (TraitObject <$> traverse (resolveGenericBound ModBound) bds <*> pure x)
 -- PathTy
 resolveTy PrimParenType p@(PathTy (Just _) _ _) = scope p (correct "added parents around path type" *> resolveTy PrimParenType (ParenTy p mempty))
-resolveTy _             p@(PathTy q p'@(Path _ s _) x) = scope p $
+resolveTy _             p@(PathTy q p'@(Path g s _) x) = scope p $
+  let sLen = if g then length s + 1 else length s in
   case q of
       Just (QSelf _ i)
-        | 0 <= i && i < length s -> PathTy <$> traverse resolveQSelf q <*> resolvePath TypePath p' <*> pure x
-        | otherwise              -> err p "index given by QSelf is outside the possible range"
-      Nothing                    -> PathTy Nothing <$> resolvePath TypePath p' <*> pure x
+        | 0 <= i
+        , i < sLen  -> PathTy <$> traverse resolveQSelf q <*> resolvePath TypePath p' <*> pure x
+        | otherwise -> err p "index given by QSelf is outside the possible range"
+      Nothing       -> PathTy Nothing <$> resolvePath TypePath p' <*> pure x
 -- BareFn
 resolveTy NoForType     f@(BareFn _ _ (_:_) _ _) = scope f (correct "added parens around `for' function type" *> resolveTy NoForType (ParenTy f mempty))
 resolveTy _             f@(BareFn u a lts fd x) = scope f (BareFn u a <$> traverse resolveGenericParam lts <*> resolveFnDecl declTy GeneralArg fd <*> pure x)
@@ -603,7 +605,8 @@ resolvePat _ t@(TupleStructP p fs x) = scope t $ do
 -- PathP
 resolvePat _ p@(PathP Nothing a x) = scope p (PathP Nothing <$> resolvePath ExprPath a <*> pure x)
 resolvePat _ p@(PathP q@(Just (QSelf _ i)) p'@(Path g s x) x')
-  | i < 0 || i >= length s = scope p (err p "index given by QSelf is outside the possible range")
+  | iMax <- if g then length s + 1 else length s
+  , i < 0 || i >= iMax = scope p (err p "index given by QSelf is outside the possible range")
   | i == 0 = scope p (PathP <$> traverse resolveQSelf q <*> resolvePath ExprPath p' <*> pure x)
   | otherwise = scope p $ do
       Path _ tyPSegs   _ <- resolvePath TypePath $ Path g (take i s) mempty
@@ -958,7 +961,8 @@ resolveExprP _ _ p@(PathExpr as Nothing p' x) = scope p $ do
   p'' <- resolvePath ExprPath p'
   pure (PathExpr as' Nothing p'' x)
 resolveExprP _ _ p@(PathExpr as q@(Just (QSelf _ i)) p'@(Path g s x) x')
-  | i < 0 || i >= length s = scope p (err p "index given by QSelf is outside the possible range")
+  | iMax <- if g then length s + 1 else length s
+  , i < 0 || i >= iMax = scope p (err p "index given by QSelf is outside the possible range")
   | i == 0 = scope p $ do
       as' <- traverse (resolveAttr OuterAttr) as
       q' <- traverse resolveQSelf q
@@ -1172,10 +1176,12 @@ data ItemType
 --
 resolveItem :: (Typeable a, Monoid a) => ItemType -> Item a -> ResolveM (Item a)
 resolveItem _ e@(ExternCrate as v i r x) = scope e $ do
+  let resolveSelfIdent j | j == mkIdent "self" = pure j
+                         | otherwise = resolveIdent j
   as' <- traverse (resolveAttr OuterAttr) as
   v' <- resolveVisibility v
-  i' <- resolveIdent i
-  r' <- traverse resolveIdent r
+  i' <-  if isJust r then resolveIdent i else resolveSelfIdent i
+  r' <- traverse resolveSelfIdent r
   pure (ExternCrate as' v' i' r' x)
 
 resolveItem _ u@(Use as v p x) = scope u $ do

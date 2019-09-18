@@ -1012,7 +1012,8 @@ printSegment (PathSegment i ps x) colons = annotate x (printIdent i <> params)
 printQPath :: Path a -> QSelf a -> Bool -> Doc a
 printQPath (Path global segs x) (QSelf ty n) colons = hcat [ "<", printType ty <+> aliasedDoc, ">", "::", restDoc ]
   where
-  (aliased, rest) = splitAt n segs
+  n' = if global then n-1 else n
+  (aliased, rest) = splitAt n' segs
 
   aliasedDoc = case aliased of
                  [] -> mempty

@@ -204,6 +204,7 @@ fn items() {
   #[macrodef_outer]
   macro_rules! foo { () => ( .. ) }
 
+  let x: i32 = #[expression_outer] 34;
 }
 
 fn foo<

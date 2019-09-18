@@ -338,6 +338,10 @@ ident :: { Spanned Ident }
   | macro_rules                   { toIdent $1 }
   | IDENT                         { toIdent $1 }
 
+ident_or_self :: { Spanned Ident }
+  : ident                         { $1 }
+  | self                          { toIdent $1 }
+
 -- This should precede any '>' token which could be absorbed in a '>>', '>=', or '>>=' token. Its
 -- purpose is to check if the lookahead token starts with '>' but contains more that. If that is
 -- the case, it pushes two tokens, the first of which is '>'. We exploit the %% feature of threaded
@@ -460,7 +464,8 @@ qual_path(segs) :: { Spanned (QSelf Span, Path Span) }
   | lt_ty_qual_path as ty_path '>' '::' segs
     {
       let Path g segsTy x = $3 in
-      Spanned (QSelf (unspan $1) (length segsTy), Path g (segsTy <> toList $6) x) ($1 # $>)
+      let idx = length segsTy + if g then 1 else 0 in
+      Spanned (QSelf (unspan $1) idx, Path g (segsTy <> toList $6) x) ($1 # $>)
     }
 
 -- Basically a qualified path, but ignoring the very first '<' token
@@ -470,7 +475,8 @@ qual_path_suf(segs) :: { Spanned (QSelf Span, Path Span) }
   | ty as ty_path '>' '::' segs
     {
       let Path g segsTy x = $3 in
-      Spanned (QSelf $1 (length segsTy), Path g (segsTy <> toList $6) x) ($1 # $>)
+      let idx = length segsTy + if g then 1 else 0 in
+      Spanned (QSelf $1 idx, Path g (segsTy <> toList $6) x) ($1 # $>)
     }
 
 -- Usually qual_path_suf is for... type paths! This consumes these but with a starting '<<' token.
@@ -1325,7 +1331,7 @@ stmts_possibly_no_semi :: { [Stmt Span] }
   | many(outer_attribute) blockpostfix_expr                { [toStmt ($1 `addAttrs` $2) False True  ($1 # $2)] }
 
 initializer :: { Maybe (Expr Span) }
-  : '=' expr                                               { Just $2 }
+  : '=' many(outer_attribute) expr                         { Just ($2 `addAttrs` $3) }
   | {- empty -}                                            { Nothing }
 
 block :: { Block Span }
@@ -1356,11 +1362,11 @@ item :: { Item Span }
     { TyAlias $1 (unspan $2) (unspan $4) $8 ($5 `withWhere` $6) ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis use use_tree ';'
     { Use $1 (unspan $2) $4 ($1 # $2 # $3 # $>) }
-  | many(outer_attribute) vis safety extern crate ident ';'
+  | many(outer_attribute) vis safety extern crate ident_or_self ';'
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $6) Nothing ($1 # $2 # $4 # $>)) }
-  | many(outer_attribute) vis safety extern crate ident as ident ';'
+  | many(outer_attribute) vis safety extern crate ident_or_self as ident ';'
     {% noSafety $3 (ExternCrate $1 (unspan $2) (unspan $8) (Just (unspan $6)) ($1 # $2 # $4 # $>)) }
-  | many(outer_attribute) vis safety extern crate ident as '_' ';'
+  | many(outer_attribute) vis safety extern crate ident_or_self as '_' ';'
     {% noSafety $3 (ExternCrate $1 (unspan $2) "_"         (Just (unspan $6)) ($1 # $2 # $4 # $>)) }
   | many(outer_attribute) vis const safety  fn ident generics fn_decl(arg_named, ret_ty) where_clause inner_attrs_block
     { Fn ($1 ++ fst $>) (unspan $2) (unspan $6) $8 (FnHeader (unspan $4) NotAsync Const Rust (spanOf $4))    ($7 `withWhere` $9) (snd $>) ($1 # $2 # $3 # snd $>) }
@@ -1433,6 +1439,8 @@ mod_item :: { Item Span }
     { MacroDef $1 InheritedV (unspan $4) $6 ($1 # $2 # $>) }
   | many(outer_attribute) macro_rules '!' ident '{' token_stream '}'
     { MacroDef $1 InheritedV (unspan $4) $6 ($1 # $2 # $>) }
+
+
 
 -- Module path starting with a problematic identifier
 conflict_mod_path :: { Path Span  }
