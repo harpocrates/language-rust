@@ -490,12 +490,17 @@ data ForeignItem a
   --
   -- Example: @type Boo;@
   | ForeignTy [Attribute a] (Visibility a) Ident a
+  -- | Macro call
+  --
+  -- Example: @foo!{ .. }@
+  | ForeignMac [Attribute a] (Mac a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (ForeignItem a) where
   spanOf (ForeignFn _ _ _ _ _ s) = spanOf s
   spanOf (ForeignStatic _ _ _ _ _ s) = spanOf s
   spanOf (ForeignTy _ _ _ s) = spanOf s
+  spanOf (ForeignMac _ _ s) = spanOf s
 
 -- | Represents lifetimes and type parameters attached to a declaration of a functions, enums,
 -- traits, etc. (@syntax::ast::Generics@). Note that lifetime definitions are always required to be
@@ -651,7 +656,7 @@ data Item a
   | Trait [Attribute a] (Visibility a) Ident Bool Unsafety (Generics a) [GenericBound a] [TraitItem a] a
   -- | trait alias
   -- Example: @trait Foo = Bar + Quux;@
-  | TraitAlias [Attribute a] (Visibility a) Ident (Generics a) (NonEmpty (GenericBound a)) a
+  | TraitAlias [Attribute a] (Visibility a) Ident (Generics a) [GenericBound a] a
   -- | implementation
   -- Example: @impl\<A\> Foo\<A\> { .. }@ or @impl\<A\> Trait for Foo\<A\> { .. }@
   | Impl [Attribute a] (Visibility a) Defaultness Unsafety ImplPolarity (Generics a) (Maybe (TraitRef a)) (Ty a) [ImplItem a] a

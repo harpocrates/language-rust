@@ -282,8 +282,8 @@ printToken (Space Whitespace _) = " "
 printToken (Space Comment n) = "/*" <> printName n <> " */"
 printToken (Doc d Inner True) = "/*!" <> printName d <> "*/"
 printToken (Doc d Outer True) = "/**" <> printName d <> "*/"
-printToken (Doc d Inner False) = "//!" <> printName d
-printToken (Doc d Outer False) = "///" <> printName d
+printToken (Doc d Inner False) = "//!" <> printName d <> hardline
+printToken (Doc d Outer False) = "///" <> printName d <> hardline
 printToken Shebang = "#!"
 -- Macro related
 printToken (Interpolated n) = unAnnotate (printNonterminal n)
@@ -661,7 +661,9 @@ printItem (Trait as vis ident a u g tys i x) = annotate x $ align $ printOuterAt
 
 printItem (TraitAlias as vis ident g bds x) = annotate x $ align $ printOuterAttrs as <#>
   let leading = printVis vis <+> "trait" <+> printIdent ident <> printGenerics g
-  in group (leading <#> indent n (printBounds "=" (toList bds)) <> ";")
+      lagging = indent n (if null bds then "=" else  printBounds "=" bds) <+> wc <> ";"
+      wc = printWhereClause True (whereClause g)
+  in group (leading <#> lagging)
 
 printItem (Impl as vis d u p g t ty i x) = annotate x $ align $ printOuterAttrs as <#>
   let generics = case g of { Generics [] _ _ -> mempty; _ -> printGenerics g }
@@ -762,6 +764,8 @@ printForeignItem (ForeignStatic attrs vis ident ty mut x) = annotate x $
   printOuterAttrs attrs <#> printVis vis <+> "static" <+> printMutability mut <+> printIdent ident <> ":" <+> printType ty <> ";"
 printForeignItem (ForeignTy attrs vis ident x) = annotate x $
   printOuterAttrs attrs <#> printVis vis <+> "type" <+> printIdent ident <> ";"
+printForeignItem (ForeignMac attrs mac x) = annotate x $
+  printOuterAttrs attrs <#> printMac Brace mac
 
 -- | Print a struct definition (@print_struct@)
 printStruct :: VariantData a -> Generics a -> Ident -> Bool -> Bool -> Doc a

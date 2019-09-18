@@ -276,6 +276,9 @@ instance Show a => Diffable (ForeignItem a) where
           i === (val ! "ident")
           t === (n' ! "fields" ! 0)
           m === (n' ! "fields" ! 1)
+        ("Macro", ForeignMac as m _) -> do
+          as === (val ! "attrs")
+          m === (n' ! "fields" ! 0)
         _ -> diff "different foreign item" f val
 
 instance Show a => Diffable (UseTree a) where

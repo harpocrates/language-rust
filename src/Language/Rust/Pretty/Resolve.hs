@@ -1139,7 +1139,7 @@ resolveStmt _ n@(NoSemi e x) | isBlockLike e = scope n (NoSemi <$> resolveExpr A
 resolveStmt AnyStmt  n@(NoSemi e x) = scope n (NoSemi <$> resolveExpr SemiExpr e <*> pure x)
 resolveStmt TermStmt n@(NoSemi e x) = scope n (NoSemi <$> resolveExpr AnyExpr (BlockExpr [] (Block [NoSemi e mempty] Normal mempty) mempty) <*> pure x)
 resolveStmt _ a@(MacStmt m s as x) = scope a $ do
-  m' <- resolveMac ExprPath m
+  m' <- resolveMac ModPath m
   as' <- traverse (resolveAttr OuterAttr) as
   pure (MacStmt m' s as' x)
 resolveStmt _ s@StandaloneSemi{} = pure s
@@ -1323,6 +1323,10 @@ resolveForeignItem _ f@(ForeignTy as v i x) = scope f $ do
   v' <- resolveVisibility v
   i' <- resolveIdent i
   pure (ForeignTy as' v' i' x)
+resolveForeignItem _ f@(ForeignMac as m x) = scope f $ do
+  as' <- traverse (resolveAttr OuterAttr) as
+  m' <- resolveMac ModPath m
+  pure (ForeignMac as' m' x)
 
 instance (Typeable a, Monoid a) => Resolve (ForeignItem a) where resolveM = resolveForeignItem C
 

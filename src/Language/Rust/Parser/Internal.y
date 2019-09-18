@@ -433,19 +433,19 @@ inner_attrs :: { Reversed NonEmpty (Attribute Span) }
 
 lit :: { Lit Span }
   : ntLit             { $1 }
-  | byte              { lit $1 }
-  | char              { lit $1 }
-  | int               { lit $1 }
-  | float             { lit $1 }
-  | true              { lit $1 }
-  | false             { lit $1 }
+  | byte              {% lit $1 }
+  | char              {% lit $1 }
+  | int               {% lit $1 }
+  | float             {% lit $1 }
+  | true              {% lit $1 }
+  | false             {% lit $1 }
   | string            { $1 }
 
 string :: { Lit Span }
-  : str               { lit $1 }
-  | rawStr            { lit $1 }
-  | byteStr           { lit $1 }
-  | rawByteStr        { lit $1 }
+  : str               {% lit $1 }
+  | rawStr            {% lit $1 }
+  | byteStr           {% lit $1 }
+  | rawByteStr        {% lit $1 }
 
 
 -----------
@@ -708,10 +708,10 @@ fn_decl(arg, ret) :: { FnDecl Span }
 
 -- Like 'fn_decl', but also accepting a self argument
 fn_decl_with_self :: { FnDecl Span }
-  : '(' arg_self ',' sep_by1T(arg_named,',')     ')' ret_ty  { FnDecl ($2 : toList $4) $> False ($1 # $5 # $6) }
-  | '(' arg_self ','                             ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
-  | '(' arg_self                                 ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
-  | fn_decl(arg_named, ret_ty)                                     { $1 }
+  : '(' arg_self ',' sep_by1T(arg_named,',') ')' ret_ty  { FnDecl ($2 : toList $4) $> False ($1 # $5 # $6) }
+  | '(' arg_self ','                         ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
+  | '(' arg_self                             ')' ret_ty  { FnDecl [$2] $> False ($1 # $3 # $4) }
+  | fn_decl(arg_named, ret_ty)                           { $1 }
 
 
 -- parse_ty_param_bounds(BoundParsingMode::Bare) == sep_by1(ty_param_bound,'+')
@@ -782,8 +782,8 @@ for_lts :: { Spanned [GenericParam Span] }
 -- Definition of a lifetime: attributes can come before the lifetime, and a list of bounding
 -- lifetimes can come after the lifetime.
 lifetime_def :: { GenericParam Span }
-  : many(outer_attribute) lifetime ':' sep_by1T(lifetime,'+')  { LifetimeParam $1 $2 [ OutlivesBound l (spanOf l) | l <- toList $4 ] ($1 # $2 # $>) }
-  | many(outer_attribute) lifetime                             { LifetimeParam $1 $2 [] ($1 # $2 # $>) }
+  : many(outer_attribute) lifetime ':' sep_byT(lifetime,'+')  { LifetimeParam $1 $2 [ OutlivesBound l (spanOf l) | l <- $4 ] ($1 # $2 # $>) }
+  | many(outer_attribute) lifetime                            { LifetimeParam $1 $2 [] ($1 # $2 # $>) }
 
 
 ---------------
@@ -1038,7 +1038,7 @@ postfix_blockexpr(lhs) :: { Expr Span }
   | lhs '.' ident '::' '<' sep_byT(ty,',') '>' '(' sep_byT(expr,',') ')'
     { MethodCall [] $1 (PathSegment (unspan $3) (Just (AngleBracketed (map TypeArg $6) [] ($5 # $7))) ($3 # $7)) $9 ($1 # $>) }
   | lhs '.' int                      {%
-      case lit $3 of
+      lit $3 >>= \l -> case l of
         Int Dec i Unsuffixed _ -> pure (TupField [] $1 (fromIntegral i) ($1 # $3))
         _ -> parseError $3
     }
@@ -1350,6 +1350,8 @@ item :: { Item Span }
     { Static $1 (unspan $2) (unspan $5) $7 Mutable $9 ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis const ident ':' ty '=' expr ';'
     { ConstItem $1 (unspan $2) (unspan $4) $6 $8 ($1 # $2 # $3 # $>) }
+  | many(outer_attribute) vis const '_'   ':' ty '=' expr ';'
+    { ConstItem $1 (unspan $2) "_" $6 $8 ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis type ident generics where_clause '=' ty ';'
     { TyAlias $1 (unspan $2) (unspan $4) $8 ($5 `withWhere` $6) ($1 # $2 # $3 # $>) }
   | many(outer_attribute) vis use use_tree ';'
@@ -1384,16 +1386,16 @@ item :: { Item Span }
     { Union $1 (unspan $2) (unspan $4) (snd $6) ($5 `withWhere` fst $6) ($1 # $2 # $3 # snd $>) }
   | many(outer_attribute) vis enum ident generics where_clause '{' sep_byT(enum_def,',') '}'
     { Enum $1 (unspan $2) (unspan $4) $8 ($5 `withWhere` $6) ($1 # $2 # $3 # $>) }
-  | many(outer_attribute) vis safety trait ident generics ':' sep_by1T(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
-    { Trait $1 (unspan $2) (unspan $5) False (unspan $3) ($6 `withWhere` $9) (toList $8) $11 ($1 # $2 # $3 # $4 # $>) }
+  | many(outer_attribute) vis safety trait ident generics ':' sep_byT(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
+    { Trait $1 (unspan $2) (unspan $5) False (unspan $3) ($6 `withWhere` $9) $8 $11 ($1 # $2 # $3 # $4 # $>) }
   | many(outer_attribute) vis safety trait ident generics where_clause '{' many(trait_item) '}'
     { Trait $1 (unspan $2) (unspan $5) False (unspan $3) ($6 `withWhere` $7) [] $9 ($1 # $2 # $3 # $4 # $>) }
-  | many(outer_attribute) vis safety auto trait ident generics ':' sep_by1T(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
-    { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $10) (toList $9) $12 ($1 # $2 # $3 # $4 # $5 # $>) }
+  | many(outer_attribute) vis safety auto trait ident generics ':' sep_byT(ty_param_bound,'+') where_clause '{' many(trait_item) '}'
+    { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $10) $9 $12 ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis safety auto trait ident generics where_clause '{' many(trait_item) '}'
     { Trait $1 (unspan $2) (unspan $6) True (unspan $3) ($7 `withWhere` $8) [] $10 ($1 # $2 # $3 # $4 # $5 # $>) }
-  | many(outer_attribute) vis safety trait ident generics '=' sep_by1T(ty_param_bound_mod,'+') ';'
-    {% noSafety $3 (TraitAlias $1 (unspan $2) (unspan $5) $6 (toNonEmpty $8) ($1 # $2 # $3 # $>)) }
+  | many(outer_attribute) vis safety trait ident generics '=' sep_byT(ty_param_bound_mod,'+') where_clause ';'
+    {% noSafety $3 (TraitAlias $1 (unspan $2) (unspan $5) ($6 `withWhere` $9) $8 ($1 # $2 # $3 # $>)) }
   | many(outer_attribute) vis         safety impl generics ty_prim              where_clause '{' impl_items '}'
     { Impl ($1 ++ fst $9) (unspan $2) Final (unspan $3) Positive ($5 `withWhere` $7) Nothing $6 (snd $9) ($1 # $2 # $3 # $4 # $5 # $>) }
   | many(outer_attribute) vis default safety impl generics ty_prim              where_clause '{' impl_items '}'
@@ -1451,6 +1453,8 @@ foreign_item :: { ForeignItem Span }
     { ForeignFn $1 (unspan $2) (unspan $4) $6 ($5 `withWhere` $7) ($1 # $2 # $>) }
   | many(outer_attribute) vis type ident ';'
     { ForeignTy $1 (unspan $2) (unspan $4) ($1 # $2 # $>) }
+  | many(outer_attribute) mod_mac
+    { ForeignMac $1 $2 ($1 # $>) }
 
 -- parse_generics
 -- Leaves the WhereClause empty
@@ -1460,10 +1464,10 @@ generics :: { Generics Span }
   | {- empty -}                           { Generics [] (WhereClause [] mempty) mempty }
 
 ty_param :: { GenericParam Span }
-  : many(outer_attribute) ident                                              { TypeParam $1 (unspan $2) [] Nothing ($1 # $>) }
-  | many(outer_attribute) ident ':' sep_by1T(ty_param_bound_mod,'+')         { TypeParam $1 (unspan $2) (toList $4) Nothing ($1 # $>) }
-  | many(outer_attribute) ident                                      '=' ty  { TypeParam $1 (unspan $2) [] (Just $>) ($1 # $>) }
-  | many(outer_attribute) ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty  { TypeParam $1 (unspan $2) (toList $4) (Just $>) ($1 # $>) }
+  : many(outer_attribute) ident                                             { TypeParam $1 (unspan $2) [] Nothing ($1 # $>) }
+  | many(outer_attribute) ident ':' sep_byT(ty_param_bound_mod,'+')         { TypeParam $1 (unspan $2) $4 Nothing ($1 # $>) }
+  | many(outer_attribute) ident                                     '=' ty  { TypeParam $1 (unspan $2) [] (Just $>) ($1 # $>) }
+  | many(outer_attribute) ident ':' sep_byT(ty_param_bound_mod,'+') '=' ty  { TypeParam $1 (unspan $2) $4 (Just $>) ($1 # $>) }
 
 const_param :: { GenericParam Span }
   : many(outer_attribute) const ident ':' ty                                 { ConstParam $1 (unspan $3) $5 ($1 # $2 # $>) }
@@ -1497,12 +1501,11 @@ enum_def :: { Variant Span }
 where_clause :: { WhereClause Span }
   : {- empty -}                                        { WhereClause [] mempty }
   | ntWhereClause                                      { $1 }
-  | where sep_by(where_predicate,',')      %prec WHERE { WhereClause $2 ($1 # $2) }
-  | where sep_by1(where_predicate,',') ',' %prec WHERE { WhereClause (toList $2) ($1 # $3) }
+  | where sep_byT(where_predicate,',')     %prec WHERE { WhereClause $2 ($1 # $2) }
 
 where_predicate :: { WherePredicate Span }
   : lifetime                                               { RegionPredicate $1 [] (spanOf $1) }
-  | lifetime ':' sep_by1T(lifetime,'+')                    { RegionPredicate $1 (toList $3) ($1 # $3) }
+  | lifetime ':' sep_byT(lifetime,'+')                     { RegionPredicate $1 $3 ($1 # $3) }
   | no_for_ty                                     %prec EQ { BoundPredicate [] $1 [] (spanOf $1) }
   | no_for_ty '='  ty                                      { EqPredicate $1 $3 ($1 # $3) }
   | no_for_ty ':' sep_byT(ty_param_bound_mod,'+')          { BoundPredicate [] $1 $3 ($1 # $3) }
@@ -1535,10 +1538,10 @@ trait_item :: { TraitItem Span }
   | many(outer_attribute) mod_mac                            { MacroT $1 $2 ($1 # $>) }
   | many(outer_attribute) type ident ';'                     { TypeT $1 (unspan $3) [] Nothing ($1 # $2 # $>) }
   | many(outer_attribute) type ident '=' ty ';'              { TypeT $1 (unspan $3) [] (Just $5) ($1 # $2 # $>) }
-  | many(outer_attribute) type ident ':' sep_by1T(ty_param_bound_mod,'+') ';'
-    { TypeT $1 (unspan $3) (toList $5) Nothing ($1 # $2 # $>) }
-  | many(outer_attribute) type ident ':' sep_by1T(ty_param_bound_mod,'+') '=' ty ';'
-    { TypeT $1 (unspan $3) (toList $5) (Just $7) ($1 # $2 # $>) }
+  | many(outer_attribute) type ident ':' sep_byT(ty_param_bound_mod,'+') ';'
+    { TypeT $1 (unspan $3) $5 Nothing ($1 # $2 # $>) }
+  | many(outer_attribute) type ident ':' sep_byT(ty_param_bound_mod,'+') '=' ty ';'
+    { TypeT $1 (unspan $3) $5 (Just $7) ($1 # $2 # $>) }
   | many(outer_attribute) is_async safety ext_abi fn ident generics fn_decl_with_self where_clause ';'
     { let methodSig = MethodSig (FnHeader (unspan $3) (unspan $2) NotConst (unspan $4) ($2 # $3 # $4)) $8; generics = $7 `withWhere` $9
       in MethodT $1             (unspan $6) generics methodSig Nothing         ($1 # $2 # $3 # $4 # $5 # $>) }
@@ -1948,28 +1951,29 @@ addAttrs as (Yield as' e s)          = Yield (as ++ as') e s
 
 -- | Given a 'LitTok' token that is expected to result in a valid literal, construct the associated
 -- literal. Note that this should _never_ fail on a token produced by the lexer.
-lit :: Spanned Token -> Lit Span
-lit (Spanned (IdentTok (Ident "true" False _)) s) = Bool True Unsuffixed s
-lit (Spanned (IdentTok (Ident "false" False _)) s) = Bool False Unsuffixed s
-lit (Spanned (LiteralTok litTok suffix_m) s) = translateLit litTok suffix s
-  where
-    suffix = case suffix_m of
-               Nothing -> Unsuffixed
-               (Just "isize") -> Is
-               (Just "usize") -> Us
-               (Just "i8")    -> I8
-               (Just "u8")    -> U8
-               (Just "i16")   -> I16
-               (Just "u16")   -> U16
-               (Just "i32")   -> I32
-               (Just "u32")   -> U32
-               (Just "i64")   -> I64
-               (Just "u64")   -> U64
-               (Just "i128")  -> I128
-               (Just "u128")  -> U128
-               (Just "f32")   -> F32
-               (Just "f64")   -> F64
-               _ -> error "invalid literal"
+lit :: Spanned Token -> P (Lit Span)
+lit (Spanned (IdentTok (Ident "true" False _)) s) = pure (Bool True Unsuffixed s)
+lit (Spanned (IdentTok (Ident "false" False _)) s) = pure (Bool False Unsuffixed s)
+lit (Spanned (LiteralTok litTok suffix_m) s) = do
+  suffix <- case suffix_m of
+              Nothing      -> pure Unsuffixed
+              Just "_"     -> pure Unsuffixed -- See https://github.com/rust-lang/rust/issues/42326
+              Just "isize" -> pure Is
+              Just "usize" -> pure Us
+              Just "i8"    -> pure I8
+              Just "u8"    -> pure U8
+              Just "i16"   -> pure I16
+              Just "u16"   -> pure U16
+              Just "i32"   -> pure I32
+              Just "u32"   -> pure U32
+              Just "i64"   -> pure I64
+              Just "u64"   -> pure U64
+              Just "i128"  -> pure I128
+              Just "u128"  -> pure U128
+              Just "f32"   -> pure F32
+              Just "f64"   -> pure F64
+              _ -> fail "invalid literal suffix"
+  pure (translateLit litTok suffix s)
 
 isTraitBound TraitBound{} = True
 isTraitBound _ = False
