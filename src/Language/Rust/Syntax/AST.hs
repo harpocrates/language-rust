@@ -349,7 +349,7 @@ data Expr a
   -- | closure (example: @move |a, b, c| { a + b + c }@)
   | Closure [Attribute a] CaptureBy IsAsync Movability (FnDecl a) (Expr a) a
   -- | (possibly unsafe) block (example: @unsafe { 1 }@)
-  | BlockExpr [Attribute a] (Block a) a
+  | BlockExpr [Attribute a] (Block a) (Maybe (Label a)) a
   -- | a try block (example: @try { 1 }@)
   | TryBlock [Attribute a] (Block a) a
   -- | an async block (example: @async move { 1 }@)
@@ -412,7 +412,7 @@ instance Located a => Located (Expr a) where
   spanOf (Loop _ _ _ s) = spanOf s
   spanOf (Match _ _ _ s) = spanOf s
   spanOf (Closure _ _ _ _ _ _ s) = spanOf s
-  spanOf (BlockExpr _ _ s) = spanOf s
+  spanOf (BlockExpr _ _ _ s) = spanOf s
   spanOf (TryBlock _ _ s) = spanOf s
   spanOf (Async _ _ _ s) = spanOf s
   spanOf (Await _ _ s) = spanOf s

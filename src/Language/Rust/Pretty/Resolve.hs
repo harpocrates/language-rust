@@ -664,7 +664,7 @@ data ExprType
   = AnyExpr           -- ^ Any expression, no restrictions
   | LitExpr           -- ^ Either an immediate literal, or a negated literal
   | LitOrPathExpr     -- ^ A literal, negated literal, expression path, or qualified expression path
-  | LitOrBlockExpr    -- ^ A literal, negated literal, or (safe, not async) block expression
+  | LitOrBlockExpr    -- ^ A literal, negated literal, or (safe, not async, un-labeled) block expression
   | NoStructExpr      -- ^ No struct literals are allowed
   | NoStructBlockExpr -- ^ No struct literals or block expressions (block-like things like 'if' are fine)
   | SemiExpr          -- ^ Forbids expressions starting with blocks (things like '{ 1 } + 2') unless
@@ -774,11 +774,11 @@ resolveExprP _ LitOrPathExpr l = scope l (err l "expression is not literal, nega
 -- Conver the 'LitOrBlockExpr' type of expression
 resolveExprP p LitOrBlockExpr l@Lit{} = resolveExprP p AnyExpr l
 resolveExprP p LitOrBlockExpr n@(Unary _ Neg Lit{} _) = resolveExprP p AnyExpr n
-resolveExprP p LitOrBlockExpr b@(BlockExpr _ (Block _ Normal _) _) = resolveExprP p AnyExpr b
+resolveExprP p LitOrBlockExpr b@(BlockExpr _ (Block _ Normal _) Nothing _) = resolveExprP p AnyExpr b
 resolveExprP _ LitOrBlockExpr e = scope e $ do
   correct "added braces around expression"
   e' <- resolveExpr AnyExpr e
-  pure (BlockExpr [] (Block [NoSemi e' mempty] Normal mempty) mempty)
+  pure (BlockExpr [] (Block [NoSemi e' mempty] Normal mempty) Nothing mempty)
 -- The following group of expression variants work in all of the remaining contexts (see
 -- 'gen_expression' in the parser)
 resolveExprP p c b@(Box as e x) = scope b $ parenE (p > 0) $ do
@@ -814,7 +814,7 @@ resolveExprP p c e@(Closure as cb a m fn@(FnDecl _ ret _ _) b x) = scope c $
       (_,                 Just _, _          ) -> parenthesizeE (Closure as cb a m fn (asBlock b) x)
       _                                         -> resolved (rhs c)
   where
-  asBlock ex = BlockExpr [] (Block [NoSemi ex mempty] Normal mempty) mempty
+  asBlock ex = BlockExpr [] (Block [NoSemi ex mempty] Normal mempty) Nothing mempty
 
   resolved c' = parenE (p > 0) $ do
     as' <- traverse (resolveAttr OuterAttr) as
@@ -999,10 +999,11 @@ resolveExprP _ _ t@(TupExpr as es x) = scope t $ do
   pure (TupExpr as' es' x)
 -- Block expressions
 resolveExprP _ NoStructBlockExpr e@BlockExpr{} = parenthesizeE e
-resolveExprP _ _ l@(BlockExpr as b x) = scope l $ do
+resolveExprP _ _ l@(BlockExpr as b l' x) = scope l $ do
   as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
-  pure (BlockExpr as' b' x)
+  l'' <- traverse resolveLbl l'
+  pure (BlockExpr as' b' l'' x)
 -- Async expressions
 resolveExprP _ NoStructBlockExpr e@Async{} = parenthesizeE e
 resolveExprP _ _ c@(Async as c' b x) = scope c $ do
@@ -1027,8 +1028,8 @@ resolveExprP p c i@(If as e b es x) = scope i $ do
            Nothing -> pure Nothing
            (Just If{}) -> traverse (resolveExprP p c) es
            (Just IfLet{}) -> traverse (resolveExprP p c) es
-           (Just BlockExpr{}) -> traverse (resolveExprP p c) es
-           (Just e'') -> Just <$> resolveExprP p c (BlockExpr [] (Block [NoSemi e'' mempty] Normal mempty) mempty)
+           (Just (BlockExpr _ _ Nothing _)) -> traverse (resolveExprP p c) es
+           (Just e'') -> Just <$> resolveExprP p c (BlockExpr [] (Block [NoSemi e'' mempty] Normal mempty) Nothing mempty)
   pure (If as' e' b' es' x)
 resolveExprP p c i@(IfLet as p' e b es x) = scope i $ do
   as' <- traverse (resolveAttr OuterAttr) as
@@ -1039,8 +1040,8 @@ resolveExprP p c i@(IfLet as p' e b es x) = scope i $ do
            Nothing -> pure Nothing
            (Just If{}) -> traverse (resolveExprP p c) es
            (Just IfLet{}) -> traverse (resolveExprP p c) es
-           (Just BlockExpr{}) -> traverse (resolveExprP p c) es
-           (Just e'') -> Just <$> resolveExprP p c (BlockExpr [] (Block [NoSemi e'' mempty] Normal mempty) mempty)
+           (Just (BlockExpr _ _ Nothing _)) -> traverse (resolveExprP p c) es
+           (Just e'') -> Just <$> resolveExprP p c (BlockExpr [] (Block [NoSemi e'' mempty] Normal mempty) Nothing mempty)
   pure (IfLet as' p'' e' b' es' x)
 resolveExprP _ _ w@(While as e b l x) = scope w $ do
   as' <- traverse (resolveAttr EitherAttr) as
@@ -1141,7 +1142,7 @@ resolveStmt _ s@(Semi e x) | isBlockLike e = scope s (Semi <$> resolveExpr AnyEx
 resolveStmt _ s@(Semi e x) = scope s (Semi <$> resolveExpr SemiExpr e <*> pure x)
 resolveStmt _ n@(NoSemi e x) | isBlockLike e = scope n (NoSemi <$> resolveExpr AnyExpr e <*> pure x)
 resolveStmt AnyStmt  n@(NoSemi e x) = scope n (NoSemi <$> resolveExpr SemiExpr e <*> pure x)
-resolveStmt TermStmt n@(NoSemi e x) = scope n (NoSemi <$> resolveExpr AnyExpr (BlockExpr [] (Block [NoSemi e mempty] Normal mempty) mempty) <*> pure x)
+resolveStmt TermStmt n@(NoSemi e x) = scope n (NoSemi <$> resolveExpr AnyExpr (BlockExpr [] (Block [NoSemi e mempty] Normal mempty) Nothing mempty) <*> pure x)
 resolveStmt _ a@(MacStmt m s as x) = scope a $ do
   m' <- resolveMac ModPath m
   as' <- traverse (resolveAttr OuterAttr) as

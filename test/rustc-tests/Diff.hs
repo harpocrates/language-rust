@@ -879,9 +879,10 @@ instance Show a => Diffable (Expr a) where
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)
         t === (n ! "fields" ! 1)
-      ("Block", BlockExpr as b _) -> do
+      ("Block", BlockExpr as b l _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         b === (n ! "fields" ! 0)
+        l === (n ! "fields" ! 1)
       ("If", If as e tb ee _) -> do
         NullList as === (val ! "attrs" ! "_field0")
         e === (n ! "fields" ! 0)

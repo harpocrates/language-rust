@@ -385,7 +385,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
                                                     , when (a == IsAsync) "async"
                                                     , when (c == Value) "move"
                                                     , printFnBlockArgs decl <+> printExpr body])
-    BlockExpr attrs blk x       -> annotate x (printBlockWithAttrs True blk attrs)
+    BlockExpr attrs blk lbl x   -> annotate x (hsep [ printLbl lbl, printBlockWithAttrs True blk attrs ])
     Async attrs cap blk x       -> annotate x (hsep [ "async"
                                                     , when (cap == Value) "move"
                                                     , printBlockWithAttrs True blk attrs])
@@ -475,7 +475,7 @@ expressionAttrs (ForLoop as _ _ _ _ _) = as
 expressionAttrs (Loop as _ _ _) = as
 expressionAttrs (Match as _ _ _) = as
 expressionAttrs (Closure as _ _ _ _ _ _) = as
-expressionAttrs (BlockExpr as _ _) = as
+expressionAttrs (BlockExpr as _ _ _) = as
 expressionAttrs (TryBlock as _ _) = as
 expressionAttrs (Async as _ _ _) = as
 expressionAttrs (Await as _ _) = as
@@ -543,9 +543,9 @@ printBlockWithAttrs b (Block stmts rules x) as = annotate x (printUnsafety rules
 -- | Print an @else@ expression (@print_else@)
 printElse :: Maybe (Expr a) -> Doc a
 printElse Nothing = mempty
-printElse (Just (If _ e t s x))      = annotate x (hsep [ "else if", printExpr e, printBlock t, printElse s ])
-printElse (Just (IfLet _ p e t s x)) = annotate x (hsep [ "else if let", printPat p, "=", printExpr e, printBlock t, printElse s ])
-printElse (Just (BlockExpr _ blk x)) = annotate x (hsep [ "else", printBlock blk ])
+printElse (Just (If _ e t s x))        = annotate x (hsep [ "else if", printExpr e, printBlock t, printElse s ])
+printElse (Just (IfLet _ p e t s x))   = annotate x (hsep [ "else if let", printPat p, "=", printExpr e, printBlock t, printElse s ])
+printElse (Just (BlockExpr _ blk _ x)) = annotate x (hsep [ "else", printBlock blk ])
 printElse _ = error "printElse saw `if` with a weird alternative"
 
 -- | Print a binary operator

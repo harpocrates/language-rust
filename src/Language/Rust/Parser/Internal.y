@@ -1122,12 +1122,12 @@ block_expr :: { Expr Span }
 
 -- simple expression that is a block (no prefix, just '{ ... }')
 unannotated_block :: { Expr Span }
-  : inner_attrs_block                                   { let (as,b) = $1 in BlockExpr as b (spanOf b) }
+  : inner_attrs_block                                   { let (as,b) = $1 in BlockExpr as b Nothing (spanOf b) }
 
 -- `unsafe` and `async` block expressions
 annotated_block :: { Expr Span }
   : unsafe inner_attrs_block
-    { let (as, Block ss r x) = $> in BlockExpr as (Block ss Unsafe ($1 # x)) ($1 # x) }
+    { let (as, Block ss r x) = $> in BlockExpr as (Block ss Unsafe ($1 # x)) Nothing ($1 # x) }
   | async      inner_attrs_block                        { let (as,b) = $> in Async as Ref b ($1 # b) }
   | async move inner_attrs_block                        { let (as,b) = $> in Async as Value b ($1 # b) }
 
@@ -1149,7 +1149,7 @@ block_like_expr :: { Expr Span }
   | match nostruct_expr '{' inner_attrs arms '}'                     { Match (toList $4) $2 $5 ($1 # $>) }
   | expr_path '!' '{' token_stream '}'                               { MacExpr [] (Mac $1 $4 ($1 # $>)) ($1 # $>) }
   | try inner_attrs_block                                            { let (as,b) = $> in TryBlock as b ($1 # b) }
---  | label ':'                                     inner_attrs_block  { let (as,b) = $> in BlockExpr as b (spanOf b) }
+  | label ':'                                     inner_attrs_block  { let (as,b) = $> in BlockExpr as b (Just $1) ($1 # b) }
 
 
 -- 'if' expressions are a bit special since they can have an arbitrary number of 'else if' chains.
@@ -1158,7 +1158,7 @@ if_expr :: { Expr Span }
   | if let top_pat '=' nostruct_expr block else_expr    { IfLet [] $3 $5 $6 $7 ($1 # $6 # $>) }
 
 else_expr :: { Maybe (Expr Span) }
-  : else block                                          { Just (BlockExpr [] $2 (spanOf $2)) }
+  : else block                                          { Just (BlockExpr [] $2 Nothing (spanOf $2)) }
   | else if_expr                                        { Just $2 }
   | {- empty -}                                         { Nothing }
 
@@ -1203,7 +1203,7 @@ paren_expr :: { Expr Span }
 -- A lambda expression with a return type. This is seperate from the `gen_expression` production
 -- because the RHS _has_ to be a block.
 lambda_expr_with_ty :: { Expr Span }
-  : lambda_prefix '->' ty block                         { $1 (Just $3) (BlockExpr [] $> (spanOf $>)) }
+  : lambda_prefix '->' ty block                         { $1 (Just $3) (BlockExpr [] $> Nothing (spanOf $>)) }
 
 -- Given a return type and a body, make a lambda expression
 lambda_prefix :: { Maybe (Ty Span) -> Expr Span -> Expr Span }
@@ -1956,7 +1956,7 @@ addAttrs as (ForLoop as' p e b l s)  = ForLoop (as ++ as') p e b l s
 addAttrs as (Loop as' b l s)         = Loop (as ++ as') b l s
 addAttrs as (Match as' e a s)        = Match (as ++ as') e a s
 addAttrs as (Closure as' c a m f e s) = Closure (as ++ as') c a m f e s
-addAttrs as (BlockExpr as' b s)      = BlockExpr (as ++ as') b s
+addAttrs as (BlockExpr as' b l s)    = BlockExpr (as ++ as') b l s
 addAttrs as (TryBlock as' b s)       = TryBlock (as ++ as') b s
 addAttrs as (Async as' c b s)        = Async (as ++ as') c b s
 addAttrs as (Await as' e s)          = Await (as ++ as') e s
