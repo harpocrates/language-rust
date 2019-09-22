@@ -138,6 +138,7 @@ instance Parse (Lit Span)         where parser = parseLit
 instance Parse (Attribute Span)   where parser = parseAttr
 instance Parse (Ty Span)          where parser = parseTy
 instance Parse (Pat Span)         where parser = parsePat
+instance Parse (Path Span)        where parser = parsePath
 instance Parse (Expr Span)        where parser = parseExpr
 instance Parse (Stmt Span)        where parser = parseStmt
 instance Parse (Item Span)        where parser = parseItem

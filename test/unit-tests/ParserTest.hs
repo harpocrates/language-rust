@@ -290,6 +290,11 @@ parserTypes = testGroup "parsing types"
   , testP "Foo(!,!,)"      (PathTy Nothing (Path False [ PathSegment "Foo" (Just (Parenthesized [Never (), Never ()] Nothing ())) () ] ()) ())
   , testP "Foo(!,!) -> !"  (PathTy Nothing (Path False [ PathSegment "Foo" (Just (Parenthesized [Never (), Never ()] (Just (Never ())) ())) () ] ()) ())
   , testP "Foo(!,!,) -> !" (PathTy Nothing (Path False [ PathSegment "Foo" (Just (Parenthesized [Never (), Never ()] (Just (Never ())) ())) () ] ()) ())
+  , testP "<'a + Trait>::AssocTy"
+             (PathTy (Just (QSelf (TraitObject [ OutlivesBound (Lifetime "a" ()) ()
+                                               , TraitBound (PolyTraitRef [] (TraitRef (Path False [PathSegment "Trait" Nothing ()] ())) ()) None ()
+                                               ] ()) 0))
+                     (Path False [PathSegment "AssocTy" Nothing ()] ()) ())
   , testP "<i32 as a>::b"
              (PathTy (Just (QSelf i32 1)) (Path False [ PathSegment "a" Nothing ()
                                                       , PathSegment "b" Nothing ()

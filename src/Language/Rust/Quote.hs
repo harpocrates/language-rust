@@ -23,7 +23,7 @@ The examples below assume the following GHCi flag and import:
 
 
 module Language.Rust.Quote (
-  lit, attr, ty, pat, stmt, expr, item, sourceFile, implItem, traitItem, tokenTree, block
+  lit, attr, ty, pat, path, stmt, expr, item, sourceFile, implItem, traitItem, tokenTree, block
 ) where
 
 {-
@@ -122,6 +122,12 @@ ty = quoter parseTy
 --
 pat :: QuasiQuoter
 pat = quoter parsePat
+
+-- | Quasiquoter for paths (see 'Language.Rust.Syntax.Path')
+--
+-- TODO example:
+path :: QuasiQuoter
+path = quoter parsePath
 
 -- | Quasiquoter for statements (see 'Language.Rust.Syntax.Stmt')
 --

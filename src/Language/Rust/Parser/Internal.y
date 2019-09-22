@@ -38,6 +38,7 @@ module Language.Rust.Parser.Internal (
   parseItem,
   parseLit,
   parsePat,
+  parsePath,
   parseSourceFile,
   parseStmt,
   parseTokenStream,
@@ -76,6 +77,7 @@ import qualified Data.List.NonEmpty as N
 %name parseAttr export_attribute
 %name parseTy ty
 %name parsePat or_pat
+%name parsePath ty_path
 %name parseStmt stmt
 %name parseExpr expr
 %name parseItem mod_item
@@ -727,13 +729,14 @@ ty_param_bound :: { GenericBound Span }
   | '(' poly_trait_ref ')'  { TraitBound $2 None ($1 # $3) }
 
 poly_trait_ref_mod_bound :: { GenericBound Span }
-  : poly_trait_ref       { TraitBound $1 None (spanOf $1) }
-  | '?' poly_trait_ref   { TraitBound $2 Maybe ($1 # $2) }
+  : lifetime                { OutlivesBound $1 (spanOf $1) }
+  | poly_trait_ref          { TraitBound $1 None (spanOf $1) }
+  | '?' poly_trait_ref      { TraitBound $2 Maybe ($1 # $2) }
 
 -- parse_ty_param_bounds(BoundParsingMode::Modified) == sep_by1(ty_param_bound_mod,'+')
 ty_param_bound_mod :: { GenericBound Span }
-  : ty_param_bound       { $1 }
-  | '?' poly_trait_ref   { TraitBound $2 Maybe ($1 # $2) }
+  : ty_param_bound          { $1 }
+  | '?' poly_trait_ref      { TraitBound $2 Maybe ($1 # $2) }
 
 -- Sort of like parse_opt_abi() -- currently doesn't handle raw string ABI
 abi :: { Abi }
@@ -1318,8 +1321,13 @@ stmt :: { Stmt Span }
     { let s = $1 # $2 # $> in ItemStmt (MacroDef $1 InheritedV (unspan $4) $6 s) s }
   | many(outer_attribute) macro_rules '!' ident '{' token_stream '}' ';'
     { let s = $1 # $2 # $> in ItemStmt (MacroDef $1 InheritedV (unspan $4) $6 s) s }
+  | many(outer_attribute) macro_rules '!'       '[' token_stream ']' ';'
+    { MacStmt (Mac (macroRulesPath $2) $5 ($2 # $6)) SemicolonMac $1 ($1 # $2 # $>) }
+  | many(outer_attribute) macro_rules '!'       '{' token_stream '}'
+    { MacStmt (Mac (macroRulesPath $2) $5 ($2 # $6)) BracesMac    $1 ($1 # $2 # $>) }
+  | many(outer_attribute) macro_rules '!'       '(' token_stream ')' ';'
+    { MacStmt (Mac (macroRulesPath $2) $5 ($2 # $6)) SemicolonMac $1 ($1 # $2 # $>) }
   | ';'                                                      { StandaloneSemi (spanOf $1) }
-
 
 
 -- List of statements where the last statement might be a no-semicolon statement.
@@ -1439,8 +1447,12 @@ mod_item :: { Item Span }
     { MacroDef $1 InheritedV (unspan $4) $6 ($1 # $2 # $>) }
   | many(outer_attribute) macro_rules '!' ident '{' token_stream '}'
     { MacroDef $1 InheritedV (unspan $4) $6 ($1 # $2 # $>) }
-
-
+  | many(outer_attribute) macro_rules '!'       '[' token_stream ']' ';'
+    { MacItem $1 (Mac (macroRulesPath $2) $5 ($2 # $>)) ($1 # $2 # $>) }
+  | many(outer_attribute) macro_rules '!'       '{' token_stream '}'
+    { MacItem $1 (Mac (macroRulesPath $2) $5 ($2 # $>)) ($1 # $2 # $>) }
+  | many(outer_attribute) macro_rules '!'       '(' token_stream ')' ';'
+    { MacItem $1 (Mac (macroRulesPath $2) $5 ($2 # $>)) ($1 # $2 # $>) }
 
 -- Module path starting with a problematic identifier
 conflict_mod_path :: { Path Span  }
@@ -1467,9 +1479,12 @@ foreign_item :: { ForeignItem Span }
 -- parse_generics
 -- Leaves the WhereClause empty
 generics :: { Generics Span }
+  : generics1                             { $1 }
+  | {- empty -}                           { Generics [] (WhereClause [] mempty) mempty }
+
+generics1 :: { Generics Span }
   : ntGenerics                            { $1 }
   | '<' sep_byT(generic_param,',') gt '>' { Generics $2 (WhereClause [] mempty) ($1 # $>) }
-  | {- empty -}                           { Generics [] (WhereClause [] mempty) mempty }
 
 ty_param :: { GenericParam Span }
   : many(outer_attribute) ident                                             { TypeParam $1 (unspan $2) [] Nothing ($1 # $>) }
@@ -1787,6 +1802,9 @@ parseTy :: P (Ty Span)
 -- | Parser for patterns.
 parsePat :: P (Pat Span)
 
+-- | Parser for paths.
+parsePath :: P (Path Span)
+
 -- | Parser for statements.
 parseStmt :: P (Stmt Span)
 
@@ -1899,6 +1917,10 @@ toStmt :: Expr Span -> Bool -> Bool -> Span -> Stmt Span
 toStmt (MacExpr a m s) hasSemi isBlock | hasSemi = MacStmt m SemicolonMac a
                                        | isBlock = MacStmt m BracesMac a
 toStmt e hasSemi _ = (if hasSemi then Semi else NoSemi) e
+
+-- | A path containing only the `macro_rules` segment
+macroRulesPath :: Spanned a -> Path Span
+macroRulesPath (Spanned _ s) = Path False [PathSegment "macro_rules" Nothing s] s
 
 -- | Return the second argument, as long as the visibility is 'InheritedV'
 noVis :: Spanned (Visibility Span) -> a -> P a
