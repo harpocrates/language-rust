@@ -530,22 +530,32 @@ data ArgType
 
 -- | The only types of patterns supported by arguments are wild or identifiers
 resolveArg :: (Typeable a, Monoid a) => ArgType -> Arg a -> ResolveM (Arg a)
-resolveArg _ s@SelfValue{} = pure s
-resolveArg _ a@(SelfRegion lt m x) = scope a (SelfRegion <$> traverse resolveLifetime lt <*> pure m <*> pure x)
-resolveArg _ a@(SelfExplicit t m x) = scope a (SelfExplicit <$> resolveTy AnyType t <*> pure m <*> pure x)
-resolveArg NamedArg  a@(Arg Nothing _ _) = scope a (err a "named arguments must have patterns")
-resolveArg NamedArg  a@(Arg p t x) = scope a $ do
+resolveArg _ s@(SelfValue as m x) = scope s $ do
+  as' <- traverse (resolveAttr OuterAttr) as
+  pure (SelfValue as' m x)
+resolveArg _ a@(SelfRegion as lt m x) = scope a $ do
+  as' <- traverse (resolveAttr OuterAttr) as
+  lt' <- traverse resolveLifetime lt
+  pure (SelfRegion as' lt' m x)
+resolveArg _ a@(SelfExplicit as t m x) = scope a $ do
+  as' <- traverse (resolveAttr OuterAttr) as
+  t' <- resolveTy AnyType t
+  pure (SelfExplicit as' t' m x)
+resolveArg NamedArg  a@(Arg _ Nothing _ _) = scope a (err a "named arguments must have patterns")
+resolveArg NamedArg  a@(Arg as p t x) = scope a $ do
   when (isSelfAlike a) $
     warn "argument looks like a self argument - did you mean to use 'SelfValue', 'SelfRegion', or 'SelfExplicit'?"
 
+  as' <- traverse (resolveAttr OuterAttr) as
   p' <- traverse (resolvePat NoOrPattern) p
   t' <- resolveTy AnyType t
-  pure (Arg p' t' x)
+  pure (Arg as' p' t' x)
 
-resolveArg GeneralArg a@(Arg p t x) = scope a $ do
+resolveArg GeneralArg a@(Arg as p t x) = scope a $ do
   when (isSelfAlike a) $
     warn "argument looks like a self argument - did you mean to use 'SelfValue', 'SelfRegion', or 'SelfExplicit'?"
 
+  as' <- traverse (resolveAttr OuterAttr) as
   p' <- case p of
           Nothing -> pure Nothing
           Just WildP{} -> traverse (resolvePat NoOrPattern) p
@@ -556,12 +566,12 @@ resolveArg GeneralArg a@(Arg p t x) = scope a $ do
           Just (RefP (RefP (IdentP (ByValue Immutable) _ _ _) Immutable _) Immutable _) -> traverse (resolvePat NoOrPattern) p
           _ -> scope p (err p "this pattern is not allowed for this type of argument")
   t' <- resolveTy AnyType t
-  pure (Arg p' t' x)
+  pure (Arg as' p' t' x)
 
 -- | Check whether an argument is one of the "self"-alike forms
 isSelfAlike :: Arg a -> Bool
-isSelfAlike (Arg Nothing (PathTy Nothing (Path False [PathSegment (Ident "self" False _) Nothing _] _) _) _) = True
-isSelfAlike (Arg Nothing (Rptr _ _ (PathTy Nothing (Path False [PathSegment (Ident "self" False _) Nothing _] _) _) _) _) = True
+isSelfAlike (Arg _ Nothing (PathTy Nothing (Path False [PathSegment (Ident "self" False _) Nothing _] _) _) _) = True
+isSelfAlike (Arg _ Nothing (Rptr _ _ (PathTy Nothing (Path False [PathSegment (Ident "self" False _) Nothing _] _) _) _) _) = True
 isSelfAlike _ = False
 
 instance (Typeable a, Monoid a) => Resolve (Arg a) where resolveM = resolveArg NamedArg

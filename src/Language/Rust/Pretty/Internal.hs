@@ -853,14 +853,15 @@ printFnArgsAndRet (FnDecl args ret var x)
   | otherwise = annotate x (block Paren True "," mempty [ printArg a False | a <- args ] <+> ret')
   where ret' = perhaps (\t -> "->" <+> printType t) ret
 
+
 -- | Print an argument (@print_arg@)
 printArg :: Arg a -> Bool -> Doc a
-printArg (Arg (Just pat) (Infer x') x) True = annotate x $ annotate x' (printPat pat)
-printArg (Arg Nothing ty x) _ = annotate x (printType ty)
-printArg (Arg (Just pat) ty x) _ = annotate x (printPat pat <> ":" <+> printType ty)
-printArg (SelfValue mut x) _ = annotate x (printMutability mut <+> "self")
-printArg (SelfRegion lt mut x) _ = annotate x ("&" <> hsep [perhaps printLifetime lt, printMutability mut, "self"])
-printArg (SelfExplicit ty mut x) _ = annotate x (printMutability mut <+> "self" <> ":" <+> printType ty)
+printArg (Arg as (Just pat) (Infer x') x) True = annotate x $ printOuterAttrs as <+> annotate x' (printPat pat)
+printArg (Arg as Nothing ty x) _ = annotate x (printOuterAttrs as <+> printType ty)
+printArg (Arg as (Just pat) ty x) _ = annotate x (printOuterAttrs as <+> printPat pat <> ":" <+> printType ty)
+printArg (SelfValue as mut x) _ = annotate x (printOuterAttrs as <+> printMutability mut <+> "self")
+printArg (SelfRegion as lt mut x) _ = annotate x (printOuterAttrs as <+> "&" <> hsep [perhaps printLifetime lt, printMutability mut, "self"])
+printArg (SelfExplicit as ty mut x) _ = annotate x (printOuterAttrs as <+> printMutability mut <+> "self" <> ":" <+> printType ty)
 
 -- | Print a lifetime (@print_lifetime@)
 printLifetime :: Lifetime a -> Doc a

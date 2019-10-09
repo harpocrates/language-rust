@@ -801,8 +801,8 @@ lifetime_def :: { GenericParam Span }
 
 -- Argument (requires a name / pattern, ie. @parse_arg_general(true)@)
 arg_named :: { Arg Span }
-  : ntArg             { $1 }
-  | pat ':' ty        { Arg (Just $1) $3 ($1 # $3) }
+  :                       ntArg             { $1 }
+  | many(outer_attribute) pat ':' ty        { Arg $1 (Just $2) $4 ($1 # $2 # $3) }
 
 -- Argument (does not require a name / pattern, ie. @parse_arg_general(false)@)
 --
@@ -810,31 +810,31 @@ arg_named :: { Arg Span }
 -- The details for which patterns _should_ be accepted fall into @is_named_argument()@.
 arg_general :: { Arg Span }
   : ntArg              { $1 }
-  |                ty  { Arg Nothing $1 (spanOf $1) }
-  |      '_'   ':' ty  { Arg (Just (WildP (spanOf $1))) $3 ($1 # $3) }
-  |      ident ':' ty  { Arg (Just (IdentP (ByValue Immutable) (unspan $1) Nothing (spanOf $1))) $3 ($1 # $3) }
-  | mut  ident ':' ty  { Arg (Just (IdentP (ByValue Mutable) (unspan $2) Nothing (spanOf $2))) $4 ($1 # $4) }
-  | '&'  '_'   ':' ty  { Arg (Just (RefP (WildP (spanOf $2)) Immutable ($1 # $2))) $4 ($1 # $4) }
-  | '&'  ident ':' ty  { Arg (Just (RefP (IdentP (ByValue Immutable) (unspan $2) Nothing (spanOf $2)) Immutable ($1 # $2))) $4 ($1 # $4) }
-  | '&&' '_'   ':' ty  { Arg (Just (RefP (RefP (WildP (spanOf $2)) Immutable (nudge 1 0 ($1 # $2))) Immutable ($1 # $2))) $4 ($1 # $4) }
-  | '&&' ident ':' ty  { Arg (Just (RefP (RefP (IdentP (ByValue Immutable) (unspan $2) Nothing (spanOf $2)) Immutable (nudge 1 0 ($1 # $2))) Immutable ($1 # $2))) $4 ($1 # $4) }
+  | many(outer_attribute)                ty  { Arg $1 Nothing $2 ($1 # $1) }
+  | many(outer_attribute)      '_'   ':' ty  { Arg $1 (Just (WildP (spanOf $2))) $4 ($1 # $2 # $3) }
+  | many(outer_attribute)      ident ':' ty  { Arg $1 (Just (IdentP (ByValue Immutable) (unspan $2) Nothing (spanOf $2))) $4 ($1 # $2 # $4) }
+  | many(outer_attribute) mut  ident ':' ty  { Arg $1 (Just (IdentP (ByValue Mutable) (unspan $3) Nothing (spanOf $3))) $5 ($1 # $2 # $4) }
+  | many(outer_attribute) '&'  '_'   ':' ty  { Arg $1 (Just (RefP (WildP (spanOf $3)) Immutable ($2 # $3))) $5 ($1 # $2 # $4) }
+  | many(outer_attribute) '&'  ident ':' ty  { Arg $1 (Just (RefP (IdentP (ByValue Immutable) (unspan $3) Nothing (spanOf $3)) Immutable ($2 # $3))) $5 ($1 # $2 # $5) }
+  | many(outer_attribute) '&&' '_'   ':' ty  { Arg $1 (Just (RefP (RefP (WildP (spanOf $3)) Immutable (nudge 1 0 ($2 # $3))) Immutable ($2 # $3))) $5 ($1 # $2 # $5) }
+  | many(outer_attribute) '&&' ident ':' ty  { Arg $1 (Just (RefP (RefP (IdentP (ByValue Immutable) (unspan $3) Nothing (spanOf $3)) Immutable (nudge 1 0 ($2 # $3))) Immutable ($2 # $3))) $5 ($1 # $2 # $4) }
 
 -- Self argument (only allowed in trait/impl function signatures)
 arg_self :: { Arg Span }
-  :                  self { SelfValue Immutable ($1 # $>) }
-  |              mut self { SelfValue Mutable ($1 # $>) }
-  | '&'              self { SelfRegion Nothing   Immutable ($1 # $>) }
-  | '&' lifetime     self { SelfRegion (Just $2) Immutable ($1 # $>) }
-  | '&'          mut self { SelfRegion Nothing   Mutable   ($1 # $>) }
-  | '&' lifetime mut self { SelfRegion (Just $2) Mutable   ($1 # $>) }
-  |     self ':' ty       { SelfExplicit $3 Immutable ($1 # $>) }
-  | mut self ':' ty       { SelfExplicit $4 Mutable ($1 # $>) }
+  : many(outer_attribute)                  self { SelfValue $1 Immutable ($1 # $2 # $>) }
+  | many(outer_attribute)              mut self { SelfValue $1 Mutable ($1 # $2 # $>) }
+  | many(outer_attribute) '&'              self { SelfRegion $1 Nothing   Immutable ($1 # $2 # $>) }
+  | many(outer_attribute) '&' lifetime     self { SelfRegion $1 (Just $3) Immutable ($1 # $2 # $>) }
+  | many(outer_attribute) '&'          mut self { SelfRegion $1 Nothing   Mutable   ($1 # $2 # $>) }
+  | many(outer_attribute) '&' lifetime mut self { SelfRegion $1 (Just $3) Mutable   ($1 # $2 # $>) }
+  | many(outer_attribute)     self ':' ty       { SelfExplicit $1 $4 Immutable ($1 # $2 # $>) }
+  | many(outer_attribute) mut self ':' ty       { SelfExplicit $1 $5 Mutable   ($1 # $2 # $>) }
 
 -- Lambda expression argument
 lambda_arg :: { Arg Span }
-  : ntArg                         { $1 }
-  | pat ':' ty                    { Arg (Just $1) $3 ($1 # $3) }
-  | pat                           { Arg (Just $1) (Infer mempty) (spanOf $1) }
+  : ntArg                                               { $1 }
+  | many(outer_attribute) pat ':' ty                    { Arg $1 (Just $2) $4 ($1 # $2 # $3) }
+  | many(outer_attribute) pat                           { Arg $1 (Just $2) (Infer mempty) ($1 # $2) }
 
 
 --------------
@@ -1487,10 +1487,11 @@ generics1 :: { Generics Span }
   | '<' sep_byT(generic_param,',') gt '>' { Generics $2 (WhereClause [] mempty) ($1 # $>) }
 
 ty_param :: { GenericParam Span }
-  : many(outer_attribute) ident                                             { TypeParam $1 (unspan $2) [] Nothing ($1 # $>) }
-  | many(outer_attribute) ident ':' sep_byT(ty_param_bound_mod,'+')         { TypeParam $1 (unspan $2) $4 Nothing ($1 # $>) }
-  | many(outer_attribute) ident                                     '=' ty  { TypeParam $1 (unspan $2) [] (Just $>) ($1 # $>) }
-  | many(outer_attribute) ident ':' sep_byT(ty_param_bound_mod,'+') '=' ty  { TypeParam $1 (unspan $2) $4 (Just $>) ($1 # $>) }
+  : many(outer_attribute) ident                                              { TypeParam $1 (unspan $2) [] Nothing ($1 # $>) }
+  | many(outer_attribute) ident ':' sep_byT(ty_param_bound_mod,'+')          { TypeParam $1 (unspan $2) $4 Nothing ($1 # $>) }
+  | many(outer_attribute) ident                                      '=' ty  { TypeParam $1 (unspan $2) [] (Just $>) ($1 # $>) }
+  | many(outer_attribute) ident ':' sep_byT(ty_param_bound_mod,'+')  '=' ty  { TypeParam $1 (unspan $2) $4 (Just $>) ($1 # $>) }
+  | many(outer_attribute) ident ':' sep_by1(ty_param_bound_mod,'+') '+=' ty  { TypeParam $1 (unspan $2) (toList $4) (Just $>) ($1 # $>) }
 
 const_param :: { GenericParam Span }
   : many(outer_attribute) const ident ':' ty                                 { ConstParam $1 (unspan $3) $5 ($1 # $2 # $>) }

@@ -176,17 +176,17 @@ data Abi
 -- }
 -- @
 data Arg a
-  = Arg (Maybe (Pat a)) (Ty a) a                   -- ^ Regular argument
-  | SelfValue Mutability a                         -- ^ Self argument, by value
-  | SelfRegion (Maybe (Lifetime a)) Mutability a   -- ^ Self argument, by reference
-  | SelfExplicit (Ty a) Mutability a               -- ^ Explicit self argument
+  = Arg [Attribute a]  (Maybe (Pat a)) (Ty a) a                   -- ^ Regular argument
+  | SelfValue [Attribute a] Mutability a                         -- ^ Self argument, by value
+  | SelfRegion [Attribute a] (Maybe (Lifetime a)) Mutability a   -- ^ Self argument, by reference
+  | SelfExplicit [Attribute a] (Ty a) Mutability a               -- ^ Explicit self argument
   deriving (Eq, Ord, Show, Functor, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Arg a) where
-  spanOf (Arg _ _ s) = spanOf s
-  spanOf (SelfValue _ s) = spanOf s
-  spanOf (SelfRegion _ _ s) = spanOf s
-  spanOf (SelfExplicit _ _ s) = spanOf s
+  spanOf (Arg _ _ _ s) = spanOf s
+  spanOf (SelfValue _ _ s) = spanOf s
+  spanOf (SelfRegion _ _ _ s) = spanOf s
+  spanOf (SelfExplicit _ _ _ s) = spanOf s
 
 -- | An arm of a 'Match' expression (@syntax::ast::Arm@). An arm has at least one patten, possibly a
 -- guard expression, and a body expression.

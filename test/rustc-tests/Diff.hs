@@ -322,14 +322,18 @@ instance Show a => Diffable (FnDecl a) where
     variadic === (val ! "c_variadic")
 
 instance Show a => Diffable (Arg a) where
-  SelfRegion _ _ x === val =
+  SelfRegion as _ _ x === val = do
+    NullList as === (val ! "attrs" ! "_field0")
     IdentP (ByValue Immutable) "self" Nothing x === (val ! "pat")
-  SelfValue m x === val =
+  SelfValue as m x === val = do
+    NullList as === (val ! "attrs" ! "_field0")
     IdentP (ByValue m) "self" Nothing x === (val ! "pat")
-  SelfExplicit t m x === val = do
+  SelfExplicit as t m x === val = do
+    NullList as === (val ! "attrs" ! "_field0")
     IdentP (ByValue m) "self" Nothing x === (val ! "pat")
     t === (val ! "ty")
-  Arg p t _ === val = do
+  Arg as p t _ === val = do
+    NullList as === (val ! "attrs" ! "_field0")
     let p' = fromMaybe (IdentP (ByValue Immutable) invalidIdent Nothing undefined) p
     p' === (val ! "pat")
     t === (val ! "ty")
