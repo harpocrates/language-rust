@@ -13,7 +13,7 @@ Data structure behind identifiers.
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 
-module Language.Rust.Data.Ident (Ident(..), mkIdent, Name) where
+module Language.Rust.Data.Ident (Ident(..), mkIdent, mkUnIdent, Name) where
 
 import GHC.Generics       ( Generic )
 
@@ -30,6 +30,7 @@ import Data.Semigroup as Sem
 data Ident
   = Ident { name :: Name                 -- ^ payload of the identifier
           , raw :: Bool                  -- ^ whether the identifier is raw
+          , unquote :: Bool              -- ^ whether the identifer should be unquoted
           , hash :: {-# UNPACK #-} !Int  -- ^ hash for quick comparision
           } deriving (Data, Typeable, Generic, NFData)
 
@@ -56,14 +57,17 @@ instance Monoid Ident where
   mappend = (<>)
   mempty = mkIdent ""
 
--- | "Forgets" about whether either argument was raw
+-- | "Forgets" about whether either argument was raw or unquoted
 instance Sem.Semigroup Ident where
-  Ident n1 _ _ <> Ident n2 _  _ = mkIdent (n1 <> n2)
-
+  Ident n1 _ _ _ <> Ident n2 _ _ _ = mkIdent (n1 <> n2)
 
 -- | Smart constructor for making an 'Ident'.
 mkIdent :: String -> Ident
-mkIdent s = Ident s False (hashString s)
+mkIdent s = Ident s False False (hashString s)
+
+-- | Smart constructor for making an 'Ident' for unquoting.
+mkUnIdent :: String -> Ident
+mkUnIdent s = Ident s False True (hashString s)
 
 -- | Hash a string into an 'Int'
 hashString :: String -> Int

@@ -369,6 +369,8 @@ data Expr a
   | Try [Attribute a] (Expr a) a
   -- | @yield@ with an optional value to yield (example: @yield 1@)
   | Yield [Attribute a] (Maybe (Expr a)) a
+  -- | A quasiquote unquote; the string should be a Haskell identifier to reference
+  | UnquoteExpr String a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Expr a) where
@@ -410,6 +412,7 @@ instance Located a => Located (Expr a) where
   spanOf (ParenExpr _ _ s) = spanOf s
   spanOf (Try _ _ s) = spanOf s
   spanOf (Yield _ _ s) = spanOf s
+  spanOf (UnquoteExpr _ s) = spanOf s
 
 -- | Field in a struct literal expression (@syntax::ast::Field@).
 --
@@ -877,6 +880,10 @@ data Stmt a
   | Semi (Expr a) a
   -- | A macro call (example: @println!("hello world")@)
   | MacStmt (Mac a) MacStmtStyle [Attribute a] a
+  -- | A template Rust statement that should be expanded
+  | UnquoteStmt String a
+  -- } A series of template Rust statements that should be spliced into a block
+  | UnquoteSplice String a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Stmt a) where
@@ -885,6 +892,8 @@ instance Located a => Located (Stmt a) where
   spanOf (NoSemi _ s) = spanOf s
   spanOf (Semi _ s) = spanOf s
   spanOf (MacStmt _ _ _ s) = spanOf s
+  spanOf (UnquoteStmt _ s) = spanOf s
+  spanOf (UnquoteSplice _ s) = spanOf s
 
 -- | Style of a string literal (@syntax::ast::StrStyle@).
 data StrStyle
@@ -1195,4 +1204,3 @@ instance Located a => Located (WherePredicate a) where
   spanOf (BoundPredicate _ _ _ s) = spanOf s
   spanOf (RegionPredicate _ _ s) = spanOf s
   spanOf (EqPredicate _ _ s) = spanOf s
-

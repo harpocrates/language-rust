@@ -44,7 +44,7 @@ module Language.Rust.Parser.Lexer (
   lexicalError,
 ) where
 
-import Language.Rust.Data.Ident        ( mkIdent, Ident(..) )
+import Language.Rust.Data.Ident        ( mkIdent, mkUnIdent, Ident(..) )
 import Language.Rust.Data.InputStream
 import Language.Rust.Data.Position
 import Language.Rust.Parser.ParseMonad
@@ -982,6 +982,10 @@ $hexit             = [0-9a-fA-F]
 -- Macro related
 
 @subst_nt          = "$" @ident
+@unquote_ident     = "$$"  @ident
+@unquote_expr      = "$$(" @ident ")"
+@unquote_stmt      = "$${" @ident "}"
+@unquote_splice    = "$@{" @ident "}"
 
 tokens :-
 
@@ -1071,7 +1075,11 @@ $white+         { \s -> pure (Space Whitespace s)  }
 
 \?              { token Question }
 @raw_ident      { \s -> pure (IdentTok ((mkIdent (drop 2 s)){ raw = True })) } 
-@ident          { \s -> pure (IdentTok (mkIdent s)) } 
+@ident          { \s -> pure (IdentTok (mkIdent s)) }
+@unquote_ident  { \s -> pure (IdentTok (mkUnIdent (drop 2 s))) }
+@unquote_expr   { \s -> pure (UnquoteExprTok (init (drop 3 s))) }
+@unquote_stmt   { \s -> pure (UnquoteStmtTok (init (drop 3 s))) }
+@unquote_splice { \s -> pure (UnquoteSplTok  (init (drop 3 s))) }
 @lifetime       { \s -> (pure (LifetimeTok (mkIdent (tail s))) :: P Token) }
 
 
@@ -1104,7 +1112,7 @@ literal lit = do
     AlexToken (pos',inp') len action -> do
         tok <- action (peekChars len inp)
         case tok of
-          IdentTok (Ident suf False _) -> do
+          IdentTok (Ident suf False False _) -> do
             setPosition pos'
             setInput inp'
             pure (LiteralTok lit (Just suf))

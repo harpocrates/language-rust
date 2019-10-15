@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 {-|
 Module      : Language.Rust.Quote
 Description : Quasiquotes for Rust AST
@@ -19,6 +20,48 @@ The examples below assume the following GHCi flag and import:
 
 >>> :set -XQuasiQuotes
 >>> import Control.Monad ( void )
+
+This quotation library allows a restricted amount of unquoting, which allow you to splice
+computed ASTs into a quoted item. In particular, you can:
+
+  * Splice in an expression by using @$$(foo)@, where @foo@ is a Haskell identifier in
+    scope that has the type `Language.Rust.Syntax.Expr`.
+  * Splice in a single statement by using @$${foo}@, where @foo@ is a Haskell identifer
+    in scope that has the type `Language.Rust.Syntax.Stmt`.
+  * Splice a series of statements into a block by using the @$\@{foo}@ syntax, where @foo@
+    is a list of `Language.Rust.Syntax.Stmt`.
+
+Putting it all together, you should be able to write things like the following:
+
+> let initial_value = [expr| 1 |]
+>     return_value  = [stmt| return v; |]
+>     lines         = replicate 10 [stmt| v = v + 1; |]
+> [item|
+> fn foo(x: u64) -> u64 {
+>   let mut v = $$(initial_value);
+>   $@{lines}
+>   v = v % 10;
+>   $${return_value}
+> |]
+
+This will then generate the following Rust:
+
+> fn foo(x: u64) -> u64 {
+>   let mut v = 1;
+>   v = v + 1;
+>   v = v + 1;
+>   v = v + 1;
+>   v = v + 1;
+>   v = v + 1;
+>   v = v + 1;
+>   v = v + 1;
+>   v = v + 1;
+>   v = v + 1;
+>   v = v + 1;
+>   v = v % 10;
+>   return v;
+> }
+
 -}
 
 
@@ -49,17 +92,21 @@ i32
 For now, however, you cannot use @$x@ or @$x:ty@ meta variables.
 -}
 
+import Language.Rust.Data.Ident         ( Ident(..) )
 import Language.Rust.Parser.ParseMonad
 import Language.Rust.Parser.Internal
 import Language.Rust.Data.InputStream   ( inputStreamFromString )
 import Language.Rust.Data.Position      ( Position(..), Span )
+import Language.Rust.Syntax.AST         ( Block(Block), Expr(UnquoteExpr), Stmt(UnquoteSplice,UnquoteStmt), TokenTree(Token) )
+import Language.Rust.Syntax.Token       ( Token(UnquoteExprTok,UnquoteStmtTok) )
 
-import Language.Haskell.TH
+import Language.Haskell.TH       hiding ( Stmt )
 import Language.Haskell.TH.Quote        ( QuasiQuoter(..), dataToExpQ, dataToPatQ )
 
 import Control.Applicative              ( (<|>) )
 import Control.Monad                    ( (>=>) )
 import Data.Functor                     ( ($>) )
+import Data.Generics.Aliases            ( extQ )
 import Data.Typeable                    ( cast, Typeable )
 import Data.Data                        ( Data )
 
@@ -68,27 +115,88 @@ import Data.Data                        ( Data )
 -- wild pattern.
 quoter :: Data a => P a -> QuasiQuoter
 quoter p = QuasiQuoter
-             { quoteExp = parse >=> dataToExpQ (const Nothing)
-             , quotePat = parse >=> dataToPatQ wildSpanPos
-             , quoteDec = error "this quasiquoter does not support declarations"
-             , quoteType = error "this quasiquoter does not support types"
-             }
+           { quoteExp = parse >=> dataToExpQ qqExp
+           , quotePat = parse >=> dataToPatQ wildSpanPos
+           , quoteDec = error "this quasiquoter does not support declarations"
+           , quoteType = error "this quasiquoter does not support types"
+           }
   where
   -- | Given a parser and an input string, turn it into the corresponding Haskell expression/pattern.
   parse inp = do
     Loc{ loc_start = (r,c) } <- location
-  
     -- Run the parser
     case execParser p (inputStreamFromString inp) (Position 0 r c) of
       Left (ParseFail _ msg) -> fail msg
       Right x -> pure x
 
-  -- | Replace 'Span' and 'Position' with wild patterns
-  wildSpanPos :: Typeable b => b -> Maybe (Q Pat)
-  wildSpanPos x = ((cast x :: Maybe Span) $> wildP) <|> ((cast x :: Maybe Position) $> wildP)
+-- | Replace 'Span' and 'Position' with wild patterns
+wildSpanPos :: Typeable b => b -> Maybe (Q Pat)
+wildSpanPos x = ((cast x :: Maybe Span) $> wildP) <|> ((cast x :: Maybe Position) $> wildP)
 
+-- | Replace quasiquoted items with their appropriate template haskell
+-- expansions.
+qqExp :: Typeable a => a -> Maybe (Q Exp)
+qqExp = const Nothing `extQ` replaceExpressions
+                      `extQ` replaceStatements
+                      `extQ` replaceNames
+                      `extQ` replaceTokens
+                      `extQ` replaceSplices
 
--- | Quasiquoter for literals (see 'Language.Rust.Syntax.Lit').
+-- | Replace unquotes within expressions with TH references to the given name.
+replaceExpressions :: Expr Span -> Maybe (Q Exp)
+replaceExpressions (UnquoteExpr n _) = Just (varE (mkName n))
+replaceExpressions _ = Nothing
+
+-- | Replace unquotes within statements with TH references to the given name.
+replaceStatements :: Stmt Span -> Maybe (Q Exp)
+replaceStatements (UnquoteStmt n _) = Just (varE (mkName n))
+replaceStatements _ = Nothing
+
+-- | Replace unquoting names with TH references to the given name.
+replaceNames :: Ident -> Maybe (Q Exp)
+replaceNames (Ident n _ True _) = Just (varE (mkName n))
+replaceNames _ = Nothing
+
+-- | Replace unquoted tokens with TH reference to the given name.
+replaceTokens :: TokenTree -> Maybe (Q Exp)
+replaceTokens (Token _ (UnquoteExprTok s)) = Just (varE (mkName s))
+replaceTokens (Token _ (UnquoteStmtTok s)) = Just (varE (mkName s))
+replaceTokens _ = Nothing
+
+data BlockPortion a = Normal [Stmt a] | Unquote (Q Exp)
+
+replaceSplices :: Block Span -> Maybe (Q Exp)
+replaceSplices (Block stmts unsaf x)
+  | all (not . isUnquote) chunks = Nothing
+  | otherwise =
+      Just [| Block $(buildExpression chunks) $(dataToExpQ qqExp unsaf) $(dataToExpQ qqExp x) |]
+ where
+  chunks = go stmts []
+  --
+  go :: [Stmt a] -> [Stmt a] -> [BlockPortion a]
+  go [] acc =
+    [Normal (reverse acc)]
+  go ((UnquoteSplice s _):rest) acc =
+    Normal (reverse acc) : Unquote (varE (mkName s)) : go rest []
+  go (h:rest) acc =
+    go rest (h:acc)
+  --
+  isUnquote (Unquote _) = True
+  isUnquote (Normal  _) = False
+  --
+  buildExpression :: Data a => [BlockPortion a] -> Q Exp
+  buildExpression [] = [| [] |]
+  buildExpression ((Unquote q) : rest) =
+    [|$(q) ++ ($(buildExpression rest))|]
+  buildExpression ((Normal parts) : rest) =
+    [| $(listify (map (dataToExpQ qqExp) parts)) ++ $(buildExpression rest) |]
+  --
+  listify :: [Q Exp] -> Q Exp
+  listify []       = [| [] |]
+  listify (f:rest) = [| $(f) : $(listify rest) |]
+
+-- | Quasiquoter for literals (see 'Language.Rust.Syntax.Lit'). Unquoting
+-- ($$(name)) will not work in a literal.
 --
 -- >>> void [lit| 1.4e29f64 |]
 -- Float 1.4e29 F64 ()
@@ -96,7 +204,8 @@ quoter p = QuasiQuoter
 lit :: QuasiQuoter
 lit = quoter parseLit
 
--- | Quasiquoter for attributes (see 'Language.Rust.Syntax.Attribute')
+-- | Quasiquoter for attributes (see 'Language.Rust.Syntax.Attribute'). Unquoting
+-- ($$(name)) will not work in an attribute.
 --
 -- >>> void [attr| #[no_mangle] |]
 -- Attribute Outer (Path False [PathSegment "no_mangle" Nothing ()] ()) (Stream []) ()
@@ -104,7 +213,8 @@ lit = quoter parseLit
 attr :: QuasiQuoter
 attr = quoter parseAttr
 
--- | Quasiquoter for types (see 'Language.Rust.Syntax.Ty')
+-- | Quasiquoter for types (see 'Language.Rust.Syntax.Ty'). Unquoting will not
+-- work in a type (currently).
 --
 -- >>> void [ty| &(_,_) |]
 -- Rptr Nothing Immutable (TupTy [Infer (),Infer ()] ()) ()
@@ -112,7 +222,8 @@ attr = quoter parseAttr
 ty :: QuasiQuoter
 ty = quoter parseTy
 
--- | Quasiquoter for patterns (see 'Language.Rust.Syntax.Pat')
+-- | Quasiquoter for patterns (see 'Language.Rust.Syntax.Pat'). Unquoting will
+-- not work in a pattern (currently).
 --
 -- >>> void [pat| x @ 1...5 |]
 -- IdentP (ByValue Immutable) "x" (Just (RangeP (Lit [] (Int Dec 1 Unsuffixed ()) ())
@@ -121,7 +232,9 @@ ty = quoter parseTy
 pat :: QuasiQuoter
 pat = quoter parsePat
 
--- | Quasiquoter for statements (see 'Language.Rust.Syntax.Stmt')
+-- | Quasiquoter for statements (see 'Language.Rust.Syntax.Stmt'). Unquoting
+-- will work in a statement block, either as a subexpression, substatement, or
+-- (weirdly) the statement itself.
 --
 -- >>> void [stmt| let x = 4i32; |]
 -- Local (IdentP (ByValue Immutable) "x" Nothing ()) Nothing (Just (Lit [] (Int Dec 4 I32 ()) ())) [] ()
