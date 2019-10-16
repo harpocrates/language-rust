@@ -370,7 +370,7 @@ data Expr a
   -- | @yield@ with an optional value to yield (example: @yield 1@)
   | Yield [Attribute a] (Maybe (Expr a)) a
   -- | A quasiquote unquote; the string should be a Haskell identifier to reference
-  | UnquoteExpr String a
+  | UnquoteExpr [Attribute a] String a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Expr a) where
@@ -412,7 +412,7 @@ instance Located a => Located (Expr a) where
   spanOf (ParenExpr _ _ s) = spanOf s
   spanOf (Try _ _ s) = spanOf s
   spanOf (Yield _ _ s) = spanOf s
-  spanOf (UnquoteExpr _ s) = spanOf s
+  spanOf (UnquoteExpr _ _ s) = spanOf s
 
 -- | Field in a struct literal expression (@syntax::ast::Field@).
 --

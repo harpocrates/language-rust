@@ -1040,7 +1040,7 @@ resolveExprP _ _ c@(Catch as b x) = scope c $ do
   as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
   pure (Catch as' b' x)
-resolveExprP _ _ x@(UnquoteExpr _ _) =
+resolveExprP _ _ x@(UnquoteExpr _ _ _) =
   pure x
 
 isBlockLike :: Expr a -> Bool

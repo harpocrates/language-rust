@@ -926,7 +926,7 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   -- immediate expressions
   : ntExpr                           { $1 }
   | lit_expr                         { $1 }
-  | UNQUOTE_EXPR                     { let UnquoteExprTok s = unspan $1 in UnquoteExpr s (spanOf $1) }
+  | UNQUOTE_EXPR                     { let UnquoteExprTok s = unspan $1 in UnquoteExpr [] s (spanOf $1) }
   | '[' sep_byT(expr,',') ']'        { Vec [] $2 ($1 # $>) }
   | '[' inner_attrs sep_byT(expr,',') ']' { Vec (toList $2) $3 ($1 # $>) }
   | '[' expr ';' expr ']'            { Repeat [] $2 $4 ($1 # $>) }
@@ -1907,6 +1907,7 @@ addAttrs as (Repeat as' e1 e2 s)     = Repeat (as ++ as') e1 e2 s
 addAttrs as (ParenExpr as' e s)      = ParenExpr (as ++ as') e s
 addAttrs as (Try as' e s)            = Try (as ++ as') e s
 addAttrs as (Yield as' e s)          = Yield (as ++ as') e s
+addAttrs as (UnquoteExpr as' a s)    = UnquoteExpr (as ++ as') a s
 
 
 -- | Given a 'LitTok' token that is expected to result in a valid literal, construct the associated

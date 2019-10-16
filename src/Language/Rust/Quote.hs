@@ -147,7 +147,7 @@ qqExp = const Nothing `extQ` replaceExpressions
 
 -- | Replace unquotes within expressions with TH references to the given name.
 replaceExpressions :: Expr Span -> Maybe (Q Exp)
-replaceExpressions (UnquoteExpr n _) = Just (varE (mkName n))
+replaceExpressions (UnquoteExpr _ n _) = Just (varE (mkName n))
 replaceExpressions _ = Nothing
 
 -- | Replace unquotes within statements with TH references to the given name.

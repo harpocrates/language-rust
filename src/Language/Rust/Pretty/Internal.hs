@@ -413,7 +413,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Repeat attrs e cnt x        -> annotate x (brackets (printInnerAttrs attrs <+> printExpr e <> ";" <+> printExpr cnt))
     ParenExpr attrs e x         -> annotate x (parens (printInnerAttrs attrs <+> printExpr e))
     Try{}                       -> chainedMethodCalls expr False id
-    UnquoteExpr s _             -> error ("Lingering unquote expression '" ++ s ++ "'")
+    UnquoteExpr _ s _           -> error ("Lingering unquote expression '" ++ s ++ "'")
   where
   printLbl = perhaps (\(Label n x) -> annotate x ("'" <> printName n) <> ":")
   printLbl' = perhaps (\(Label n x) -> annotate x ("'" <> printName n))
@@ -496,7 +496,7 @@ expressionAttrs (Repeat as _ _ _) = as
 expressionAttrs (ParenExpr as _ _) = as
 expressionAttrs (Try as _ _) = as
 expressionAttrs (Yield as _ _) = as
-expressionAttrs (UnquoteExpr _ _) = []
+expressionAttrs (UnquoteExpr as _ _) = as
 
 -- | Print a field
 printField :: Field a -> Doc a
