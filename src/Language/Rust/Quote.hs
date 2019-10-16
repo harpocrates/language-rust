@@ -24,6 +24,9 @@ The examples below assume the following GHCi flag and import:
 This quotation library allows a restricted amount of unquoting, which allow you to splice
 computed ASTs into a quoted item. In particular, you can:
 
+  * Splice in an identifier (in any number of helpful places, including function names,
+    use statements, etc.) by using @$$foo@ where @foo@ is a Haskell identifier in scope
+    that has type `Language.Rust.Data.Ident`.
   * Splice in an expression by using @$$(foo)@, where @foo@ is a Haskell identifier in
     scope that has the type `Language.Rust.Syntax.Expr`.
   * Splice in a single statement by using @$${foo}@, where @foo@ is a Haskell identifer
