@@ -684,6 +684,8 @@ printItem (MacItem as i (Mac p ts y) x) = annotate x $ annotate y $ align $ prin
 printItem (MacroDef as i ts x) = annotate x $ align $ printOuterAttrs as <#>
   ("macro_rules" <> "!" <+> printIdent i <+> block Brace True mempty mempty [ printTokenStream ts ])
 
+printItem (UnquoteItems _ _ _) =
+  error ("print_item ran into a lingering UnquoteItems")
 
 -- | Print a trait item (@print_trait_item@)
 printTraitItem :: TraitItem a -> Doc a

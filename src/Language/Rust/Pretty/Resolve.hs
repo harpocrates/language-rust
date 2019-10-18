@@ -1280,6 +1280,9 @@ resolveItem _ m@(MacroDef as i ts x) = scope m $ do
   ts' <- resolveTokenStream ts
   pure (MacroDef as' i' ts' x)
 
+resolveItem _ m@(UnquoteItems _ _ _) =
+  pure m
+
 instance (Typeable a, Monoid a) => Resolve (Item a) where resolveM = resolveItem ModItem
 
 -- | A foreign item is invalid only if any of its underlying constituents are 

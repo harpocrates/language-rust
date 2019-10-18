@@ -33,6 +33,8 @@ computed ASTs into a quoted item. In particular, you can:
     in scope that has the type `Language.Rust.Syntax.Stmt`.
   * Splice a series of statements into a block by using the @$\@{foo}@ syntax, where @foo@
     is a list of `Language.Rust.Syntax.Stmt`.
+  * Splice a series of items (`Item`) into a top-level source file or module by using the
+    same @$\@{foo}@ syntax.
 
 Putting it all together, you should be able to write things like the following:
 
@@ -100,7 +102,7 @@ import Language.Rust.Parser.ParseMonad
 import Language.Rust.Parser.Internal
 import Language.Rust.Data.InputStream   ( inputStreamFromString )
 import Language.Rust.Data.Position      ( Position(..), Span )
-import Language.Rust.Syntax.AST         ( Block(Block), Expr(UnquoteExpr), Stmt(UnquoteSplice,UnquoteStmt), TokenTree(Token) )
+import Language.Rust.Syntax.AST         ( Block(Block), Expr(UnquoteExpr), Item(Mod,UnquoteItems), SourceFile(SourceFile), Stmt(UnquoteSplice,UnquoteStmt), TokenTree(Token) )
 import Language.Rust.Syntax.Token       ( Token(UnquoteExprTok,UnquoteStmtTok) )
 
 import Language.Haskell.TH       hiding ( Stmt )
@@ -143,7 +145,9 @@ qqExp = const Nothing `extQ` replaceExpressions
                       `extQ` replaceStatements
                       `extQ` replaceNames
                       `extQ` replaceTokens
-                      `extQ` replaceSplices
+                      `extQ` replaceStmtSplices
+                      `extQ` replaceItemSplices
+                      `extQ` replaceSourceFileSplices
 
 -- | Replace unquotes within expressions with TH references to the given name.
 replaceExpressions :: Expr Span -> Maybe (Q Exp)
@@ -166,37 +170,73 @@ replaceTokens (Token _ (UnquoteExprTok s)) = Just (varE (mkName s))
 replaceTokens (Token _ (UnquoteStmtTok s)) = Just (varE (mkName s))
 replaceTokens _ = Nothing
 
-data BlockPortion a = Normal [Stmt a] | Unquote (Q Exp)
+data BlockPortion i a = Normal [i a] | Unquote (Q Exp)
 
-replaceSplices :: Block Span -> Maybe (Q Exp)
-replaceSplices (Block stmts unsaf x)
+replaceStmtSplices :: Block Span -> Maybe (Q Exp)
+replaceStmtSplices (Block stmts unsaf x)
   | all (not . isUnquote) chunks = Nothing
   | otherwise =
       Just [| Block $(buildExpression chunks) $(dataToExpQ qqExp unsaf) $(dataToExpQ qqExp x) |]
  where
-  chunks = go stmts []
-  --
-  go :: [Stmt a] -> [Stmt a] -> [BlockPortion a]
-  go [] acc =
-    [Normal (reverse acc)]
-  go ((UnquoteSplice s _):rest) acc =
-    Normal (reverse acc) : Unquote (varE (mkName s)) : go rest []
-  go (h:rest) acc =
-    go rest (h:acc)
-  --
-  isUnquote (Unquote _) = True
-  isUnquote (Normal  _) = False
-  --
-  buildExpression :: Data a => [BlockPortion a] -> Q Exp
-  buildExpression [] = [| [] |]
-  buildExpression ((Unquote q) : rest) =
-    [|$(q) ++ ($(buildExpression rest))|]
-  buildExpression ((Normal parts) : rest) =
-    [| $(listify (map (dataToExpQ qqExp) parts)) ++ $(buildExpression rest) |]
-  --
-  listify :: [Q Exp] -> Q Exp
-  listify []       = [| [] |]
-  listify (f:rest) = [| $(f) : $(listify rest) |]
+  chunks = classifyPortions classify stmts []
+  classify (UnquoteSplice s _) = Right (varE (mkName s))
+  classify other               = Left other
+
+replaceItemSplices :: Item Span -> Maybe (Q Exp)
+replaceItemSplices (Mod attrs vis ident (Just xs) sp) =
+  let chunks = classifyPortions classify xs []
+      classify (UnquoteItems _ s _) = Right (varE (mkName s))
+      classify other                = Left other
+  in Just [| Mod $(dataToExpQ qqExp attrs)
+                 $(dataToExpQ qqExp vis)
+                 $(dataToExpQ qqExp ident)
+                 (Just $(buildExpression chunks))
+                 $(dataToExpQ qqExp sp) |]
+replaceItemSplices _ = Nothing
+
+replaceSourceFileSplices :: SourceFile Span -> Maybe (Q Exp)
+replaceSourceFileSplices (SourceFile mname attrs items)
+  | all (not . isUnquote) chunks = Nothing
+  | otherwise =
+      Just [| SourceFile $(dataToExpQ qqExp mname) $(dataToExpQ qqExp attrs) $(buildExpression chunks) |]
+ where
+  chunks = classifyPortions classify items []
+  classify (UnquoteItems _ s _) = Right (varE (mkName s))
+  classify other                = Left other
+
+-- Classify a series of items into either their normal counterpart, or unquote
+-- splices
+classifyPortions :: (i a -> Either (i a) (Q Exp)) ->
+                    [i a] -> [i a] ->
+                    [BlockPortion i a]
+classifyPortions _ [] acc =
+  [Normal (reverse acc)]
+classifyPortions classify (first:rest) acc =
+  case classify first of
+    Left normy ->
+      classifyPortions classify rest (normy : acc)
+    Right unq ->
+      Normal (reverse acc) : Unquote unq : classifyPortions classify rest []
+
+-- You got this.
+isUnquote :: BlockPortion i a -> Bool
+isUnquote (Unquote _) = True
+isUnquote (Normal  _) = False
+
+-- Build a template haskell expression that combines a combination of normal
+-- things with a list of unquote splices.
+buildExpression :: Data (i a) => [BlockPortion i a] -> Q Exp
+buildExpression [] = [| [] |]
+buildExpression ((Unquote q) : rest) =
+  [|$(q) ++ ($(buildExpression rest))|]
+buildExpression ((Normal parts) : rest) =
+  [| $(listify (map (dataToExpQ qqExp) parts)) ++ $(buildExpression rest) |]
+
+-- Convert a list of template haskell expressions into a template haskell
+-- expression that will construct a list of the relevant results
+listify :: [Q Exp] -> Q Exp
+listify []       = [| [] |]
+listify (f:rest) = [| $(f) : $(listify rest) |]
 
 -- | Quasiquoter for literals (see 'Language.Rust.Syntax.Lit'). Unquoting
 -- ($$(name)) will not work in a literal.

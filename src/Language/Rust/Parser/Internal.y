@@ -1410,6 +1410,8 @@ mod_item :: { Item Span }
     { macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!'       '{' token_stream '}'
     { macroItem $1 Nothing            (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
+  | UNQUOTE_SPLICE
+    { let UnquoteSplTok  s = unspan $1 in UnquoteItems [] s (spanOf $1) }
 
 foreign_item :: { ForeignItem Span }
   : many(outer_attribute) vis static     ident ':' ty ';'

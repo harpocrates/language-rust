@@ -601,6 +601,9 @@ data Item a
   -- | definition of a macro via @macro_rules@
   -- Example: @macro_rules! foo { .. }@
   | MacroDef [Attribute a] Ident TokenStream a
+  -- | an unquote splice, in which we should throw in a bunch of to-be-generated
+  -- items
+  | UnquoteItems [Attribute a] String a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Item a) where
@@ -620,6 +623,7 @@ instance Located a => Located (Item a) where
   spanOf (Impl _ _ _ _ _ _ _ _ _ s) = spanOf s
   spanOf (MacItem _ _ _ s) = spanOf s
   spanOf (MacroDef _ _ _ s) = spanOf s
+  spanOf (UnquoteItems _ _ s) = spanOf s
 
 -- | Used to annotate loops, breaks, continues, etc.
 data Label a = Label Name a
