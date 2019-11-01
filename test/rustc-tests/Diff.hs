@@ -636,8 +636,8 @@ instance Show a => Diffable (Field a) where
       me === (val ! "expr")
 
 instance Diffable Ident where
-  Ident i _ _ === String s | fromString i == s = pure ()
-  ident'      === val = diff "identifiers are different" ident' val
+  Ident i _ _ _ === String s | fromString i == s = pure ()
+  ident'        === val = diff "identifiers are different" ident' val
 
 -- | The empty identifier is invalid
 invalidIdent :: Ident

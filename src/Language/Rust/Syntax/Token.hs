@@ -105,6 +105,9 @@ data Token
   -- ^ doc comment with its contents, whether it is outer/inner, and whether it is inline or not
   | Shebang               -- ^ @#!@ shebang token
   | Eof                   -- ^ end of file token
+  | UnquoteExprTok String -- ^ An unquote for Haskell quasiquoting of expression
+  | UnquoteStmtTok String -- ^ An unquote for Haskell quasiquoting of statement
+  | UnquoteSplTok  String -- ^ An unquote for a sequence of statements
   
   -- NOT PRODUCED IN TOKENIZATION!!
   | Interpolated (Nonterminal Span) -- ^ can be expanded into several tokens in macro-expansion
@@ -355,6 +358,9 @@ instance Show Token where
   show (LiteralTok (ByteStrRawTok n i) s) = "br" ++ replicate i '#' ++ "\"" ++ n ++ "\"" ++ replicate i '#' ++ fromMaybe "" s
   -- Name components
   show (IdentTok i) = name i
+  show (UnquoteExprTok s) = "$$(" ++ s ++ ")"
+  show (UnquoteStmtTok s) = "$${" ++ s ++ "}"
+  show (UnquoteSplTok s) = "$@{" ++ s ++ "}"
   show (LifetimeTok l) = "'" ++ show l
   show (Space Whitespace _) = "<whitespace>"
   show (Space Comment n) = "/*" ++ show n ++ " */"

@@ -124,8 +124,9 @@ printName = pretty
 
 -- | Print an identifier
 printIdent :: Ident -> Doc a
-printIdent (Ident s False _) = pretty s
-printIdent (Ident s True _) = "r#" <> pretty s
+printIdent (Ident s _     True  _) = error ("Lingering unquote identifer '" ++ s ++ "'")
+printIdent (Ident s False False _) = pretty s
+printIdent (Ident s True  False _) = "r#" <> pretty s
 
 -- | Print a type (@print_type@ with @print_ty_fn@ inlined)
 -- Types are expected to always be only one line
@@ -290,6 +291,9 @@ printToken Shebang = "#!"
 -- Macro related 
 printToken (Interpolated n) = unAnnotate (printNonterminal n)
 -- Other
+printToken (UnquoteExprTok s) = "$$(" <> printName s <> ")"
+printToken (UnquoteStmtTok s) = "$${" <> printName s <> "}"
+printToken (UnquoteSplTok s) = "$@{" <> printName s <> "}"
 printToken t = error $ "printToken: " ++ show t
 
 
@@ -327,6 +331,8 @@ printNonterminal (NtLit lit) = printLit lit
 -- | Print a statement (@print_stmt@)
 printStmt :: Stmt a -> Doc a
 printStmt (ItemStmt item x)   = annotate x (printItem item)
+printStmt (UnquoteStmt s _)   = error ("Ran into lingering unquote statement '" ++ s ++ "'")
+printStmt (UnquoteSplice s _) = error ("Ran into lingering unquote splice '" ++ s ++ "'")
 printStmt (NoSemi expr x)     = annotate x (printExprOuterAttrStyle expr False <> when (requiresSemi expr) ";")
   where
   -- @parse::classify::expr_requires_semi_to_be_stmt@
@@ -407,6 +413,7 @@ printExprOuterAttrStyle expr isInline = glue (printEitherAttrs (expressionAttrs 
     Repeat attrs e cnt x        -> annotate x (brackets (printInnerAttrs attrs <+> printExpr e <> ";" <+> printExpr cnt))
     ParenExpr attrs e x         -> annotate x (parens (printInnerAttrs attrs <+> printExpr e))
     Try{}                       -> chainedMethodCalls expr False id
+    UnquoteExpr _ s _           -> error ("Lingering unquote expression '" ++ s ++ "'")
   where
   printLbl = perhaps (\(Label n x) -> annotate x ("'" <> printName n) <> ":")
   printLbl' = perhaps (\(Label n x) -> annotate x ("'" <> printName n))
@@ -489,6 +496,7 @@ expressionAttrs (Repeat as _ _ _) = as
 expressionAttrs (ParenExpr as _ _) = as
 expressionAttrs (Try as _ _) = as
 expressionAttrs (Yield as _ _) = as
+expressionAttrs (UnquoteExpr as _ _) = as
 
 -- | Print a field
 printField :: Field a -> Doc a
@@ -599,7 +607,8 @@ printAttr (SugaredDoc Outer False c x) _ = annotate x (flatAlt ("///" <> pretty 
 
 -- | Print an identifier as is, or as cooked string if containing a hyphen
 printCookedIdent :: Ident -> Doc a
-printCookedIdent ident@(Ident str raw _)
+printCookedIdent ident@(Ident str raw unquote _)
+  | unquote = error ("Lingering unquote ident '" ++ str ++ "' (2)")
   | '-' `elem` str && not raw = printStr Cooked str
   | otherwise = printIdent ident 
 
@@ -675,6 +684,8 @@ printItem (MacItem as i (Mac p ts y) x) = annotate x $ annotate y $ align $ prin
 printItem (MacroDef as i ts x) = annotate x $ align $ printOuterAttrs as <#>
   ("macro_rules" <> "!" <+> printIdent i <+> block Brace True mempty mempty [ printTokenStream ts ])
 
+printItem (UnquoteItems _ _ _) =
+  error ("print_item ran into a lingering UnquoteItems")
 
 -- | Print a trait item (@print_trait_item@)
 printTraitItem :: TraitItem a -> Doc a

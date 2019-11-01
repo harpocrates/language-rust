@@ -242,6 +242,9 @@ import qualified Data.List.NonEmpty as N
 
   -- Lifetimes.
   LIFETIME       { Spanned (LifetimeTok _) _ }
+  UNQUOTE_EXPR   { Spanned (UnquoteExprTok _) _ }
+  UNQUOTE_STMT   { Spanned (UnquoteStmtTok _) _ }
+  UNQUOTE_SPLICE { Spanned (UnquoteSplTok  _) _ }
 
   -- Interpolated
   ntItem         { Spanned (Interpolated (NtItem $$)) _ }
@@ -585,7 +588,7 @@ self_or_ident :: { Spanned Ident }
 -----------
 
 lifetime :: { Lifetime Span }
-  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _ _)) s = $1 in Lifetime l s }
+  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _ _ _)) s = $1 in Lifetime l s }
 
 -- parse_trait_ref()
 trait_ref :: { TraitRef Span }
@@ -923,6 +926,7 @@ gen_expression(lhs,rhs,rhs2) :: { Expr Span }
   -- immediate expressions
   : ntExpr                           { $1 }
   | lit_expr                         { $1 }
+  | UNQUOTE_EXPR                     { let UnquoteExprTok s = unspan $1 in UnquoteExpr [] s (spanOf $1) }
   | '[' sep_byT(expr,',') ']'        { Vec [] $2 ($1 # $>) }
   | '[' inner_attrs sep_byT(expr,',') ']' { Vec (toList $2) $3 ($1 # $>) }
   | '[' expr ';' expr ']'            { Repeat [] $2 $4 ($1 # $>) }
@@ -1125,7 +1129,7 @@ blockpostfix_expr :: { Expr Span }
 
 -- labels on loops
 label :: { Label Span }
-  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _ _)) s = $1 in Label l s }
+  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _ _ _)) s = $1 in Label l s }
 
 -- Literal expressions (composed of just literals)
 lit_expr :: { Expr Span }
@@ -1268,6 +1272,7 @@ union_default_expr :: { Expr Span }
 
 stmt :: { Stmt Span }
   : ntStmt                                                 { $1 }
+  | UNQUOTE_STMT                                           { let UnquoteStmtTok s = unspan $1 in UnquoteStmt s (spanOf $1) }
   | many(outer_attribute) let pat ':' ty initializer ';'   { Local $3 (Just $5) $6 $1 ($1 # $2 # $>) }
   | many(outer_attribute) let pat        initializer ';'   { Local $3 Nothing $4 $1 ($1 # $2 # $>) }
   | many(outer_attribute) nonblock_expr ';'                { toStmt ($1 `addAttrs` $2) True  False ($1 # $2 # $3) }
@@ -1292,6 +1297,8 @@ pub_or_inherited :: { Spanned (Visibility Span) }
 stmtOrSemi :: { Maybe (Stmt Span) }
   : ';'                                                    { Nothing }
   | stmt                                                   { Just $1 }
+  | UNQUOTE_SPLICE
+    { let UnquoteSplTok  s = unspan $1 in Just (UnquoteSplice s (spanOf $1)) }
 
 -- List of statements where the last statement might be a no-semicolon statement.
 stmts_possibly_no_semi :: { [Maybe (Stmt Span)] }
@@ -1403,6 +1410,8 @@ mod_item :: { Item Span }
     { macroItem $1 (Just (unspan $4)) (Mac $2 $6 ($2 # $>)) ($1 # $2 # $>) }
   | many(outer_attribute) expr_path '!'       '{' token_stream '}'
     { macroItem $1 Nothing            (Mac $2 $5 ($2 # $>)) ($1 # $2 # $>) }
+  | UNQUOTE_SPLICE
+    { let UnquoteSplTok  s = unspan $1 in UnquoteItems [] s (spanOf $1) }
 
 foreign_item :: { ForeignItem Span }
   : many(outer_attribute) vis static     ident ':' ty ';'
@@ -1688,8 +1697,9 @@ token :: { Spanned Token }
   | outerDoc   { $1 }
   | innerDoc   { $1 }
   -- Identifiers.
-  | IDENT      { $1 }
-  | '_'        { $1 }
+  | IDENT        { $1 }
+  | UNQUOTE_EXPR { $1 }
+  | '_'          { $1 }
   -- Lifetimes.
   | LIFETIME   { $1 }
 
@@ -1899,13 +1909,14 @@ addAttrs as (Repeat as' e1 e2 s)     = Repeat (as ++ as') e1 e2 s
 addAttrs as (ParenExpr as' e s)      = ParenExpr (as ++ as') e s
 addAttrs as (Try as' e s)            = Try (as ++ as') e s
 addAttrs as (Yield as' e s)          = Yield (as ++ as') e s
+addAttrs as (UnquoteExpr as' a s)    = UnquoteExpr (as ++ as') a s
 
 
 -- | Given a 'LitTok' token that is expected to result in a valid literal, construct the associated
 -- literal. Note that this should _never_ fail on a token produced by the lexer.
 lit :: Spanned Token -> Lit Span
-lit (Spanned (IdentTok (Ident "true" False _)) s) = Bool True Unsuffixed s
-lit (Spanned (IdentTok (Ident "false" False _)) s) = Bool False Unsuffixed s
+lit (Spanned (IdentTok (Ident "true" False _ _)) s) = Bool True Unsuffixed s
+lit (Spanned (IdentTok (Ident "false" False _ _)) s) = Bool False Unsuffixed s
 lit (Spanned (LiteralTok litTok suffix_m) s) = translateLit litTok suffix s
   where
     suffix = case suffix_m of

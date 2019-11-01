@@ -231,7 +231,9 @@ instance (Typeable a, Monoid a) => Resolve (SourceFile a) where resolveM = resol
 --   * it is a keyword
 --
 resolveIdent :: Ident -> ResolveM Ident
-resolveIdent i@(Ident s r _) =
+resolveIdent i@(Ident _ _ True  _) =
+    return i
+resolveIdent i@(Ident s r False _) =
     scope i $ case toks of
                 Right [Spanned (IdentTok i') _]
                    | i /= i' -> err i ("identifier `" ++ s ++ "' does not lex properly")
@@ -359,10 +361,10 @@ resolvePath t p@(Path g segs x) = scope p $
   resolveSeg :: (Typeable a, Monoid a) => PathSegment a -> ResolveM (PathSegment a)
   resolveSeg (PathSegment i a x') = do
     i' <- case i of
-            Ident "self" False _ -> pure i
-            Ident "Self" False _ -> pure i
-            Ident "super" False _ -> pure i
-            Ident "crate" False _ -> pure i
+            Ident "self"  False False _ -> pure i
+            Ident "Self"  False False _ -> pure i
+            Ident "super" False False _ -> pure i
+            Ident "crate" False False _ -> pure i
             _ -> resolveIdent i
     a' <- traverse resolvePathParameters a
     pure (PathSegment i' a' x')
@@ -544,8 +546,8 @@ resolveArg GeneralArg a@(Arg p t x) = scope a $ do
 
 -- | Check whether an argument is one of the "self"-alike forms
 isSelfAlike :: Arg a -> Bool
-isSelfAlike (Arg Nothing (PathTy Nothing (Path False [PathSegment (Ident "self" False _) Nothing _] _) _) _) = True
-isSelfAlike (Arg Nothing (Rptr _ _ (PathTy Nothing (Path False [PathSegment (Ident "self" False _) Nothing _] _) _) _) _) = True
+isSelfAlike (Arg Nothing (PathTy Nothing (Path False [PathSegment (Ident "self" False _ _) Nothing _] _) _) _) = True
+isSelfAlike (Arg Nothing (Rptr _ _ (PathTy Nothing (Path False [PathSegment (Ident "self" False _ _) Nothing _] _) _) _) _) = True
 isSelfAlike _ = False
 
 instance (Typeable a, Monoid a) => Resolve (Arg a) where resolveM = resolveArg NamedArg
@@ -1037,7 +1039,9 @@ resolveExprP _ _ m@(Match as e ar x) = scope m $ do
 resolveExprP _ _ c@(Catch as b x) = scope c $ do
   as' <- traverse (resolveAttr EitherAttr) as
   b' <- resolveBlock b
-  pure (Catch as' b' x) 
+  pure (Catch as' b' x)
+resolveExprP _ _ x@(UnquoteExpr _ _ _) =
+  pure x
 
 isBlockLike :: Expr a -> Bool
 isBlockLike If{} = True
@@ -1106,6 +1110,10 @@ resolveStmt _ a@(MacStmt m s as x) = scope a $ do
   m' <- resolveMac ExprPath m
   as' <- traverse (resolveAttr OuterAttr) as
   pure (MacStmt m' s as' x)
+resolveStmt _ a@(UnquoteStmt _ _) =
+  pure a
+resolveStmt _ a@(UnquoteSplice _ _) =
+  pure a
 
 instance (Typeable a, Monoid a) => Resolve (Stmt a) where resolveM = resolveStmt AnyStmt
 
@@ -1271,6 +1279,9 @@ resolveItem _ m@(MacroDef as i ts x) = scope m $ do
   i' <- resolveIdent i
   ts' <- resolveTokenStream ts
   pure (MacroDef as' i' ts' x)
+
+resolveItem _ m@(UnquoteItems _ _ _) =
+  pure m
 
 instance (Typeable a, Monoid a) => Resolve (Item a) where resolveM = resolveItem ModItem
 
