@@ -1,5 +1,5 @@
 name:                language-rust
-version:             0.2.0.27
+version:             0.3.0.39
 
 synopsis:            Parsing and pretty printing of Rust code
 description:         Language Rust is a library for the analysis of Rust code. It includes a
@@ -17,7 +17,7 @@ category:            Language
 build-type:          Simple
 extra-source-files:  ChangeLog.md README.md
 cabal-version:       >=1.10
-tested-with:         GHC==8.0.2, GHC==8.2.2, GHC==8.4.4, GHC==8.6.5
+tested-with:         GHC==8.0.2, GHC==8.2.2, GHC==8.4.4, GHC==8.6.5, GHC==8.8.1
 
 source-repository head
   type:              git
