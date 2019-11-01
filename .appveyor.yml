@@ -4,12 +4,13 @@ clone_folder: c:\language-rust
 # Add new environments to the build here:
 environment:
   matrix:
-    # - resolver: lts-6.35 # ghc-7.10.3
-    # - resolver: lts-7.24 # ghc-8.0.1
-    # - resolver: lts-9.21 # ghc-8.0.2
     - resolver: lts-11.22 # ghc-8.2.2
     - resolver: lts-12.14 # ghc-8.4.4
     - resolver: lts-14.4  # ghc-8.6.5
+    - resolver: nightly
+
+matrix:
+  allow_failures:
     - resolver: nightly
 
 # Manually fetch stack

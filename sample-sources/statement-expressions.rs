@@ -2,12 +2,12 @@ fn main() {
 
   { 1 }[1];     // !!! Parses as { 1 }; [1];
   { 1 }(0);     // !!! Parses as { 1 }; (0);
-  
+
   { 1 }.foo;    // Parses as a field access
   { 1 }.foo(0); // Parses as a method call
   { 1 }.0;      // Parses as a tup field access
   { 1 }?;       // Parses as a try
-  
+
 
   { 1 }? + 1;  // SHOULD WORK
   { 1 }[0] + 1;  // SHOULD WORK
@@ -18,7 +18,7 @@ fn main() {
 
  // { 1 } as i32 + 1;  // SHOULD NOT WORK
  // { 1 }  + 1;  // SHOULD NOT WORK
-  
+
   { 1 }[1];
   { 1 }();
   { 1 }.bar;

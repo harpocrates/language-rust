@@ -1,22 +1,23 @@
 name:                language-rust
-version:             0.2.0.27
+version:             0.3.0.39
 
 synopsis:            Parsing and pretty printing of Rust code
 description:         Language Rust is a library for the analysis of Rust code. It includes a
-                     complete, well tested parser and pretty printer. 
+                     complete, well tested parser and pretty printer.
 
 homepage:            https://github.com/harpocrates/language-rust
 license:             BSD3
 license-file:        LICENSE
 author:              Alec Theriault
 maintainer:          alec.theriault@gmail.com
-copyright:           (c) 2017-2018 Alec Theriault
+copyright:           (c) 2017-2019 Alec Theriault
 stability:           provisional
 bug-reports:         https://github.com/harpocrates/language-rust/issues
 category:            Language
 build-type:          Simple
 extra-source-files:  ChangeLog.md README.md
 cabal-version:       >=1.10
+tested-with:         GHC==8.0.2, GHC==8.2.2, GHC==8.4.4, GHC==8.6.5, GHC==8.8.1
 
 source-repository head
   type:              git
@@ -34,12 +35,13 @@ library
   hs-source-dirs:      src
 
   ghc-options:         -Wall
-
-  if impl(ghc >= 8)
-    ghc-options:
+                       -Wcompat
+                       -Widentities
                        -Wincomplete-patterns
+                       -Wincomplete-record-updates
                        -Wincomplete-uni-patterns
                        -Wmissing-signatures
+                       -Wredundant-constraints
 
   build-tools:         alex >=3.1, happy >=1.19.8
   default-language:    Haskell2010
@@ -130,6 +132,7 @@ test-suite rustc-tests
   main-is:             Main.hs
   other-modules:       Diff
                        DiffUtils
+                       Options
 
   other-extensions:    InstanceSigs
                      , OverloadedStrings
@@ -142,7 +145,7 @@ test-suite rustc-tests
 
   build-depends:       process              >=1.3
                      , bytestring           >=0.10
-                     , aeson                >=0.11.0.0
+                     , aeson                >=1.2.4.0
                      , directory            >=1.2.5.0
                      , filepath             >=1.4.0.0
                      , test-framework       >=0.8.0
@@ -166,7 +169,7 @@ benchmark timing-benchmarks
   default-language:    Haskell2010
   build-depends:       process              >=1.3
                      , bytestring           >=0.10
-                     , aeson                >=0.11.0.0
+                     , aeson                >=1.2.4.0
                      , directory            >=1.2.5.0
                      , filepath             >=1.4.0.0
                      , criterion            >=1.1.1.0
@@ -174,10 +177,11 @@ benchmark timing-benchmarks
 
                      , language-rust
                      , base
+                     , deepseq
 
 benchmark allocation-benchmarks
   hs-source-dirs:      bench/allocation-benchmarks
-  ghc-options:         -Wall
+  ghc-options:         -Wall -with-rtsopts=-T
   main-is:             Main.hs
 
 
@@ -186,12 +190,12 @@ benchmark allocation-benchmarks
   type:                exitcode-stdio-1.0
   default-language:    Haskell2010
   build-depends:       process              >=1.3
-                     , bytestring           >=0.10
-                     , aeson                >=0.11.0.0
+                     , aeson                >=1.2.4.0
                      , directory            >=1.2.5.0
                      , filepath             >=1.4.0.0
-                     , weigh                >=0.0.6
+                     , weigh                >=0.0.8 && <=0.0.14
 
                      , language-rust
                      , base
+                     , deepseq
 

@@ -1,20 +1,20 @@
 {-|
 Module      : Language.Rust.Pretty
 Description : Pretty printing
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : portable
 
-This module provides functions for turning ASTs into values of type 'Doc'. These values can then be
-rendered into concrete string types using functions from the @prettyprinter@ package. This has some
-advantages over printing plain old strings:
+This module provides functions for turning ASTs into values of type 'Language.Rust.Pretty.Doc'.
+These values can then be rendered into concrete string types using functions from the
+@prettyprinter@ package. This has some advantages over printing plain old strings:
 
   * /Backend independent/: you can use a variety of existing backends to efficiently render to all
     sorts of formats like 'Data.Text.Text', 'String', HTML, and terminal.
 
-  * /Dynamic layouts/: the AST will render differently depending on the desired page width 
+  * /Dynamic layouts/: the AST will render differently depending on the desired page width
 
         >>> :set -XTypeApplications -XOverloadedStrings
         >>> import Language.Rust.Parser
@@ -34,8 +34,8 @@ advantages over printing plain old strings:
           x - y + z
         }
 
-  * /Annotations/: Depending on the backend you are using to render the 'Doc', annotations can
-    determine colours, styling, links, etc.
+  * /Annotations/: Depending on the backend you are using to render the 'Language.Rust.Pretty.Doc',
+    annotations can determine colours, styling, links, etc.
 
 The examples below assume the following GHCi flag and import:
 
@@ -56,7 +56,7 @@ module Language.Rust.Pretty (
   Pretty(..),
   PrettyAnnotated(..),
   Doc,
-  
+
   -- * Resolving
   Resolve(..),
 
@@ -93,7 +93,7 @@ import Control.Exception                     ( throw )
 -- Right (1 + 2) * 3
 -- >>> pretty (Binary [] AddOp one bogusVar ())
 -- Left (invalid AST (identifier `let' is a keyword))
--- 
+--
 pretty :: (Resolve a, Pretty a) => a -> Either ResolveFail (Doc b)
 pretty = fmap prettyUnresolved . resolve
 
@@ -172,10 +172,10 @@ instance Pretty (FieldPat a)       where prettyUnresolved = PP.unAnnotate . pret
 instance Pretty (FnDecl a)         where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (ForeignItem a)    where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (Generics a)       where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
+instance Pretty (GenericArg a)     where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (ImplItem a)       where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (Item a)           where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (Lifetime a)       where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
-instance Pretty (LifetimeDef a)    where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (Lit a)            where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (Mac a)            where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (Nonterminal a)    where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
@@ -187,8 +187,8 @@ instance Pretty (StructField a)    where prettyUnresolved = PP.unAnnotate . pret
 instance Pretty (TraitItem a)      where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (TraitRef a)       where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (Ty a)             where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
-instance Pretty (TyParam a)        where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
-instance Pretty (TyParamBound a)   where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
+instance Pretty (GenericParam a)   where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
+instance Pretty (GenericBound a)   where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (Variant a)        where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (UseTree a)        where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
 instance Pretty (Visibility a)     where prettyUnresolved = PP.unAnnotate . prettyAnnUnresolved
@@ -199,8 +199,8 @@ instance Pretty Span               where prettyUnresolved = PP.pretty . prettySp
 
 -- | Similar to 'Pretty', but for types which are parametrized over an annotation type.
 class PrettyAnnotated p where
-  -- | Pretty print the given value without resolving it, adding annotations in the 'Doc' whenever
-  -- possible.
+  -- | Pretty print the given value without resolving it, adding annotations in the
+  -- 'Language.Rust.Pretty.Doc' whenever possible.
   prettyAnnUnresolved :: p a -> Doc a
 
 -- | This instance prints attributes inline
@@ -213,10 +213,10 @@ instance PrettyAnnotated FieldPat       where prettyAnnUnresolved = printFieldPa
 instance PrettyAnnotated FnDecl         where prettyAnnUnresolved = printFnArgsAndRet
 instance PrettyAnnotated ForeignItem    where prettyAnnUnresolved = printForeignItem
 instance PrettyAnnotated Generics       where prettyAnnUnresolved = printGenerics
+instance PrettyAnnotated GenericArg     where prettyAnnUnresolved = printGenericArg
 instance PrettyAnnotated ImplItem       where prettyAnnUnresolved = printImplItem
 instance PrettyAnnotated Item           where prettyAnnUnresolved = printItem
 instance PrettyAnnotated Lifetime       where prettyAnnUnresolved = printLifetime
-instance PrettyAnnotated LifetimeDef    where prettyAnnUnresolved = printLifetimeDef
 instance PrettyAnnotated Lit            where prettyAnnUnresolved = printLit
 instance PrettyAnnotated Mac            where prettyAnnUnresolved = printMac Paren
 instance PrettyAnnotated Nonterminal    where prettyAnnUnresolved = printNonterminal
@@ -228,8 +228,8 @@ instance PrettyAnnotated StructField    where prettyAnnUnresolved = printStructF
 instance PrettyAnnotated TraitItem      where prettyAnnUnresolved = printTraitItem
 instance PrettyAnnotated TraitRef       where prettyAnnUnresolved = printTraitRef
 instance PrettyAnnotated Ty             where prettyAnnUnresolved = printType
-instance PrettyAnnotated TyParam        where prettyAnnUnresolved = printTyParam
-instance PrettyAnnotated TyParamBound   where prettyAnnUnresolved = printBound
+instance PrettyAnnotated GenericParam   where prettyAnnUnresolved = printGenericParam
+instance PrettyAnnotated GenericBound   where prettyAnnUnresolved = printBound
 instance PrettyAnnotated Variant        where prettyAnnUnresolved = printVariant
 instance PrettyAnnotated UseTree        where prettyAnnUnresolved = printUseTree
 instance PrettyAnnotated Visibility     where prettyAnnUnresolved = printVis

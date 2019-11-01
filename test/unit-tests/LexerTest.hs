@@ -15,11 +15,11 @@ import Language.Rust.Data.InputStream
 lexerSuite :: Test
 lexerSuite = testGroup "lexer suite" [ commonCode, literals ]
 
--- | This contains some random real-life code fragments. The purpose here is 
+-- | This contains some random real-life code fragments. The purpose here is
 -- primarily black-box testing.
 commonCode :: Test
 commonCode = testGroup "lexing common code fragments"
-  [ testCode "let span = $p.span;" 
+  [ testCode "let span = $p.span;"
              [ IdentTok (mkIdent "let")
              , Space Whitespace " "
              , IdentTok (mkIdent "span")
@@ -32,7 +32,7 @@ commonCode = testGroup "lexing common code fragments"
              , IdentTok (mkIdent "span")
              , Semicolon
              ]
-  , testCode "$(p.span),+" 
+  , testCode "$(p.span),+"
              [ Dollar
              , OpenDelim Paren
              , IdentTok (mkIdent "p")
@@ -94,7 +94,7 @@ commonCode = testGroup "lexing common code fragments"
               [ IdentTok (mkIdent "fn")
               , Space Whitespace " "
               , IdentTok (mkIdent "ܐ_ܐ")
-              , OpenDelim Paren 
+              , OpenDelim Paren
               , CloseDelim Paren
               , Space Whitespace " "
               , OpenDelim Brace

@@ -43,12 +43,17 @@ fn main() {
   let x = [1; 5];
   let x = 1 * (2 + 3);
   let x = foo()?;
-  let x = do catch { 1 };
+  let x = try { 1 };
   return 0;
   return;
   yield 0;
   yield;
   let r#return = 0;
+  let r#async = 0;
+  let x = async { 1 };
+  let x = y.await;
+  // foo::(i32) -> f64();           TODO
+  // foo::<i32, f64, 'a, A=i32>();  TODO
 
   match true {
     true => move | | { 1 },

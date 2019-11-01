@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Quote
 Description : Quasiquotes for Rust AST
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -23,7 +23,7 @@ The examples below assume the following GHCi flag and import:
 
 
 module Language.Rust.Quote (
-  lit, attr, ty, pat, stmt, expr, item, sourceFile, implItem, traitItem, tokenTree, block
+  lit, attr, ty, pat, path, stmt, expr, item, sourceFile, implItem, traitItem, tokenTree, block
 ) where
 
 {-
@@ -77,7 +77,7 @@ quoter p = QuasiQuoter
   -- | Given a parser and an input string, turn it into the corresponding Haskell expression/pattern.
   parse inp = do
     Loc{ loc_start = (r,c) } <- location
-  
+
     -- Run the parser
     case execParser p (inputStreamFromString inp) (Position 0 r c) of
       Left (ParseFail _ msg) -> fail msg
@@ -114,12 +114,20 @@ ty = quoter parseTy
 
 -- | Quasiquoter for patterns (see 'Language.Rust.Syntax.Pat')
 --
--- >>> void [pat| x @ 1...5 |]
+-- >>> void [pat| x @ 1..=5 |]
 -- IdentP (ByValue Immutable) "x" (Just (RangeP (Lit [] (Int Dec 1 Unsuffixed ()) ())
---                                              (Lit [] (Int Dec 5 Unsuffixed ()) ()) ())) ()
+--                                              (Lit [] (Int Dec 5 Unsuffixed ()) ())
+--                                              Closed
+--                                              ())) ()
 --
 pat :: QuasiQuoter
 pat = quoter parsePat
+
+-- | Quasiquoter for paths (see 'Language.Rust.Syntax.Path')
+--
+-- TODO example:
+path :: QuasiQuoter
+path = quoter parsePath
 
 -- | Quasiquoter for statements (see 'Language.Rust.Syntax.Stmt')
 --

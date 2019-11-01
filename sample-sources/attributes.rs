@@ -58,7 +58,7 @@ fn expressions() {
     #![while_inner]
     1;
   }
-  
+
   #[whilelet_outer]
   while let x = true {
     #![whilelet_inner]
@@ -91,8 +91,8 @@ fn expressions() {
   #[blockexpr_outer]
   unsafe { #![blockexpr_inner] 1; 2 }
 
-  #[catch_outer]
-  do catch { #![catch_inner] 1 };
+  #[try_outer]
+  try { #![try_inner] 1 };
 
 //  #[assign_outer]
 //  x = 1;
@@ -159,7 +159,7 @@ impl Impls {
     #![method_inner]
     1f64
   }
-  
+
   #[type_outer]
   type N = i32;
 
@@ -170,43 +170,44 @@ impl Impls {
 fn items() {
   #[use_outer]
   use foo::bar as FooBar;
- 
+
   #[static_outer]
   static FOO: i32 = 42;
-  
+
   #[const_outer]
   const FOO: i32 = 42;
- 
+
   #[fn_outer]
   fn foo(bar: usize) -> usize {
     #![fn_inner]
     1
   }
- 
+
   #[mod_outer]
   mod foo { #![mod_inner]  }
- 
+
   #[type_outer]
   type Foo = Bar<u8>;
-  
+
   #[enum_outer]
   enum Foo<A, B> { #[variant_outer] C(A), D(B) }
-  
+
   #[struct_outer]
   struct Foo<A> { #[field_outer] x: A }
-  
+
   #[union_outer]
   union Foo<A, B> { x: A, y: B }
 
   #[macro_outer]
   foo!{ .. }
-  
+
   #[macrodef_outer]
   macro_rules! foo { () => ( .. ) }
 
+  let x: i32 = #[expression_outer] 34;
 }
 
 fn foo<
   #[lifetimedef_outer] 'a: 'b,
   #[typaram_outer] T
->() { } 
+>() { }

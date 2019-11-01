@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Pretty.Literals
 Description : Parsing literals
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -19,9 +19,10 @@ module Language.Rust.Pretty.Literals (
 import Language.Rust.Syntax.AST
 import Language.Rust.Pretty.Util
 
-import Data.Text.Prettyprint.Doc ( hcat, annotate, (<>), Doc, pretty, group, hardline, flatAlt )
+import Data.Text.Prettyprint.Doc ( hcat, annotate, Doc, pretty, group, hardline, flatAlt )
 
 import Data.Char                 ( intToDigit, ord, chr )
+import Data.Semigroup as Sem
 import Data.Word                 ( Word8 )
 
 -- | Print a literal (@print_literal@)
@@ -42,7 +43,7 @@ printLit lit = noIndent $ case lit of
   pad m = pretty (replicate m '#')
 
   suf :: Suffix -> Doc a
-  suf = printLitSuffix 
+  suf = printLitSuffix
 
 -- | Print literal suffix
 printLitSuffix :: Suffix -> Doc a
@@ -90,8 +91,8 @@ printIntLit i r | i < 0     = "-" <> baseRep r <> toNBase (abs i) (baseVal r)
 
 -- | Extend a byte into a unicode character
 byte2Char :: Word8 -> Char
-byte2Char = chr . fromIntegral 
-  
+byte2Char = chr . fromIntegral
+
 -- | Constrain a unicode character to a byte
 -- This assumes the character is in the right range already
 char2Byte :: Char -> Word8
@@ -103,15 +104,15 @@ char2Byte = fromIntegral . ord
 -- too long.
 escapeByte :: Bool -> Word8 -> Doc a
 escapeByte nl w8 = case byte2Char w8 of
-  '\t' -> "\\t" 
+  '\t' -> "\\t"
   '\r' -> "\\r"
-  '\\' -> "\\\\" 
+  '\\' -> "\\\\"
   '\'' -> "\\'"
   '"'  -> "\\\""
   '\n'| nl        -> flatAlt hardline "\\n"
       | otherwise -> "\\n"
   c | 0x20 <= w8 && w8 <= 0x7e -> pretty c
-  _ -> "\\x" <> padHex 2 w8
+  _ -> "\\x" Sem.<> padHex 2 w8
 
 -- | Escape a unicode character. Based on @std::ascii::escape_default@.
 --
@@ -121,7 +122,7 @@ escapeChar :: Bool -> Char -> Doc a
 escapeChar nl c | c <= '\x7f'   = escapeByte nl (char2Byte c)
                 | c <= '\xffff' = "\\u{" <> padHex 4 (ord c) <> "}"
                 | otherwise     = "\\u{" <> padHex 6 (ord c) <> "}"
- 
+
 -- | Convert a number to its padded hexadecimal form
 padHex :: Integral a => Int -> a -> Doc b
 padHex i 0 = pretty (replicate i '0')

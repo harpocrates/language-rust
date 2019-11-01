@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Parser
 Description : Parsing and lexing
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -136,8 +136,9 @@ class Parse a where
 
 instance Parse (Lit Span)         where parser = parseLit
 instance Parse (Attribute Span)   where parser = parseAttr
-instance Parse (Ty Span)          where parser = parseTy 
+instance Parse (Ty Span)          where parser = parseTy
 instance Parse (Pat Span)         where parser = parsePat
+instance Parse (Path Span)        where parser = parsePath
 instance Parse (Expr Span)        where parser = parseExpr
 instance Parse (Stmt Span)        where parser = parseStmt
 instance Parse (Item Span)        where parser = parseItem
@@ -145,9 +146,8 @@ instance Parse (SourceFile Span)  where parser = parseSourceFile
 instance Parse TokenTree          where parser = parseTt
 instance Parse TokenStream        where parser = parseTokenStream
 instance Parse (Block Span)       where parser = parseBlock
-instance Parse (ImplItem Span)    where parser = parseImplItem 
+instance Parse (ImplItem Span)    where parser = parseImplItem
 instance Parse (TraitItem Span)   where parser = parseTraitItem
-instance Parse (TyParam Span)     where parser = parseTyParam
-instance Parse (LifetimeDef Span) where parser = parseLifetimeDef
+instance Parse (GenericParam Span)where parser = parseGenericParam
 instance Parse (Generics Span)    where parser = parseGenerics
 instance Parse (WhereClause Span) where parser = parseWhereClause

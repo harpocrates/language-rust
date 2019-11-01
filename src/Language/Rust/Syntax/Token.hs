@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Syntax.Token
 Description : Token definitions
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -39,20 +39,20 @@ import Language.Rust.Syntax.AST    ( Nonterminal, AttrStyle(..) )
 -- and @syntax::parse::token::BinOpEqToken@ as regular tokens.
 data Token
   -- Single character expression-operator symbols.
-  = Equal                 -- ^ @=@ token 
-  | Less                  -- ^ @<@ token 
-  | Greater               -- ^ @>@ token 
-  | Ampersand             -- ^ @&@ token 
-  | Pipe                  -- ^ @|@ token 
-  | Exclamation           -- ^ @!@ token 
-  | Tilde                 -- ^ @~@ token 
-  | Plus                  -- ^ @+@ token 
-  | Minus                 -- ^ @-@ token 
-  | Star                  -- ^ @*@ token 
-  | Slash                 -- ^ @/@ token 
-  | Percent               -- ^ @%@ token 
-  | Caret                 -- ^ @^@ token 
-  
+  = Equal                 -- ^ @=@ token
+  | Less                  -- ^ @<@ token
+  | Greater               -- ^ @>@ token
+  | Ampersand             -- ^ @&@ token
+  | Pipe                  -- ^ @|@ token
+  | Exclamation           -- ^ @!@ token
+  | Tilde                 -- ^ @~@ token
+  | Plus                  -- ^ @+@ token
+  | Minus                 -- ^ @-@ token
+  | Star                  -- ^ @*@ token
+  | Slash                 -- ^ @/@ token
+  | Percent               -- ^ @%@ token
+  | Caret                 -- ^ @^@ token
+
   -- Multi character expression-operator symbols
   | GreaterEqual          -- ^ @>=@ token
   | GreaterGreaterEqual   -- ^ @>>=@ token
@@ -72,8 +72,8 @@ data Token
   | SlashEqual            -- ^ @/=@ token
   | CaretEqual            -- ^ @^=@ token
   | PercentEqual          -- ^ @%=@ token
-  
-  -- Structural symbols  
+
+  -- Structural symbols
   | At                    -- ^ @\@@ token
   | Dot                   -- ^ @.@ token
   | DotDot                -- ^ @..@ token
@@ -89,14 +89,14 @@ data Token
   | Pound                 -- ^ @#@ token
   | Dollar                -- ^ @$@ token
   | Question              -- ^ @?@ token
-  
+
   -- Delimiters
   | OpenDelim !Delim      -- ^ One of @(@, @[@, @{@
   | CloseDelim !Delim     -- ^ One of @)@, @]@, @}@
-  
+
   -- Literals
   | LiteralTok LitTok (Maybe Name) -- ^ a literal token with an optional suffix (something like @i32@)
-  
+
   -- Name components
   | IdentTok Ident        -- ^ an arbitrary identifier (something like @x@ or @foo@ or @and_then@)
   | LifetimeTok Ident     -- ^ a lifetime (something like @\'a@ or @\'static@)
@@ -105,7 +105,7 @@ data Token
   -- ^ doc comment with its contents, whether it is outer/inner, and whether it is inline or not
   | Shebang               -- ^ @#!@ shebang token
   | Eof                   -- ^ end of file token
-  
+
   -- NOT PRODUCED IN TOKENIZATION!!
   | Interpolated (Nonterminal Span) -- ^ can be expanded into several tokens in macro-expansion
   deriving (Eq, Ord, Data, Typeable, Generic, NFData)
@@ -149,7 +149,7 @@ spaceNeeded Greater FatArrow = True
 -- conflicts with 'GreaterGreaterEqual'
 spaceNeeded Greater GreaterEqual = True
 spaceNeeded GreaterGreater Equal = True
-spaceNeeded GreaterGreater EqualEqual = True 
+spaceNeeded GreaterGreater EqualEqual = True
 spaceNeeded GreaterGreater FatArrow = True
 
 -- conflicts with 'AmpersandAmpersand'
@@ -271,7 +271,7 @@ spaceNeeded Equal GreaterEqual = True
 spaceNeeded Equal GreaterGreaterEqual = True
 
 -- conflicts with 'LiteralTok'
-spaceNeeded LiteralTok{} IdentTok{} = True 
+spaceNeeded LiteralTok{} IdentTok{} = True
 
 -- conflicts with 'IdentTok'
 spaceNeeded IdentTok{} IdentTok{} = True
@@ -364,6 +364,6 @@ instance Show Token where
   show (Doc d Outer False) = "///" ++ d
   show Shebang = "#!"
   show Eof = "<EOF>"
-  -- Macro related 
+  -- Macro related
   show Interpolated{} = "<Interpolated>"
 

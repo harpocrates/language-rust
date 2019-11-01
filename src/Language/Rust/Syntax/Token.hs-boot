@@ -1,8 +1,5 @@
 -- .hs-boot files play badly with associated type families like 'Rep'
-{-# LANGUAGE CPP #-}
-#if __GLASGOW_HASKELL__ >= 800
 {-# OPTIONS_GHC -Wno-missing-methods #-}
-#endif
 
 module Language.Rust.Syntax.Token where
 

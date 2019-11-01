@@ -28,12 +28,13 @@ it :: Doc b
 
 ## Building
 
+You'll need a supported version of GHC (check supported versions by searching for `tested-with` in
+`language-rust.cabal`). Odds are the version you want to use is supported.
+
 ### Cabal
 
-With Cabal and GHC, run
+With a recent version of Cabal, run
 
-    cabal install happy --constraint 'happy >= 1.19.8'
-    cabal install alex
     cabal configure
     cabal build
 
@@ -44,10 +45,8 @@ With the [Stack][1] tool installed, run
     stack init
     stack build
 
-The second command is responsible for pulling in all of the dependencies (including executable
-tools like [Alex][2], [Happy][3], and GHC itself) and then compiling everything. If Stack complains
-about the version of Happy installed, you can explicitly install a recent one with `stack install
-happy-1.19.8`.
+If Stack complains about the version of Happy installed, you can explicitly install a recent one
+with `stack install happy-1.19.12`.
 
 ## Evolution of Rust
 

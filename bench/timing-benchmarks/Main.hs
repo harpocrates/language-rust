@@ -5,8 +5,9 @@ import Criterion.Main (defaultConfig)
 import Criterion.Types (anMean, reportAnalysis, timeLimit, anOutlierVar, ovEffect, OutlierEffect(Moderate))
 import Statistics.Types (Estimate(..), ConfInt(..))
 
+import Control.DeepSeq (rnf)
 import Control.Monad (filterM)
-import Control.Exception (catch, throwIO)
+import Control.Exception (catch, evaluate, throwIO)
 import Data.Foldable (for_)
 import Data.Traversable (for)
 import GHC.Exts (fromString)
@@ -21,7 +22,6 @@ import System.Process (proc, readCreateProcess)
 import System.IO.Error (isDoesNotExistError)
 
 import Data.Aeson
-import qualified Data.ByteString.Lazy as BL
 
 main :: IO ()
 main = do
@@ -30,7 +30,7 @@ main = do
   logFileName <- case status of
                    "" -> init <$> readCreateProcess (proc "git" ["rev-parse", "HEAD"]) ""
                    _ -> pure "WIP"
-  
+
   -- Get the test cases
   workingDirectory <- getCurrentDirectory
   let sampleSources = workingDirectory </> "sample-sources"
@@ -51,6 +51,7 @@ main = do
     let name = takeFileName f
     putStrLn name
     is <- readInputStream f
+    evaluate (rnf is)
     bnch <- benchmarkWith' defaultConfig{ timeLimit = 20 } (nf (parse' :: InputStream -> SourceFile Span) is)
     pure (name, bnch)
   let results = object [ fromString name .= object [ "mean" .= m
@@ -68,5 +69,5 @@ main = do
   createDirectoryIfMissing False (workingDirectory </> "bench" </> "timings")
   let logFile = workingDirectory </> "bench" </> "timings" </> logFileName <.> "json"
   putStrLn $ "writing results to: " ++ logFile
-  logFile `BL.writeFile` encode results
+  encodeFile logFile results
 

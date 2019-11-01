@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Data.Ident
 Description : Identifiers
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -68,7 +68,7 @@ mkIdent s = Ident s False (hashString s)
 -- | Hash a string into an 'Int'
 hashString :: String -> Int
 hashString = foldl' f golden
-   where f m c = fromIntegral (ord c) * magic + m
+   where f m c = ord c * magic + m
          magic = 0xdeadbeef
          golden = 1013904242
 

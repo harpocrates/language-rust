@@ -2,7 +2,7 @@
 {-|
 Module      : Language.Rust.Parser.Lexer
 Description : Rust lexer
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -18,16 +18,16 @@ bitwise and, and unary reference), @&&&x&&&y@ lexes into 'AmpersandAmpersand', '
 @'IdentTok' "x"@, 'AmpersandAmpersand', 'Ampersand', @'IdentTok' "y"@. Although the parser sometimes
 needs to "break apart" tokens, it never has to think about putting them together. That means it can
 easily figure out that @&&&x&&&y@ parses as @&(&(&x)) && (&y)@ and not @&(&(&x)) & (&(&y))@ even if
-bitwise conjunctions bind more tightly that logical conjunctions. 
+bitwise conjunctions bind more tightly that logical conjunctions.
 
-This sort of amguity where one token need to be broken up by the parser occurs for
+This sort of ambiguity where one token need to be broken up by the parser occurs for
 
    * @&&@ in patterns like @&&mut x@
    * @||@ in closures with no arguments like @|| x@
    * @<<@ in qualified type paths like @FromIterator\<\<A as IntoIterator\>::Item\>@
    * @>>@ in qualified paths like @\<Self as Foo\<T\>\>::Bar@
    * @>=@ in equality predicates like @F\<A\>=i32@
-   * @>>=@ in equality predicates like @F\<G\<A\>\>=i32@ 
+   * @>>=@ in equality predicates like @F\<G\<A\>\>=i32@
 -}
 
 module Language.Rust.Parser.Lexer (
@@ -43,6 +43,10 @@ module Language.Rust.Parser.Lexer (
   -- * Error reporting
   lexicalError,
 ) where
+
+
+import Prelude hiding                  ( fail )
+import Control.Monad.Fail              ( fail )
 
 import Language.Rust.Data.Ident        ( mkIdent, Ident(..) )
 import Language.Rust.Data.InputStream
@@ -62,6 +66,9 @@ import Data.Word                       ( Word8 )
 --  * <https://github.com/rust-lang/rust/blob/master/src/grammar/xidcontinue.g4>
 
 }
+
+-- Whitespace
+$whitespace = [ $white \x0085 \x200e \x200f \x2028 \x2029 ]
 
 -- XID_START unicode character class
 @xid_start
@@ -923,12 +930,7 @@ $hexit             = [0-9a-fA-F]
 @char_escape
   = [nrt\\'"0]
   | [xX] [0-7] $hexit
-  | u\{ $hexit \}
-  | u\{ $hexit $hexit \}
-  | u\{ $hexit $hexit $hexit \}
-  | u\{ $hexit $hexit $hexit $hexit \}
-  | u\{ $hexit $hexit $hexit $hexit $hexit \}
-  | u\{ $hexit $hexit $hexit $hexit $hexit $hexit \}
+  | u\{ _* ( $hexit _* ){1,6} \}
 
 @byte_escape
   = [xX] $hexit $hexit
@@ -944,7 +946,7 @@ $hexit             = [0-9a-fA-F]
     \'
 
 @lit_byte
-  = b\' ( \\ @byte_escape 
+  = b\' ( \\ @byte_escape
         | [^\\'\n\t\r] [ \udc00-\udfff ]?
         )
     \'
@@ -985,7 +987,7 @@ $hexit             = [0-9a-fA-F]
 
 tokens :-
 
-$white+         { \s -> pure (Space Whitespace s)  }
+$whitespace+    { \s -> pure (Space Whitespace s)  }
 
 "="             { token Equal }
 "<"             { token Less }
@@ -1020,28 +1022,28 @@ $white+         { \s -> pure (Space Whitespace s)  }
 "/="            { token SlashEqual }
 "^="            { token CaretEqual }
 "%="            { token PercentEqual }
- 
 
-"@"             { token At }          
-"."             { token Dot }        
-".."            { token DotDot }     
-"..."           { token DotDotDot } 
-"..="           { token DotDotEqual } 
-","             { token Comma } 
-";"             { token Semicolon }     
+
+"@"             { token At }
+"."             { token Dot }
+".."            { token DotDot }
+"..."           { token DotDotDot }
+"..="           { token DotDotEqual }
+","             { token Comma }
+";"             { token Semicolon }
 ":"             { token Colon }
 "::"            { token ModSep }
 "->"            { token RArrow }
 "<-"            { token LArrow }
 "=>"            { token FatArrow }
-"("             { token (OpenDelim Paren) }      
-")"             { token (CloseDelim Paren) }  
+"("             { token (OpenDelim Paren) }
+")"             { token (CloseDelim Paren) }
 "["             { token (OpenDelim Bracket) }
 "]"             { token (CloseDelim Bracket) }
-"{"             { token (OpenDelim Brace) }      
-"}"             { token (CloseDelim Brace) }      
-"#"             { token Pound }     
-"$"             { token Dollar }     
+"{"             { token (OpenDelim Brace) }
+"}"             { token (CloseDelim Brace) }
+"#"             { token Pound }
+"$"             { token Dollar }
 
 @lit_integer    { \i -> literal (IntegerTok i) }
 @lit_float      { \f -> literal (FloatTok   f) }
@@ -1058,26 +1060,26 @@ $white+         { \s -> pure (Space Whitespace s)  }
 @lit_raw_str    { \s -> let n = length s - 2
                         in do
                             str <- cleanWindowsNewlines `fmap` rawString n
-                            literal (StrRawTok str (fromIntegral n))
+                            literal (StrRawTok str n)
                 }
 @lit_raw_bstr   { \s -> let n = length s - 3
                         in do
                             str <- cleanWindowsNewlines `fmap` rawString n
-                            literal (ByteStrRawTok str (fromIntegral n))
+                            literal (ByteStrRawTok str n)
                 }
 
 <lits> ""       ;
 <lits> @ident   { \s -> pure (IdentTok (mkIdent s)) }
 
 \?              { token Question }
-@raw_ident      { \s -> pure (IdentTok ((mkIdent (drop 2 s)){ raw = True })) } 
-@ident          { \s -> pure (IdentTok (mkIdent s)) } 
+@raw_ident      { \s -> pure (IdentTok ((mkIdent (drop 2 s)){ raw = True })) }
+@ident          { \s -> pure (IdentTok (mkIdent s)) }
 @lifetime       { \s -> (pure (LifetimeTok (mkIdent (tail s))) :: P Token) }
 
 
-@outer_doc_line { \c -> pure (Doc (drop 3 c) Outer False) } 
-@outer_doc_line \r { \c -> pure (Doc (drop 3 (init c)) Outer False) } 
-@outer_doc_inline / ( [^\*] | \r | \n )
+@outer_doc_line { \c -> pure (Doc (drop 3 c) Outer False) }
+@outer_doc_line \r { \c -> pure (Doc (drop 3 (init c)) Outer False) }
+@outer_doc_inline / ( [^\*\/] | \r | \n )
                   { \_ -> Doc <$> nestedComment <*> pure Outer <*> pure True }
 
 @inner_doc_line   { \c -> pure (Doc (drop 3 c) Inner False) }
@@ -1095,8 +1097,8 @@ token t _ = pure t
 -- | Given the first part of a literal, try to parse also a suffix. Even if
 -- the allowed suffixes are very well defined and only valid on integer and
 -- float literals, we need to put in the same token whatever suffix follows.
--- This is for backwards compatibility if Rust decides to ever add suffixes. 
-literal :: LitTok -> P Token 
+-- This is for backwards compatibility if Rust decides to ever add suffixes.
+literal :: LitTok -> P Token
 literal lit = do
   pos <- getPosition
   inp <- getInput
@@ -1119,20 +1121,20 @@ rawString n = do
   case c_m of
     -- The string was never closed
     Nothing -> fail "Invalid raw (byte)string"
-    
+
     -- The string has a chance of being closed
     Just '"' -> do
       n' <- greedyChar '#' n
       if n' == n
         then pure ""
-        else (('"' : replicate n' '#') ++) <$> rawString n 
+        else (('"' : replicate n' '#') ++) <$> rawString n
 
     -- Just another character...
-    Just c -> ([c] ++) <$> rawString n 
+    Just c -> ([c] ++) <$> rawString n
 
 -- | Consume a full inline comment (which may be nested).
 nestedComment :: P String
-nestedComment = go 1 ""
+nestedComment = fmap cleanWindowsNewlines (go 1 "")
   where
     go :: Int -> String -> P String
     go 0 s = pure (reverse (drop 2 s))
@@ -1142,15 +1144,15 @@ nestedComment = go 1 ""
         Nothing -> fail "Unclosed comment"
         Just '*' -> do
           c' <- peekChar
-          case c' of 
+          case c' of
             Nothing -> fail "Unclosed comment"
             Just '/' -> nextChar *> go (n-1) ('/':'*':s)
             Just _ -> go n ('*':s)
         Just '/' -> do
           c' <- peekChar
-          case c' of 
+          case c' of
             Nothing -> fail "Unclosed comment"
-            Just '*' -> nextChar *> go (n+1) ('*':'/':s) 
+            Just '*' -> nextChar *> go (n+1) ('*':'/':s)
             Just _ -> go n ('/':s)
         Just c' -> go n (c':s)
 
@@ -1162,7 +1164,7 @@ nextChar :: P (Maybe Char)
 nextChar = do
   pos <- getPosition
   inp <- getInput
-  if inputStreamEmpty inp 
+  if inputStreamEmpty inp
     then pure Nothing
     else let (c,inp') = takeChar inp
              pos' = alexMove pos c
@@ -1173,7 +1175,7 @@ nextChar = do
 peekChar :: P (Maybe Char)
 peekChar = do
   inp <- getInput
-  if inputStreamEmpty inp 
+  if inputStreamEmpty inp
     then pure Nothing
     else let (c,_) = takeChar inp
          in pure (Just c)
@@ -1195,7 +1197,7 @@ lexicalError = do
   fail ("Lexical error: the character " ++ show c ++ " does not fit here")
 
 
--- Functions required by Alex 
+-- Functions required by Alex
 
 -- | type passed around by Alex functions (required by Alex)
 type AlexInput = (Position,    -- current position,
@@ -1223,7 +1225,7 @@ alexMove pos '\n' = retPos pos
 alexMove pos '\r' = incOffset pos 1
 alexMove pos _    = incPos pos 1
 
--- | Lexer for one 'Token'. The only token this cannot produce is 'Interpolated'. 
+-- | Lexer for one 'Token'. The only token this cannot produce is 'Interpolated'.
 lexToken :: P (Spanned Token)
 lexToken = do
   tok_maybe <- popToken
@@ -1245,7 +1247,7 @@ lexToken = do
           return (Spanned tok' (Span pos pos''))
 
 -- | Lexer for one non-whitespace 'Token'. The only tokens this cannot produce are 'Interpolated'
--- and 'Space' (which includes comments that aren't doc comments).
+-- and @Space@ (which includes comments that aren't doc comments).
 lexNonSpace :: P (Spanned Token)
 lexNonSpace = do
   tok <- lexToken

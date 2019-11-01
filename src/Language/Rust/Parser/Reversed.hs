@@ -1,21 +1,20 @@
 {-|
 Module      : Language.Rust.Parser.Reversed
 Description : Parsing literals
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
 Portability : GHC
 
-Datatypes wrapping lists and non-empty lists designed for fast append (as opposed to prepend) 
+Datatypes wrapping lists and non-empty lists designed for fast append (as opposed to prepend)
 along with the usual class instances.
 -}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
-#if __GLASGOW_HASKELL__ < 800
-{-# LANGUAGE FlexibleContexts #-}
-#endif
+
+-- my `Monoid` instance is not canonical, but it wouldn't compile on GHC<=8.2 if it was
+{-# OPTIONS_GHC -Wno-compat #-}
 
 module Language.Rust.Parser.Reversed (
   Reversed(..),

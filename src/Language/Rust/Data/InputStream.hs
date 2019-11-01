@@ -1,7 +1,7 @@
 {-|
 Module      : Language.Rust.Data.InputStream
 Description : Interface to the underlying input of parsing
-Copyright   : (c) Alec Theriault, 2017-2018
+Copyright   : (c) Alec Theriault, 2017-2019
 License     : BSD-style
 Maintainer  : alec.theriault@gmail.com
 Stability   : experimental
@@ -15,18 +15,19 @@ means incurring a dependency on the [utf8-string](https://hackage.haskell.org/pa
 package.
 -}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Language.Rust.Data.InputStream (
   -- * InputStream type
   InputStream,
   countLines,
   inputStreamEmpty,
-  
+
   -- * Introduction forms
   readInputStream,
   hReadInputStream,
   inputStreamFromString,
-  
+
   -- * Elimination forms
   inputStreamToString,
   takeByte,
@@ -45,6 +46,8 @@ import qualified Data.ByteString.UTF8 as BE
 #else
 import qualified Data.Char as Char
 #endif
+
+import Control.DeepSeq ( NFData )
 
 -- | Read an encoded file into an 'InputStream'
 readInputStream :: FilePath -> IO InputStream
@@ -134,7 +137,7 @@ countLines :: InputStream -> Int
 #ifdef USE_BYTESTRING
 
 -- | Opaque input type.
-newtype InputStream = IS BS.ByteString deriving (Eq, Ord)
+newtype InputStream = IS BS.ByteString deriving (Eq, Ord, NFData)
 takeByte bs = (BS.head (coerce bs), coerce (BS.tail (coerce bs)))
 takeChar bs = maybe (error "takeChar: no char left") coerce (BE.uncons (coerce bs))
 inputStreamEmpty = BS.null . coerce
@@ -142,7 +145,7 @@ peekChars n = BE.toString . BE.take n . coerce
 readInputStream f = coerce <$> BS.readFile f
 hReadInputStream h = coerce <$> BS.hGetContents h
 inputStreamToString = BE.toString . coerce
-inputStreamFromString = IS . BE.fromString 
+inputStreamFromString = IS . BE.fromString
 countLines = length . BE.lines . coerce
 
 instance Show InputStream where
@@ -151,7 +154,7 @@ instance Show InputStream where
 #else
 
 -- | Opaque input type.
-newtype InputStream = IS String deriving (Eq, Ord)
+newtype InputStream = IS String deriving (Eq, Ord, NFData)
 takeByte (IS ~(c:str))
   | Char.isLatin1 c = let b = fromIntegral (Char.ord c) in b `seq` (b, IS str)
   | otherwise       = error "takeByte: not a latin-1 character"
