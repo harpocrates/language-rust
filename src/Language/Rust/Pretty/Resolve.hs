@@ -231,7 +231,7 @@ instance (Typeable a, Monoid a) => Resolve (SourceFile a) where resolveM = resol
 --   * it is a keyword
 --
 resolveIdent :: Ident -> ResolveM Ident
-resolveIdent i@(Ident s r _) =
+resolveIdent i@(Ident { name = s, raw = r }) =
     scope i $ case toks of
                 Right [Spanned (IdentTok i') _]
                    | i /= i' -> err i ("identifier `" ++ s ++ "' does not lex properly")
@@ -359,10 +359,10 @@ resolvePath t p@(Path g segs x) = scope p $
   resolveSeg :: (Typeable a, Monoid a) => PathSegment a -> ResolveM (PathSegment a)
   resolveSeg (PathSegment i a x') = do
     i' <- case i of
-            Ident "self" False _ -> pure i
-            Ident "Self" False _ -> pure i
-            Ident "super" False _ -> pure i
-            Ident "crate" False _ -> pure i
+            Ident { name = "self",  raw = False } -> pure i
+            Ident { name = "Self",  raw = False } -> pure i
+            Ident { name = "super", raw = False } -> pure i
+            Ident { name = "crate", raw = False } -> pure i
             _ -> resolveIdent i
     a' <- traverse resolvePathParameters a
     pure (PathSegment i' a' x')
@@ -544,8 +544,8 @@ resolveArg GeneralArg a@(Arg p t x) = scope a $ do
 
 -- | Check whether an argument is one of the "self"-alike forms
 isSelfAlike :: Arg a -> Bool
-isSelfAlike (Arg Nothing (PathTy Nothing (Path False [PathSegment (Ident "self" False _) Nothing _] _) _) _) = True
-isSelfAlike (Arg Nothing (Rptr _ _ (PathTy Nothing (Path False [PathSegment (Ident "self" False _) Nothing _] _) _) _) _) = True
+isSelfAlike (Arg Nothing (PathTy Nothing (Path False [PathSegment Ident { name = "self", raw = False } Nothing _] _) _) _) = True
+isSelfAlike (Arg Nothing (Rptr _ _ (PathTy Nothing (Path False [PathSegment Ident { name = "self", raw = False } Nothing _] _) _) _) _) = True
 isSelfAlike _ = False
 
 instance (Typeable a, Monoid a) => Resolve (Arg a) where resolveM = resolveArg NamedArg

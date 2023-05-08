@@ -1104,7 +1104,7 @@ literal lit = do
     AlexToken (pos',inp') len action -> do
         tok <- action (peekChars len inp)
         case tok of
-          IdentTok (Ident suf False _) -> do
+          IdentTok Ident { name = suf, raw = False } -> do
             setPosition pos'
             setInput inp'
             pure (LiteralTok lit (Just suf))

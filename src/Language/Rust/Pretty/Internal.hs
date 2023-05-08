@@ -124,8 +124,7 @@ printName = pretty
 
 -- | Print an identifier
 printIdent :: Ident -> Doc a
-printIdent (Ident s False _) = pretty s
-printIdent (Ident s True _) = "r#" <> pretty s
+printIdent n = if raw n then "r#" <> pretty (name n) else pretty (name n)
 
 -- | Print a type (@print_type@ with @print_ty_fn@ inlined)
 -- Types are expected to always be only one line
@@ -599,7 +598,7 @@ printAttr (SugaredDoc Outer False c x) _ = annotate x (flatAlt ("///" <> pretty 
 
 -- | Print an identifier as is, or as cooked string if containing a hyphen
 printCookedIdent :: Ident -> Doc a
-printCookedIdent ident@(Ident str raw _)
+printCookedIdent ident@(Ident { name = str, raw = raw })
   | '-' `elem` str && not raw = printStr Cooked str
   | otherwise = printIdent ident 
 

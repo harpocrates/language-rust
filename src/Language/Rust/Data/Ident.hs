@@ -26,12 +26,14 @@ import Data.Char          ( ord )
 import Data.String        ( IsString(..) )
 import Data.Semigroup as Sem
 
--- | An identifier
+-- | An identifier.
+-- Note that the order of the fields is important, so the
+-- when we derive `Eq` and `Ord` we use the hash first.
 data Ident
-  = Ident { name :: Name                 -- ^ payload of the identifier
+  = Ident { hash :: {-# UNPACK #-} !Int  -- ^ hash for quick comparision
+          , name :: Name                 -- ^ payload of the identifier
           , raw :: Bool                  -- ^ whether the identifier is raw
-          , hash :: {-# UNPACK #-} !Int  -- ^ hash for quick comparision
-          } deriving (Data, Typeable, Generic, NFData)
+          } deriving (Data, Typeable, Generic, NFData, Eq, Ord)
 
 -- | Shows the identifier as a string (for use with @-XOverloadedStrings@)
 instance Show Ident where
@@ -40,17 +42,6 @@ instance Show Ident where
 instance IsString Ident where
   fromString = mkIdent
 
--- | Uses 'hash' to short-circuit
-instance Eq Ident where
-  i1 == i2 = hash i1 == hash i2 && name i1 == name i2 && raw i1 == raw i2
-  i1 /= i2 = hash i1 /= hash i2 || name i1 /= name i2 || raw i1 /= raw i2
-
--- | Uses 'hash' to short-circuit
-instance Ord Ident where
-  compare i1 i2 = case compare i1 i2 of
-                    EQ -> compare (raw i1, name i1) (raw i2, name i2)
-                    rt -> rt
-
 -- | "Forgets" about whether either argument was raw
 instance Monoid Ident where
   mappend = (<>)
@@ -58,12 +49,15 @@ instance Monoid Ident where
 
 -- | "Forgets" about whether either argument was raw
 instance Sem.Semigroup Ident where
-  Ident n1 _ _ <> Ident n2 _  _ = mkIdent (n1 <> n2)
+  i1 <> i2 = mkIdent (name i1 <> name i2)
 
 
 -- | Smart constructor for making an 'Ident'.
 mkIdent :: String -> Ident
-mkIdent s = Ident s False (hashString s)
+mkIdent s = Ident { hash = hashString s
+                  , name = s
+                  , raw = False
+                  }
 
 -- | Hash a string into an 'Int'
 hashString :: String -> Int
