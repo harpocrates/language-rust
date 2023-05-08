@@ -947,7 +947,12 @@ printGenerics (Generics lifetimes tyParams _ x)
   | null lifetimes && null tyParams = mempty
   | otherwise =  let lifetimes' = printLifetimeDef `map` lifetimes
                      bounds' = [ printTyParam param | param<-tyParams ]
-                 in annotate x (group ("<" <##> ungroup (block NoDelim True "," mempty (lifetimes' ++ bounds')) <##> ">"))
+                 in annotate x (group ("<" <##> vsep (go (lifetimes' ++ bounds')) <##> ">"))
+  where
+  go []     = []
+  go [z]    = [ flatAlt (indent n z <> ",") (flatten z) ]
+  go (z:zs) = flatAlt (indent n z <> ",") (flatten z <> ",") : go zs
+
 
 -- | Print a poly-trait ref (@print_poly_trait_ref@)
 printPolyTraitRef :: PolyTraitRef a -> Doc a
