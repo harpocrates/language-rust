@@ -85,7 +85,6 @@ import Data.List                       ( find )
 import Data.List.NonEmpty              ( NonEmpty(..) )
 import qualified Data.List.NonEmpty as N
 import Data.Maybe                      ( fromJust )
-import Data.Semigroup                  ( (<>) )
 
 {-# ANN module "HLint: ignore Reduce duplication" #-}
 
