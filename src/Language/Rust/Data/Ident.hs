@@ -33,7 +33,13 @@ data Ident
   = Ident { hash :: {-# UNPACK #-} !Int  -- ^ hash for quick comparision
           , name :: Name                 -- ^ payload of the identifier
           , raw :: Bool                  -- ^ whether the identifier is raw
-          } deriving (Data, Typeable, Generic, NFData, Eq, Ord)
+          } deriving (Data, Typeable, Generic, NFData)
+
+instance Eq Ident where
+  x == y = (hash x, name x) == (hash y, name y)
+
+instance Ord Ident where
+  compare x y = compare (hash x, name x) (hash y, name y)
 
 -- | Shows the identifier as a string (for use with @-XOverloadedStrings@)
 instance Show Ident where
