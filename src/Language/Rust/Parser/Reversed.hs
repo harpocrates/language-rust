@@ -51,7 +51,7 @@ instance Sem.Semigroup (f a) => Sem.Semigroup (Reversed f a) where
 
 instance Monoid (f a) => Monoid (Reversed f a) where
   mempty = Reversed mempty
-  mappend (Reversed xs) (Reversed ys) = Reversed (mappend ys xs)
+  mappend = (<>)
 
 instance G.IsList (f a) => G.IsList (Reversed f a) where
   type Item (Reversed f a) = G.Item (f a)
