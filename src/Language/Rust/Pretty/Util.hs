@@ -25,8 +25,8 @@ module Language.Rust.Pretty.Util where
 
 import Data.Monoid as M
 
-import qualified Data.Text.Prettyprint.Doc as PP
-import Data.Text.Prettyprint.Doc.Internal.Type ( Doc(..) )
+import qualified Prettyprinter as PP
+import Prettyprinter.Internal.Type ( Doc(..) )
 
 import Language.Rust.Syntax.Token ( Delim(..) )
 
