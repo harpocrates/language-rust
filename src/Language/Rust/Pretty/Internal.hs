@@ -103,7 +103,7 @@ import Language.Rust.Data.Position
 import Language.Rust.Syntax.AST
 import Language.Rust.Syntax.Token
 
-import Data.Text.Prettyprint.Doc hiding ( (<+>), hsep, indent, vsep )
+import Prettyprinter hiding ( (<+>), hsep, indent, vsep )
 
 import Data.Maybe               ( maybeToList, fromMaybe )
 import Data.Foldable            ( toList )
@@ -148,6 +148,17 @@ printType (MacTy m x)           = annotate x (printMac Bracket m)
 printType (BareFn u a l d x)    = annotate x (printFormalLifetimeList l
                                                <+> printFnHeaderInfo u NotConst a InheritedV
                                                <> printFnArgsAndRet d)
+printType (ConstTy e x)         = annotate x (if simple then doc else wrapped)
+  where
+  doc = printExpr e
+  wrapped = "{" <> doc <> "}"
+  simple =
+    case e of
+      Lit {} -> True
+      PathExpr [] Nothing (Path False [seg] _) _
+        | PathSegment _ Nothing _ <- seg -> True
+      _ -> False
+
 
 -- | Print a macro (@print_mac@)
 printMac :: Delim -> Mac a -> Doc a

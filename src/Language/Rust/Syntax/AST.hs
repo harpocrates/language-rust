@@ -1022,6 +1022,9 @@ data Ty a
   | Infer a
   -- | generated from a call to a macro (example: @HList![i32,(),u8]@)
   | MacTy (Mac a) a
+
+  -- | Type constant, for example @f<2,u8>@
+  | ConstTy (Expr a) a
   deriving (Eq, Ord, Functor, Show, Typeable, Data, Generic, Generic1, NFData)
 
 instance Located a => Located (Ty a) where
@@ -1039,6 +1042,7 @@ instance Located a => Located (Ty a) where
   spanOf (Typeof _ s) = spanOf s
   spanOf (Infer s) = spanOf s
   spanOf (MacTy _ s) = spanOf s
+  spanOf (ConstTy _ s) = spanOf s
 
 -- | Type parameter definition used in 'Generics' (@syntax::ast::TyParam@). Note that each
 -- parameter can have any number of (lifetime or trait) bounds, as well as possibly a default type.

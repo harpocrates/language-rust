@@ -463,6 +463,7 @@ resolveTy _ a@(Array ty' e x) = scope a (Array <$> resolveTy AnyType ty' <*> res
 resolveTy _ m@(MacTy (Mac p t x) x') = scope m $ do
   p' <- resolvePath TypePath p
   MacTy <$> resolveMac TypePath (Mac p' t x) <*> pure x'
+resolveTy _ a@(ConstTy e x) = scope a (ConstTy <$> resolveExpr AnyExpr e <*> pure x)
 
 instance (Typeable a, Monoid a) => Resolve (Ty a) where resolveM = resolveTy AnyType
 
