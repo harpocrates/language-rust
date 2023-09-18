@@ -77,9 +77,9 @@ import Language.Rust.Pretty.Resolve
 
 import System.IO                             ( Handle )
 import Data.Typeable                         ( Typeable )
-import Data.Text.Prettyprint.Doc.Render.Text ( renderIO )
-import Data.Text.Prettyprint.Doc             ( Doc )
-import qualified Data.Text.Prettyprint.Doc as PP
+import Prettyprinter.Render.Text ( renderIO )
+import Prettyprinter                         ( Doc )
+import qualified Prettyprinter as PP
 
 import Control.Exception                     ( throw )
 

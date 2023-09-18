@@ -124,8 +124,7 @@ printName = pretty
 
 -- | Print an identifier
 printIdent :: Ident -> Doc a
-printIdent (Ident s False _) = pretty s
-printIdent (Ident s True _) = "r#" <> pretty s
+printIdent n = if raw n then "r#" <> pretty (name n) else pretty (name n)
 
 -- | Print a type (@print_type@ with @print_ty_fn@ inlined)
 -- Types are expected to always be only one line
@@ -599,7 +598,7 @@ printAttr (SugaredDoc Outer False c x) _ = annotate x (flatAlt ("///" <> pretty 
 
 -- | Print an identifier as is, or as cooked string if containing a hyphen
 printCookedIdent :: Ident -> Doc a
-printCookedIdent ident@(Ident str raw _)
+printCookedIdent ident@(Ident { name = str, raw = raw })
   | '-' `elem` str && not raw = printStr Cooked str
   | otherwise = printIdent ident 
 
@@ -947,7 +946,12 @@ printGenerics (Generics lifetimes tyParams _ x)
   | null lifetimes && null tyParams = mempty
   | otherwise =  let lifetimes' = printLifetimeDef `map` lifetimes
                      bounds' = [ printTyParam param | param<-tyParams ]
-                 in annotate x (group ("<" <##> ungroup (block NoDelim True "," mempty (lifetimes' ++ bounds')) <##> ">"))
+                 in annotate x (group ("<" <##> vsep (go (lifetimes' ++ bounds')) <##> ">"))
+  where
+  go []     = []
+  go [z]    = [ flatAlt (indent n z <> ",") (flatten z) ]
+  go (z:zs) = flatAlt (indent n z <> ",") (flatten z <> ",") : go zs
+
 
 -- | Print a poly-trait ref (@print_poly_trait_ref@)
 printPolyTraitRef :: PolyTraitRef a -> Doc a

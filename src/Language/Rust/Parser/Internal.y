@@ -585,7 +585,7 @@ self_or_ident :: { Spanned Ident }
 -----------
 
 lifetime :: { Lifetime Span }
-  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _ _)) s = $1 in Lifetime l s }
+  : LIFETIME                         { let Spanned (LifetimeTok l) s = $1 in Lifetime (name l) s }
 
 -- parse_trait_ref()
 trait_ref :: { TraitRef Span }
@@ -1125,7 +1125,7 @@ blockpostfix_expr :: { Expr Span }
 
 -- labels on loops
 label :: { Label Span }
-  : LIFETIME                         { let Spanned (LifetimeTok (Ident l _ _)) s = $1 in Label l s }
+  : LIFETIME                         { let Spanned (LifetimeTok l) s = $1 in Label (name l) s }
 
 -- Literal expressions (composed of just literals)
 lit_expr :: { Expr Span }
@@ -1904,8 +1904,8 @@ addAttrs as (Yield as' e s)          = Yield (as ++ as') e s
 -- | Given a 'LitTok' token that is expected to result in a valid literal, construct the associated
 -- literal. Note that this should _never_ fail on a token produced by the lexer.
 lit :: Spanned Token -> Lit Span
-lit (Spanned (IdentTok (Ident "true" False _)) s) = Bool True Unsuffixed s
-lit (Spanned (IdentTok (Ident "false" False _)) s) = Bool False Unsuffixed s
+lit (Spanned (IdentTok Ident { name = "true", raw = False }) s) = Bool True Unsuffixed s
+lit (Spanned (IdentTok Ident { name = "false", raw = False }) s) = Bool False Unsuffixed s
 lit (Spanned (LiteralTok litTok suffix_m) s) = translateLit litTok suffix s
   where
     suffix = case suffix_m of

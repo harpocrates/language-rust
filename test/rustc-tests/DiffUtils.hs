@@ -5,7 +5,7 @@
 module DiffUtils where
 
 import qualified Data.Aeson as Aeson
-import qualified Data.HashMap.Lazy as HM
+import qualified Data.Aeson.KeyMap as Aeson
 import qualified Data.Vector as V
 import qualified Data.List.NonEmpty as N
 import Control.Monad
@@ -24,10 +24,16 @@ instance IsString AesonKey where fromString = Key
 
 -- | Accessor method for JSON with helpful error messages.
 (!) :: Aeson.Value -> AesonKey -> Aeson.Value
-val@(Aeson.Object hashmap) ! Key key =
-  case HM.lookup (fromString key) hashmap of
-    Nothing -> error $ "No key `" ++ key ++ "' on JSON object `" ++ showAeson val ++ "'"
+val@(Aeson.Object hashmap) ! key =
+  case Aeson.lookup (fromString keyString) hashmap of
+    Nothing -> error $ "No key `" ++ keyString ++ "' on JSON object `" ++ showAeson val ++ "'"
     Just v -> v
+  where
+  keyString =
+    case key of
+      Index i -> show i
+      Key x   -> x
+
 val ! Key key = error $ "Cannot lookup key `" ++ key ++ "' on non-object JSON `" ++ showAeson val ++ "'"
 val@(Aeson.Array vect) ! Index key =
   case vect V.!? key of
@@ -41,7 +47,7 @@ showAeson = unpack . Aeson.encode
 
 -- | Accessor method for JSON which fails with 'Nothing'
 (!?) :: Aeson.Value -> AesonKey -> Maybe Aeson.Value
-Aeson.Object hashmap !? Key key = HM.lookup (fromString key) hashmap
+Aeson.Object hashmap !? Key key = Aeson.lookup (fromString key) hashmap
 Aeson.Array vect !? Index key = vect V.!? key
 _ !? _ = Nothing
 
